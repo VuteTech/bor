@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// KConfigEntry represents a single KDE Kiosk configuration entry.
+message KConfigEntry {
+  string file = 1;
+  string group = 2;
+  string key = 3;
+  string value = 4;
+  string type = 5;
+  bool enforced = 6;
+}
+
+// KConfigPolicy holds all KConfig entries for a single policy.
+message KConfigPolicy {
+  repeated KConfigEntry entries = 1;
+}

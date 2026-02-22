@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: public.ecr.aws/docker/library/postgres:17.6-alpine3.22
+    container_name: bor-postgres
+    environment:
+      POSTGRES_USER: bor
+      POSTGRES_PASSWORD: bor
+      POSTGRES_DB: bor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Containerfile
+    container_name: bor-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=bor
+      - DB_PASSWORD=bor
+      - DB_NAME=bor
+      - BOR_ADDR=:8443
+    ports:
+      - "8443:8443"
+    volumes:
+      - bor_pki:/var/lib/bor/pki:U
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  bor_pki:

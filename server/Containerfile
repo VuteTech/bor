@@ -1,0 +1,100 @@
+# ────────────────────────────────────────────────────────
+# Stage 0a: Generate protobuf Go bindings
+# ────────────────────────────────────────────────────────
+FROM registry.access.redhat.com/ubi10/go-toolset:10.1 AS proto-go-builder
+
+USER root
+ENV GOPATH=/root/go
+ENV PATH=${PATH}:/root/go/bin
+
+ARG PROTOC_VERSION=29.3
+RUN dnf install -y --nodocs curl unzip && dnf clean all && \
+    curl -fsSL -o /tmp/protoc.zip \
+      "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-$(uname -m).zip" && \
+    unzip -q /tmp/protoc.zip -d /usr/local && \
+    rm /tmp/protoc.zip
+
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+COPY proto/ /proto/
+
+RUN mkdir -p /out/go && \
+    protoc --go_out=/out/go --go_opt=paths=source_relative \
+           --go-grpc_out=/out/go --go-grpc_opt=paths=source_relative \
+           -I /proto/policy /proto/policy/*.proto
+
+# ────────────────────────────────────────────────────────
+# Stage 0b: Generate protobuf TypeScript bindings
+# ────────────────────────────────────────────────────────
+FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS proto-ts-builder
+
+USER root
+
+# Copy protoc binary and well-known-type includes from the Go builder
+COPY --from=proto-go-builder /usr/local/bin/protoc /usr/local/bin/protoc
+COPY --from=proto-go-builder /usr/local/include/ /usr/local/include/
+
+# protoc is a C++ binary; libstdc++ may be absent in the minimal image
+RUN microdnf install -y --nodocs libstdc++ && microdnf clean all
+
+COPY server/web/frontend/package.json server/web/frontend/package-lock.json /frontend/
+RUN cd /frontend && npm ci --ignore-scripts
+
+COPY proto/ /proto/
+
+RUN mkdir -p /out/ts && \
+    cd /frontend && \
+    protoc \
+        --plugin=node_modules/.bin/protoc-gen-ts_proto \
+        --ts_proto_out=/out/ts \
+        --ts_proto_opt=onlyTypes=true,snakeToCamel=false,outputServices=false \
+        -I /proto/policy \
+        /proto/policy/*.proto
+
+# ────────────────────────────────────────────────────────
+# Stage 1: Build the React frontend
+# ────────────────────────────────────────────────────────
+FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS frontend-builder
+
+COPY server/web/frontend/package.json server/web/frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+
+# Inject generated TypeScript proto types
+COPY --from=proto-ts-builder /out/ts/ ./src/generated/proto/
+
+COPY server/web/frontend/ ./
+RUN npm run build
+
+# ────────────────────────────────────────────────────────
+# Stage 2: Build the Go server binary
+# ────────────────────────────────────────────────────────
+FROM registry.access.redhat.com/ubi10/go-toolset:10.1 AS builder
+
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+
+COPY server/ ./
+
+# Inject generated Go proto bindings (replaces committed pb.go files)
+COPY --from=proto-go-builder /out/go/ ./pkg/grpc/policy/
+
+# Inject built frontend assets
+COPY --from=frontend-builder /opt/app-root/static/ ./web/static/
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./cmd/server
+
+# ────────────────────────────────────────────────────────
+# Stage 3: Runtime image
+# ────────────────────────────────────────────────────────
+FROM registry.access.redhat.com/ubi10/ubi:10.1
+
+USER root
+RUN mkdir -p /var/lib/bor/pki/ui && chown -R 1001:1001 /var/lib/bor
+
+COPY --from=builder /opt/app-root/src/server /usr/local/bin/server
+
+EXPOSE 8443
+USER 1001
+
+CMD ["/usr/local/bin/server"]

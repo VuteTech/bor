@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// ChromePolicy holds Chrome/Chromium browser enterprise policy settings.
+// Content is a JSON object mapping Chrome policy names to their values.
+// See https://chromeenterprise.google/policies/ for the full policy reference.
+message ChromePolicy {
+  // JSON object with Chrome policy key-value pairs.
+  // Keys are Chrome policy names (e.g. "HomepageLocation", "ExtensionInstallForcelist").
+  // Applied to all Chrome/Chromium variants via managed policy directories.
+  string content = 1;
+}

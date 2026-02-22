@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package bor.enrollment.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/enrollment;enrollment";
+
+import "google/protobuf/timestamp.proto";
+
+// EnrollmentService handles agent enrollment via gRPC.
+service EnrollmentService {
+  // CreateEnrollmentToken generates a short-lived enrollment token for a node group.
+  // Called by admins via the UI or CLI.
+  rpc CreateEnrollmentToken(CreateEnrollmentTokenRequest) returns (CreateEnrollmentTokenResponse);
+
+  // Enroll registers a new agent using an enrollment token and CSR.
+  // Called by the agent on first run.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+}
+
+// CreateEnrollmentTokenRequest is sent by an admin to generate an enrollment token.
+message CreateEnrollmentTokenRequest {
+  string node_group_id = 1;
+}
+
+// CreateEnrollmentTokenResponse contains the generated enrollment token.
+message CreateEnrollmentTokenResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// EnrollRequest is sent by the agent to enroll using a token + CSR.
+message EnrollRequest {
+  string enrollment_token = 1;
+  bytes csr_pem = 2;
+  string node_name = 3;
+  map<string, string> facts = 4;
+}
+
+// EnrollResponse is returned after successful enrollment.
+message EnrollResponse {
+  string node_id = 1;
+  bytes signed_cert_pem = 2;
+  bytes ca_cert_pem = 3;
+  string assigned_node_group = 4;
+}

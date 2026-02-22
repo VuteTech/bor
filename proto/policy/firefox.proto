@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// FirefoxPolicy is the canonical schema for a Firefox enterprise policy
+// on Linux. It maps directly to the "policies" key in policies.json.
+message FirefoxPolicy {
+  // Simple boolean policies
+  optional bool DisableAppUpdate = 1;
+  optional bool AppAutoUpdate = 2;
+  optional bool DisableFirefoxStudies = 3;
+  optional bool DisablePocket = 4;
+  optional bool DisableTelemetry = 5;
+  optional bool DisableFirefoxAccounts = 6;
+  optional bool DisableFormHistory = 7;
+  optional bool DisablePasswordReveal = 8;
+  optional bool DisableMasterPasswordCreation = 9;
+  optional bool BlockAboutAddons = 10;
+  optional bool BlockAboutConfig = 11;
+  optional bool BlockAboutProfiles = 12;
+  optional bool BlockAboutSupport = 13;
+  optional bool DontCheckDefaultBrowser = 14;
+  optional bool OfferToSaveLogins = 15;
+  optional bool PasswordManagerEnabled = 16;
+  optional bool PromptForDownloadLocation = 17;
+  optional bool HardwareAcceleration = 18;
+  optional bool NetworkPrediction = 19;
+  optional bool CaptivePortal = 20;
+  optional bool DisableSetDesktopBackground = 21;
+  optional bool NoDefaultBookmarks = 22;
+  optional bool OverrideFirstRunPage = 23;
+  optional bool OverridePostUpdatePage = 24;
+  optional bool DisableProfileImport = 25;
+  optional bool DisableFeedbackCommands = 26;
+  optional bool DisableSafeMode = 27;
+  optional bool DisableSecurityBypass = 28;
+  optional bool SearchSuggestEnabled = 29;
+  optional bool DisplayBookmarksToolbar = 30;
+  optional bool DisplayMenuBar = 31;
+
+  // String policies
+  optional string DefaultDownloadDirectory = 32;
+  optional string SSLVersionMin = 33;
+  optional string SSLVersionMax = 34;
+  optional string AppUpdatePin = 35;
+
+  // Integer policies
+  optional int32 NewTabPage = 36;
+
+  // Object/composite policies
+  optional FirefoxHomepage Homepage = 37;
+  optional FirefoxTrackingProtection EnableTrackingProtection = 38;
+  optional FirefoxDNSOverHTTPS DNSOverHTTPS = 39;
+  optional FirefoxFirefoxHome FirefoxHome = 40;
+  optional FirefoxCookies Cookies = 41;
+  optional FirefoxExtensions Extensions = 42;
+  repeated FirefoxBookmark Bookmarks = 43;
+  optional FirefoxProxy Proxy = 44;
+  optional FirefoxPopupBlocking PopupBlocking = 45;
+  optional FirefoxPermissions Permissions = 46;
+}
+
+// FirefoxHomepage configures the browser homepage
+message FirefoxHomepage {
+  string URL = 1;
+  bool Locked = 2;
+  repeated string Additional = 3;
+  // "none", "homepage", "previous-session", "homepage-locked"
+  string StartPage = 4;
+}
+
+// FirefoxTrackingProtection configures Enhanced Tracking Protection
+message FirefoxTrackingProtection {
+  bool Value = 1;
+  bool Locked = 2;
+  bool Cryptomining = 3;
+  bool Fingerprinting = 4;
+  bool EmailTracking = 5;
+  repeated string Exceptions = 6;
+}
+
+// FirefoxDNSOverHTTPS configures DNS-over-HTTPS settings
+message FirefoxDNSOverHTTPS {
+  bool Enabled = 1;
+  string ProviderURL = 2;
+  bool Locked = 3;
+  repeated string ExcludedDomains = 4;
+  bool Fallback = 5;
+}
+
+// FirefoxFirefoxHome configures the Firefox Home (new tab) page
+message FirefoxFirefoxHome {
+  bool Search = 1;
+  bool TopSites = 2;
+  bool SponsoredTopSites = 3;
+  bool Highlights = 4;
+  bool Pocket = 5;
+  bool SponsoredPocket = 6;
+  bool Snippets = 7;
+  bool Locked = 8;
+}
+
+// FirefoxCookies configures cookie behaviour
+message FirefoxCookies {
+  repeated string Allow = 1;
+  repeated string Block = 2;
+  repeated string AllowSession = 3;
+  // "accept", "reject-foreign", "reject-all", etc.
+  string Behavior = 4;
+  string BehaviorPrivateBrowsing = 5;
+  bool Locked = 6;
+}
+
+// FirefoxExtensions manages extension install/uninstall/lock lists
+message FirefoxExtensions {
+  repeated string Install = 1;
+  repeated string Uninstall = 2;
+  repeated string Locked = 3;
+}
+
+// FirefoxBookmark represents a single managed bookmark
+message FirefoxBookmark {
+  string Title = 1;
+  string URL = 2;
+  string Favicon = 3;
+  string Placement = 4;
+  string Folder = 5;
+}
+
+// FirefoxProxy configures proxy settings
+message FirefoxProxy {
+  string Mode = 1;
+  bool Locked = 2;
+  string HTTPProxy = 3;
+  int32 HTTPPort = 4;
+  bool UseHTTPProxyForAllProtocols = 5;
+  string SSLProxy = 6;
+  int32 SSLPort = 7;
+  string FTPProxy = 8;
+  int32 FTPPort = 9;
+  string SOCKSProxy = 10;
+  int32 SOCKSPort = 11;
+  int32 SOCKSVersion = 12;
+  string Passthrough = 13;
+  string AutoConfigURL = 14;
+  bool AutoLogin = 15;
+  bool UseProxyForDNS = 16;
+}
+
+// FirefoxPopupBlocking configures popup blocker exceptions
+message FirefoxPopupBlocking {
+  repeated string Allow = 1;
+  bool Default = 2;
+  bool Locked = 3;
+}
+
+// FirefoxPermissions configures site permission defaults and exceptions
+message FirefoxPermissions {
+  optional FirefoxPermissionPolicy Camera = 1;
+  optional FirefoxPermissionPolicy Microphone = 2;
+  optional FirefoxPermissionPolicy Location = 3;
+  optional FirefoxPermissionPolicy Notifications = 4;
+  optional FirefoxPermissionPolicy Autoplay = 5;
+}
+
+// FirefoxPermissionPolicy configures a single permission type
+message FirefoxPermissionPolicy {
+  repeated string Allow = 1;
+  repeated string Block = 2;
+  bool BlockNewRequests = 3;
+  bool Locked = 4;
+}

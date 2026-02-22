@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS agent_settings;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS user_group_role_bindings;
+DROP TABLE IF EXISTS user_group_members;
+DROP TABLE IF EXISTS user_groups;
+DROP TABLE IF EXISTS user_role_bindings;
+DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS permissions;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS policy_bindings;
+DROP TABLE IF EXISTS node_group_members;
+DROP TABLE IF EXISTS nodes;
+DROP TABLE IF EXISTS node_groups;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS policies;

@@ -1,0 +1,42 @@
+/* Bor brand color overrides for PatternFly v5 */
+/* Primary palette derived from logo color #0F2F24 (dark forest green) */
+:root {
+  --pf-v5-global--primary-color--100: #2E7D32;
+  --pf-v5-global--primary-color--200: #1B5E20;
+  --pf-v5-global--primary-color--light-100: #4CAF50;
+  --pf-v5-global--primary-color--dark-100: #1B5E20;
+  --pf-v5-global--link--Color: #2E7D32;
+  --pf-v5-global--link--Color--hover: #1B5E20;
+  --pf-v5-global--link--Color--visited: #1B5E20;
+  --pf-v5-global--active-color--100: #2E7D32;
+  --pf-v5-global--Color--status--custom--default: #2E7D32;
+}
+
+/* Masthead */
+.pf-v5-c-masthead {
+  --pf-v5-c-masthead--BackgroundColor: #0F2F24;
+}
+
+/* Sidebar nav */
+.pf-v5-c-page__sidebar {
+  --pf-v5-c-page__sidebar--BackgroundColor: #0F2F24;
+}
+
+.pf-v5-c-nav__link.pf-m-current,
+.pf-v5-c-nav__link:hover {
+  --pf-v5-c-nav__link--m-current--BackgroundColor: rgba(46, 125, 50, 0.2);
+}
+
+/* Button overrides */
+.pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: #2E7D32;
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: #1B5E20;
+  --pf-v5-c-button--m-primary--active--BackgroundColor: #0F2F24;
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: #1B5E20;
+}
+
+/* Login page button */
+.pf-v5-c-login .pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: #2E7D32;
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: #1B5E20;
+}

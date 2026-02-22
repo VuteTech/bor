@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f0f0f"></stop>
+      <stop offset="100%" stop-color="#1b1b1b"></stop>
+    </linearGradient>
+
+    <!-- Green accent gradient (Bor brand) -->
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0F2F24" stop-opacity="0"></stop>
+      <stop offset="50%" stop-color="#0F2F24" stop-opacity="0.6"></stop>
+      <stop offset="100%" stop-color="#0F2F24" stop-opacity="0"></stop>
+    </linearGradient>
+
+    <!-- Subtle pattern -->
+    <pattern id="dots" width="40" height="40" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#ffffff" opacity="0.04"></circle>
+    </pattern>
+  </defs>
+
+  <!-- Base -->
+  <rect width="100%" height="100%" fill="url(#bg)"></rect>
+
+  <!-- Pattern overlay -->
+  <rect width="100%" height="100%" fill="url(#dots)"></rect>
+
+  <!-- Flowing accent lines -->
+  <path d="M-200 200 C 300 100, 600 300, 1200 200" stroke="url(#accent)" stroke-width="2" fill="none"></path>
+
+  <path d="M-300 700 C 400 600, 900 900, 1600 700" stroke="url(#accent)" stroke-width="1.5" fill="none" opacity="0.6"></path>
+</svg>

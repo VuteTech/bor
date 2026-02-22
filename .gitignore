@@ -1,0 +1,69 @@
+# Package builds
+/builds/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+/vendor/
+/dist/
+/build/
+server/server
+server/cmd/server/server
+agent/bor-agent
+
+# IDEs
+.vscode/*
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+tmp/
+
+#AI Tools
+CLAUDE.md
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node modules (for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Frontend build
+server/web/frontend/dist/
+server/web/frontend/build/
+server/web/frontend/.cache/
+
+# Source maps in static folder
+server/web/static/*.map
+server/web/static/*.LICENSE.txt
+
+# Test coverage
+*.coverprofile
+coverage/
+*.cover
+*.coverage
+
+# OS
+Thumbs.db

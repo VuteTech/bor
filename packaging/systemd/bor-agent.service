@@ -1,0 +1,17 @@
+[Unit]
+Description=Bor Policy Management Agent
+Documentation=https://github.com/VuteTech/Bor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bor-agent
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bor-agent
+
+[Install]
+WantedBy=multi-user.target

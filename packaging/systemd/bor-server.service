@@ -1,0 +1,25 @@
+[Unit]
+Description=Bor Policy Management Server
+Documentation=https://github.com/VuteTech/Bor
+After=network.target
+
+[Service]
+Type=simple
+User=bor
+Group=bor
+EnvironmentFile=/etc/bor/server.env
+ExecStart=/usr/bin/bor-server
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bor-server
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/bor/pki
+
+[Install]
+WantedBy=multi-user.target

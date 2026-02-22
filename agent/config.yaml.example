@@ -1,0 +1,42 @@
+# Bor Agent Configuration
+# Protect this file: chmod 0600 /etc/bor/config.yaml
+
+server:
+  # Server address (host:port) — same address as the web UI
+  address: "localhost:8443"
+  # Skip server certificate verification during enrollment only.
+  # Set to true when the server uses a self-signed certificate.
+  # After enrollment, the CA cert is stored locally and used for verification.
+  insecure_skip_verify: true
+
+agent:
+  # Unique client identifier (defaults to hostname if empty)
+  client_id: ""
+
+# Enrollment settings for mTLS bootstrap
+enrollment:
+  # Directory where the agent stores its certificate, key, and CA cert after enrollment
+  data_dir: "/var/lib/bor/agent"
+  # To enroll, run: bor-agent --token <TOKEN>
+  # Generate a token from the Node Groups page in the Bor web UI.
+
+# Firefox policy output paths
+firefox:
+  # System Firefox (RPM/DEB package)
+  policies_path: "/etc/firefox/policies/policies.json"
+  # Flatpak Firefox — extension directory (auto-detected arch; leave empty to disable)
+  # The agent writes here as root; Firefox Flatpak mounts it at /app/etc/firefox/ inside the sandbox.
+  flatpak_policies_path: "/var/lib/flatpak/extension/org.mozilla.firefox.systemconfig/x86_64/stable/policies/policies.json"
+
+# Chrome/Chromium policy directories
+# The agent writes bor_managed.json into each configured directory.
+# Set any path to "" to disable writing to that variant.
+chrome:
+  # Google Chrome (stable, beta, dev, unstable — all channels share this path)
+  chrome_policies_path: "/etc/opt/chrome/policies/managed"
+  # Chromium (upstream build: Arch Linux, self-built, etc.)
+  chromium_policies_path: "/etc/chromium/policies/managed"
+  # Chromium (Debian/Ubuntu deb package)
+  chromium_browser_policies_path: "/etc/chromium-browser/policies/managed"
+  # Flatpak Chromium (org.chromium.Chromium) — set empty to disable
+  flatpak_chromium_policies_path: "/var/lib/flatpak/extension/org.chromium.Chromium.Extension.system-policies/x86_64/1/policies/managed"

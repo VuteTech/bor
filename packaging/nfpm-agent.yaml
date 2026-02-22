@@ -1,0 +1,46 @@
+name: "bor-agent"
+arch: "${ARCH}"
+platform: "linux"
+version: "${VERSION}"
+maintainer: "VuteTech <info@vutetech.com>"
+description: |
+  Bor Policy Management Agent.
+  Connects to the Bor server and enforces desktop policies
+  on Linux endpoints (Firefox, Chrome/Chromium, KDE Kiosk).
+homepage: "https://getbor.dev"
+license: "LGPL-3.0-or-later"
+
+contents:
+  # Binary
+  - src: agent/bor-agent
+    dst: /usr/bin/bor-agent
+    file_info:
+      mode: 0755
+
+  # Default config (preserved on upgrade)
+  - src: agent/config.yaml.example
+    dst: /etc/bor/config.yaml
+    type: config|noreplace
+    file_info:
+      mode: 0600
+
+  # Systemd unit
+  - src: packaging/systemd/bor-agent.service
+    dst: /lib/systemd/system/bor-agent.service
+    file_info:
+      mode: 0644
+
+  # Directories
+  - dst: /etc/bor
+    type: dir
+    file_info:
+      mode: 0755
+
+  - dst: /var/lib/bor/agent
+    type: dir
+    file_info:
+      mode: 0750
+
+scripts:
+  postinstall: packaging/scripts/postinstall-agent.sh
+  preremove: packaging/scripts/preremove-agent.sh

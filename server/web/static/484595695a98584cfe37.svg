@@ -1,0 +1,12 @@
+<svg width="220" height="220" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="110" cy="110" r="100" fill="none" stroke="#0F2F24" stroke-width="8"/>
+  
+  <!-- Trunk -->
+  <line x1="110" y1="60" x2="110" y2="150" stroke="#0F2F24" stroke-width="10" stroke-linecap="round"/>
+  
+  <!-- Left branch -->
+  <path d="M110 90 Q75 110 65 130" fill="none" stroke="#0F2F24" stroke-width="8" stroke-linecap="round"/>
+  
+  <!-- Right branch -->
+  <path d="M110 90 Q145 110 155 130" fill="none" stroke="#0F2F24" stroke-width="8" stroke-linecap="round"/>
+</svg>

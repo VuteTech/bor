@@ -1,0 +1,209 @@
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+import "google/protobuf/timestamp.proto";
+import "chrome.proto";
+import "firefox.proto";
+import "kconfig.proto";
+
+// PolicyService manages desktop policies
+service PolicyService {
+  // Get a specific policy by ID
+  rpc GetPolicy(GetPolicyRequest) returns (GetPolicyResponse);
+
+  // List all policies for a client
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+
+  // Subscribe to policy updates (streaming)
+  rpc SubscribePolicyUpdates(SubscribePolicyUpdatesRequest) returns (stream PolicyUpdate);
+
+  // Report policy compliance status
+  rpc ReportCompliance(ReportComplianceRequest) returns (ReportComplianceResponse);
+
+  // Get agent configuration (notification settings, etc.)
+  rpc GetAgentConfig(GetAgentConfigRequest) returns (GetAgentConfigResponse);
+
+  // Send a heartbeat with node metadata
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// Policy represents a desktop policy configuration
+message Policy {
+  // Unique policy identifier
+  string id = 1;
+
+  // Policy name
+  string name = 2;
+
+  // Policy description
+  string description = 3;
+
+  // Policy type (e.g., "firewall", "software", "security")
+  string type = 4;
+
+  // Policy configuration in JSON format
+  string content = 5;
+
+  // Policy version
+  int32 version = 6;
+
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 7;
+
+  // Last update timestamp
+  google.protobuf.Timestamp updated_at = 8;
+
+  // Whether the policy is enabled
+  bool enabled = 9;
+
+  // Typed policy content — populated by the server for gRPC transport.
+  // The string content field (5) is kept for REST API compatibility.
+  oneof typed_content {
+    FirefoxPolicy firefox_policy = 10;
+    KConfigPolicy kconfig_policy = 11;
+    ChromePolicy chrome_policy = 12;
+  }
+}
+
+// GetPolicyRequest requests a specific policy
+message GetPolicyRequest {
+  string policy_id = 1;
+}
+
+// GetPolicyResponse contains the requested policy
+message GetPolicyResponse {
+  Policy policy = 1;
+}
+
+// ListPoliciesRequest requests policies for a client
+message ListPoliciesRequest {
+  // Client identifier (hostname, MAC address, etc.)
+  string client_id = 1;
+
+  // Optional filter by policy type
+  string type_filter = 2;
+
+  // Pagination: page size
+  int32 page_size = 3;
+
+  // Pagination: page token
+  string page_token = 4;
+}
+
+// ListPoliciesResponse contains a list of policies
+message ListPoliciesResponse {
+  repeated Policy policies = 1;
+
+  // Next page token (empty if no more pages)
+  string next_page_token = 2;
+
+  // Total count of policies
+  int32 total_count = 3;
+}
+
+// SubscribePolicyUpdatesRequest subscribes to policy updates
+message SubscribePolicyUpdatesRequest {
+  // Client identifier
+  string client_id = 1;
+
+  // Last revision the client has seen.
+  //   0          → client has no state, server sends a full snapshot.
+  //   > 0        → server attempts a delta from that revision;
+  //                if too old (compacted) it falls back to full snapshot.
+  int64 last_known_revision = 2;
+}
+
+// PolicyUpdate represents a policy change notification
+message PolicyUpdate {
+  // Update type
+  enum UpdateType {
+    UNKNOWN = 0;
+    CREATED = 1;
+    UPDATED = 2;
+    DELETED = 3;
+    // SNAPSHOT indicates a full policy snapshot entry (one per policy).
+    SNAPSHOT = 4;
+    // METADATA_REQUEST is a server-to-agent command asking the agent
+    // to collect and report fresh system metadata via the Heartbeat RPC.
+    METADATA_REQUEST = 5;
+  }
+
+  UpdateType type = 1;
+  Policy policy = 2;
+
+  // Server-side revision after this event. Clients should persist
+  // this and send it back in last_known_revision on reconnect.
+  int64 revision = 3;
+
+  // When true, indicates that this is the last message of a full
+  // snapshot batch. The client should apply all received SNAPSHOT
+  // messages atomically.
+  bool snapshot_complete = 4;
+}
+
+// ReportComplianceRequest reports policy compliance status
+message ReportComplianceRequest {
+  // Client identifier
+  string client_id = 1;
+
+  // Policy ID
+  string policy_id = 2;
+
+  // Compliance status
+  bool compliant = 3;
+
+  // Status message or error details
+  string message = 4;
+
+  // Timestamp of the report
+  google.protobuf.Timestamp reported_at = 5;
+}
+
+// ReportComplianceResponse acknowledges compliance report
+message ReportComplianceResponse {
+  bool success = 1;
+}
+
+// ─── Agent configuration messages ──────────────────────────────────────
+
+message GetAgentConfigRequest {}
+
+message GetAgentConfigResponse {
+  AgentConfig config = 1;
+}
+
+message AgentConfig {
+  bool notify_users = 1;
+  int32 notify_cooldown_seconds = 2;
+  string notify_message = 3;
+  string notify_message_firefox = 4;
+  string notify_message_chrome = 5;
+}
+
+// ─── Heartbeat messages ─────────────────────────────────────────────────────
+
+// NodeInfo contains metadata reported by an agent node.
+message NodeInfo {
+  string fqdn = 1;
+  string ip_address = 2;
+  // Distribution name, e.g. "Fedora", "Fedora Atomic", "Ubuntu", "openSUSE Leap", "SLES"
+  string os_name = 3;
+  // Version string, e.g. "40", "22.04", "15.6"
+  string os_version = 4;
+  // Desktop environments installed, e.g. ["KDE Plasma 6.1.4", "GNOME 46.1"]
+  repeated string desktop_envs = 5;
+  string agent_version = 6;
+  string machine_id = 7;
+}
+
+message HeartbeatRequest {
+  string client_id = 1;
+  NodeInfo info = 2;
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
+}

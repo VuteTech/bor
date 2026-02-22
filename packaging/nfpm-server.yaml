@@ -1,0 +1,45 @@
+name: "bor-server"
+arch: "${ARCH}"
+platform: "linux"
+version: "${VERSION}"
+maintainer: "VuteTech <info@vutetech.com>"
+description: |
+  Bor Policy Management Server.
+  Manages desktop policies and delivers them to enrolled agents.
+homepage: "https://getbor.dev"
+license: "LGPL-3.0-or-later"
+
+contents:
+  # Binary
+  - src: server/server
+    dst: /usr/bin/bor-server
+    file_info:
+      mode: 0755
+
+  # Default environment config (preserved on upgrade)
+  - src: packaging/env/bor-server.env
+    dst: /etc/bor/server.env
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+  # Systemd unit
+  - src: packaging/systemd/bor-server.service
+    dst: /lib/systemd/system/bor-server.service
+    file_info:
+      mode: 0644
+
+  # Directories
+  - dst: /etc/bor
+    type: dir
+    file_info:
+      mode: 0755
+
+  - dst: /var/lib/bor/pki
+    type: dir
+    file_info:
+      mode: 0750
+
+scripts:
+  postinstall: packaging/scripts/postinstall-server.sh
+  preremove: packaging/scripts/preremove-server.sh
