@@ -1,15 +1,787 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
 syntax = "proto3";
 
 package bor.policy.v1;
 
+import "google/protobuf/struct.proto";
+
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
-// ChromePolicy holds Chrome/Chromium browser enterprise policy settings.
-// Content is a JSON object mapping Chrome policy names to their values.
-// See https://chromeenterprise.google/policies/ for the full policy reference.
+// ChromePolicy holds all Chrome/Chromium enterprise policy settings for Linux.
+// Each field maps to an official Chrome policy: https://chromeenterprise.google/policies/
+// Only policies with Linux support are included.
+// Field json_name annotations ensure protojson round-trips with the correct
+// PascalCase Chrome policy key names.
 message ChromePolicy {
-  // JSON object with Chrome policy key-value pairs.
-  // Keys are Chrome policy names (e.g. "HomepageLocation", "ExtensionInstallForcelist").
-  // Applied to all Chrome/Chromium variants via managed policy directories.
-  string content = 1;
+
+  // =========================================================================
+  // Homepage & Startup (1–50)
+  // =========================================================================
+
+  // Sets the browser home page URL.
+  optional string HomepageLocation = 1 [json_name = "HomepageLocation"];
+
+  // Use the New Tab Page as the home page.
+  optional bool HomepageIsNewTabPage = 2 [json_name = "HomepageIsNewTabPage"];
+
+  // Sets the New Tab Page URL.
+  optional string NewTabPageLocation = 3 [json_name = "NewTabPageLocation"];
+
+  // Action on startup: 1=open new tab, 4=open last session, 5=open list of URLs.
+  optional int32 RestoreOnStartup = 4 [json_name = "RestoreOnStartup"];
+
+  // List of URLs to open on startup (requires RestoreOnStartup=5).
+  repeated string RestoreOnStartupURLs = 5 [json_name = "RestoreOnStartupURLs"];
+
+  // Show the Home button in the toolbar.
+  optional bool ShowHomeButton = 6 [json_name = "ShowHomeButton"];
+
+  // Whether to set Chrome as the default browser.
+  optional bool DefaultBrowserSettingEnabled = 7 [json_name = "DefaultBrowserSettingEnabled"];
+
+  // Show the bookmark bar.
+  optional bool BookmarkBarEnabled = 8 [json_name = "BookmarkBarEnabled"];
+
+  // Allow users to edit bookmarks.
+  optional bool EditBookmarksEnabled = 9 [json_name = "EditBookmarksEnabled"];
+
+  // Managed bookmarks that cannot be deleted or edited by the user.
+  // Value is a JSON array of bookmark objects with "name" and "url" (or "children").
+  optional google.protobuf.Value ManagedBookmarks = 10 [json_name = "ManagedBookmarks"];
+
+  // =========================================================================
+  // Extensions (51–100)
+  // =========================================================================
+
+  // Force-install extensions. List of "<extensionID>;<updateURL>" strings.
+  repeated string ExtensionInstallForcelist = 51 [json_name = "ExtensionInstallForcelist"];
+
+  // Block installation of listed extensions (use "*" to block all).
+  repeated string ExtensionInstallBlocklist = 52 [json_name = "ExtensionInstallBlocklist"];
+
+  // Allow installation of listed extensions even if they are in the blocklist.
+  repeated string ExtensionInstallAllowlist = 53 [json_name = "ExtensionInstallAllowlist"];
+
+  // Allow extensions to be installed from these URLs.
+  repeated string ExtensionInstallSources = 54 [json_name = "ExtensionInstallSources"];
+
+  // Allowed extension/app types: "extension", "theme", "user_script", "hosted_app", "legacy_packaged_app", "platform_app".
+  repeated string ExtensionAllowedTypes = 55 [json_name = "ExtensionAllowedTypes"];
+
+  // Fine-grained extension management settings (dictionary keyed by extension ID or "*").
+  optional google.protobuf.Value ExtensionSettings = 56 [json_name = "ExtensionSettings"];
+
+  // Deprecated: use ExtensionInstallBlocklist.
+  repeated string ExtensionInstallBlacklist = 57 [json_name = "ExtensionInstallBlacklist"];
+
+  // Deprecated: use ExtensionInstallAllowlist.
+  repeated string ExtensionInstallWhitelist = 58 [json_name = "ExtensionInstallWhitelist"];
+
+  // =========================================================================
+  // Privacy & Security (101–150)
+  // =========================================================================
+
+  // Safe Browsing protection level: 0=off, 1=standard, 2=enhanced.
+  optional int32 SafeBrowsingProtectionLevel = 101 [json_name = "SafeBrowsingProtectionLevel"];
+
+  // Enable Safe Browsing (deprecated; use SafeBrowsingProtectionLevel).
+  optional bool SafeBrowsingEnabled = 102 [json_name = "SafeBrowsingEnabled"];
+
+  // Report Safe Browsing data to Google.
+  optional bool SafeBrowsingExtendedReportingEnabled = 103 [json_name = "SafeBrowsingExtendedReportingEnabled"];
+
+  // URLs exempted from Safe Browsing checks.
+  repeated string SafeBrowsingAllowlistDomains = 104 [json_name = "SafeBrowsingAllowlistDomains"];
+
+  // Block access to a list of URLs.
+  repeated string URLBlocklist = 105 [json_name = "URLBlocklist"];
+
+  // Allow access to listed URLs (overrides URLBlocklist).
+  repeated string URLAllowlist = 106 [json_name = "URLAllowlist"];
+
+  // Report Chrome usage and crash data to Google.
+  optional bool MetricsReportingEnabled = 107 [json_name = "MetricsReportingEnabled"];
+
+  // Enable alternate error pages (Google web service when a page is not found).
+  optional bool AlternateErrorPagesEnabled = 108 [json_name = "AlternateErrorPagesEnabled"];
+
+  // Block third-party cookies.
+  optional bool BlockThirdPartyCookies = 109 [json_name = "BlockThirdPartyCookies"];
+
+  // Clear browsing data on exit.
+  optional bool ClearSiteDataOnExit = 110 [json_name = "ClearSiteDataOnExit"];
+
+  // Disable saving browsing history.
+  optional bool SavingBrowserHistoryDisabled = 111 [json_name = "SavingBrowserHistoryDisabled"];
+
+  // Allow users to delete browser history and download history.
+  optional bool AllowDeletingBrowserHistory = 112 [json_name = "AllowDeletingBrowserHistory"];
+
+  // Disable 3D graphics APIs (WebGL).
+  optional bool Disable3DAPIs = 113 [json_name = "Disable3DAPIs"];
+
+  // Disable SPDY protocol.
+  optional bool DisableSpdy = 114 [json_name = "DisableSpdy"];
+
+  // Disable schemes (protocols); e.g. ["javascript"].
+  repeated string DisabledSchemes = 115 [json_name = "DisabledSchemes"];
+
+  // Enable JavaScript.
+  optional bool JavascriptEnabled = 116 [json_name = "JavascriptEnabled"];
+
+  // Allow or block access to file:// URLs for extensions.
+  optional bool AllowFileSelectionDialogs = 117 [json_name = "AllowFileSelectionDialogs"];
+
+  // Enable DNS prefetching.
+  optional bool DnsPrefetchingEnabled = 118 [json_name = "DnsPrefetchingEnabled"];
+
+  // DNS-over-HTTPS mode: "off", "automatic", "secure".
+  optional string DnsOverHttpsMode = 119 [json_name = "DnsOverHttpsMode"];
+
+  // URI template of the desired DNS-over-HTTPS resolver.
+  optional string DnsOverHttpsTemplates = 120 [json_name = "DnsOverHttpsTemplates"];
+
+  // Control network prediction (preloading): 0=always, 2=WiFi-only, 4=never.
+  optional int32 NetworkPredictionOptions = 121 [json_name = "NetworkPredictionOptions"];
+
+  // SSL version min: "tls1", "tls1.1", "tls1.2", "tls1.3".
+  optional string SSLVersionMin = 122 [json_name = "SSLVersionMin"];
+
+  // Enable QUIC protocol.
+  optional bool QuicAllowed = 123 [json_name = "QuicAllowed"];
+
+  // Maximum number of simultaneous connections to a proxy server.
+  optional int32 MaxConnectionsPerProxy = 124 [json_name = "MaxConnectionsPerProxy"];
+
+  // Allow HTTP/0.9 on non-standard ports.
+  optional bool Http09OnNonDefaultPortsEnabled = 125 [json_name = "Http09OnNonDefaultPortsEnabled"];
+
+  // Incognito mode: 0=available, 1=disabled, 2=forced.
+  optional int32 IncognitoModeAvailability = 126 [json_name = "IncognitoModeAvailability"];
+
+  // Enable incognito mode (deprecated; use IncognitoModeAvailability).
+  optional bool IncognitoEnabled = 127 [json_name = "IncognitoEnabled"];
+
+  // Enable the dinosaur Easter egg game (offline page).
+  optional bool AllowDinosaurEasterEgg = 128 [json_name = "AllowDinosaurEasterEgg"];
+
+  // HSTS preload list: 0=enabled, 1=disabled.
+  optional bool HSTSPolicyBypassList = 129 [json_name = "HSTSPolicyBypassList"];
+
+  // Certificate Transparency enforcement: list of URLs to exclude.
+  repeated string CertificateTransparencyEnforcementDisabledForUrls = 130 [json_name = "CertificateTransparencyEnforcementDisabledForUrls"];
+
+  // Certificate Transparency enforcement: list of certificate hashes to exclude.
+  repeated string CertificateTransparencyEnforcementDisabledForCas = 131 [json_name = "CertificateTransparencyEnforcementDisabledForCas"];
+
+  // Certificate Transparency enforcement: list of legacy certificate hashes.
+  repeated string CertificateTransparencyEnforcementDisabledForLegacyCas = 132 [json_name = "CertificateTransparencyEnforcementDisabledForLegacyCas"];
+
+  // Require online OCSP/CRL checks for local trust anchors.
+  optional bool RequireOnlineRevocationChecksForLocalAnchors = 133 [json_name = "RequireOnlineRevocationChecksForLocalAnchors"];
+
+  // Additional CA certificates to trust (list of base64-encoded DER certs).
+  optional google.protobuf.Value PolicyCertificateAuthorities = 134 [json_name = "PolicyCertificateAuthorities"];
+
+  // =========================================================================
+  // Network & Proxy (151–200)
+  // =========================================================================
+
+  // Proxy settings dictionary (mode, server, pac url, bypass list).
+  optional google.protobuf.Value ProxySettings = 151 [json_name = "ProxySettings"];
+
+  // Proxy mode: "direct", "auto_detect", "pac_script", "fixed_servers", "system".
+  optional string ProxyMode = 152 [json_name = "ProxyMode"];
+
+  // Proxy server mode (integer, deprecated; prefer ProxyMode).
+  optional int32 ProxyServerMode = 153 [json_name = "ProxyServerMode"];
+
+  // Proxy server address ("host:port").
+  optional string ProxyServer = 154 [json_name = "ProxyServer"];
+
+  // URL for the proxy auto-config (PAC) script.
+  optional string ProxyPacUrl = 155 [json_name = "ProxyPacUrl"];
+
+  // Semicolon-separated list of hosts that bypass the proxy.
+  optional string ProxyBypassList = 156 [json_name = "ProxyBypassList"];
+
+  // HTTP authentication schemes to support (comma-separated).
+  optional string AuthSchemes = 157 [json_name = "AuthSchemes"];
+
+  // Disable CNAME lookup when negotiating Kerberos/NTLM auth.
+  optional bool DisableAuthNegotiateCnameLookup = 158 [json_name = "DisableAuthNegotiateCnameLookup"];
+
+  // Include port in Kerberos SPN when negotiating auth.
+  optional bool EnableAuthNegotiatePort = 159 [json_name = "EnableAuthNegotiatePort"];
+
+  // Allowlist of servers for integrated Windows authentication.
+  optional string AuthServerAllowlist = 160 [json_name = "AuthServerAllowlist"];
+
+  // Servers to which Kerberos credentials can be delegated.
+  optional string AuthNegotiateDelegateAllowlist = 161 [json_name = "AuthNegotiateDelegateAllowlist"];
+
+  // Deprecated form of AuthServerAllowlist.
+  optional string AuthServerWhitelist = 162 [json_name = "AuthServerWhitelist"];
+
+  // Deprecated form of AuthNegotiateDelegateAllowlist.
+  optional string AuthNegotiateDelegateWhitelist = 163 [json_name = "AuthNegotiateDelegateWhitelist"];
+
+  // Path to the GSSAPI library (Linux only).
+  optional string GSSAPILibraryName = 164 [json_name = "GSSAPILibraryName"];
+
+  // Allow cross-origin authentication prompts.
+  optional bool AllowCrossOriginAuthPrompt = 165 [json_name = "AllowCrossOriginAuthPrompt"];
+
+  // Disable WPAD optimisation (Quick-check).
+  optional bool WPADQuickCheckEnabled = 166 [json_name = "WPADQuickCheckEnabled"];
+
+  // Force network traffic through HTTPS.
+  optional bool HttpsOnlyMode = 167 [json_name = "HttpsOnlyMode"];
+
+  // Upgrade insecure requests to HTTPS.
+  optional bool UpgradeHttpRequests = 168 [json_name = "UpgradeHttpRequests"];
+
+  // =========================================================================
+  // Content Settings (201–250)
+  // =========================================================================
+
+  // Default cookies setting: 1=allow, 2=block, 4=session-only.
+  optional int32 DefaultCookiesSetting = 201 [json_name = "DefaultCookiesSetting"];
+
+  // Default images setting: 1=allow, 2=block.
+  optional int32 DefaultImagesSetting = 202 [json_name = "DefaultImagesSetting"];
+
+  // Default JavaScript setting: 1=allow, 2=block.
+  optional int32 DefaultJavaScriptSetting = 203 [json_name = "DefaultJavaScriptSetting"];
+
+  // Default pop-ups setting: 1=allow, 2=block.
+  optional int32 DefaultPopupsSetting = 204 [json_name = "DefaultPopupsSetting"];
+
+  // Default notifications setting: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultNotificationsSetting = 205 [json_name = "DefaultNotificationsSetting"];
+
+  // Default geolocation setting: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultGeolocationSetting = 206 [json_name = "DefaultGeolocationSetting"];
+
+  // Default WebUSB setting: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultWebUsbGuardSetting = 207 [json_name = "DefaultWebUsbGuardSetting"];
+
+  // Default file system read access: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultFileSystemReadGuardSetting = 208 [json_name = "DefaultFileSystemReadGuardSetting"];
+
+  // Default file system write access: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultFileSystemWriteGuardSetting = 209 [json_name = "DefaultFileSystemWriteGuardSetting"];
+
+  // Default sensors access (device motion/orientation): 1=allow, 2=block.
+  optional int32 DefaultSensorsSetting = 210 [json_name = "DefaultSensorsSetting"];
+
+  // Default serial port access: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultSerialGuardSetting = 211 [json_name = "DefaultSerialGuardSetting"];
+
+  // Automatically select certificates matching these filters.
+  repeated string AutoSelectCertificateForUrls = 212 [json_name = "AutoSelectCertificateForUrls"];
+
+  // Allow cookies for these URL patterns.
+  repeated string CookiesAllowedForUrls = 213 [json_name = "CookiesAllowedForUrls"];
+
+  // Block cookies for these URL patterns.
+  repeated string CookiesBlockedForUrls = 214 [json_name = "CookiesBlockedForUrls"];
+
+  // Allow session-only cookies for these URL patterns.
+  repeated string CookiesSessionOnlyForUrls = 215 [json_name = "CookiesSessionOnlyForUrls"];
+
+  // Allow images for these URL patterns.
+  repeated string ImagesAllowedForUrls = 216 [json_name = "ImagesAllowedForUrls"];
+
+  // Block images for these URL patterns.
+  repeated string ImagesBlockedForUrls = 217 [json_name = "ImagesBlockedForUrls"];
+
+  // Allow JavaScript for these URL patterns.
+  repeated string JavaScriptAllowedForUrls = 218 [json_name = "JavaScriptAllowedForUrls"];
+
+  // Block JavaScript for these URL patterns.
+  repeated string JavaScriptBlockedForUrls = 219 [json_name = "JavaScriptBlockedForUrls"];
+
+  // Allow pop-ups for these URL patterns.
+  repeated string PopupsAllowedForUrls = 220 [json_name = "PopupsAllowedForUrls"];
+
+  // Block pop-ups for these URL patterns.
+  repeated string PopupsBlockedForUrls = 221 [json_name = "PopupsBlockedForUrls"];
+
+  // Allow notifications for these URL patterns.
+  repeated string NotificationsAllowedForUrls = 222 [json_name = "NotificationsAllowedForUrls"];
+
+  // Block notifications for these URL patterns.
+  repeated string NotificationsBlockedForUrls = 223 [json_name = "NotificationsBlockedForUrls"];
+
+  // Allow WebUSB for these URL patterns.
+  repeated string WebUsbAllowDevicesForUrls = 224 [json_name = "WebUsbAllowDevicesForUrls"];
+
+  // Block WebUSB for these URL patterns.
+  repeated string WebUsbAskForUrls = 225 [json_name = "WebUsbAskForUrls"];
+
+  // Block WebUSB for these URL patterns.
+  repeated string WebUsbBlockedForUrls = 226 [json_name = "WebUsbBlockedForUrls"];
+
+  // Allow geolocation for these URL patterns.
+  repeated string DefaultGeolocationAllowedForUrls = 227 [json_name = "DefaultGeolocationAllowedForUrls"];
+
+  // Block geolocation for these URL patterns.
+  repeated string DefaultGeolocationBlockedForUrls = 228 [json_name = "DefaultGeolocationBlockedForUrls"];
+
+  // JIT compiler for JavaScript: list of URLs where JIT is disabled.
+  repeated string JavaScriptJitBlockedForSites = 229 [json_name = "JavaScriptJitBlockedForSites"];
+
+  // JIT compiler for JavaScript: list of URLs where JIT is allowed.
+  repeated string JavaScriptJitAllowedForSites = 230 [json_name = "JavaScriptJitAllowedForSites"];
+
+  // Default legacy SameSite cookie behaviour (deprecated).
+  optional int32 LegacySameSiteCookieBehaviorEnabled = 231 [json_name = "LegacySameSiteCookieBehaviorEnabled"];
+
+  // Override legacy cookie behaviour for these URL patterns.
+  repeated string LegacySameSiteCookieBehaviorEnabledForDomainList = 232 [json_name = "LegacySameSiteCookieBehaviorEnabledForDomainList"];
+
+  // Allow third-party storage partitioning for these origins.
+  repeated string StorageAccessAPIAllowlistBypassedForOrigins = 233 [json_name = "StorageAccessAPIAllowlistBypassedForOrigins"];
+
+  // Default WebBluetooth setting: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultWebBluetoothGuardSetting = 234 [json_name = "DefaultWebBluetoothGuardSetting"];
+
+  // =========================================================================
+  // Safe Browsing (251–300)
+  // =========================================================================
+
+  // Enable downloading of malicious file type warnings.
+  optional bool SafeBrowsingForTrustedSourcesEnabled = 251 [json_name = "SafeBrowsingForTrustedSourcesEnabled"];
+
+  // Disable Safe Browsing bypass prompts for listed domains.
+  repeated string SafeBrowsingAllowlistForDomains = 252 [json_name = "SafeBrowsingAllowlistForDomains"];
+
+  // Enable real-time Safe Browsing checks.
+  optional bool SafeBrowsingRealTimeLookupsEnabled = 253 [json_name = "SafeBrowsingRealTimeLookupsEnabled"];
+
+  // Allow bypassing Safe Browsing warnings for malicious downloads.
+  optional bool SafeBrowsingDeepScanningEnabled = 254 [json_name = "SafeBrowsingDeepScanningEnabled"];
+
+  // =========================================================================
+  // Password & Autofill (301–350)
+  // =========================================================================
+
+  // Enable the password manager.
+  optional bool PasswordManagerEnabled = 301 [json_name = "PasswordManagerEnabled"];
+
+  // Allow users to show stored passwords.
+  optional bool PasswordManagerAllowShowPasswords = 302 [json_name = "PasswordManagerAllowShowPasswords"];
+
+  // Enable autofill for addresses and credit cards.
+  optional bool AutofillAddressEnabled = 303 [json_name = "AutofillAddressEnabled"];
+
+  // Enable autofill for credit cards.
+  optional bool AutofillCreditCardEnabled = 304 [json_name = "AutofillCreditCardEnabled"];
+
+  // Deprecated: enable autofill (use AutofillAddressEnabled and AutofillCreditCardEnabled).
+  optional bool AutoFillEnabled = 305 [json_name = "AutoFillEnabled"];
+
+  // Import autofill form data from default browser on first run.
+  optional bool ImportAutofillFormData = 306 [json_name = "ImportAutofillFormData"];
+
+  // =========================================================================
+  // Downloads (351–400)
+  // =========================================================================
+
+  // Default download directory.
+  optional string DownloadDirectory = 351 [json_name = "DownloadDirectory"];
+
+  // Prompt user for the download location.
+  optional bool PromptForDownloadLocation = 352 [json_name = "PromptForDownloadLocation"];
+
+  // Allow downloading files of these types.
+  repeated string DownloadRestrictions = 353 [json_name = "DownloadRestrictions"];
+
+  // Disk cache directory.
+  optional string DiskCacheDir = 354 [json_name = "DiskCacheDir"];
+
+  // Disk cache size in bytes.
+  optional int32 DiskCacheSize = 355 [json_name = "DiskCacheSize"];
+
+  // Media cache size in bytes (deprecated).
+  optional int32 MediaCacheSize = 356 [json_name = "MediaCacheSize"];
+
+  // =========================================================================
+  // Printing (401–450)
+  // =========================================================================
+
+  // Enable printing.
+  optional bool PrintingEnabled = 401 [json_name = "PrintingEnabled"];
+
+  // Allowed color modes: "color", "monochrome", "any".
+  optional string PrintingAllowedColorModes = 402 [json_name = "PrintingAllowedColorModes"];
+
+  // Allowed duplex modes: "simplex", "short_edge", "long_edge", "any".
+  optional string PrintingAllowedDuplexModes = 403 [json_name = "PrintingAllowedDuplexModes"];
+
+  // Allowed background graphics modes: "enabled", "disabled", "any".
+  optional string PrintingAllowedBackgroundGraphicsModes = 404 [json_name = "PrintingAllowedBackgroundGraphicsModes"];
+
+  // Default color mode: "color" or "monochrome".
+  optional string PrintingColorDefault = 405 [json_name = "PrintingColorDefault"];
+
+  // Default duplex mode: "simplex", "short_edge", "long_edge".
+  optional string PrintingDuplexDefault = 406 [json_name = "PrintingDuplexDefault"];
+
+  // Default background graphics mode: "enabled" or "disabled".
+  optional string PrintingBackgroundGraphicsDefault = 407 [json_name = "PrintingBackgroundGraphicsDefault"];
+
+  // Default page size: dict with width/height in micrometers.
+  optional google.protobuf.Value PrintingSizeDefault = 408 [json_name = "PrintingSizeDefault"];
+
+  // Maximum number of sheets that can be printed.
+  optional int32 PrintingMaxSheetsAllowed = 409 [json_name = "PrintingMaxSheetsAllowed"];
+
+  // Allowed print page sizes (list of dicts).
+  optional google.protobuf.Value PrintingAllowedPageSizes = 410 [json_name = "PrintingAllowedPageSizes"];
+
+  // Default paper size name.
+  optional string DefaultPrinterSelection = 411 [json_name = "DefaultPrinterSelection"];
+
+  // Enable Cloud Print proxy (deprecated).
+  optional bool CloudPrintProxyEnabled = 412 [json_name = "CloudPrintProxyEnabled"];
+
+  // =========================================================================
+  // Browser UI & Display (451–500)
+  // =========================================================================
+
+  // Disable developer tools.
+  optional bool DeveloperToolsDisabled = 451 [json_name = "DeveloperToolsDisabled"];
+
+  // Availability of developer tools: 0=always, 1=never, 2=not for extensions.
+  optional int32 DeveloperToolsAvailability = 452 [json_name = "DeveloperToolsAvailability"];
+
+  // Enable translate.
+  optional bool TranslateEnabled = 453 [json_name = "TranslateEnabled"];
+
+  // Allow outdated plugins to run.
+  optional bool AllowOutdatedPlugins = 454 [json_name = "AllowOutdatedPlugins"];
+
+  // Always authorize plugins to run.
+  optional bool AlwaysAuthorizePlugins = 455 [json_name = "AlwaysAuthorizePlugins"];
+
+  // Enable instant (deprecated).
+  optional bool InstantEnabled = 456 [json_name = "InstantEnabled"];
+
+  // Disable plugin finder (deprecated).
+  optional bool DisablePluginFinder = 457 [json_name = "DisablePluginFinder"];
+
+  // Disable screenshot capture.
+  optional bool DisableScreenshots = 458 [json_name = "DisableScreenshots"];
+
+  // Enable full-screen mode.
+  optional bool FullscreenAllowed = 459 [json_name = "FullscreenAllowed"];
+
+  // Allow browser to be used in kiosk mode without admin controls.
+  optional bool KioskModeEnabled = 460 [json_name = "KioskModeEnabled"];
+
+  // Disable showing the browser error page.
+  optional bool SuppressUnsupportedOSWarning = 461 [json_name = "SuppressUnsupportedOSWarning"];
+
+  // Task manager availability: 0=available, 1=disallow end process.
+  optional int32 TaskManagerEndProcessEnabled = 462 [json_name = "TaskManagerEndProcessEnabled"];
+
+  // Enable accessibility features.
+  optional bool AccessibilityImageLabelsEnabled = 463 [json_name = "AccessibilityImageLabelsEnabled"];
+
+  // Show the apps shortcut in the bookmark bar.
+  optional bool ShowAppsShortcutInBookmarkBar = 464 [json_name = "ShowAppsShortcutInBookmarkBar"];
+
+  // Suppress default browser check.
+  optional bool SuppressLocalCancelDeferredTask = 465 [json_name = "SuppressLocalCancelDeferredTask"];
+
+  // =========================================================================
+  // User & Sync (501–550)
+  // =========================================================================
+
+  // Disable Chrome Sync.
+  optional bool SyncDisabled = 501 [json_name = "SyncDisabled"];
+
+  // List of sync data types to disable.
+  repeated string SyncTypesListDisabled = 502 [json_name = "SyncTypesListDisabled"];
+
+  // Enable or disable sign-in to Chrome.
+  optional int32 BrowserSignin = 503 [json_name = "BrowserSignin"];
+
+  // List of Google accounts allowed to sign in to Chrome (email patterns).
+  repeated string RestrictSigninToPattern = 504 [json_name = "RestrictSigninToPattern"];
+
+  // Force sign-in.
+  optional bool ForceGoogleSafeSearch = 505 [json_name = "ForceGoogleSafeSearch"];
+
+  // Force YouTube Restricted Mode: 0=off, 1=moderate, 2=strict.
+  optional int32 ForceYouTubeRestrict = 506 [json_name = "ForceYouTubeRestrict"];
+
+  // Allowed domains for sign-in.
+  repeated string SigninAllowedOnUrls = 507 [json_name = "SigninAllowedOnUrls"];
+
+  // =========================================================================
+  // Search (551–600)
+  // =========================================================================
+
+  // Enable the default search provider.
+  optional bool DefaultSearchProviderEnabled = 551 [json_name = "DefaultSearchProviderEnabled"];
+
+  // Default search provider name.
+  optional string DefaultSearchProviderName = 552 [json_name = "DefaultSearchProviderName"];
+
+  // Default search provider keyword.
+  optional string DefaultSearchProviderKeyword = 553 [json_name = "DefaultSearchProviderKeyword"];
+
+  // Default search provider search URL template.
+  optional string DefaultSearchProviderSearchURL = 554 [json_name = "DefaultSearchProviderSearchURL"];
+
+  // Default search provider suggest URL template.
+  optional string DefaultSearchProviderSuggestURL = 555 [json_name = "DefaultSearchProviderSuggestURL"];
+
+  // Default search provider icon URL.
+  optional string DefaultSearchProviderIconURL = 556 [json_name = "DefaultSearchProviderIconURL"];
+
+  // Default search provider supported encodings.
+  repeated string DefaultSearchProviderEncodings = 557 [json_name = "DefaultSearchProviderEncodings"];
+
+  // Default search provider new tab URL.
+  optional string DefaultSearchProviderNewTabURL = 558 [json_name = "DefaultSearchProviderNewTabURL"];
+
+  // Default search provider image search URL.
+  optional string DefaultSearchProviderImageURL = 559 [json_name = "DefaultSearchProviderImageURL"];
+
+  // Default search provider image search post params.
+  optional string DefaultSearchProviderImageURLPostParams = 560 [json_name = "DefaultSearchProviderImageURLPostParams"];
+
+  // Enable search suggestions.
+  optional bool SearchSuggestEnabled = 561 [json_name = "SearchSuggestEnabled"];
+
+  // =========================================================================
+  // Updates & Cloud Management (601–650)
+  // =========================================================================
+
+  // Cloud enrollment token for Chrome Browser Cloud Management.
+  optional string CloudManagementEnrollmentToken = 601 [json_name = "CloudManagementEnrollmentToken"];
+
+  // Enrollment mandatory (force enrollment).
+  optional bool CloudManagementEnrollmentMandatory = 602 [json_name = "CloudManagementEnrollmentMandatory"];
+
+  // Report machine info to cloud management.
+  optional bool DeviceReportingEnabled = 603 [json_name = "DeviceReportingEnabled"];
+
+  // =========================================================================
+  // HTTP Authentication & Kerberos (651–700)
+  // =========================================================================
+
+  // Kerberos tickets (list of Kerberos account dictionaries).
+  optional google.protobuf.Value KerberosAccounts = 651 [json_name = "KerberosAccounts"];
+
+  // Use Kerberos service tickets for HTTP authentication.
+  optional bool KerberosEnabled = 652 [json_name = "KerberosEnabled"];
+
+  // Remember last Kerberos accounts.
+  optional bool KerberosRememberPasswordEnabled = 653 [json_name = "KerberosRememberPasswordEnabled"];
+
+  // Kerberos principal (username@REALM).
+  optional string KerberosPrincipal = 654 [json_name = "KerberosPrincipal"];
+
+  // =========================================================================
+  // Miscellaneous & Advanced (701–800)
+  // =========================================================================
+
+  // Allow running of outdated plugins.
+  optional bool PluginsAllowedForUrls = 701 [json_name = "PluginsAllowedForUrls"];
+
+  // Application locale (overrides system locale). Linux: not usually enforced.
+  optional string ApplicationLocaleValue = 702 [json_name = "ApplicationLocaleValue"];
+
+  // Enable spell-check.
+  optional bool SpellCheckServiceEnabled = 703 [json_name = "SpellCheckServiceEnabled"];
+
+  // List of languages for spell-check.
+  repeated string SpellcheckLanguage = 704 [json_name = "SpellcheckLanguage"];
+
+  // Disable spell-check for these languages.
+  repeated string SpellcheckLanguageBlocklist = 705 [json_name = "SpellcheckLanguageBlocklist"];
+
+  // Number of hours (0=auto) between background policy refreshes.
+  optional int32 PolicyRefreshRate = 706 [json_name = "PolicyRefreshRate"];
+
+  // Path for user data (profile) directory.
+  optional string UserDataDir = 707 [json_name = "UserDataDir"];
+
+  // List of command-line flags to suppress (security/compatibility).
+  repeated string CommandLineFlagSecurityWarningsEnabled = 708 [json_name = "CommandLineFlagSecurityWarningsEnabled"];
+
+  // Enable media router (Cast).
+  optional bool EnableMediaRouter = 709 [json_name = "EnableMediaRouter"];
+
+  // Show Cast icon in toolbar.
+  optional bool ShowCastIconInToolbar = 710 [json_name = "ShowCastIconInToolbar"];
+
+  // Disable certificate error overrides.
+  optional bool SSLErrorOverrideAllowed = 711 [json_name = "SSLErrorOverrideAllowed"];
+
+  // Allow SSL errors for these URL patterns.
+  repeated string SSLErrorOverrideAllowedForOrigins = 712 [json_name = "SSLErrorOverrideAllowedForOrigins"];
+
+  // Remote Desktop access: allow client firewall traversal.
+  optional bool RemoteAccessClientFirewallTraversal = 713 [json_name = "RemoteAccessClientFirewallTraversal"];
+
+  // Remote Desktop access: allow host firewall traversal.
+  optional bool RemoteAccessHostFirewallTraversal = 714 [json_name = "RemoteAccessHostFirewallTraversal"];
+
+  // Remote Desktop: allowed client domain.
+  optional string RemoteAccessHostDomain = 715 [json_name = "RemoteAccessHostDomain"];
+
+  // Remote Desktop: allowed client domain list.
+  repeated string RemoteAccessHostDomainList = 716 [json_name = "RemoteAccessHostDomainList"];
+
+  // Remote Desktop: allow file transfers.
+  optional bool RemoteAccessHostAllowFileTransfer = 717 [json_name = "RemoteAccessHostAllowFileTransfer"];
+
+  // Remote Desktop: allow relayed connections.
+  optional bool RemoteAccessHostAllowRelayedConnection = 718 [json_name = "RemoteAccessHostAllowRelayedConnection"];
+
+  // Remote Desktop: UDP port range.
+  optional string RemoteAccessHostUdpPortRange = 719 [json_name = "RemoteAccessHostUdpPortRange"];
+
+  // Suppress automatic app updates.
+  optional bool ComponentUpdatesEnabled = 720 [json_name = "ComponentUpdatesEnabled"];
+
+  // Enable background processing when browser is closed.
+  optional bool BackgroundModeEnabled = 721 [json_name = "BackgroundModeEnabled"];
+
+  // Enable hardware acceleration.
+  optional bool HardwareAccelerationModeEnabled = 722 [json_name = "HardwareAccelerationModeEnabled"];
+
+  // Force enable / disable specific features.
+  repeated string EnabledLabsExperiments = 723 [json_name = "EnabledLabsExperiments"];
+
+  // Disable safe browsing bypass.
+  optional bool DisableSafeBrowsingProceedAnyway = 724 [json_name = "DisableSafeBrowsingProceedAnyway"];
+
+  // Control browser sign-in.
+  optional bool SigninAllowed = 725 [json_name = "SigninAllowed"];
+
+  // Session length in minutes (0=unlimited).
+  optional int32 SessionLength = 726 [json_name = "SessionLength"];
+
+  // User feedback allowed.
+  optional bool UserFeedbackAllowed = 727 [json_name = "UserFeedbackAllowed"];
+
+  // Disable plugin list.
+  repeated string DisabledPlugins = 728 [json_name = "DisabledPlugins"];
+
+  // Force-enable plugin list.
+  repeated string EnabledPlugins = 729 [json_name = "EnabledPlugins"];
+
+  // Plugins exception list (allowed even if in DisabledPlugins).
+  repeated string DisabledPluginsExceptions = 730 [json_name = "DisabledPluginsExceptions"];
+
+  // Allow external protocol handlers.
+  optional google.protobuf.Value AutoOpenAllowedForURLs = 731 [json_name = "AutoOpenAllowedForURLs"];
+
+  // Protocols and applications allowed to open external handlers.
+  optional google.protobuf.Value AutoOpenFileTypes = 732 [json_name = "AutoOpenFileTypes"];
+
+  // Enrollment token for Google Admin Console.
+  optional string EnrollmentToken = 733 [json_name = "EnrollmentToken"];
+
+  // Browser switch service URL.
+  optional string BrowserSwitcherEnabled = 734 [json_name = "BrowserSwitcherEnabled"];
+
+  // Policy for controlling browser network service sandbox.
+  optional bool NetworkServiceSandboxEnabled = 735 [json_name = "NetworkServiceSandboxEnabled"];
+
+  // Allow or block insecure private network requests.
+  optional bool InsecurePrivateNetworkRequestsAllowed = 736 [json_name = "InsecurePrivateNetworkRequestsAllowed"];
+
+  // Origins for which insecure private network requests are allowed.
+  repeated string InsecurePrivateNetworkRequestsAllowedForUrls = 737 [json_name = "InsecurePrivateNetworkRequestsAllowedForUrls"];
+
+  // Control private network access checks.
+  optional bool PrivateNetworkAccessRestrictionsEnabled = 738 [json_name = "PrivateNetworkAccessRestrictionsEnabled"];
+
+  // URL patterns for which private network access checks are bypassed.
+  repeated string PrivateNetworkAccessRestrictionsForUrls = 739 [json_name = "PrivateNetworkAccessRestrictionsForUrls"];
+
+  // Report extensions/app info to cloud management.
+  optional bool ExtensionReportingEnabled = 740 [json_name = "ExtensionReportingEnabled"];
+
+  // Force-enable Lookalike URL warnings.
+  optional bool LookalikeWarningAllowlistDomains = 741 [json_name = "LookalikeWarningAllowlistDomains"];
+
+  // Suppress first-run/OOBE page for enterprise.
+  optional bool SuppressFirstRunBubble = 742 [json_name = "SuppressFirstRunBubble"];
+
+  // Import bookmarks from default browser on first run.
+  optional bool ImportBookmarks = 743 [json_name = "ImportBookmarks"];
+
+  // Import browsing history from default browser on first run.
+  optional bool ImportHistory = 744 [json_name = "ImportHistory"];
+
+  // Import homepage from default browser on first run.
+  optional bool ImportHomepage = 745 [json_name = "ImportHomepage"];
+
+  // Import saved passwords from default browser on first run.
+  optional bool ImportSavedPasswords = 746 [json_name = "ImportSavedPasswords"];
+
+  // Import search engines from default browser on first run.
+  optional bool ImportSearchEngine = 747 [json_name = "ImportSearchEngine"];
+
+  // Enable OCSP/CRL checks.
+  optional bool EnableOnlineRevocationChecks = 748 [json_name = "EnableOnlineRevocationChecks"];
+
+  // Allow users to bypass certificate error pages.
+  optional bool CertificateTransparencyEnforcementDisabled = 749 [json_name = "CertificateTransparencyEnforcementDisabled"];
+
+  // =========================================================================
+  // Screen Capture & Media (801–850)
+  // =========================================================================
+
+  // Allow screen capture.
+  optional int32 DefaultScreenCaptureSetting = 801 [json_name = "DefaultScreenCaptureSetting"];
+
+  // Allow screen capture for these origins.
+  repeated string ScreenCaptureAllowedByOrigins = 802 [json_name = "ScreenCaptureAllowedByOrigins"];
+
+  // Block screen capture for these origins.
+  repeated string ScreenCaptureBlockedByOrigins = 803 [json_name = "ScreenCaptureBlockedByOrigins"];
+
+  // Window capture allowed by origins.
+  repeated string WindowCaptureAllowedByOrigins = 804 [json_name = "WindowCaptureAllowedByOrigins"];
+
+  // Tab capture allowed by origins.
+  repeated string TabCaptureAllowedByOrigins = 805 [json_name = "TabCaptureAllowedByOrigins"];
+
+  // Audio capture allowed (bool).
+  optional bool AudioCaptureAllowed = 806 [json_name = "AudioCaptureAllowed"];
+
+  // Audio capture allowed for these URLs.
+  repeated string AudioCaptureAllowedUrls = 807 [json_name = "AudioCaptureAllowedUrls"];
+
+  // Video capture allowed (bool).
+  optional bool VideoCaptureAllowed = 808 [json_name = "VideoCaptureAllowed"];
+
+  // Video capture allowed for these URLs.
+  repeated string VideoCaptureAllowedUrls = 809 [json_name = "VideoCaptureAllowedUrls"];
+
+  // =========================================================================
+  // Clipboard & Sharing (851–900)
+  // =========================================================================
+
+  // Default clipboard setting: 1=allow, 2=block, 3=ask.
+  optional int32 DefaultClipboardSetting = 851 [json_name = "DefaultClipboardSetting"];
+
+  // Allow clipboard for these origins.
+  repeated string ClipboardAllowedForUrls = 852 [json_name = "ClipboardAllowedForUrls"];
+
+  // Block clipboard for these origins.
+  repeated string ClipboardBlockedForUrls = 853 [json_name = "ClipboardBlockedForUrls"];
 }

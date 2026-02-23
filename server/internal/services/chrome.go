@@ -5,27 +5,24 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
+	"strings"
+
+	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// ValidateChromeContent validates that the given JSON string is a valid Chrome policy object.
-// Returns an error if the JSON is malformed or not a JSON object, or if the content is empty.
+// ValidateChromeContent validates Chrome policy JSON content.
+// Uses DiscardUnknown: true so that Chrome policy names not yet in our proto
+// are accepted (forward compatibility).
 func ValidateChromeContent(content string) error {
-	if content == "" || content == "{}" {
+	if strings.TrimSpace(content) == "" || content == "{}" {
 		return fmt.Errorf("chrome policy content is empty")
 	}
-
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(content), &obj); err != nil {
-		return fmt.Errorf("invalid chrome policy JSON: %w", err)
+	var pol pb.ChromePolicy
+	opts := protojson.UnmarshalOptions{DiscardUnknown: true}
+	if err := opts.Unmarshal([]byte(content), &pol); err != nil {
+		return fmt.Errorf("invalid Chrome policy: %w", err)
 	}
-
-	for k := range obj {
-		if k == "" {
-			return fmt.Errorf("chrome policy keys must be non-empty strings")
-		}
-	}
-
 	return nil
 }

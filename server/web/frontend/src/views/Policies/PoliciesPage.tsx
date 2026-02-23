@@ -41,7 +41,7 @@ import { PolicyDetailsModal } from "./PolicyDetailsModal";
 
 /* ── Filter options ── */
 
-const TYPE_OPTIONS = ["Kconfig", "Dconf", "Firefox", "Polkit", "Chrome", "custom"];
+const TYPE_OPTIONS = ["Kconfig", "Dconf", "Firefox", "Polkit", "Chrome"];
 const STATUS_OPTIONS = ["draft", "released", "archived"];
 
 const statusLabelColor = (status: string): "green" | "red" | "blue" | "orange" | "grey" => {

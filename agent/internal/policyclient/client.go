@@ -89,10 +89,11 @@ type PolicyInfo struct {
 	ID             string
 	Name           string
 	Type           string
-	Content        string
+	Content        string             // kept for compatibility / fallback
 	Version        int32
-	KConfigEntries []*pb.KConfigEntry  // populated from typed_content for Kconfig type
-	FirefoxPolicy  *pb.FirefoxPolicy   // populated from typed_content for Firefox type
+	KConfigEntries []*pb.KConfigEntry // populated from typed_content for Kconfig type
+	FirefoxPolicy  *pb.FirefoxPolicy  // populated from typed_content for Firefox type
+	ChromePolicy   *pb.ChromePolicy   // populated from typed_content for Chrome type
 }
 
 
@@ -233,6 +234,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if ffp := p.GetFirefoxPolicy(); ffp != nil {
 				pi.FirefoxPolicy = ffp
+			}
+			if chrp := p.GetChromePolicy(); chrp != nil {
+				pi.ChromePolicy = chrp
 			}
 		}
 

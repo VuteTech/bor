@@ -9,16 +9,30 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestMergeChromePolicies_SinglePolicy(t *testing.T) {
-	contents := []string{
-		`{"HomepageLocation": "https://example.com", "HomepageIsNewTabPage": false}`,
+func TestSyncChromeFromProto_SinglePolicy(t *testing.T) {
+	dir := t.TempDir()
+	managedDir := filepath.Join(dir, "policies", "managed")
+
+	homepageLoc := "https://example.com"
+	homepageIsNewTab := false
+	pol := &pb.ChromePolicy{
+		HomepageLocation:    &homepageLoc,
+		HomepageIsNewTabPage: &homepageIsNewTab,
 	}
 
-	data, err := MergeChromePolicies(contents)
-	if err != nil {
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
 		t.Fatal(err)
+	}
+
+	target := filepath.Join(managedDir, ChromeManagedFilename)
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("expected bor_managed.json to exist: %v", err)
 	}
 
 	var result map[string]interface{}
@@ -34,16 +48,37 @@ func TestMergeChromePolicies_SinglePolicy(t *testing.T) {
 	}
 }
 
-func TestMergeChromePolicies_MultiplePolicies(t *testing.T) {
-	contents := []string{
-		`{"HomepageLocation": "https://example.com"}`,
-		`{"HomepageIsNewTabPage": false, "DefaultSearchProviderEnabled": true}`,
-		`{"ExtensionSettings": {"abcdefghijklmnopabcdefghijklmnop": {"installation_mode": "force_installed"}}}`,
-	}
+func TestSyncChromeFromProto_MultiplePolicies(t *testing.T) {
+	dir := t.TempDir()
+	managedDir := filepath.Join(dir, "policies", "managed")
 
-	data, err := MergeChromePolicies(contents)
+	homepageLoc := "https://example.com"
+	homepageIsNewTab := false
+	searchEnabled := true
+
+	extMap, err := structpb.NewValue(map[string]interface{}{
+		"abcdefghijklmnopabcdefghijklmnop": map[string]interface{}{
+			"installation_mode": "force_installed",
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	policies := []*pb.ChromePolicy{
+		{HomepageLocation: &homepageLoc},
+		{HomepageIsNewTabPage: &homepageIsNewTab, DefaultSearchProviderEnabled: &searchEnabled},
+		{ExtensionSettings: extMap},
+	}
+
+	if err := SyncChromeFromProto(policies, []string{managedDir}); err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(managedDir, ChromeManagedFilename)
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("expected bor_managed.json to exist: %v", err)
 	}
 
 	var result map[string]interface{}
@@ -74,26 +109,34 @@ func TestMergeChromePolicies_MultiplePolicies(t *testing.T) {
 	}
 }
 
-func TestMergeChromePolicies_EmptyInput(t *testing.T) {
-	data, err := MergeChromePolicies(nil)
-	if err != nil {
-		t.Fatal(err)
+func TestSyncChromeFromProto_EmptyInput(t *testing.T) {
+	dir := t.TempDir()
+	managedDir := filepath.Join(dir, "policies", "managed")
+
+	// With no policies and no pre-existing file, removal is a no-op.
+	if err := SyncChromeFromProto(nil, []string{managedDir}); err != nil {
+		t.Fatalf("SyncChromeFromProto with nil policies failed: %v", err)
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(result) != 0 {
-		t.Errorf("expected empty result, got %d keys", len(result))
+	target := filepath.Join(managedDir, ChromeManagedFilename)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Error("expected bor_managed.json to not exist after empty sync")
 	}
 }
 
-func TestMergeChromePolicies_NoCommentKey(t *testing.T) {
-	contents := []string{`{"HomepageLocation": "https://example.com"}`}
+func TestSyncChromeFromProto_NoCommentKey(t *testing.T) {
+	dir := t.TempDir()
+	managedDir := filepath.Join(dir, "policies", "managed")
 
-	data, err := MergeChromePolicies(contents)
+	homepageLoc := "https://example.com"
+	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
+
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(managedDir, ChromeManagedFilename)
+	data, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,13 +151,14 @@ func TestMergeChromePolicies_NoCommentKey(t *testing.T) {
 	}
 }
 
-func TestSyncChromeDir_WritesFile(t *testing.T) {
+func TestSyncChromeFromProto_WritesFile(t *testing.T) {
 	dir := t.TempDir()
 	managedDir := filepath.Join(dir, "policies", "managed")
 
-	contents := []string{`{"HomepageLocation": "https://example.com"}`}
+	homepageLoc := "https://example.com"
+	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
 
-	if err := SyncChromeDir(managedDir, contents); err != nil {
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -143,13 +187,14 @@ func TestSyncChromeDir_WritesFile(t *testing.T) {
 	}
 }
 
-func TestSyncChromeDir_RemovesFileOnEmpty(t *testing.T) {
+func TestSyncChromeFromProto_RemovesFileOnEmpty(t *testing.T) {
 	dir := t.TempDir()
 	managedDir := filepath.Join(dir, "policies", "managed")
 
 	// First write a file.
-	contents := []string{`{"HomepageLocation": "https://example.com"}`}
-	if err := SyncChromeDir(managedDir, contents); err != nil {
+	homepageLoc := "https://example.com"
+	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -158,9 +203,9 @@ func TestSyncChromeDir_RemovesFileOnEmpty(t *testing.T) {
 		t.Fatal("expected file to exist after write")
 	}
 
-	// Now sync with empty contents — file should be removed.
-	if err := SyncChromeDir(managedDir, nil); err != nil {
-		t.Fatalf("SyncChromeDir with empty contents failed: %v", err)
+	// Now sync with nil policies — file should be removed.
+	if err := SyncChromeFromProto(nil, []string{managedDir}); err != nil {
+		t.Fatalf("SyncChromeFromProto with nil policies failed: %v", err)
 	}
 
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -168,23 +213,24 @@ func TestSyncChromeDir_RemovesFileOnEmpty(t *testing.T) {
 	}
 }
 
-func TestSyncChromeDir_RemovesFileOnEmpty_NoErrorIfMissing(t *testing.T) {
+func TestSyncChromeFromProto_RemovesFileOnEmpty_NoErrorIfMissing(t *testing.T) {
 	dir := t.TempDir()
 	managedDir := filepath.Join(dir, "policies", "managed")
 
-	// Sync with empty contents when no file exists — should not error.
-	if err := SyncChromeDir(managedDir, nil); err != nil {
-		t.Fatalf("SyncChromeDir with empty contents and no existing file failed: %v", err)
+	// Sync with nil policies when no file exists — should not error.
+	if err := SyncChromeFromProto(nil, []string{managedDir}); err != nil {
+		t.Fatalf("SyncChromeFromProto with nil policies and no existing file failed: %v", err)
 	}
 }
 
-func TestSyncChromeDir_CreatesDir(t *testing.T) {
+func TestSyncChromeFromProto_CreatesDir(t *testing.T) {
 	dir := t.TempDir()
 	// Use a deeply nested directory that does not exist yet.
 	managedDir := filepath.Join(dir, "etc", "opt", "chrome", "policies", "managed")
 
-	contents := []string{`{"DefaultSearchProviderEnabled": true}`}
-	if err := SyncChromeDir(managedDir, contents); err != nil {
+	searchEnabled := true
+	pol := &pb.ChromePolicy{DefaultSearchProviderEnabled: &searchEnabled}
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,5 +246,60 @@ func TestSyncChromeDir_CreatesDir(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0755 {
 		t.Errorf("expected directory permissions 0755, got %o", info.Mode().Perm())
+	}
+}
+
+func TestSyncChromeFromProto_MultipleDirs(t *testing.T) {
+	dir := t.TempDir()
+	dir1 := filepath.Join(dir, "chrome", "managed")
+	dir2 := filepath.Join(dir, "chromium", "managed")
+
+	homepageLoc := "https://example.com"
+	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
+
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{dir1, dir2}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, d := range []string{dir1, dir2} {
+		target := filepath.Join(d, ChromeManagedFilename)
+		data, err := os.ReadFile(target)
+		if err != nil {
+			t.Fatalf("expected bor_managed.json in %s: %v", d, err)
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result["HomepageLocation"] != "https://example.com" {
+			t.Errorf("dir %s: expected HomepageLocation, got %v", d, result["HomepageLocation"])
+		}
+	}
+}
+
+func TestSyncChromeFromProto_NilPoliciesAreSkipped(t *testing.T) {
+	dir := t.TempDir()
+	managedDir := filepath.Join(dir, "policies", "managed")
+
+	homepageLoc := "https://example.com"
+	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
+
+	// Mix of nil and non-nil policies — nil entries must be silently skipped.
+	if err := SyncChromeFromProto([]*pb.ChromePolicy{nil, pol, nil}, []string{managedDir}); err != nil {
+		t.Fatal(err)
+	}
+
+	target := filepath.Join(managedDir, ChromeManagedFilename)
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("expected bor_managed.json to exist: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["HomepageLocation"] != "https://example.com" {
+		t.Errorf("expected HomepageLocation, got %v", result["HomepageLocation"])
 	}
 }

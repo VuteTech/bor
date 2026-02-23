@@ -64,12 +64,12 @@ var firefoxNotifyConfig = notify.NotifyConfig{
 	Message:  "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
 }
 
-// chromeCache maps policy ID → content JSON for all active Chrome policies.
-var chromeCache = make(map[string]string)
+// chromeCache maps policy ID → proto policy for all active Chrome policies.
+var chromeCache = make(map[string]*pb.ChromePolicy)
 
-// chromeSnapshotStaging accumulates Chrome contents during a SNAPSHOT.
+// chromeSnapshotStaging accumulates Chrome proto policies during a SNAPSHOT.
 // It is nil when not inside a snapshot sequence.
-var chromeSnapshotStaging map[string]string
+var chromeSnapshotStaging map[string]*pb.ChromePolicy
 
 // chromeNotifier handles desktop notifications for Chrome policy changes.
 var chromeNotifier = notify.New()
@@ -267,7 +267,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				kconfigSnapshotStaging = nil
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
 				firefoxSnapshotStaging = nil
-				chromeCache = make(map[string]string)
+				chromeCache = make(map[string]*pb.ChromePolicy)
 				chromeSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
@@ -299,9 +299,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			firefoxSnapshotStaging[pi.ID] = pi.FirefoxPolicy
 		case "Chrome":
 			if chromeSnapshotStaging == nil {
-				chromeSnapshotStaging = make(map[string]string)
+				chromeSnapshotStaging = make(map[string]*pb.ChromePolicy)
 			}
-			chromeSnapshotStaging[pi.ID] = pi.Content
+			chromeSnapshotStaging[pi.ID] = pi.ChromePolicy
 		case "Kconfig":
 			if kconfigSnapshotStaging == nil {
 				kconfigSnapshotStaging = make(map[string][]*pb.KConfigEntry)
@@ -338,7 +338,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if chromeSnapshotStaging != nil {
 				chromeCache = chromeSnapshotStaging
 			} else {
-				chromeCache = make(map[string]string)
+				chromeCache = make(map[string]*pb.ChromePolicy)
 			}
 			chromeSnapshotStaging = nil
 
@@ -375,7 +375,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firefoxNotifier.ScheduleNotification(firefoxNotifyConfig, map[string]bool{"policies.json": true})
 			}
 		case "Chrome":
-			chromeCache[pi.ID] = pi.Content
+			chromeCache[pi.ID] = pi.ChromePolicy
 			if syncAllChrome(ctx, client, cfg) {
 				chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
@@ -438,14 +438,18 @@ func firefoxCachesEqual(a, b map[string]*pb.FirefoxPolicy) bool {
 }
 
 // chromeCachesEqual returns true when two Chrome policy caches contain
-// identical policy IDs and content strings. Used to detect whether a
+// identical policy IDs and proto content. Used to detect whether a
 // SNAPSHOT resync actually changed the Chrome policy set.
-func chromeCachesEqual(a, b map[string]string) bool {
+func chromeCachesEqual(a, b map[string]*pb.ChromePolicy) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for k, v := range a {
-		if w, ok := b[k]; !ok || v != w {
+	for k, va := range a {
+		vb, ok := b[k]
+		if !ok {
+			return false
+		}
+		if !proto.Equal(va, vb) {
 			return false
 		}
 	}
@@ -562,54 +566,53 @@ func sendHeartbeat(ctx context.Context, client *policyclient.Client) {
 	}
 }
 
-// syncAllChrome re-merges all cached Chrome policy contents and syncs
+// syncAllChrome re-merges all cached Chrome proto policies and syncs
 // bor_managed.json to each configured Chrome/Chromium policy directory.
-// Returns true when the primary sync succeeded (for notification scheduling).
+// Returns true when the sync succeeded (for notification scheduling).
 func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config.Config) bool {
-	var contents []string
+	var policies []*pb.ChromePolicy
 	var ids []string
-	for id, content := range chromeCache {
-		contents = append(contents, content)
+	for id, pol := range chromeCache {
+		if pol != nil {
+			policies = append(policies, pol)
+		}
 		ids = append(ids, id)
 	}
 
-	// Write to all configured Chrome/Chromium paths.
+	// Collect active (non-empty) Chrome/Chromium paths.
 	chromePaths := []string{
 		cfg.Chrome.ChromePoliciesPath,
 		cfg.Chrome.ChromiumPoliciesPath,
 		cfg.Chrome.ChromiumBrowserPoliciesPath,
 	}
-
-	success := true
+	var activePaths []string
 	for _, p := range chromePaths {
-		if p == "" {
-			continue
+		if p != "" {
+			activePaths = append(activePaths, p)
 		}
-		if err := policy.SyncChromeDir(p, contents); err != nil {
-			log.Printf("Error syncing Chrome policies to %s: %v", p, err)
-			success = false
+	}
+
+	if err := policy.SyncChromeFromProto(policies, activePaths); err != nil {
+		log.Printf("Error syncing Chrome policies: %v", err)
+		for _, id := range ids {
+			_ = client.ReportCompliance(ctx, id, false, "failed to sync Chrome policies: "+err.Error())
 		}
+		return false
 	}
 
 	// Flatpak Chromium is best-effort — log warning but don't fail.
 	if cfg.Chrome.FlatpakChromiumPoliciesPath != "" {
-		if err := policy.SyncChromeDir(cfg.Chrome.FlatpakChromiumPoliciesPath, contents); err != nil {
+		if err := policy.SyncChromeFromProto(policies, []string{cfg.Chrome.FlatpakChromiumPoliciesPath}); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Chromium policies: %v", err)
-		} else if len(contents) > 0 {
+		} else if len(policies) > 0 {
 			log.Printf("Flatpak Chromium policies synced to %s", cfg.Chrome.FlatpakChromiumPoliciesPath)
 		}
 	}
 
-	if success {
-		log.Printf("Chrome policies synced (%d policies)", len(ids))
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, true, "Deployed")
-		}
-	} else {
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to sync Chrome policies")
-		}
+	log.Printf("Chrome policies synced (%d policies)", len(ids))
+	for _, id := range ids {
+		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
-	return success
+	return true
 }
 

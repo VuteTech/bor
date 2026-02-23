@@ -38,7 +38,6 @@ import { NodesPage } from "./views/Nodes";
 import { NodeGroupsPage } from "./views/NodeGroups";
 import { PolicyBindingsPage } from "./views/PolicyBindings";
 import { SettingsPage } from "./views/Settings";
-import logo from "./assets/logo.svg";
 import logoWhite from "./assets/logo-white.svg";
 
 type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "settings";
@@ -228,7 +227,6 @@ export const Shell: React.FC = () => {
             gap: "0.75rem",
           }}
         >
-          <img src={logo} alt="Bor Logo" style={{ width: "120px", height: "auto" }} />
           <div
             style={{
               fontSize: "0.75rem",
@@ -239,12 +237,12 @@ export const Shell: React.FC = () => {
           >
             &copy; {new Date().getFullYear()} Bor. All rights reserved.{" "}
             <a
-              href="https://github.com/VuteTech/Bor"
+              href="https://getbor.dev"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "#2E7D32", textDecoration: "none" }}
             >
-              Bor
+              getbor.dev
             </a>
           </div>
         </div>

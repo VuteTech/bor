@@ -323,7 +323,7 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		}
 	case "Chrome":
 		var chrPol pb.ChromePolicy
-		if err := protojson.Unmarshal([]byte(p.Content), &chrPol); err != nil {
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &chrPol); err != nil {
 			log.Printf("WARNING: failed to unmarshal Chrome typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_ChromePolicy{ChromePolicy: &chrPol}

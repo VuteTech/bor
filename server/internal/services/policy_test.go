@@ -44,7 +44,7 @@ func TestPolicyService_CreatePolicy_Validation(t *testing.T) {
 	}{
 		{
 			name:    "empty name",
-			req:     &models.CreatePolicyRequest{Type: "custom"},
+			req:     &models.CreatePolicyRequest{Type: "Firefox"},
 			wantErr: "policy name is required",
 		},
 		{
@@ -140,7 +140,7 @@ func TestPolicyService_ListPoliciesForNodeGroup_NilBindingRepo(t *testing.T) {
 
 // TestPolicyService_UpdatePolicyRequest_JSON verifies type field is properly serialized
 func TestPolicyService_UpdatePolicyRequest_JSON(t *testing.T) {
-	newType := "custom"
+	newType := "Firefox"
 	req := models.UpdatePolicyRequest{
 		Type: &newType,
 	}
@@ -155,7 +155,7 @@ func TestPolicyService_UpdatePolicyRequest_JSON(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
-	if parsed["type"] != "custom" {
-		t.Errorf("expected type=custom in JSON, got: %v", parsed["type"])
+	if parsed["type"] != "Firefox" {
+		t.Errorf("expected type=Firefox in JSON, got: %v", parsed["type"])
 	}
 }
