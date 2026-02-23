@@ -65,7 +65,7 @@ func main() {
 	tlsKeyFile := cfg.TLS.KeyFile
 	if tlsCertFile == "" && tlsKeyFile == "" {
 		log.Println("BOR_TLS_CERT_FILE/KEY not set – ensuring server certificate (signed by internal CA)")
-		tlsCertFile, tlsKeyFile, err = pki.EnsureServerCert(cfg.TLS.AutogenDir, caCert, caKey)
+		tlsCertFile, tlsKeyFile, err = pki.EnsureServerCert(cfg.TLS.AutogenDir, caCert, caKey, cfg.Server.Hostnames)
 		if err != nil {
 			log.Fatalf("Failed to ensure server certificate: %v", err)
 		}

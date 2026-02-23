@@ -1,0 +1,64 @@
+# Bor Server Configuration
+#
+# Copy to /etc/bor/server.yaml (or set BOR_CONFIG env var to a custom path).
+# Environment variables always take precedence over this file.
+# Missing fields fall back to built-in defaults.
+
+server:
+  # HTTPS listen address (default: ":8443")
+  addr: ":8443"
+
+  # Additional hostnames and IP addresses to include as Subject Alternative
+  # Names in the auto-generated TLS certificate. The system hostname,
+  # "localhost", 127.0.0.1, and ::1 are always included automatically.
+  # Add your server's FQDN and any DNS aliases so that browsers and agents
+  # can verify the certificate without warnings.
+  #
+  # Each entry is treated as a DNS name unless it parses as an IP address.
+  #hostnames:
+  #  - "bor.example.com"
+  #  - "bor.internal"
+  #  - "192.0.2.10"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "bor"
+  password: "change-me"
+  name: "bor"
+  sslmode: "disable"
+
+security:
+  jwt_secret: "change-me-in-production"
+  # Static admin token for gRPC enrollment calls (optional, leave empty to
+  # require a web-UI-generated enrollment token instead).
+  admin_token: ""
+
+tls:
+  # Paths to an externally-managed TLS certificate and private key.
+  # If empty, the server auto-generates a certificate signed by the
+  # internal CA and stores it in autogen_dir.
+  cert_file: ""
+  key_file:  ""
+  autogen_dir: "/var/lib/bor/pki/ui"
+
+ca:
+  # Paths to the internal CA certificate and private key used to sign
+  # agent mTLS certificates. If empty, the server auto-generates a CA
+  # and stores it in autogen_dir.
+  cert_file: ""
+  key_file:  ""
+  autogen_dir: "/var/lib/bor/pki/ca"
+
+ldap:
+  enabled: false
+  host: "ldap.example.com"
+  port: 389
+  use_tls: false
+  bind_dn: "cn=readonly,dc=example,dc=com"
+  bind_password: ""
+  base_dn: "dc=example,dc=com"
+  user_filter: "(uid=%s)"
+  attr_username: "uid"
+  attr_email: "mail"
+  attr_full_name: "cn"

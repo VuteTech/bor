@@ -23,6 +23,13 @@ contents:
     file_info:
       mode: 0640
 
+  # YAML config file (preserved on upgrade)
+  - src: server/server.yaml.example
+    dst: /etc/bor/server.yaml
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
   # Systemd unit
   - src: packaging/systemd/bor-server.service
     dst: /lib/systemd/system/bor-server.service

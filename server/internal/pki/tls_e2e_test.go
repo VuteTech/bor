@@ -41,7 +41,7 @@ func TestFullTLSChain(t *testing.T) {
     }
 
     // Step 2: Generate server cert signed by CA
-    certPath, keyPath, err := pki.EnsureServerCert(uiDir, caCert, caKey)
+    certPath, keyPath, err := pki.EnsureServerCert(uiDir, caCert, caKey, nil)
     if err != nil {
         t.Fatal("EnsureServerCert:", err)
     }

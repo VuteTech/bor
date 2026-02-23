@@ -26,13 +26,24 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=bor
       - DB_PASSWORD=bor
       - DB_NAME=bor
+      - DB_SSLMODE=disable
       - BOR_ADDR=:8443
+      - BOR_HOSTNAMES=10.28.7.134
+      # Space-separated list of hostnames/IPs added as SANs to the
+      # auto-generated TLS certificate. Set to your server's FQDN so
+      # browsers and agents can verify the cert without warnings.
+      # Overrides the 'hostnames' list in /etc/bor/server.yaml when set.
+      # Example: BOR_HOSTNAMES=bor.example.com,192.0.2.10
+      - BOR_HOSTNAMES=localhost,10.28.7.134
     ports:
       - "8443:8443"
     volumes:

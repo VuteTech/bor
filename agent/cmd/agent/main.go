@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -115,7 +116,25 @@ func main() {
 		); err != nil {
 			log.Fatalf("Enrollment failed: %v", err)
 		}
-		log.Printf("Enrollment successful. Certificates stored in %s", cfg.Enrollment.DataDir)
+		fmt.Printf(`
+Enrollment successful. Certificates stored in %s
+
+To enable and start the Bor agent service, run:
+
+    sudo systemctl enable --now bor-agent
+
+To check the agent status:
+
+    sudo systemctl status bor-agent
+
+To follow the agent logs:
+
+    sudo journalctl -u bor-agent -f
+
+`, cfg.Enrollment.DataDir)
+		os.Exit(0)
+	} else if *enrollToken != "" {
+		log.Println("Agent is already enrolled – ignoring --token flag")
 	} else {
 		log.Println("Agent is enrolled – using mTLS credentials")
 	}

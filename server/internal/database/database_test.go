@@ -64,7 +64,7 @@ func TestMigrationFilesContainExpected(t *testing.T) {
 
 	expected := map[string]bool{
 		"000001_initial_schema.up.sql": false,
-		"000002_add_users.up.sql":      false,
+		"000002_seed_data.up.sql":      false,
 	}
 
 	for _, e := range entries {

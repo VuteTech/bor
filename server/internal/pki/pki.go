@@ -23,12 +23,18 @@ import (
 // and dir/ui.key. If they exist AND are signed by the provided CA,
 // they are reused. If they do not exist, or were signed by a different
 // CA (e.g. self-signed from a previous run), a new TLS server
-// certificate is generated (RSA 2048, 365 days, SANs: localhost +
-// hostname) and signed by the given CA.
+// certificate is generated (RSA 2048, 365 days) and signed by the
+// given CA.
+//
+// The certificate always includes SANs for localhost, 127.0.0.1, ::1,
+// and the system hostname. Additional DNS names or IP addresses can be
+// provided via extraHostnames — each entry is classified as an IP
+// address if net.ParseIP succeeds, otherwise it is treated as a DNS name.
+//
 // When caCert/caKey are nil the certificate is self-signed (fallback
 // for when no CA is available).
 // Returns the paths to the cert and key files.
-func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKey) (certPath, keyPath string, err error) {
+func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKey, extraHostnames []string) (certPath, keyPath string, err error) {
 	certPath = filepath.Join(dir, "ui.crt")
 	keyPath = filepath.Join(dir, "ui.key")
 
@@ -64,6 +70,21 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 
 	hostname, _ := os.Hostname()
 
+	dnsNames := []string{"localhost"}
+	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+
+	if hostname != "" {
+		dnsNames = append(dnsNames, hostname)
+	}
+
+	for _, h := range extraHostnames {
+		if ip := net.ParseIP(h); ip != nil {
+			ipAddresses = append(ipAddresses, ip)
+		} else {
+			dnsNames = append(dnsNames, h)
+		}
+	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
@@ -75,11 +96,8 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{"localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
-	}
-	if hostname != "" {
-		tmpl.DNSNames = append(tmpl.DNSNames, hostname)
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
 	}
 
 	// Sign with CA if available, otherwise self-sign.

@@ -20,7 +20,7 @@ func TestEnsureServerCert_SelfSigned(t *testing.T) {
 	dir := t.TempDir()
 
 	// Without CA: self-signed fallback
-	certPath, keyPath, err := EnsureServerCert(dir, nil, nil)
+	certPath, keyPath, err := EnsureServerCert(dir, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EnsureServerCert() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestEnsureServerCert_SelfSigned(t *testing.T) {
 	}
 
 	// Calling again should reuse existing cert (idempotent)
-	certPath2, keyPath2, err := EnsureServerCert(dir, nil, nil)
+	certPath2, keyPath2, err := EnsureServerCert(dir, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EnsureServerCert() second call error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestEnsureServerCert_SignedByCA(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	certPath, keyPath, err := EnsureServerCert(dir, caCert, caKey)
+	certPath, keyPath, err := EnsureServerCert(dir, caCert, caKey, nil)
 	if err != nil {
 		t.Fatalf("EnsureServerCert() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestEnsureServerCert_RegeneratesWhenCAChanges(t *testing.T) {
 	dir := t.TempDir()
 
 	// Step 1: Create a self-signed server cert (no CA)
-	certPath, keyPath, err := EnsureServerCert(dir, nil, nil)
+	certPath, keyPath, err := EnsureServerCert(dir, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EnsureServerCert(nil CA) error = %v", err)
 	}
@@ -158,7 +158,7 @@ func TestEnsureServerCert_RegeneratesWhenCAChanges(t *testing.T) {
 
 	// Step 3: Call EnsureServerCert WITH the CA — should detect mismatch
 	// and regenerate the cert.
-	certPath2, keyPath2, err := EnsureServerCert(dir, caCert, caKey)
+	certPath2, keyPath2, err := EnsureServerCert(dir, caCert, caKey, nil)
 	if err != nil {
 		t.Fatalf("EnsureServerCert(with CA) error = %v", err)
 	}
@@ -338,7 +338,7 @@ func TestLoadCACertPool_MissingFile(t *testing.T) {
 func TestEnsureServerCert_FilePermissions(t *testing.T) {
 	dir := t.TempDir()
 
-	_, keyPath, err := EnsureServerCert(dir, nil, nil)
+	_, keyPath, err := EnsureServerCert(dir, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("EnsureServerCert() error = %v", err)
 	}
