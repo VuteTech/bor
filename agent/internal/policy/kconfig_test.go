@@ -468,6 +468,107 @@ func TestSyncKConfigFiles_PartialCleanup(t *testing.T) {
 	}
 }
 
+func TestMergeKConfigEntries_URLRestrictionsSinglePolicy(t *testing.T) {
+	entries := []*pb.KConfigEntry{
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_count", Value: "2", Enforced: true},
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_1", Value: "open,,,,http,example.com,,true", Enforced: true},
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_2", Value: "list,,,,file,,,false", Enforced: true},
+	}
+
+	files, err := MergeKConfigEntries(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(files["kdeglobals"])
+	if !strings.Contains(content, "[KDE URL Restrictions][$i]") {
+		t.Errorf("expected group header with [$i], got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_1=open,,,,http,example.com,,true") {
+		t.Errorf("expected rule_1, got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_2=list,,,,file,,,false") {
+		t.Errorf("expected rule_2, got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_count=2") {
+		t.Errorf("expected rule_count=2, got:\n%s", content)
+	}
+}
+
+func TestMergeKConfigEntries_URLRestrictionsMultiplePolicies(t *testing.T) {
+	// Simulate entries from two policies combined: both have rule_1 and rule_2.
+	entries := []*pb.KConfigEntry{
+		// Policy A
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_count", Value: "2", Enforced: true},
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_1", Value: "open,,,,http,a.com,,true", Enforced: true},
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_2", Value: "list,,,,https,a.com,,false", Enforced: true},
+		// Policy B
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_count", Value: "1", Enforced: true},
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_1", Value: "redirect,,,,file,b.com,,true", Enforced: true},
+	}
+
+	files, err := MergeKConfigEntries(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(files["kdeglobals"])
+
+	// Should have 3 rules renumbered sequentially.
+	// rule_1 entries from both policies sort by original index (1),
+	// stable sort preserves insertion order: a.com first, then b.com.
+	if !strings.Contains(content, "rule_1=open,,,,http,a.com,,true") {
+		t.Errorf("expected rule_1=a.com, got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_2=redirect,,,,file,b.com,,true") {
+		t.Errorf("expected rule_2=b.com, got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_3=list,,,,https,a.com,,false") {
+		t.Errorf("expected rule_3 from policy A rule_2, got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_count=3") {
+		t.Errorf("expected rule_count=3, got:\n%s", content)
+	}
+
+	// Should NOT contain duplicate rule_count entries.
+	if strings.Count(content, "rule_count=") != 1 {
+		t.Errorf("expected exactly one rule_count, got:\n%s", content)
+	}
+}
+
+func TestMergeKConfigEntries_URLRestrictionsWithOtherGroups(t *testing.T) {
+	entries := []*pb.KConfigEntry{
+		// URL restriction rules
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_count", Value: "1", Enforced: true},
+		{File: "kdeglobals", Group: "KDE URL Restrictions", Key: "rule_1", Value: "open,,,,http,example.com,,true", Enforced: true},
+		// Other group in same file
+		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "shell_access", Value: "false", Enforced: true},
+	}
+
+	files, err := MergeKConfigEntries(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(files["kdeglobals"])
+
+	// URL restrictions should be present and correct.
+	if !strings.Contains(content, "rule_1=open,,,,http,example.com,,true") {
+		t.Errorf("expected URL restriction rule, got:\n%s", content)
+	}
+	if !strings.Contains(content, "rule_count=1") {
+		t.Errorf("expected rule_count=1, got:\n%s", content)
+	}
+
+	// Action restrictions should be unaffected.
+	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
+		t.Errorf("expected Action Restrictions group, got:\n%s", content)
+	}
+	if !strings.Contains(content, "shell_access=false") {
+		t.Errorf("expected shell_access=false, got:\n%s", content)
+	}
+}
+
 func TestProfileScriptContent(t *testing.T) {
 	got := profileScriptContent("/etc/bor/xdg")
 	want := "export XDG_CONFIG_DIRS=/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n"

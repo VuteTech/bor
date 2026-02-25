@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -60,6 +61,16 @@ func MergeKConfigEntries(entries []*pb.KConfigEntry) (map[string][]byte, error) 
 	}
 
 	sort.Strings(fileOrder)
+
+	// Renumber URL restriction rules when multiple policies contribute
+	// rule_N entries to the same [KDE URL Restrictions] group.
+	for _, fd := range files {
+		for _, g := range fd.groups {
+			if g.name == "KDE URL Restrictions" {
+				renumberURLRestrictions(g)
+			}
+		}
+	}
 
 	result := make(map[string][]byte, len(files))
 	for _, fileName := range fileOrder {
@@ -245,6 +256,72 @@ func SyncKConfigFiles(basePath string, files map[string][]byte) error {
 	}
 
 	return nil
+}
+
+// parseRuleNum extracts the numeric index from a "rule_N" key.
+// Returns -1 if the key does not match the pattern.
+func parseRuleNum(key string) int {
+	if !strings.HasPrefix(key, "rule_") {
+		return -1
+	}
+	n, err := strconv.Atoi(key[len("rule_"):])
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// renumberURLRestrictions collects all rule_N entries in a
+// [KDE URL Restrictions] group, renumbers them sequentially starting
+// from rule_1, and sets a single rule_count entry with the total.
+// Non-rule entries (other than rule_count) are preserved.
+func renumberURLRestrictions(g *kconfigGroup) {
+	type indexedRule struct {
+		origNum int
+		entry   *pb.KConfigEntry
+	}
+
+	var rules []indexedRule
+	var other []*pb.KConfigEntry
+
+	for _, e := range g.entries {
+		if e.Key == "rule_count" {
+			continue // drop old rule_count — we'll regenerate it
+		}
+		n := parseRuleNum(e.Key)
+		if n > 0 {
+			rules = append(rules, indexedRule{origNum: n, entry: e})
+		} else {
+			other = append(other, e)
+		}
+	}
+
+	// Stable sort by original index so that rules from different
+	// policies with the same index maintain insertion order.
+	sort.SliceStable(rules, func(i, j int) bool {
+		return rules[i].origNum < rules[j].origNum
+	})
+
+	// Renumber sequentially.
+	result := make([]*pb.KConfigEntry, 0, len(other)+len(rules)+1)
+	result = append(result, other...)
+	for i, r := range rules {
+		r.entry.Key = fmt.Sprintf("rule_%d", i+1)
+		result = append(result, r.entry)
+	}
+
+	// Add rule_count if there are any rules.
+	if len(rules) > 0 {
+		result = append(result, &pb.KConfigEntry{
+			File:     g.entries[0].File,
+			Group:    g.name,
+			Key:      "rule_count",
+			Value:    strconv.Itoa(len(rules)),
+			Enforced: g.entries[0].Enforced,
+		})
+	}
+
+	g.entries = result
 }
 
 // profileScriptPath is the path to the login profile script that

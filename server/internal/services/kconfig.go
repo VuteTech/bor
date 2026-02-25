@@ -84,6 +84,22 @@ func ValidateKConfigPolicy(content string) error {
 		if e.Type != "" && !validKConfigTypes[e.Type] {
 			return fmt.Errorf("entry %d: type %q is not valid (must be bool, string, or int)", i, e.Type)
 		}
+
+		// Validate KDE URL Restriction rules (rule_N entries).
+		if e.Group == "KDE URL Restrictions" && strings.HasPrefix(e.Key, "rule_") && e.Key != "rule_count" {
+			fields := strings.Split(e.Value, ",")
+			if len(fields) != 8 {
+				return fmt.Errorf("entry %d: URL restriction %s must have exactly 8 comma-separated fields, got %d", i, e.Key, len(fields))
+			}
+			action := fields[0]
+			if action != "open" && action != "list" && action != "redirect" {
+				return fmt.Errorf("entry %d: URL restriction %s has invalid action %q (must be open, list, or redirect)", i, e.Key, action)
+			}
+			enabled := fields[7]
+			if enabled != "true" && enabled != "false" {
+				return fmt.Errorf("entry %d: URL restriction %s has invalid enabled value %q (must be true or false)", i, e.Key, enabled)
+			}
+		}
 	}
 
 	return nil

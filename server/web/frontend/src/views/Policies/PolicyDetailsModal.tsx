@@ -694,9 +694,22 @@ interface KConfigPolicyDef {
   file: string;
   iniGroup: string;
   iniKey: string;
-  type: "boolean" | "string" | "select" | "int" | "color";
+  type: "boolean" | "string" | "select" | "int" | "color" | "url-restrictions";
   selectOptions?: string[];
   defaultValue?: string;
+}
+
+/* ── URL Restriction rule model (KDE Kiosk) ── */
+
+interface UrlRestrictionRule {
+  action: "open" | "list" | "redirect";
+  referrerProtocol: string;
+  referrerHost: string;
+  referrerPath: string;
+  protocol: string;
+  host: string;
+  path: string;
+  enabled: boolean;
 }
 
 const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
@@ -732,6 +745,8 @@ const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
   { key: "wp_Image", label: "Wallpaper Image Path", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Image", type: "string" },
   { key: "wp_FillMode", label: "Wallpaper Fill Mode", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "FillMode", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2" },
   { key: "wp_Color", label: "Wallpaper Background Color", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Color", type: "color" },
+  // Security
+  { key: "url_restrictions", label: "URL Restrictions", group: "Security", file: "kdeglobals", iniGroup: "KDE URL Restrictions", iniKey: "__url_restrictions__", type: "url-restrictions" },
 ];
 
 // Convert KDE "R,G,B" color string to hex "#rrggbb".
@@ -775,13 +790,19 @@ function buildKConfigTree(): Map<string, KConfigPolicyDef[]> {
 function detectKConfigConfiguredKeys(content: string): string[] {
   try {
     const parsed = JSON.parse(content || "{}");
-    const entries: { key?: string }[] = parsed.entries || [];
+    const entries: { key?: string; group?: string }[] = parsed.entries || [];
     const result: string[] = [];
+    let hasUrlRestrictions = false;
     for (const e of entries) {
+      if (e.group === "KDE URL Restrictions") {
+        hasUrlRestrictions = true;
+        continue;
+      }
       // Find the policy def whose iniKey matches the stored key
       const def = KCONFIG_ALL_POLICIES.find(p => p.iniKey === e.key);
       if (def) result.push(def.key);
     }
+    if (hasUrlRestrictions) result.push("url_restrictions");
     return result;
   } catch { return []; }
 }
@@ -825,14 +846,81 @@ function buildKConfigContent(policyDef: KConfigPolicyDef, value: string, enforce
 
 // Remove a KConfig entry from content JSON by policy def key
 function removeKConfigContentKey(defKey: string, existingContent: string): string {
-  let parsed: { entries: { key?: string }[] } = { entries: [] };
+  let parsed: { entries: { key?: string; group?: string }[] } = { entries: [] };
   try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
   if (!parsed.entries) parsed.entries = [];
 
-  const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === defKey);
-  if (policyDef) {
-    parsed.entries = parsed.entries.filter(e => e.key !== policyDef.iniKey);
+  if (defKey === "url_restrictions") {
+    parsed.entries = parsed.entries.filter(e => e.group !== "KDE URL Restrictions");
+  } else {
+    const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === defKey);
+    if (policyDef) {
+      parsed.entries = parsed.entries.filter(e => e.key !== policyDef.iniKey);
+    }
   }
+  return JSON.stringify(parsed, null, 2);
+}
+
+// Parse URL restriction rules from KConfig content JSON.
+function parseUrlRestrictionRules(content: string): UrlRestrictionRule[] {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    const entries: { group?: string; key?: string; value?: string }[] = parsed.entries || [];
+    const rules: UrlRestrictionRule[] = [];
+    for (const e of entries) {
+      if (e.group !== "KDE URL Restrictions") continue;
+      if (!e.key || !e.key.match(/^rule_\d+$/)) continue;
+      const fields = (e.value || "").split(",");
+      if (fields.length !== 8) continue;
+      rules.push({
+        action: (fields[0] as UrlRestrictionRule["action"]) || "open",
+        referrerProtocol: fields[1],
+        referrerHost: fields[2],
+        referrerPath: fields[3],
+        protocol: fields[4],
+        host: fields[5],
+        path: fields[6],
+        enabled: fields[7] === "true",
+      });
+    }
+    return rules;
+  } catch { return []; }
+}
+
+// Build URL restriction entries into KConfig content JSON.
+// Removes all existing KDE URL Restrictions entries and adds fresh rule_count + rule_N entries.
+function buildUrlRestrictionContent(rules: UrlRestrictionRule[], existingContent: string): string {
+  let parsed: { entries: { file: string; group: string; key: string; value: string; type: string; enforced: boolean }[] } = { entries: [] };
+  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
+  if (!parsed.entries) parsed.entries = [];
+
+  // Remove all existing KDE URL Restrictions entries.
+  parsed.entries = parsed.entries.filter(e => e.group !== "KDE URL Restrictions");
+
+  // Add fresh entries.
+  if (rules.length > 0) {
+    parsed.entries.push({
+      file: "kdeglobals",
+      group: "KDE URL Restrictions",
+      key: "rule_count",
+      value: String(rules.length),
+      type: "string",
+      enforced: true,
+    });
+    for (let i = 0; i < rules.length; i++) {
+      const r = rules[i];
+      const value = [r.action, r.referrerProtocol, r.referrerHost, r.referrerPath, r.protocol, r.host, r.path, r.enabled ? "true" : "false"].join(",");
+      parsed.entries.push({
+        file: "kdeglobals",
+        group: "KDE URL Restrictions",
+        key: `rule_${i + 1}`,
+        value,
+        type: "string",
+        enforced: true,
+      });
+    }
+  }
+
   return JSON.stringify(parsed, null, 2);
 }
 
@@ -924,6 +1012,22 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
     const parsed = raw as { entries?: { key?: string; value?: string; enforced?: boolean; file?: string; group?: string }[] };
     const entries = parsed.entries || [];
     for (const entry of entries) {
+      // Show URL restriction rules with human-readable summary
+      if (entry.group === "KDE URL Restrictions" && entry.key && entry.key.match(/^rule_\d+$/)) {
+        const fields = (entry.value || "").split(",");
+        if (fields.length === 8) {
+          const summary = `${fields[0]} ${fields[4] || "*"}://${fields[5] || "*"}${fields[6] ? "/" + fields[6] : ""} → ${fields[7] === "true" ? "allow" : "deny"}`;
+          rows.push({
+            setting: `Security › URL Restrictions › ${entry.key}`,
+            value: summary,
+            locked: entry.enforced !== undefined ? (entry.enforced ? "Yes" : "No") : null,
+          });
+        }
+        continue;
+      }
+      // Skip rule_count in overview display
+      if (entry.group === "KDE URL Restrictions" && entry.key === "rule_count") continue;
+
       const def = KCONFIG_ALL_POLICIES.find(p => p.iniKey === entry.key);
       rows.push({
         setting: def ? `${def.group} › ${def.label}` : (entry.key || "Unknown"),
@@ -1072,6 +1176,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const [kconfigValue, setKconfigValue] = useState<string>("");
   const [kconfigEnforced, setKconfigEnforced] = useState<boolean>(false);
   const [kconfigExpandedGroups, setKconfigExpandedGroups] = useState<Set<string>>(new Set());
+  const [urlRestrictionRules, setUrlRestrictionRules] = useState<UrlRestrictionRule[]>([]);
 
   // Chrome-specific state: selected policy key + its value
   const [chromeSelectedKey, setChromeSelectedKey] = useState<string | null>(null);
@@ -1118,11 +1223,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             if (def) groups.add(def.group);
           }
           setKconfigExpandedGroups(groups);
+          // If url_restrictions is configured, load the rules
+          if (configuredKeys.includes("url_restrictions")) {
+            setUrlRestrictionRules(parseUrlRestrictionRules(policy.content));
+          }
         } else {
           setKconfigSelectedKey(null);
           setKconfigValue("");
           setKconfigEnforced(false);
           setKconfigExpandedGroups(new Set());
+          setUrlRestrictionRules([]);
         }
       } else if (policy.type === "Chrome") {
         const configuredKeys = detectChromeConfiguredKeys(policy.content);
@@ -1166,6 +1276,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigValue("");
       setKconfigEnforced(false);
       setKconfigExpandedGroups(new Set());
+      setUrlRestrictionRules([]);
       setChromeSelectedKey(null);
       setChromeValue(undefined);
       setChromeExpandedGroups(new Set());
@@ -1192,6 +1303,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigEnforced(false);
       setContentRaw('{"entries":[]}');
       setKconfigExpandedGroups(new Set());
+      setUrlRestrictionRules([]);
     } else if (newType === "Chrome") {
       setChromeSelectedKey(null);
       setChromeValue(undefined);
@@ -1308,6 +1420,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // KConfig: select a policy from the tree
   const handleKconfigSelectPolicy = (policyDef: KConfigPolicyDef) => {
     setKconfigSelectedKey(policyDef.key);
+    if (policyDef.type === "url-restrictions") {
+      const rules = parseUrlRestrictionRules(contentRaw);
+      if (rules.length > 0) {
+        setUrlRestrictionRules(rules);
+      } else {
+        // Seed with one default rule
+        const defaultRule: UrlRestrictionRule = { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true };
+        setUrlRestrictionRules([defaultRule]);
+        setContentRaw(buildUrlRestrictionContent([defaultRule], contentRaw));
+      }
+      return;
+    }
     const existing = extractKConfigEntry(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setKconfigValue(existing.value);
@@ -1438,7 +1562,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         }
       } else if (policyType === "Kconfig") {
         // Save the current selection into content before validating
-        if (kconfigSelectedKey) {
+        if (kconfigSelectedKey === "url_restrictions") {
+          finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
+        } else if (kconfigSelectedKey) {
           const def = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);
           if (def) {
             finalContent = buildKConfigContent(def, kconfigValue, kconfigEnforced, contentRaw);
@@ -1767,6 +1893,92 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   };
 
   /* ── KConfig: property editor for selected policy ── */
+  /* ── URL Restrictions: structured rule editor ── */
+  const renderUrlRestrictionsEditor = () => {
+    const updateRules = (newRules: UrlRestrictionRule[]) => {
+      setUrlRestrictionRules(newRules);
+      setContentRaw(buildUrlRestrictionContent(newRules, contentRaw));
+    };
+
+    const updateRule = (index: number, partial: Partial<UrlRestrictionRule>) => {
+      const updated = urlRestrictionRules.map((r, i) => i === index ? { ...r, ...partial } : r);
+      updateRules(updated);
+    };
+
+    const addRule = () => {
+      updateRules([...urlRestrictionRules, { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true }]);
+    };
+
+    const removeRule = (index: number) => {
+      const updated = urlRestrictionRules.filter((_, i) => i !== index);
+      updateRules(updated);
+    };
+
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>URL Restrictions</Title>
+        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+          File: <code>kdeglobals</code> &nbsp; Group: <code>[KDE URL Restrictions]</code>
+        </p>
+        <Button variant="secondary" size="sm" onClick={addRule} style={{ marginBottom: "1rem" }}>+ Add Rule</Button>
+        {urlRestrictionRules.map((rule, idx) => (
+          <Card key={idx} isCompact style={{ marginBottom: "0.75rem" }}>
+            <CardTitle>
+              <Flex justifyContent={{ default: "justifyContentSpaceBetween" }} alignItems={{ default: "alignItemsCenter" }}>
+                <FlexItem><strong>Rule {idx + 1}</strong></FlexItem>
+                <FlexItem>
+                  <Button variant="plain" size="sm" onClick={() => removeRule(idx)} aria-label={`Remove rule ${idx + 1}`} style={{ color: "#c9190b" }}>Remove</Button>
+                </FlexItem>
+              </Flex>
+            </CardTitle>
+            <CardBody>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <FormGroup label="Action" fieldId={`url-action-${idx}`}>
+                  <FormSelect id={`url-action-${idx}`} value={rule.action} onChange={(_ev, val) => updateRule(idx, { action: val as UrlRestrictionRule["action"] })}>
+                    <FormSelectOption value="open" label="open" />
+                    <FormSelectOption value="list" label="list" />
+                    <FormSelectOption value="redirect" label="redirect" />
+                  </FormSelect>
+                </FormGroup>
+                <FormGroup label="Protocol" fieldId={`url-protocol-${idx}`} helperText="http, file, etc. Without ! = prefix-matches">
+                  <TextInput id={`url-protocol-${idx}`} value={rule.protocol} onChange={(_ev, val) => updateRule(idx, { protocol: val })} placeholder="blank = all" />
+                </FormGroup>
+                <FormGroup label="Enabled" fieldId={`url-enabled-${idx}`}>
+                  <Switch id={`url-enabled-${idx}`} isChecked={rule.enabled} onChange={(_ev, checked) => updateRule(idx, { enabled: checked })} label="Allow" labelOff="Deny" />
+                </FormGroup>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <FormGroup label="Host" fieldId={`url-host-${idx}`} helperText="*.example.com, blank = all">
+                  <TextInput id={`url-host-${idx}`} value={rule.host} onChange={(_ev, val) => updateRule(idx, { host: val })} placeholder="blank = all" />
+                </FormGroup>
+                <FormGroup label="Path" fieldId={`url-path-${idx}`} helperText="/path, blank = all, ! = exact only">
+                  <TextInput id={`url-path-${idx}`} value={rule.path} onChange={(_ev, val) => updateRule(idx, { path: val })} placeholder="blank = all" />
+                </FormGroup>
+              </div>
+              <details style={{ marginTop: "0.25rem" }}>
+                <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Referrer Matching (advanced)</summary>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginTop: "0.5rem" }}>
+                  <FormGroup label="Referrer Protocol" fieldId={`url-ref-proto-${idx}`}>
+                    <TextInput id={`url-ref-proto-${idx}`} value={rule.referrerProtocol} onChange={(_ev, val) => updateRule(idx, { referrerProtocol: val })} placeholder="blank = all" />
+                  </FormGroup>
+                  <FormGroup label="Referrer Host" fieldId={`url-ref-host-${idx}`}>
+                    <TextInput id={`url-ref-host-${idx}`} value={rule.referrerHost} onChange={(_ev, val) => updateRule(idx, { referrerHost: val })} placeholder="blank = all" />
+                  </FormGroup>
+                  <FormGroup label="Referrer Path" fieldId={`url-ref-path-${idx}`}>
+                    <TextInput id={`url-ref-path-${idx}`} value={rule.referrerPath} onChange={(_ev, val) => updateRule(idx, { referrerPath: val })} placeholder="blank = all" />
+                  </FormGroup>
+                </div>
+              </details>
+            </CardBody>
+          </Card>
+        ))}
+        {urlRestrictionRules.length === 0 && (
+          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No rules configured. Click "+ Add Rule" to begin.</p>
+        )}
+      </div>
+    );
+  };
+
   const renderKconfigPropertyEditor = () => {
     if (!kconfigSelectedKey) {
       return (
@@ -1775,6 +1987,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
       );
+    }
+
+    if (kconfigSelectedKey === "url_restrictions") {
+      return renderUrlRestrictionsEditor();
     }
 
     const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);

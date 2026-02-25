@@ -206,6 +206,65 @@ func TestValidateKConfigPolicy_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestValidateKConfigPolicy_URLRestrictionValid(t *testing.T) {
+	content := `{
+		"entries": [
+			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_count", "value": "2", "type": "string", "enforced": true},
+			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "open,,,,http,example.com,,true", "type": "string", "enforced": true},
+			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_2", "value": "list,,,,file,,,false", "type": "string", "enforced": true}
+		]
+	}`
+	err := ValidateKConfigPolicy(content)
+	if err != nil {
+		t.Fatalf("expected valid URL restriction rules to pass, got: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_URLRestrictionInvalidAction(t *testing.T) {
+	content := `{
+		"entries": [
+			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "block,,,,http,example.com,,true", "type": "string", "enforced": true}
+		]
+	}`
+	err := ValidateKConfigPolicy(content)
+	if err == nil {
+		t.Fatal("expected error for invalid action 'block'")
+	}
+	if !strings.Contains(err.Error(), "invalid action") {
+		t.Errorf("expected 'invalid action' error, got: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_URLRestrictionWrongFieldCount(t *testing.T) {
+	content := `{
+		"entries": [
+			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "open,,,,http,example.com", "type": "string", "enforced": true}
+		]
+	}`
+	err := ValidateKConfigPolicy(content)
+	if err == nil {
+		t.Fatal("expected error for wrong field count")
+	}
+	if !strings.Contains(err.Error(), "8 comma-separated fields") {
+		t.Errorf("expected '8 comma-separated fields' error, got: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_URLRestrictionInvalidEnabled(t *testing.T) {
+	content := `{
+		"entries": [
+			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "open,,,,http,example.com,,yes", "type": "string", "enforced": true}
+		]
+	}`
+	err := ValidateKConfigPolicy(content)
+	if err == nil {
+		t.Fatal("expected error for invalid enabled value")
+	}
+	if !strings.Contains(err.Error(), "invalid enabled") {
+		t.Errorf("expected 'invalid enabled' error, got: %v", err)
+	}
+}
+
 func TestParseKConfigPolicyContent_Valid(t *testing.T) {
 	content := `{
 		"entries": [
