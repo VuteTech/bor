@@ -151,6 +151,54 @@ func TestValidateKConfigPolicy_AllowedFiles(t *testing.T) {
 	}
 }
 
+func TestValidateKConfigPolicy_WallpaperValid(t *testing.T) {
+	tests := []struct {
+		name  string
+		group string
+	}{
+		{"containment-level", "Containments][1"},
+		{"containment-99", "Containments][99"},
+		{"wallpaper-plugin-general", "Containments][1][Wallpaper][org.kde.image][General"},
+		{"wallpaper-plugin-other", "Containments][2][Wallpaper][org.kde.potd][General"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := `{"entries": [{"file": "plasma-org.kde.plasma.desktop-appletsrc", "group": "` + tt.group + `", "key": "K", "value": "V", "type": "string"}]}`
+			err := ValidateKConfigPolicy(content)
+			if err != nil {
+				t.Errorf("group %q should be allowed, got: %v", tt.group, err)
+			}
+		})
+	}
+}
+
+func TestValidateKConfigPolicy_WallpaperInvalidGroup(t *testing.T) {
+	tests := []struct {
+		name  string
+		group string
+	}{
+		{"arbitrary-group", "General"},
+		{"no-containment-prefix", "Wallpaper][org.kde.image][General"},
+		{"missing-plugin-section", "Containments][1][General"},
+		{"empty-containment-id", "Containments]["},
+		{"non-numeric-containment", "Containments][abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := `{"entries": [{"file": "plasma-org.kde.plasma.desktop-appletsrc", "group": "` + tt.group + `", "key": "K", "value": "V", "type": "string"}]}`
+			err := ValidateKConfigPolicy(content)
+			if err == nil {
+				t.Errorf("group %q should be rejected for appletsrc file", tt.group)
+			}
+			if err != nil && !strings.Contains(err.Error(), "not allowed") {
+				t.Errorf("expected 'not allowed' error, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateKConfigPolicy_InvalidJSON(t *testing.T) {
 	err := ValidateKConfigPolicy("{bad json")
 	if err == nil {

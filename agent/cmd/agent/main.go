@@ -479,6 +479,10 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		return nil
 	}
 
+	if err := policy.EnsureProfileScript(cfg.KConfig.ConfigPath); err != nil {
+		log.Printf("Warning: failed to ensure profile.d script: %v", err)
+	}
+
 	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, files); err != nil {
 		log.Printf("Error syncing KConfig files: %v", err)
 		for _, id := range ids {

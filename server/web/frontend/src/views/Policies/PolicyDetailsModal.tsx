@@ -694,7 +694,7 @@ interface KConfigPolicyDef {
   file: string;
   iniGroup: string;
   iniKey: string;
-  type: "boolean" | "string" | "select" | "int";
+  type: "boolean" | "string" | "select" | "int" | "color";
   selectOptions?: string[];
   defaultValue?: string;
 }
@@ -726,7 +726,39 @@ const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
   { key: "AutoLock", label: "Auto Lock", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "AutoLock", type: "boolean" },
   { key: "LockOnResume", label: "Lock on Resume", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "LockOnResume", type: "boolean" },
   { key: "Timeout", label: "Lock Timeout (seconds)", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "Timeout", type: "int" },
+  // Appearance
+  { key: "icon_theme", label: "Icon Theme", group: "Appearance", file: "kdeglobals", iniGroup: "Icons", iniKey: "Theme", type: "string" },
+  { key: "wallpaperplugin", label: "Wallpaper Plugin", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1", iniKey: "wallpaperplugin", type: "string", defaultValue: "org.kde.image" },
+  { key: "wp_Image", label: "Wallpaper Image Path", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Image", type: "string" },
+  { key: "wp_FillMode", label: "Wallpaper Fill Mode", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "FillMode", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2" },
+  { key: "wp_Color", label: "Wallpaper Background Color", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Color", type: "color" },
 ];
+
+// Convert KDE "R,G,B" color string to hex "#rrggbb".
+function rgbToHex(rgb: string): string {
+  const parts = rgb.split(",").map(s => parseInt(s.trim(), 10));
+  if (parts.length !== 3 || parts.some(isNaN)) return "#000000";
+  return "#" + parts.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+}
+
+// Convert hex "#rrggbb" to KDE "R,G,B" color string.
+function hexToRgb(hex: string): string {
+  const m = hex.replace("#", "");
+  if (m.length !== 6) return "0,0,0";
+  const r = parseInt(m.substring(0, 2), 16);
+  const g = parseInt(m.substring(2, 4), 16);
+  const b = parseInt(m.substring(4, 6), 16);
+  return `${r},${g},${b}`;
+}
+
+// FillMode display labels for the select dropdown.
+const FILL_MODE_LABELS: Record<string, string> = {
+  "0": "0 — Stretch",
+  "1": "1 — Preserve Aspect Fit",
+  "2": "2 — Preserve Aspect Crop",
+  "3": "3 — Tile",
+  "6": "6 — Pad",
+};
 
 function buildKConfigTree(): Map<string, KConfigPolicyDef[]> {
   const groups = new Map<string, KConfigPolicyDef[]>();
@@ -779,7 +811,7 @@ function buildKConfigContent(policyDef: KConfigPolicyDef, value: string, enforce
     group: policyDef.iniGroup,
     key: policyDef.iniKey,
     value,
-    type: policyDef.type === "boolean" ? "bool" : policyDef.type === "int" ? "int" : "string",
+    type: policyDef.type === "boolean" ? "bool" : policyDef.type === "int" ? "int" : "string", // color and select also map to "string"
     enforced,
   };
 
@@ -1794,9 +1826,29 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               >
                 <FormSelectOption key="" value="" label="(not set)" />
                 {(policyDef.selectOptions || []).map(v => (
-                  <FormSelectOption key={v} value={v} label={v} />
+                  <FormSelectOption key={v} value={v} label={FILL_MODE_LABELS[v] || v} />
                 ))}
               </FormSelect>
+            </FormGroup>
+          )}
+          {policyDef.type === "color" && (
+            <FormGroup label="Value" fieldId="kc-prop-color">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <input
+                  type="color"
+                  id="kc-prop-color"
+                  value={rgbToHex(kconfigValue || "0,0,0")}
+                  onChange={(ev) => updateKconfigValue(hexToRgb(ev.target.value))}
+                  style={{ width: "48px", height: "36px", padding: "2px", border: "1px solid #d2d2d2", borderRadius: "4px", cursor: "pointer" }}
+                />
+                <TextInput
+                  id="kc-prop-color-text"
+                  value={kconfigValue}
+                  onChange={(_ev, val) => updateKconfigValue(val)}
+                  placeholder="R,G,B"
+                  style={{ maxWidth: "140px" }}
+                />
+              </div>
             </FormGroup>
           )}
           <FormGroup label="Enforced (Immutable)" fieldId="kc-prop-enforced">

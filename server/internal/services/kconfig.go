@@ -6,6 +6,7 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -20,7 +21,15 @@ var allowedKConfigFiles = map[string]bool{
 	"kscreenlockerrc": true,
 	"dolphinrc":       true,
 	"konsolerc":       true,
+	"plasma-org.kde.plasma.desktop-appletsrc": true,
 }
+
+// allowedAppletsrcGroupRe restricts which INI groups may be set inside
+// the plasma-org.kde.plasma.desktop-appletsrc file. Only containment-level
+// keys (e.g. wallpaperplugin) and wallpaper-plugin-level keys are permitted.
+var allowedAppletsrcGroupRe = regexp.MustCompile(
+	`^Containments\]\[\d+(\]\[Wallpaper\]\[.+\]\[.+)?$`,
+)
 
 // validKConfigTypes is the set of allowed value types.
 var validKConfigTypes = map[string]bool{
@@ -62,6 +71,14 @@ func ValidateKConfigPolicy(content string) error {
 
 		if !allowedKConfigFiles[e.File] {
 			return fmt.Errorf("entry %d: file %q is not in the allowed set", i, e.File)
+		}
+
+		// Restrict groups for plasma-org.kde.plasma.desktop-appletsrc to
+		// containment-level and wallpaper-plugin-level groups only.
+		if e.File == "plasma-org.kde.plasma.desktop-appletsrc" {
+			if !allowedAppletsrcGroupRe.MatchString(e.Group) {
+				return fmt.Errorf("entry %d: group %q is not allowed for %s", i, e.Group, e.File)
+			}
 		}
 
 		if e.Type != "" && !validKConfigTypes[e.Type] {

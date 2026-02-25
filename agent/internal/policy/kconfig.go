@@ -246,3 +246,41 @@ func SyncKConfigFiles(basePath string, files map[string][]byte) error {
 
 	return nil
 }
+
+// profileScriptPath is the path to the login profile script that
+// prepends the Bor XDG config directory to XDG_CONFIG_DIRS.
+const profileScriptPath = "/etc/profile.d/99-bor.sh"
+
+// profileScriptContent returns the shell script that prepends basePath
+// to XDG_CONFIG_DIRS so that KDE (and other XDG-aware apps) pick up
+// the Bor-managed config files.
+func profileScriptContent(basePath string) string {
+	return fmt.Sprintf("export XDG_CONFIG_DIRS=%s:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n", basePath)
+}
+
+// EnsureProfileScript creates or updates /etc/profile.d/99-bor.sh so
+// that the Bor XDG config directory is prepended to XDG_CONFIG_DIRS
+// for all login sessions.
+func EnsureProfileScript(basePath string) error {
+	desired := profileScriptContent(basePath)
+
+	existing, err := os.ReadFile(profileScriptPath)
+	if err == nil && string(existing) == desired {
+		return nil // already up to date
+	}
+
+	if err := os.MkdirAll(filepath.Dir(profileScriptPath), 0755); err != nil {
+		return fmt.Errorf("failed to create profile.d directory: %w", err)
+	}
+
+	if err := WriteFileAtomically(profileScriptPath, []byte(desired)); err != nil {
+		return fmt.Errorf("failed to write %s: %w", profileScriptPath, err)
+	}
+
+	// Ensure the script is executable.
+	if err := os.Chmod(profileScriptPath, 0755); err != nil {
+		return fmt.Errorf("failed to chmod %s: %w", profileScriptPath, err)
+	}
+
+	return nil
+}

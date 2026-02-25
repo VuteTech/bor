@@ -55,7 +55,7 @@ type ChromeConfig struct {
 
 // KConfigConfig holds KDE Kiosk (KConfig) policy settings.
 type KConfigConfig struct {
-	ConfigPath string `yaml:"config_path"` // base directory for KDE config files (default /etc/xdg)
+	ConfigPath string `yaml:"config_path"` // base directory for KDE config files (default /etc/bor/xdg)
 }
 
 // EnrollmentConfig holds enrollment and mTLS settings.
@@ -81,7 +81,7 @@ func DefaultConfig() *Config {
 			FlatpakChromiumPoliciesPath: "/var/lib/flatpak/extension/org.chromium.Chromium.Extension.system-policies/" + flatpakArch() + "/1/policies/managed",
 		},
 		KConfig: KConfigConfig{
-			ConfigPath: "/etc/xdg",
+			ConfigPath: "/etc/bor/xdg",
 		},
 		Enrollment: EnrollmentConfig{
 			DataDir: "/var/lib/bor/agent",

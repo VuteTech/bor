@@ -467,3 +467,11 @@ func TestSyncKConfigFiles_PartialCleanup(t *testing.T) {
 		t.Error("kdeglobals backup should still exist")
 	}
 }
+
+func TestProfileScriptContent(t *testing.T) {
+	got := profileScriptContent("/etc/bor/xdg")
+	want := "export XDG_CONFIG_DIRS=/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n"
+	if got != want {
+		t.Errorf("profileScriptContent mismatch:\ngot:  %q\nwant: %q", got, want)
+	}
+}
