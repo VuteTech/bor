@@ -749,6 +749,14 @@ const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
   { key: "url_restrictions", label: "URL Restrictions", group: "Security", file: "kdeglobals", iniGroup: "KDE URL Restrictions", iniKey: "__url_restrictions__", type: "url-restrictions" },
 ];
 
+// KIO protocols available for URL restriction rules.
+const KIO_PROTOCOLS = [
+  "bzip", "bzip2", "cifs", "dav", "davs", "file", "fish", "ftp", "gdrive",
+  "gopher", "gzip", "help", "http", "https", "info", "ldap", "ldaps", "lzma",
+  "man", "nfs", "recentlyused", "sftp", "smb", "tar", "thumbnail", "webdav",
+  "webdavs", "xz", "zstd",
+];
+
 // Convert KDE "R,G,B" color string to hex "#rrggbb".
 function rgbToHex(rgb: string): string {
   const parts = rgb.split(",").map(s => parseInt(s.trim(), 10));
@@ -1177,6 +1185,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const [kconfigEnforced, setKconfigEnforced] = useState<boolean>(false);
   const [kconfigExpandedGroups, setKconfigExpandedGroups] = useState<Set<string>>(new Set());
   const [urlRestrictionRules, setUrlRestrictionRules] = useState<UrlRestrictionRule[]>([]);
+  const [customProtocolIndices, setCustomProtocolIndices] = useState<Set<number>>(new Set());
 
   // Chrome-specific state: selected policy key + its value
   const [chromeSelectedKey, setChromeSelectedKey] = useState<string | null>(null);
@@ -1225,7 +1234,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           setKconfigExpandedGroups(groups);
           // If url_restrictions is configured, load the rules
           if (configuredKeys.includes("url_restrictions")) {
-            setUrlRestrictionRules(parseUrlRestrictionRules(policy.content));
+            const rules = parseUrlRestrictionRules(policy.content);
+            setUrlRestrictionRules(rules);
+            const customIdxs = new Set<number>();
+            rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
+            setCustomProtocolIndices(customIdxs);
           }
         } else {
           setKconfigSelectedKey(null);
@@ -1233,6 +1246,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           setKconfigEnforced(false);
           setKconfigExpandedGroups(new Set());
           setUrlRestrictionRules([]);
+          setCustomProtocolIndices(new Set());
         }
       } else if (policy.type === "Chrome") {
         const configuredKeys = detectChromeConfiguredKeys(policy.content);
@@ -1277,6 +1291,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigEnforced(false);
       setKconfigExpandedGroups(new Set());
       setUrlRestrictionRules([]);
+      setCustomProtocolIndices(new Set());
       setChromeSelectedKey(null);
       setChromeValue(undefined);
       setChromeExpandedGroups(new Set());
@@ -1304,6 +1319,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setContentRaw('{"entries":[]}');
       setKconfigExpandedGroups(new Set());
       setUrlRestrictionRules([]);
+      setCustomProtocolIndices(new Set());
     } else if (newType === "Chrome") {
       setChromeSelectedKey(null);
       setChromeValue(undefined);
@@ -1424,10 +1440,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       const rules = parseUrlRestrictionRules(contentRaw);
       if (rules.length > 0) {
         setUrlRestrictionRules(rules);
+        const customIdxs = new Set<number>();
+        rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
+        setCustomProtocolIndices(customIdxs);
       } else {
         // Seed with one default rule
         const defaultRule: UrlRestrictionRule = { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true };
         setUrlRestrictionRules([defaultRule]);
+        setCustomProtocolIndices(new Set());
         setContentRaw(buildUrlRestrictionContent([defaultRule], contentRaw));
       }
       return;
@@ -1911,6 +1931,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
     const removeRule = (index: number) => {
       const updated = urlRestrictionRules.filter((_, i) => i !== index);
+      // Shift custom protocol indices to account for removed index
+      const newCustom = new Set<number>();
+      for (const ci of customProtocolIndices) {
+        if (ci < index) newCustom.add(ci);
+        else if (ci > index) newCustom.add(ci - 1);
+      }
+      setCustomProtocolIndices(newCustom);
       updateRules(updated);
     };
 
@@ -1940,10 +1967,35 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                     <FormSelectOption value="redirect" label="redirect" />
                   </FormSelect>
                 </FormGroup>
-                <FormGroup label="Protocol" fieldId={`url-protocol-${idx}`} helperText="http, file, etc. Without ! = prefix-matches">
-                  <TextInput id={`url-protocol-${idx}`} value={rule.protocol} onChange={(_ev, val) => updateRule(idx, { protocol: val })} placeholder="blank = all" />
+                <FormGroup label="Protocol" fieldId={`url-protocol-${idx}`} helperText="Without ! suffix = prefix-matches (e.g. http matches https)">
+                  <FormSelect
+                    id={`url-protocol-${idx}`}
+                    value={customProtocolIndices.has(idx) ? "__custom__" : KIO_PROTOCOLS.includes(rule.protocol) ? rule.protocol : rule.protocol === "" ? "" : "__custom__"}
+                    onChange={(_ev, val) => {
+                      if (val === "__custom__") {
+                        setCustomProtocolIndices(prev => new Set(prev).add(idx));
+                        updateRule(idx, { protocol: "" });
+                      } else {
+                        setCustomProtocolIndices(prev => { const next = new Set(prev); next.delete(idx); return next; });
+                        updateRule(idx, { protocol: val });
+                      }
+                    }}
+                  >
+                    <FormSelectOption value="" label="(any protocol)" />
+                    {KIO_PROTOCOLS.map(p => <FormSelectOption key={p} value={p} label={p} />)}
+                    <FormSelectOption value="__custom__" label="Custom..." />
+                  </FormSelect>
+                  {customProtocolIndices.has(idx) && (
+                    <TextInput
+                      id={`url-protocol-custom-${idx}`}
+                      value={rule.protocol}
+                      onChange={(_ev, val) => updateRule(idx, { protocol: val })}
+                      placeholder="Enter custom protocol"
+                      style={{ marginTop: "0.5rem" }}
+                    />
+                  )}
                 </FormGroup>
-                <FormGroup label="Enabled" fieldId={`url-enabled-${idx}`}>
+                <FormGroup label="Access" fieldId={`url-enabled-${idx}`}>
                   <Switch id={`url-enabled-${idx}`} isChecked={rule.enabled} onChange={(_ev, checked) => updateRule(idx, { enabled: checked })} label="Allow" labelOff="Deny" />
                 </FormGroup>
               </div>
