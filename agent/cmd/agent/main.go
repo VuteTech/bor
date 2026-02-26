@@ -457,8 +457,10 @@ func chromeCachesEqual(a, b map[string]*pb.ChromePolicy) bool {
 }
 
 // syncAllKConfig re-merges all cached KConfig policies and syncs the
-// resulting files to disk. When the cache is empty, SyncKConfigFiles
-// restores all previously managed files from backups.
+// resulting files to disk. KCM (Control Module) restriction entries are
+// split out and written directly to /etc/kde5rc and /etc/kde6rc; all
+// other entries go to the XDG overlay. When the cache is empty,
+// SyncKConfigFiles restores all previously managed files from backups.
 //
 // Returns the set of written file basenames (nil when nothing was
 // written). The caller decides whether to schedule a notification.
@@ -470,7 +472,11 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		ids = append(ids, id)
 	}
 
-	files, err := policy.MergeKConfigEntries(allEntries)
+	// Split KCM restriction entries from other KConfig entries.
+	// KCM restrictions go to /etc/kde5rc and /etc/kde6rc directly.
+	kcmEntries, otherEntries := policy.SplitKCMRestrictions(allEntries)
+
+	files, err := policy.MergeKConfigEntries(otherEntries)
 	if err != nil {
 		log.Printf("Error merging KConfig policies: %v", err)
 		for _, id := range ids {
@@ -491,17 +497,46 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		return nil
 	}
 
+	// Sync KCM restrictions to /etc/kde5rc and /etc/kde6rc.
+	var kcmContent []byte
+	if len(kcmEntries) > 0 {
+		kcmFiles, err := policy.MergeKConfigEntries(kcmEntries)
+		if err != nil {
+			log.Printf("Error merging KCM restriction entries: %v", err)
+			for _, id := range ids {
+				_ = client.ReportCompliance(ctx, id, false, "failed to merge KCM restrictions: "+err.Error())
+			}
+			return nil
+		}
+		kcmContent = kcmFiles["kde5rc"]
+	}
+
+	if err := policy.SyncKCMRestrictions(kcmContent); err != nil {
+		log.Printf("Error syncing KCM restrictions: %v", err)
+		for _, id := range ids {
+			_ = client.ReportCompliance(ctx, id, false, "failed to sync KCM restrictions: "+err.Error())
+		}
+		return nil
+	}
+
 	log.Printf("KConfig policies synced to %s (%d policies, %d files)", cfg.KConfig.ConfigPath, len(ids), len(files))
+	if len(kcmEntries) > 0 {
+		log.Printf("KCM restrictions synced to /etc/kde5rc and /etc/kde6rc")
+	}
 	for _, id := range ids {
 		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
 
-	if len(files) == 0 {
+	if len(files) == 0 && len(kcmEntries) == 0 {
 		return nil
 	}
-	changedFiles := make(map[string]bool, len(files))
+	changedFiles := make(map[string]bool, len(files)+2)
 	for name := range files {
 		changedFiles[name] = true
+	}
+	if len(kcmEntries) > 0 {
+		changedFiles["kde5rc"] = true
+		changedFiles["kde6rc"] = true
 	}
 	return changedFiles
 }

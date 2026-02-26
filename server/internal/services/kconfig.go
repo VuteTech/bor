@@ -16,6 +16,8 @@ import (
 // allowedKConfigFiles is the set of KDE config files that may be managed.
 var allowedKConfigFiles = map[string]bool{
 	"kdeglobals":      true,
+	"kde5rc":          true,
+	"kde6rc":          true,
 	"kwinrc":          true,
 	"plasmarc":        true,
 	"kscreenlockerrc": true,

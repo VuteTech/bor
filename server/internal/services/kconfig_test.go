@@ -141,7 +141,7 @@ func TestValidateKConfigPolicy_EmptyTypeAllowed(t *testing.T) {
 }
 
 func TestValidateKConfigPolicy_AllowedFiles(t *testing.T) {
-	allowedFiles := []string{"kdeglobals", "kwinrc", "plasmarc", "kscreenlockerrc", "dolphinrc", "konsolerc"}
+	allowedFiles := []string{"kdeglobals", "kde5rc", "kde6rc", "kwinrc", "plasmarc", "kscreenlockerrc", "dolphinrc", "konsolerc"}
 	for _, f := range allowedFiles {
 		content := `{"entries": [{"file": "` + f + `", "group": "G", "key": "K", "value": "V", "type": "string"}]}`
 		err := ValidateKConfigPolicy(content)

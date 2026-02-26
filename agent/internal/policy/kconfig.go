@@ -324,6 +324,51 @@ func renumberURLRestrictions(g *kconfigGroup) {
 	g.entries = result
 }
 
+// kcmRestrictionPaths are the system-wide KDE config files where KCM
+// (Control Module) restrictions must be written. These live in /etc/
+// directly rather than in the XDG overlay because KDE reads them as
+// system-level immutable config.
+var kcmRestrictionPaths = []string{"/etc/kde5rc", "/etc/kde6rc"}
+
+// SplitKCMRestrictions separates KCM restriction entries from other
+// KConfig entries. Entries with file="kde5rc" and group="KDE Control
+// Module Restrictions" are returned in kcm; everything else in other.
+func SplitKCMRestrictions(entries []*pb.KConfigEntry) (kcm, other []*pb.KConfigEntry) {
+	for _, e := range entries {
+		if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
+			kcm = append(kcm, e)
+		} else {
+			other = append(other, e)
+		}
+	}
+	return
+}
+
+// SyncKCMRestrictions writes KCM restriction INI content to the system-wide
+// /etc/kde5rc and /etc/kde6rc files with backup/restore support and a
+// managed-file header. Passing nil content restores all previously backed-up
+// originals.
+func SyncKCMRestrictions(content []byte) error {
+	for _, path := range kcmRestrictionPaths {
+		if content == nil {
+			if err := RestoreOriginal(path); err != nil {
+				return fmt.Errorf("failed to restore %s: %w", path, err)
+			}
+			continue
+		}
+
+		if err := BackupOriginal(path); err != nil {
+			return fmt.Errorf("failed to backup %s: %w", path, err)
+		}
+
+		withHeader := append([]byte(ManagedFileHeader), content...)
+		if err := WriteFileAtomically(path, withHeader); err != nil {
+			return fmt.Errorf("failed to write %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
 // profileScriptPath is the path to the login profile script that
 // prepends the Bor XDG config directory to XDG_CONFIG_DIRS.
 const profileScriptPath = "/etc/profile.d/99-bor.sh"

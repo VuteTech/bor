@@ -569,6 +569,130 @@ func TestMergeKConfigEntries_URLRestrictionsWithOtherGroups(t *testing.T) {
 	}
 }
 
+func TestSplitKCMRestrictions(t *testing.T) {
+	entries := []*pb.KConfigEntry{
+		{File: "kde5rc", Group: "KDE Control Module Restrictions", Key: "kcm_access", Value: "false", Enforced: true},
+		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "shell_access", Value: "false", Enforced: true},
+		{File: "kde5rc", Group: "KDE Control Module Restrictions", Key: "kcm_bluetooth", Value: "false", Enforced: true},
+		{File: "kwinrc", Group: "Windows", Key: "BorderlessMaximizedWindows", Value: "true", Enforced: false},
+	}
+
+	kcm, other := SplitKCMRestrictions(entries)
+
+	if len(kcm) != 2 {
+		t.Fatalf("expected 2 KCM entries, got %d", len(kcm))
+	}
+	if len(other) != 2 {
+		t.Fatalf("expected 2 other entries, got %d", len(other))
+	}
+
+	for _, e := range kcm {
+		if e.File != "kde5rc" || e.Group != "KDE Control Module Restrictions" {
+			t.Errorf("unexpected KCM entry: file=%q group=%q", e.File, e.Group)
+		}
+	}
+	for _, e := range other {
+		if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
+			t.Errorf("KCM entry should not be in other: %+v", e)
+		}
+	}
+}
+
+func TestSplitKCMRestrictions_Empty(t *testing.T) {
+	kcm, other := SplitKCMRestrictions(nil)
+	if len(kcm) != 0 || len(other) != 0 {
+		t.Errorf("expected empty results for nil input, got kcm=%d other=%d", len(kcm), len(other))
+	}
+}
+
+func TestSplitKCMRestrictions_OnlyKCM(t *testing.T) {
+	entries := []*pb.KConfigEntry{
+		{File: "kde5rc", Group: "KDE Control Module Restrictions", Key: "kcm_access", Value: "false", Enforced: true},
+	}
+
+	kcm, other := SplitKCMRestrictions(entries)
+	if len(kcm) != 1 || len(other) != 0 {
+		t.Errorf("expected 1 KCM and 0 other, got kcm=%d other=%d", len(kcm), len(other))
+	}
+}
+
+func TestSyncKCMRestrictions_WriteAndRestore(t *testing.T) {
+	dir := t.TempDir()
+
+	// Override kcmRestrictionPaths for testing.
+	origPaths := kcmRestrictionPaths
+	kcmRestrictionPaths = []string{
+		filepath.Join(dir, "kde5rc"),
+		filepath.Join(dir, "kde6rc"),
+	}
+	defer func() { kcmRestrictionPaths = origPaths }()
+
+	content := []byte("[KDE Control Module Restrictions][$i]\nkcm_access=false\n")
+
+	// Write KCM restrictions.
+	if err := SyncKCMRestrictions(content); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both files should exist with managed header + content.
+	for _, name := range []string{"kde5rc", "kde6rc"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("expected %s to exist: %v", name, err)
+		}
+		if !strings.HasPrefix(string(data), ManagedFileHeader) {
+			t.Errorf("%s should have managed header", name)
+		}
+		if !strings.Contains(string(data), "kcm_access=false") {
+			t.Errorf("%s should contain kcm_access=false", name)
+		}
+	}
+
+	// Restore (nil content).
+	if err := SyncKCMRestrictions(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Files should be removed (no originals existed).
+	for _, name := range []string{"kde5rc", "kde6rc"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed after restore with no original", name)
+		}
+	}
+}
+
+func TestSyncKCMRestrictions_PreservesOriginal(t *testing.T) {
+	dir := t.TempDir()
+
+	origPaths := kcmRestrictionPaths
+	kcmRestrictionPaths = []string{filepath.Join(dir, "kde5rc")}
+	defer func() { kcmRestrictionPaths = origPaths }()
+
+	// Write an original file.
+	writeFile(t, filepath.Join(dir, "kde5rc"), []byte("[General]\noriginal=true\n"))
+
+	content := []byte("[KDE Control Module Restrictions][$i]\nkcm_access=false\n")
+
+	// Write KCM restrictions.
+	if err := SyncKCMRestrictions(content); err != nil {
+		t.Fatal(err)
+	}
+
+	// Restore.
+	if err := SyncKCMRestrictions(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Original should be restored.
+	data, err := os.ReadFile(filepath.Join(dir, "kde5rc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "[General]\noriginal=true\n" {
+		t.Errorf("expected original content restored, got %q", data)
+	}
+}
+
 func TestProfileScriptContent(t *testing.T) {
 	got := profileScriptContent("/etc/bor/xdg")
 	want := "export XDG_CONFIG_DIRS=/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n"
