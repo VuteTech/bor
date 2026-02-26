@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -60,6 +61,16 @@ func MergeKConfigEntries(entries []*pb.KConfigEntry) (map[string][]byte, error) 
 	}
 
 	sort.Strings(fileOrder)
+
+	// Renumber URL restriction rules when multiple policies contribute
+	// rule_N entries to the same [KDE URL Restrictions] group.
+	for _, fd := range files {
+		for _, g := range fd.groups {
+			if g.name == "KDE URL Restrictions" {
+				renumberURLRestrictions(g)
+			}
+		}
+	}
 
 	result := make(map[string][]byte, len(files))
 	for _, fileName := range fileOrder {
@@ -242,6 +253,155 @@ func SyncKConfigFiles(basePath string, files map[string][]byte) error {
 		if err := RestoreOriginal(target); err != nil {
 			return fmt.Errorf("failed to restore %s: %w", name, err)
 		}
+	}
+
+	return nil
+}
+
+// parseRuleNum extracts the numeric index from a "rule_N" key.
+// Returns -1 if the key does not match the pattern.
+func parseRuleNum(key string) int {
+	if !strings.HasPrefix(key, "rule_") {
+		return -1
+	}
+	n, err := strconv.Atoi(key[len("rule_"):])
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// renumberURLRestrictions collects all rule_N entries in a
+// [KDE URL Restrictions] group, renumbers them sequentially starting
+// from rule_1, and sets a single rule_count entry with the total.
+// Non-rule entries (other than rule_count) are preserved.
+func renumberURLRestrictions(g *kconfigGroup) {
+	type indexedRule struct {
+		origNum int
+		entry   *pb.KConfigEntry
+	}
+
+	var rules []indexedRule
+	var other []*pb.KConfigEntry
+
+	for _, e := range g.entries {
+		if e.Key == "rule_count" {
+			continue // drop old rule_count — we'll regenerate it
+		}
+		n := parseRuleNum(e.Key)
+		if n > 0 {
+			rules = append(rules, indexedRule{origNum: n, entry: e})
+		} else {
+			other = append(other, e)
+		}
+	}
+
+	// Stable sort by original index so that rules from different
+	// policies with the same index maintain insertion order.
+	sort.SliceStable(rules, func(i, j int) bool {
+		return rules[i].origNum < rules[j].origNum
+	})
+
+	// Renumber sequentially.
+	result := make([]*pb.KConfigEntry, 0, len(other)+len(rules)+1)
+	result = append(result, other...)
+	for i, r := range rules {
+		r.entry.Key = fmt.Sprintf("rule_%d", i+1)
+		result = append(result, r.entry)
+	}
+
+	// Add rule_count if there are any rules.
+	if len(rules) > 0 {
+		result = append(result, &pb.KConfigEntry{
+			File:     g.entries[0].File,
+			Group:    g.name,
+			Key:      "rule_count",
+			Value:    strconv.Itoa(len(rules)),
+			Enforced: g.entries[0].Enforced,
+		})
+	}
+
+	g.entries = result
+}
+
+// kcmRestrictionPaths are the system-wide KDE config files where KCM
+// (Control Module) restrictions must be written. These live in /etc/
+// directly rather than in the XDG overlay because KDE reads them as
+// system-level immutable config.
+var kcmRestrictionPaths = []string{"/etc/kde5rc", "/etc/kde6rc"}
+
+// SplitKCMRestrictions separates KCM restriction entries from other
+// KConfig entries. Entries with file="kde5rc" and group="KDE Control
+// Module Restrictions" are returned in kcm; everything else in other.
+func SplitKCMRestrictions(entries []*pb.KConfigEntry) (kcm, other []*pb.KConfigEntry) {
+	for _, e := range entries {
+		if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
+			kcm = append(kcm, e)
+		} else {
+			other = append(other, e)
+		}
+	}
+	return
+}
+
+// SyncKCMRestrictions writes KCM restriction INI content to the system-wide
+// /etc/kde5rc and /etc/kde6rc files with backup/restore support and a
+// managed-file header. Passing nil content restores all previously backed-up
+// originals.
+func SyncKCMRestrictions(content []byte) error {
+	for _, path := range kcmRestrictionPaths {
+		if content == nil {
+			if err := RestoreOriginal(path); err != nil {
+				return fmt.Errorf("failed to restore %s: %w", path, err)
+			}
+			continue
+		}
+
+		if err := BackupOriginal(path); err != nil {
+			return fmt.Errorf("failed to backup %s: %w", path, err)
+		}
+
+		withHeader := append([]byte(ManagedFileHeader), content...)
+		if err := WriteFileAtomically(path, withHeader); err != nil {
+			return fmt.Errorf("failed to write %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// profileScriptPath is the path to the login profile script that
+// prepends the Bor XDG config directory to XDG_CONFIG_DIRS.
+const profileScriptPath = "/etc/profile.d/99-bor.sh"
+
+// profileScriptContent returns the shell script that prepends basePath
+// to XDG_CONFIG_DIRS so that KDE (and other XDG-aware apps) pick up
+// the Bor-managed config files.
+func profileScriptContent(basePath string) string {
+	return fmt.Sprintf("export XDG_CONFIG_DIRS=%s:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n", basePath)
+}
+
+// EnsureProfileScript creates or updates /etc/profile.d/99-bor.sh so
+// that the Bor XDG config directory is prepended to XDG_CONFIG_DIRS
+// for all login sessions.
+func EnsureProfileScript(basePath string) error {
+	desired := profileScriptContent(basePath)
+
+	existing, err := os.ReadFile(profileScriptPath)
+	if err == nil && string(existing) == desired {
+		return nil // already up to date
+	}
+
+	if err := os.MkdirAll(filepath.Dir(profileScriptPath), 0755); err != nil {
+		return fmt.Errorf("failed to create profile.d directory: %w", err)
+	}
+
+	if err := WriteFileAtomically(profileScriptPath, []byte(desired)); err != nil {
+		return fmt.Errorf("failed to write %s: %w", profileScriptPath, err)
+	}
+
+	// Ensure the script is executable.
+	if err := os.Chmod(profileScriptPath, 0755); err != nil {
+		return fmt.Errorf("failed to chmod %s: %w", profileScriptPath, err)
 	}
 
 	return nil
