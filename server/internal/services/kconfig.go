@@ -6,6 +6,7 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -15,12 +16,22 @@ import (
 // allowedKConfigFiles is the set of KDE config files that may be managed.
 var allowedKConfigFiles = map[string]bool{
 	"kdeglobals":      true,
+	"kde5rc":          true,
+	"kde6rc":          true,
 	"kwinrc":          true,
 	"plasmarc":        true,
 	"kscreenlockerrc": true,
 	"dolphinrc":       true,
 	"konsolerc":       true,
+	"plasma-org.kde.plasma.desktop-appletsrc": true,
 }
+
+// allowedAppletsrcGroupRe restricts which INI groups may be set inside
+// the plasma-org.kde.plasma.desktop-appletsrc file. Only containment-level
+// keys (e.g. wallpaperplugin) and wallpaper-plugin-level keys are permitted.
+var allowedAppletsrcGroupRe = regexp.MustCompile(
+	`^Containments\]\[\d+(\]\[Wallpaper\]\[.+\]\[.+)?$`,
+)
 
 // validKConfigTypes is the set of allowed value types.
 var validKConfigTypes = map[string]bool{
@@ -64,8 +75,32 @@ func ValidateKConfigPolicy(content string) error {
 			return fmt.Errorf("entry %d: file %q is not in the allowed set", i, e.File)
 		}
 
+		// Restrict groups for plasma-org.kde.plasma.desktop-appletsrc to
+		// containment-level and wallpaper-plugin-level groups only.
+		if e.File == "plasma-org.kde.plasma.desktop-appletsrc" {
+			if !allowedAppletsrcGroupRe.MatchString(e.Group) {
+				return fmt.Errorf("entry %d: group %q is not allowed for %s", i, e.Group, e.File)
+			}
+		}
+
 		if e.Type != "" && !validKConfigTypes[e.Type] {
 			return fmt.Errorf("entry %d: type %q is not valid (must be bool, string, or int)", i, e.Type)
+		}
+
+		// Validate KDE URL Restriction rules (rule_N entries).
+		if e.Group == "KDE URL Restrictions" && strings.HasPrefix(e.Key, "rule_") && e.Key != "rule_count" {
+			fields := strings.Split(e.Value, ",")
+			if len(fields) != 8 {
+				return fmt.Errorf("entry %d: URL restriction %s must have exactly 8 comma-separated fields, got %d", i, e.Key, len(fields))
+			}
+			action := fields[0]
+			if action != "open" && action != "list" && action != "redirect" {
+				return fmt.Errorf("entry %d: URL restriction %s has invalid action %q (must be open, list, or redirect)", i, e.Key, action)
+			}
+			enabled := fields[7]
+			if enabled != "true" && enabled != "false" {
+				return fmt.Errorf("entry %d: URL restriction %s has invalid enabled value %q (must be true or false)", i, e.Key, enabled)
+			}
 		}
 	}
 

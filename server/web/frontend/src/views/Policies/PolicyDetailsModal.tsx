@@ -694,9 +694,22 @@ interface KConfigPolicyDef {
   file: string;
   iniGroup: string;
   iniKey: string;
-  type: "boolean" | "string" | "select" | "int";
+  type: "boolean" | "string" | "select" | "int" | "color" | "url-restrictions" | "kcm-restrictions";
   selectOptions?: string[];
   defaultValue?: string;
+}
+
+/* ── URL Restriction rule model (KDE Kiosk) ── */
+
+interface UrlRestrictionRule {
+  action: "open" | "list" | "redirect";
+  referrerProtocol: string;
+  referrerHost: string;
+  referrerPath: string;
+  protocol: string;
+  host: string;
+  path: string;
+  enabled: boolean;
 }
 
 const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
@@ -707,10 +720,8 @@ const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
   { key: "action/file_new", label: "File New Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/file_new", type: "boolean" },
   { key: "action/file_open", label: "File Open Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/file_open", type: "boolean" },
   { key: "action/file_save", label: "File Save Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/file_save", type: "boolean" },
-  // Control Module Restrictions (kdeglobals)
-  { key: "kcm_mouse", label: "Mouse Settings", group: "Control Module Restrictions", file: "kdeglobals", iniGroup: "KDE Control Module Restrictions", iniKey: "kcm_mouse", type: "boolean" },
-  { key: "kcm_keyboard", label: "Keyboard Settings", group: "Control Module Restrictions", file: "kdeglobals", iniGroup: "KDE Control Module Restrictions", iniKey: "kcm_keyboard", type: "boolean" },
-  { key: "kcm_kscreen", label: "Display Settings", group: "Control Module Restrictions", file: "kdeglobals", iniGroup: "KDE Control Module Restrictions", iniKey: "kcm_kscreen", type: "boolean" },
+  // System Settings Restrictions (kdeglobals)
+  { key: "kcm_restrictions", label: "System Settings Modules", group: "System Settings Restrictions", file: "kde5rc", iniGroup: "KDE Control Module Restrictions", iniKey: "__kcm_restrictions__", type: "kcm-restrictions" },
   // Resource Restrictions (kdeglobals)
   { key: "wallpaper", label: "Wallpaper Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "wallpaper", type: "boolean" },
   { key: "icons", label: "Icon Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "icons", type: "boolean" },
@@ -726,7 +737,159 @@ const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
   { key: "AutoLock", label: "Auto Lock", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "AutoLock", type: "boolean" },
   { key: "LockOnResume", label: "Lock on Resume", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "LockOnResume", type: "boolean" },
   { key: "Timeout", label: "Lock Timeout (seconds)", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "Timeout", type: "int" },
+  // Appearance
+  { key: "icon_theme", label: "Icon Theme", group: "Appearance", file: "kdeglobals", iniGroup: "Icons", iniKey: "Theme", type: "string" },
+  { key: "wallpaperplugin", label: "Wallpaper Plugin", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1", iniKey: "wallpaperplugin", type: "string", defaultValue: "org.kde.image" },
+  { key: "wp_Image", label: "Wallpaper Image Path", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Image", type: "string" },
+  { key: "wp_FillMode", label: "Wallpaper Fill Mode", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "FillMode", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2" },
+  { key: "wp_Color", label: "Wallpaper Background Color", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Color", type: "color" },
+  // Security
+  { key: "url_restrictions", label: "URL Restrictions", group: "Security", file: "kdeglobals", iniGroup: "KDE URL Restrictions", iniKey: "__url_restrictions__", type: "url-restrictions" },
 ];
+
+// KIO protocols available for URL restriction rules.
+const KIO_PROTOCOLS = [
+  "bzip", "bzip2", "cifs", "dav", "davs", "file", "fish", "ftp", "gdrive",
+  "gopher", "gzip", "help", "http", "https", "info", "ldap", "ldaps", "lzma",
+  "man", "nfs", "recentlyused", "sftp", "smb", "tar", "thumbnail", "webdav",
+  "webdavs", "xz", "zstd",
+];
+
+// KDE Control Modules (KCMs) available for System Settings restrictions.
+// Sorted alphabetically by module ID. Label is the human-readable description.
+const KCM_MODULES: { id: string; label: string }[] = [
+  { id: "kcm_about-distro", label: "Information About This System" },
+  { id: "kcm_access", label: "Accessibility Options" },
+  { id: "kcm_activities", label: "Activities" },
+  { id: "kcm_animations", label: "Animation Speed and Style" },
+  { id: "kcm_app-permissions", label: "Application Permissions" },
+  { id: "kcm_audio_information", label: "Audio Device Information" },
+  { id: "kcm_autostart", label: "Autostart Applications" },
+  { id: "kcm_baloofile", label: "File Search" },
+  { id: "kcm_block_devices", label: "Block Devices" },
+  { id: "kcm_bluetooth", label: "Bluetooth Devices" },
+  { id: "kcm_cddb", label: "CDDB Retrieval" },
+  { id: "kcm_cellular_network", label: "Cellular Networks" },
+  { id: "kcm_clock", label: "Date and Time" },
+  { id: "kcm_colors", label: "Colour Scheme" },
+  { id: "kcm_componentchooser", label: "Default Applications" },
+  { id: "kcm_cpu", label: "Advanced CPU Information" },
+  { id: "kcm_cron", label: "Task Scheduler (Cron)" },
+  { id: "kcm_cursortheme", label: "Cursor Theme" },
+  { id: "kcm_desktoppaths", label: "Personal File Locations" },
+  { id: "kcm_desktoptheme", label: "Plasma Style" },
+  { id: "kcm_device_automounter", label: "Device Automounting" },
+  { id: "kcm_edid", label: "Display EDID Information" },
+  { id: "kcm_egl", label: "EGL Information" },
+  { id: "kcm_energyinfo", label: "Energy Consumption Statistics" },
+  { id: "kcm_feedback", label: "User Feedback Settings" },
+  { id: "kcm_filetypes", label: "File Associations" },
+  { id: "kcm_firmware_security", label: "Firmware Security" },
+  { id: "kcm_fontinst", label: "Font Management" },
+  { id: "kcm_fonts", label: "UI Fonts" },
+  { id: "kcm_gamecontroller", label: "Game Controllers" },
+  { id: "kcm_glx", label: "GLX Information" },
+  { id: "kcm_icons", label: "Icon Theme" },
+  { id: "kcm_interrupts", label: "Interrupt Information" },
+  { id: "kcm_kaccounts", label: "Online Accounts" },
+  { id: "kcm_kamera", label: "Camera Configuration" },
+  { id: "kcm_kded", label: "Background Services" },
+  { id: "kcm_keyboard", label: "Keyboard Hardware and Layout" },
+  { id: "kcm_keys", label: "Keyboard Shortcuts" },
+  { id: "kcm_kgamma", label: "Monitor Calibration" },
+  { id: "kcm_krdpserver", label: "Remote Desktop" },
+  { id: "kcm_kscreen", label: "Display Configuration" },
+  { id: "kcm_kwallet5", label: "KDE Wallet" },
+  { id: "kcm_kwin_effects", label: "Desktop Effects" },
+  { id: "kcm_kwin_scripts", label: "KWin Scripts" },
+  { id: "kcm_kwin_virtualdesktops", label: "Virtual Desktops" },
+  { id: "kcm_kwindecoration", label: "Window Decorations" },
+  { id: "kcm_kwinoptions", label: "Window Behaviour" },
+  { id: "kcm_kwinrules", label: "Window Rules" },
+  { id: "kcm_kwinscreenedges", label: "Screen Edges" },
+  { id: "kcm_kwinsupportinfo", label: "KWin Support Information" },
+  { id: "kcm_kwintabbox", label: "Task Switcher" },
+  { id: "kcm_kwintouchscreen", label: "Touch Screen Gestures" },
+  { id: "kcm_kwinxwayland", label: "Legacy X11 App Compatibility" },
+  { id: "kcm_landingpage", label: "Landing Page" },
+  { id: "kcm_lookandfeel", label: "Global Theme" },
+  { id: "kcm_memory", label: "Memory Information" },
+  { id: "kcm_mobile_hotspot", label: "WiFi Hotspot" },
+  { id: "kcm_mobile_power", label: "Power Management (Mobile)" },
+  { id: "kcm_mobile_wifi", label: "Wireless Network (Mobile)" },
+  { id: "kcm_mouse", label: "Mouse Settings" },
+  { id: "kcm_netpref", label: "Network Preferences" },
+  { id: "kcm_network", label: "Network Information" },
+  { id: "kcm_networkmanagement", label: "Network Connections" },
+  { id: "kcm_nightlight", label: "Night Light" },
+  { id: "kcm_nighttime", label: "Day-Night Cycle" },
+  { id: "kcm_notifications", label: "Notifications" },
+  { id: "kcm_opencl", label: "OpenCL Information" },
+  { id: "kcm_pci", label: "PCI Information" },
+  { id: "kcm_plasmasearch", label: "Search Settings" },
+  { id: "kcm_plasmakeyboard", label: "Plasma Keyboard" },
+  { id: "kcm_powerdevilprofilesconfig", label: "Power Management" },
+  { id: "kcm_printer_manager", label: "Printer Management" },
+  { id: "kcm_proxy", label: "Proxy Settings" },
+  { id: "kcm_pulseaudio", label: "Audio Volume" },
+  { id: "kcm_push_notifications", label: "Push Notifications" },
+  { id: "kcm_qtquicksettings", label: "Qt Quick Settings" },
+  { id: "kcm_recentFiles", label: "File Activity History" },
+  { id: "kcm_regionandlang", label: "Language and Formats" },
+  { id: "kcm_samba", label: "Samba Status" },
+  { id: "kcm_screenlocker", label: "Screen Locking" },
+  { id: "kcm_sddm", label: "Login Manager (SDDM)" },
+  { id: "kcm_sensors", label: "Sensors" },
+  { id: "kcm_smserver", label: "Desktop Session" },
+  { id: "kcm_solid_actions", label: "Device Actions" },
+  { id: "kcm_soundtheme", label: "Sound Theme" },
+  { id: "kcm_splashscreen", label: "Splash Screen" },
+  { id: "kcm_style", label: "Application Style" },
+  { id: "kcm_tablet", label: "Drawing Tablet" },
+  { id: "kcm_touchpad", label: "Touchpad" },
+  { id: "kcm_touchscreen", label: "Touchscreen" },
+  { id: "kcm_updates", label: "Software Updates" },
+  { id: "kcm_usb", label: "USB Devices" },
+  { id: "kcm_users", label: "User Accounts" },
+  { id: "kcm_virtualkeyboard", label: "Virtual Keyboard" },
+  { id: "kcm_vulkan", label: "Vulkan Information" },
+  { id: "kcm_wallpaper", label: "Wallpaper" },
+  { id: "kcm_wayland", label: "Wayland Compositor Information" },
+  { id: "kcm_webshortcuts", label: "Web Search Keywords" },
+  { id: "kcm_workspace", label: "Workspace Behaviour" },
+  { id: "kcm_xserver", label: "X-Server Information" },
+  { id: "kcmspellchecking", label: "Spell Checker" },
+  { id: "kcm_audiocd", label: "Audiocd IO Worker" },
+];
+
+// Set for quick lookup of known KCM module IDs.
+const KCM_MODULE_IDS = new Set(KCM_MODULES.map(m => m.id));
+
+// Convert KDE "R,G,B" color string to hex "#rrggbb".
+function rgbToHex(rgb: string): string {
+  const parts = rgb.split(",").map(s => parseInt(s.trim(), 10));
+  if (parts.length !== 3 || parts.some(isNaN)) return "#000000";
+  return "#" + parts.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+}
+
+// Convert hex "#rrggbb" to KDE "R,G,B" color string.
+function hexToRgb(hex: string): string {
+  const m = hex.replace("#", "");
+  if (m.length !== 6) return "0,0,0";
+  const r = parseInt(m.substring(0, 2), 16);
+  const g = parseInt(m.substring(2, 4), 16);
+  const b = parseInt(m.substring(4, 6), 16);
+  return `${r},${g},${b}`;
+}
+
+// FillMode display labels for the select dropdown.
+const FILL_MODE_LABELS: Record<string, string> = {
+  "0": "0 — Stretch",
+  "1": "1 — Preserve Aspect Fit",
+  "2": "2 — Preserve Aspect Crop",
+  "3": "3 — Tile",
+  "6": "6 — Pad",
+};
 
 function buildKConfigTree(): Map<string, KConfigPolicyDef[]> {
   const groups = new Map<string, KConfigPolicyDef[]>();
@@ -743,13 +906,25 @@ function buildKConfigTree(): Map<string, KConfigPolicyDef[]> {
 function detectKConfigConfiguredKeys(content: string): string[] {
   try {
     const parsed = JSON.parse(content || "{}");
-    const entries: { key?: string }[] = parsed.entries || [];
+    const entries: { key?: string; group?: string }[] = parsed.entries || [];
     const result: string[] = [];
+    let hasUrlRestrictions = false;
+    let hasKcmRestrictions = false;
     for (const e of entries) {
+      if (e.group === "KDE URL Restrictions") {
+        hasUrlRestrictions = true;
+        continue;
+      }
+      if (e.group === "KDE Control Module Restrictions") {
+        hasKcmRestrictions = true;
+        continue;
+      }
       // Find the policy def whose iniKey matches the stored key
       const def = KCONFIG_ALL_POLICIES.find(p => p.iniKey === e.key);
       if (def) result.push(def.key);
     }
+    if (hasUrlRestrictions) result.push("url_restrictions");
+    if (hasKcmRestrictions) result.push("kcm_restrictions");
     return result;
   } catch { return []; }
 }
@@ -779,7 +954,7 @@ function buildKConfigContent(policyDef: KConfigPolicyDef, value: string, enforce
     group: policyDef.iniGroup,
     key: policyDef.iniKey,
     value,
-    type: policyDef.type === "boolean" ? "bool" : policyDef.type === "int" ? "int" : "string",
+    type: policyDef.type === "boolean" ? "bool" : policyDef.type === "int" ? "int" : "string", // color and select also map to "string"
     enforced,
   };
 
@@ -793,14 +968,124 @@ function buildKConfigContent(policyDef: KConfigPolicyDef, value: string, enforce
 
 // Remove a KConfig entry from content JSON by policy def key
 function removeKConfigContentKey(defKey: string, existingContent: string): string {
-  let parsed: { entries: { key?: string }[] } = { entries: [] };
+  let parsed: { entries: { key?: string; group?: string }[] } = { entries: [] };
   try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
   if (!parsed.entries) parsed.entries = [];
 
-  const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === defKey);
-  if (policyDef) {
-    parsed.entries = parsed.entries.filter(e => e.key !== policyDef.iniKey);
+  if (defKey === "url_restrictions") {
+    parsed.entries = parsed.entries.filter(e => e.group !== "KDE URL Restrictions");
+  } else if (defKey === "kcm_restrictions") {
+    parsed.entries = parsed.entries.filter(e => e.group !== "KDE Control Module Restrictions");
+  } else {
+    const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === defKey);
+    if (policyDef) {
+      parsed.entries = parsed.entries.filter(e => e.key !== policyDef.iniKey);
+    }
   }
+  return JSON.stringify(parsed, null, 2);
+}
+
+// Parse URL restriction rules from KConfig content JSON.
+function parseUrlRestrictionRules(content: string): UrlRestrictionRule[] {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    const entries: { group?: string; key?: string; value?: string }[] = parsed.entries || [];
+    const rules: UrlRestrictionRule[] = [];
+    for (const e of entries) {
+      if (e.group !== "KDE URL Restrictions") continue;
+      if (!e.key || !e.key.match(/^rule_\d+$/)) continue;
+      const fields = (e.value || "").split(",");
+      if (fields.length !== 8) continue;
+      rules.push({
+        action: (fields[0] as UrlRestrictionRule["action"]) || "open",
+        referrerProtocol: fields[1],
+        referrerHost: fields[2],
+        referrerPath: fields[3],
+        protocol: fields[4],
+        host: fields[5],
+        path: fields[6],
+        enabled: fields[7] === "true",
+      });
+    }
+    return rules;
+  } catch { return []; }
+}
+
+// Build URL restriction entries into KConfig content JSON.
+// Removes all existing KDE URL Restrictions entries and adds fresh rule_count + rule_N entries.
+function buildUrlRestrictionContent(rules: UrlRestrictionRule[], existingContent: string): string {
+  let parsed: { entries: { file: string; group: string; key: string; value: string; type: string; enforced: boolean }[] } = { entries: [] };
+  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
+  if (!parsed.entries) parsed.entries = [];
+
+  // Remove all existing KDE URL Restrictions entries.
+  parsed.entries = parsed.entries.filter(e => e.group !== "KDE URL Restrictions");
+
+  // Add fresh entries.
+  if (rules.length > 0) {
+    parsed.entries.push({
+      file: "kdeglobals",
+      group: "KDE URL Restrictions",
+      key: "rule_count",
+      value: String(rules.length),
+      type: "string",
+      enforced: true,
+    });
+    for (let i = 0; i < rules.length; i++) {
+      const r = rules[i];
+      const value = [r.action, r.referrerProtocol, r.referrerHost, r.referrerPath, r.protocol, r.host, r.path, r.enabled ? "true" : "false"].join(",");
+      parsed.entries.push({
+        file: "kdeglobals",
+        group: "KDE URL Restrictions",
+        key: `rule_${i + 1}`,
+        value,
+        type: "string",
+        enforced: true,
+      });
+    }
+  }
+
+  return JSON.stringify(parsed, null, 2);
+}
+
+// Parse KCM restriction modules from KConfig content JSON.
+// Returns an array of module IDs that are restricted (value=false).
+function parseKcmRestrictions(content: string): string[] {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    const entries: { group?: string; key?: string; value?: string }[] = parsed.entries || [];
+    const modules: string[] = [];
+    for (const e of entries) {
+      if (e.group === "KDE Control Module Restrictions" && e.key) {
+        modules.push(e.key);
+      }
+    }
+    return modules;
+  } catch { return []; }
+}
+
+// Build KCM restriction entries into KConfig content JSON.
+// Removes all existing KDE Control Module Restrictions entries and adds fresh ones.
+function buildKcmRestrictionContent(modules: string[], existingContent: string): string {
+  let parsed: { entries: { file: string; group: string; key: string; value: string; type: string; enforced: boolean }[] } = { entries: [] };
+  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
+  if (!parsed.entries) parsed.entries = [];
+
+  // Remove all existing KDE Control Module Restrictions entries.
+  parsed.entries = parsed.entries.filter(e => e.group !== "KDE Control Module Restrictions");
+
+  // Add fresh entries — each module set to false (restricted) and enforced.
+  for (const mod of modules) {
+    parsed.entries.push({
+      file: "kde5rc",
+      group: "KDE Control Module Restrictions",
+      key: mod,
+      value: "false",
+      type: "bool",
+      enforced: true,
+    });
+  }
+
   return JSON.stringify(parsed, null, 2);
 }
 
@@ -892,6 +1177,33 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
     const parsed = raw as { entries?: { key?: string; value?: string; enforced?: boolean; file?: string; group?: string }[] };
     const entries = parsed.entries || [];
     for (const entry of entries) {
+      // Show URL restriction rules with human-readable summary
+      if (entry.group === "KDE URL Restrictions" && entry.key && entry.key.match(/^rule_\d+$/)) {
+        const fields = (entry.value || "").split(",");
+        if (fields.length === 8) {
+          const summary = `${fields[0]} ${fields[4] || "*"}://${fields[5] || "*"}${fields[6] ? "/" + fields[6] : ""} → ${fields[7] === "true" ? "allow" : "deny"}`;
+          rows.push({
+            setting: `Security › URL Restrictions › ${entry.key}`,
+            value: summary,
+            locked: entry.enforced !== undefined ? (entry.enforced ? "Yes" : "No") : null,
+          });
+        }
+        continue;
+      }
+      // Skip rule_count in overview display
+      if (entry.group === "KDE URL Restrictions" && entry.key === "rule_count") continue;
+
+      // Show KCM restrictions with human-readable labels
+      if (entry.group === "KDE Control Module Restrictions" && entry.key) {
+        const mod = KCM_MODULES.find(m => m.id === entry.key);
+        rows.push({
+          setting: `System Settings Restrictions › ${mod ? mod.label : entry.key}`,
+          value: "Restricted",
+          locked: entry.enforced !== undefined ? (entry.enforced ? "Yes" : "No") : null,
+        });
+        continue;
+      }
+
       const def = KCONFIG_ALL_POLICIES.find(p => p.iniKey === entry.key);
       rows.push({
         setting: def ? `${def.group} › ${def.label}` : (entry.key || "Unknown"),
@@ -1040,6 +1352,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const [kconfigValue, setKconfigValue] = useState<string>("");
   const [kconfigEnforced, setKconfigEnforced] = useState<boolean>(false);
   const [kconfigExpandedGroups, setKconfigExpandedGroups] = useState<Set<string>>(new Set());
+  const [urlRestrictionRules, setUrlRestrictionRules] = useState<UrlRestrictionRule[]>([]);
+  const [customProtocolIndices, setCustomProtocolIndices] = useState<Set<number>>(new Set());
+  const [kcmRestrictedModules, setKcmRestrictedModules] = useState<string[]>([]);
+  const [kcmCustomInput, setKcmCustomInput] = useState("");
 
   // Chrome-specific state: selected policy key + its value
   const [chromeSelectedKey, setChromeSelectedKey] = useState<string | null>(null);
@@ -1086,11 +1402,26 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             if (def) groups.add(def.group);
           }
           setKconfigExpandedGroups(groups);
+          // If url_restrictions is configured, load the rules
+          if (configuredKeys.includes("url_restrictions")) {
+            const rules = parseUrlRestrictionRules(policy.content);
+            setUrlRestrictionRules(rules);
+            const customIdxs = new Set<number>();
+            rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
+            setCustomProtocolIndices(customIdxs);
+          }
+          if (configuredKeys.includes("kcm_restrictions")) {
+            setKcmRestrictedModules(parseKcmRestrictions(policy.content));
+          }
         } else {
           setKconfigSelectedKey(null);
           setKconfigValue("");
           setKconfigEnforced(false);
           setKconfigExpandedGroups(new Set());
+          setUrlRestrictionRules([]);
+          setCustomProtocolIndices(new Set());
+          setKcmRestrictedModules([]);
+          setKcmCustomInput("");
         }
       } else if (policy.type === "Chrome") {
         const configuredKeys = detectChromeConfiguredKeys(policy.content);
@@ -1134,6 +1465,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigValue("");
       setKconfigEnforced(false);
       setKconfigExpandedGroups(new Set());
+      setUrlRestrictionRules([]);
+      setCustomProtocolIndices(new Set());
+      setKcmRestrictedModules([]);
+      setKcmCustomInput("");
       setChromeSelectedKey(null);
       setChromeValue(undefined);
       setChromeExpandedGroups(new Set());
@@ -1160,6 +1495,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigEnforced(false);
       setContentRaw('{"entries":[]}');
       setKconfigExpandedGroups(new Set());
+      setUrlRestrictionRules([]);
+      setCustomProtocolIndices(new Set());
+      setKcmRestrictedModules([]);
+      setKcmCustomInput("");
     } else if (newType === "Chrome") {
       setChromeSelectedKey(null);
       setChromeValue(undefined);
@@ -1276,6 +1615,28 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // KConfig: select a policy from the tree
   const handleKconfigSelectPolicy = (policyDef: KConfigPolicyDef) => {
     setKconfigSelectedKey(policyDef.key);
+    if (policyDef.type === "url-restrictions") {
+      const rules = parseUrlRestrictionRules(contentRaw);
+      if (rules.length > 0) {
+        setUrlRestrictionRules(rules);
+        const customIdxs = new Set<number>();
+        rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
+        setCustomProtocolIndices(customIdxs);
+      } else {
+        // Seed with one default rule
+        const defaultRule: UrlRestrictionRule = { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true };
+        setUrlRestrictionRules([defaultRule]);
+        setCustomProtocolIndices(new Set());
+        setContentRaw(buildUrlRestrictionContent([defaultRule], contentRaw));
+      }
+      return;
+    }
+    if (policyDef.type === "kcm-restrictions") {
+      const modules = parseKcmRestrictions(contentRaw);
+      setKcmRestrictedModules(modules);
+      setKcmCustomInput("");
+      return;
+    }
     const existing = extractKConfigEntry(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setKconfigValue(existing.value);
@@ -1406,7 +1767,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         }
       } else if (policyType === "Kconfig") {
         // Save the current selection into content before validating
-        if (kconfigSelectedKey) {
+        if (kconfigSelectedKey === "url_restrictions") {
+          finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
+        } else if (kconfigSelectedKey === "kcm_restrictions") {
+          finalContent = buildKcmRestrictionContent(kcmRestrictedModules, contentRaw);
+        } else if (kconfigSelectedKey) {
           const def = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);
           if (def) {
             finalContent = buildKConfigContent(def, kconfigValue, kconfigEnforced, contentRaw);
@@ -1735,6 +2100,229 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   };
 
   /* ── KConfig: property editor for selected policy ── */
+  /* ── KCM Restrictions: module multi-select editor ── */
+  const renderKcmRestrictionsEditor = () => {
+    const updateModules = (newModules: string[]) => {
+      setKcmRestrictedModules(newModules);
+      setContentRaw(buildKcmRestrictionContent(newModules, contentRaw));
+    };
+
+    const addModule = (moduleId: string) => {
+      if (!moduleId || kcmRestrictedModules.includes(moduleId)) return;
+      updateModules([...kcmRestrictedModules, moduleId]);
+    };
+
+    const removeModule = (moduleId: string) => {
+      updateModules(kcmRestrictedModules.filter(m => m !== moduleId));
+    };
+
+    const addCustomModules = () => {
+      const ids = kcmCustomInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      const toAdd = ids.filter(id => !kcmRestrictedModules.includes(id));
+      if (toAdd.length > 0) updateModules([...kcmRestrictedModules, ...toAdd]);
+      setKcmCustomInput("");
+    };
+
+    // Available modules = all known modules not already added
+    const availableModules = KCM_MODULES.filter(m => !kcmRestrictedModules.includes(m.id));
+
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>System Settings Module Restrictions</Title>
+        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+          Files: <code>/etc/kde5rc</code>, <code>/etc/kde6rc</code> &nbsp; Group: <code>[KDE Control Module Restrictions]</code>
+          <br />
+          Selected modules will be <strong>restricted</strong> (users will not be able to access them in System Settings).
+        </p>
+
+        {/* Module selector dropdown */}
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", alignItems: "flex-end" }}>
+          <FormGroup label="Add module" fieldId="kcm-add-select" style={{ flex: 1 }}>
+            <FormSelect
+              id="kcm-add-select"
+              value=""
+              onChange={(_ev, val) => { if (val) addModule(val); }}
+            >
+              <FormSelectOption value="" label={availableModules.length > 0 ? "Select a module to restrict..." : "(all known modules added)"} isDisabled />
+              {availableModules.map(m => (
+                <FormSelectOption key={m.id} value={m.id} label={`${m.label} (${m.id})`} />
+              ))}
+            </FormSelect>
+          </FormGroup>
+        </div>
+
+        {/* Custom module input */}
+        <details style={{ marginBottom: "1rem" }}>
+          <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Add custom modules</summary>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "flex-end" }}>
+            <FormGroup label="Custom module IDs" fieldId="kcm-custom-input" helperText="One per line or comma-separated" style={{ flex: 1 }}>
+              <TextArea
+                id="kcm-custom-input"
+                value={kcmCustomInput}
+                onChange={(_ev, val) => setKcmCustomInput(val)}
+                rows={2}
+                placeholder="kcm_example, kcm_other"
+              />
+            </FormGroup>
+            <Button variant="secondary" size="sm" onClick={addCustomModules} style={{ marginBottom: "0.25rem" }}>Add</Button>
+          </div>
+        </details>
+
+        {/* Restricted modules list */}
+        {kcmRestrictedModules.length > 0 ? (
+          <div>
+            <Title headingLevel="h4" size="md" style={{ marginBottom: "0.5rem" }}>Restricted modules ({kcmRestrictedModules.length})</Title>
+            {kcmRestrictedModules.map(moduleId => {
+              const mod = KCM_MODULES.find(m => m.id === moduleId);
+              return (
+                <div
+                  key={moduleId}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "0.4rem 0.75rem",
+                    borderBottom: "1px solid #e8e8e8",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  <span>
+                    <strong>{mod ? mod.label : moduleId}</strong>
+                    {mod && <span style={{ color: "#6a6e73", marginLeft: "0.5rem" }}>({moduleId})</span>}
+                    {!mod && <Label isCompact color="orange" style={{ marginLeft: "0.5rem" }}>custom</Label>}
+                  </span>
+                  <Button variant="plain" size="sm" onClick={() => removeModule(moduleId)} style={{ color: "#c9190b", padding: "0 0.25rem", minWidth: "auto" }} aria-label={`Remove ${moduleId}`}>
+                    Remove
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No modules restricted. Use the dropdown above to add modules.</p>
+        )}
+      </div>
+    );
+  };
+
+  /* ── URL Restrictions: structured rule editor ── */
+  const renderUrlRestrictionsEditor = () => {
+    const updateRules = (newRules: UrlRestrictionRule[]) => {
+      setUrlRestrictionRules(newRules);
+      setContentRaw(buildUrlRestrictionContent(newRules, contentRaw));
+    };
+
+    const updateRule = (index: number, partial: Partial<UrlRestrictionRule>) => {
+      const updated = urlRestrictionRules.map((r, i) => i === index ? { ...r, ...partial } : r);
+      updateRules(updated);
+    };
+
+    const addRule = () => {
+      updateRules([...urlRestrictionRules, { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true }]);
+    };
+
+    const removeRule = (index: number) => {
+      const updated = urlRestrictionRules.filter((_, i) => i !== index);
+      // Shift custom protocol indices to account for removed index
+      const newCustom = new Set<number>();
+      for (const ci of customProtocolIndices) {
+        if (ci < index) newCustom.add(ci);
+        else if (ci > index) newCustom.add(ci - 1);
+      }
+      setCustomProtocolIndices(newCustom);
+      updateRules(updated);
+    };
+
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>URL Restrictions</Title>
+        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+          File: <code>kdeglobals</code> &nbsp; Group: <code>[KDE URL Restrictions]</code>
+        </p>
+        <Button variant="secondary" size="sm" onClick={addRule} style={{ marginBottom: "1rem" }}>+ Add Rule</Button>
+        {urlRestrictionRules.map((rule, idx) => (
+          <Card key={idx} isCompact style={{ marginBottom: "0.75rem" }}>
+            <CardTitle>
+              <Flex justifyContent={{ default: "justifyContentSpaceBetween" }} alignItems={{ default: "alignItemsCenter" }}>
+                <FlexItem><strong>Rule {idx + 1}</strong></FlexItem>
+                <FlexItem>
+                  <Button variant="plain" size="sm" onClick={() => removeRule(idx)} aria-label={`Remove rule ${idx + 1}`} style={{ color: "#c9190b" }}>Remove</Button>
+                </FlexItem>
+              </Flex>
+            </CardTitle>
+            <CardBody>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <FormGroup label="Action" fieldId={`url-action-${idx}`}>
+                  <FormSelect id={`url-action-${idx}`} value={rule.action} onChange={(_ev, val) => updateRule(idx, { action: val as UrlRestrictionRule["action"] })}>
+                    <FormSelectOption value="open" label="open" />
+                    <FormSelectOption value="list" label="list" />
+                    <FormSelectOption value="redirect" label="redirect" />
+                  </FormSelect>
+                </FormGroup>
+                <FormGroup label="Protocol" fieldId={`url-protocol-${idx}`} helperText="Without ! suffix = prefix-matches (e.g. http matches https)">
+                  <FormSelect
+                    id={`url-protocol-${idx}`}
+                    value={customProtocolIndices.has(idx) ? "__custom__" : KIO_PROTOCOLS.includes(rule.protocol) ? rule.protocol : rule.protocol === "" ? "" : "__custom__"}
+                    onChange={(_ev, val) => {
+                      if (val === "__custom__") {
+                        setCustomProtocolIndices(prev => new Set(prev).add(idx));
+                        updateRule(idx, { protocol: "" });
+                      } else {
+                        setCustomProtocolIndices(prev => { const next = new Set(prev); next.delete(idx); return next; });
+                        updateRule(idx, { protocol: val });
+                      }
+                    }}
+                  >
+                    <FormSelectOption value="" label="(any protocol)" />
+                    {KIO_PROTOCOLS.map(p => <FormSelectOption key={p} value={p} label={p} />)}
+                    <FormSelectOption value="__custom__" label="Custom..." />
+                  </FormSelect>
+                  {customProtocolIndices.has(idx) && (
+                    <TextInput
+                      id={`url-protocol-custom-${idx}`}
+                      value={rule.protocol}
+                      onChange={(_ev, val) => updateRule(idx, { protocol: val })}
+                      placeholder="Enter custom protocol"
+                      style={{ marginTop: "0.5rem" }}
+                    />
+                  )}
+                </FormGroup>
+                <FormGroup label="Access" fieldId={`url-enabled-${idx}`}>
+                  <Switch id={`url-enabled-${idx}`} isChecked={rule.enabled} onChange={(_ev, checked) => updateRule(idx, { enabled: checked })} label="Allow" labelOff="Deny" />
+                </FormGroup>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <FormGroup label="Host" fieldId={`url-host-${idx}`} helperText="*.example.com, blank = all">
+                  <TextInput id={`url-host-${idx}`} value={rule.host} onChange={(_ev, val) => updateRule(idx, { host: val })} placeholder="blank = all" />
+                </FormGroup>
+                <FormGroup label="Path" fieldId={`url-path-${idx}`} helperText="/path, blank = all, ! = exact only">
+                  <TextInput id={`url-path-${idx}`} value={rule.path} onChange={(_ev, val) => updateRule(idx, { path: val })} placeholder="blank = all" />
+                </FormGroup>
+              </div>
+              <details style={{ marginTop: "0.25rem" }}>
+                <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Referrer Matching (advanced)</summary>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginTop: "0.5rem" }}>
+                  <FormGroup label="Referrer Protocol" fieldId={`url-ref-proto-${idx}`}>
+                    <TextInput id={`url-ref-proto-${idx}`} value={rule.referrerProtocol} onChange={(_ev, val) => updateRule(idx, { referrerProtocol: val })} placeholder="blank = all" />
+                  </FormGroup>
+                  <FormGroup label="Referrer Host" fieldId={`url-ref-host-${idx}`}>
+                    <TextInput id={`url-ref-host-${idx}`} value={rule.referrerHost} onChange={(_ev, val) => updateRule(idx, { referrerHost: val })} placeholder="blank = all" />
+                  </FormGroup>
+                  <FormGroup label="Referrer Path" fieldId={`url-ref-path-${idx}`}>
+                    <TextInput id={`url-ref-path-${idx}`} value={rule.referrerPath} onChange={(_ev, val) => updateRule(idx, { referrerPath: val })} placeholder="blank = all" />
+                  </FormGroup>
+                </div>
+              </details>
+            </CardBody>
+          </Card>
+        ))}
+        {urlRestrictionRules.length === 0 && (
+          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No rules configured. Click "+ Add Rule" to begin.</p>
+        )}
+      </div>
+    );
+  };
+
   const renderKconfigPropertyEditor = () => {
     if (!kconfigSelectedKey) {
       return (
@@ -1743,6 +2331,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
       );
+    }
+
+    if (kconfigSelectedKey === "url_restrictions") {
+      return renderUrlRestrictionsEditor();
+    }
+
+    if (kconfigSelectedKey === "kcm_restrictions") {
+      return renderKcmRestrictionsEditor();
     }
 
     const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);
@@ -1794,9 +2390,29 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               >
                 <FormSelectOption key="" value="" label="(not set)" />
                 {(policyDef.selectOptions || []).map(v => (
-                  <FormSelectOption key={v} value={v} label={v} />
+                  <FormSelectOption key={v} value={v} label={FILL_MODE_LABELS[v] || v} />
                 ))}
               </FormSelect>
+            </FormGroup>
+          )}
+          {policyDef.type === "color" && (
+            <FormGroup label="Value" fieldId="kc-prop-color">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <input
+                  type="color"
+                  id="kc-prop-color"
+                  value={rgbToHex(kconfigValue || "0,0,0")}
+                  onChange={(ev) => updateKconfigValue(hexToRgb(ev.target.value))}
+                  style={{ width: "48px", height: "36px", padding: "2px", border: "1px solid #d2d2d2", borderRadius: "4px", cursor: "pointer" }}
+                />
+                <TextInput
+                  id="kc-prop-color-text"
+                  value={kconfigValue}
+                  onChange={(_ev, val) => updateKconfigValue(val)}
+                  placeholder="R,G,B"
+                  style={{ maxWidth: "140px" }}
+                />
+              </div>
             </FormGroup>
           )}
           <FormGroup label="Enforced (Immutable)" fieldId="kc-prop-enforced">

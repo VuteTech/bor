@@ -222,6 +222,14 @@ func reconfigureApps(s session, changedFiles map[string]bool) {
 		}
 	}
 
+	if changedFiles["plasma-org.kde.plasma.desktop-appletsrc"] {
+		if err := reconfigurePlasmaShell(s); err != nil {
+			log.Printf("notify: Plasma shell reconfigure failed for UID %d: %v", s.UID, err)
+		} else {
+			log.Printf("notify: Plasma shell reconfigure sent to UID %d", s.UID)
+		}
+	}
+
 	if changedFiles["plasmarc"] || changedFiles["kdeglobals"] {
 		if err := reconfigurePlasmaShell(s); err != nil {
 			log.Printf("notify: Plasma shell reconfigure failed for UID %d: %v", s.UID, err)
