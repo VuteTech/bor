@@ -223,12 +223,6 @@ export const PoliciesPage: React.FC = () => {
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
-            <Title headingLevel="h1" size="2xl">Policies</Title>
-            <p style={{ color: "#6a6e73", marginTop: "0.25rem" }}>
-              Manage desktop policies for your Linux fleet. Each update creates a new version.
-            </p>
-          </FlexItem>
-          <FlexItem>
             <Button variant="primary" icon={<PlusCircleIcon />} onClick={handleCreate}>
               Create a policy
             </Button>

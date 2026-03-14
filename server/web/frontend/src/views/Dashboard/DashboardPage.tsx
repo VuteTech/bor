@@ -5,7 +5,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   PageSection,
-  Title,
   Alert,
   Spinner,
   Flex,
@@ -83,9 +82,6 @@ export const DashboardPage: React.FC = () => {
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
-            <Title headingLevel="h1" size="2xl">
-              Dashboard
-            </Title>
             {lastUpdated && (
               <span style={{ color: "#6a6e73", fontSize: "0.8rem" }}>
                 Updated {lastUpdated.toLocaleTimeString()}

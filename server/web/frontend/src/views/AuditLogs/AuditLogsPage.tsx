@@ -25,7 +25,6 @@ import {
   Spinner,
   TextContent,
   TextInput,
-  Title,
   Toolbar,
   ToolbarContent,
   ToolbarGroup,
@@ -370,8 +369,6 @@ export const AuditLogsPage: React.FC = () => {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" style={{ marginBottom: 16 }}>Audit Logs</Title>
-
       {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
 
       {/* ── Toolbar ── */}

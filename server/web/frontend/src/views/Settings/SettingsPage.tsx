@@ -37,9 +37,6 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" style={{ marginBottom: 16 }}>
-        Settings
-      </Title>
       <Tabs
         activeKey={activeTab}
         onSelect={(_ev, key) => setActiveTab(key as string)}
