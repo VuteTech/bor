@@ -193,6 +193,44 @@ func (c *Client) Heartbeat(ctx context.Context, info *NodeInfo) error {
 	return nil
 }
 
+// TamperProcess describes a process found holding a tampered file open.
+type TamperProcess struct {
+	PID  int
+	Comm string
+	User string
+}
+
+// ReportTamperEvent notifies the server that a managed file was externally
+// modified. processes is the best-effort list of processes that had the file
+// open at detection time. The server records this in the audit log.
+func (c *Client) ReportTamperEvent(ctx context.Context, filePath string, processes []TamperProcess) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var pbProcs []*pb.TamperProcessInfo
+	for _, p := range processes {
+		pbProcs = append(pbProcs, &pb.TamperProcessInfo{
+			Pid:  int32(p.PID),
+			Comm: p.Comm,
+			User: p.User,
+		})
+	}
+
+	resp, err := c.client.ReportTamperEvent(ctx, &pb.ReportTamperEventRequest{
+		ClientId:   c.clientID,
+		FilePath:   filePath,
+		DetectedAt: timestamppb.Now(),
+		Processes:  pbProcs,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportTamperEvent RPC failed: %w", err)
+	}
+	if !resp.GetSuccess() {
+		return fmt.Errorf("server rejected tamper event report for file %s", filePath)
+	}
+	return nil
+}
+
 // PolicyUpdateCallback is called for each policy update received from
 // the server streaming RPC. The revision parameter is the server-side
 // revision after the update; the caller should persist this value to

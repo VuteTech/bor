@@ -21,6 +21,7 @@ import (
 	"github.com/VuteTech/Bor/agent/internal/notify"
 	"github.com/VuteTech/Bor/agent/internal/policy"
 	"github.com/VuteTech/Bor/agent/internal/policyclient"
+	"github.com/VuteTech/Bor/agent/internal/procinfo"
 	"github.com/VuteTech/Bor/agent/internal/sysinfo"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/protobuf/proto"
@@ -769,9 +770,19 @@ func suppressManagedWrites(cfg *config.Config, extra ...string) {
 
 // onTamperedFile is called by the file watcher when a managed file is modified
 // or removed externally. It re-applies the appropriate policy to restore the
-// file to the Bor-managed state.
+// file to the Bor-managed state and reports the event to the server.
 func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *config.Config, path string) {
 	log.Printf("Tamper protection: restoring %s", path)
+
+	// Collect process info before restoring — the modifying process may still
+	// hold the file open (e.g. an editor), giving us user/comm attribution.
+	holders := procinfo.FindFileHolders(path)
+	procs := make([]policyclient.TamperProcess, len(holders))
+	for i, h := range holders {
+		procs[i] = policyclient.TamperProcess{PID: h.PID, Comm: h.Comm, User: h.User}
+		log.Printf("Tamper protection: file held by pid=%d comm=%s user=%s", h.PID, h.Comm, h.User)
+	}
+
 	switch {
 	case strings.HasPrefix(path, cfg.KConfig.ConfigPath+string(filepath.Separator)) ||
 		path == "/etc/kde5rc" || path == "/etc/kde6rc":
@@ -780,6 +791,10 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllFirefox(ctx, client, cfg)
 	default:
 		syncAllChrome(ctx, client, cfg)
+	}
+
+	if err := client.ReportTamperEvent(ctx, path, procs); err != nil {
+		log.Printf("Failed to report tamper event to server: %v", err)
 	}
 }
 

@@ -7,12 +7,14 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -24,12 +26,13 @@ type PolicyServer struct {
 	policySvc   *services.PolicyService
 	nodeSvc     *services.NodeService
 	settingsSvc *services.SettingsService
+	auditSvc    *services.AuditService
 	hub         *PolicyHub
 }
 
 // NewPolicyServer creates a new PolicyServer.
-func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, hub *PolicyHub) *PolicyServer {
-	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, hub: hub}
+func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, hub *PolicyHub) *PolicyServer {
+	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, hub: hub}
 }
 
 // GetPolicy returns a single policy by ID.
@@ -289,6 +292,59 @@ func (s *PolicyServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) 
 		clientID, info.OSName, info.OSVersion, info.DesktopEnvs, info.AgentVersion)
 
 	return &pb.HeartbeatResponse{Accepted: true}, nil
+}
+
+// ReportTamperEvent records an agent-reported file tamper event in the audit log.
+func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamperEventRequest) (*pb.ReportTamperEventResponse, error) {
+	clientID := req.GetClientId()
+	if clientID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	}
+	if req.GetFilePath() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "file_path is required")
+	}
+
+	// Extract caller IP from gRPC peer metadata.
+	ipAddr := ""
+	if p, ok := peer.FromContext(ctx); ok {
+		ipAddr = p.Addr.String()
+	}
+
+	// Build a compact JSON details string.
+	type procEntry struct {
+		PID  int32  `json:"pid"`
+		Comm string `json:"comm"`
+		User string `json:"user"`
+	}
+	procs := make([]procEntry, 0, len(req.GetProcesses()))
+	for _, p := range req.GetProcesses() {
+		procs = append(procs, procEntry{PID: p.GetPid(), Comm: p.GetComm(), User: p.GetUser()})
+	}
+	detailsBytes, err := json.Marshal(struct {
+		File      string      `json:"file"`
+		Node      string      `json:"node"`
+		Processes []procEntry `json:"processes,omitempty"`
+	}{
+		File:      req.GetFilePath(),
+		Node:      clientID,
+		Processes: procs,
+	})
+	if err != nil {
+		detailsBytes = []byte(fmt.Sprintf(`{"file":%q,"node":%q}`, req.GetFilePath(), clientID))
+	}
+
+	s.auditSvc.LogEvent(ctx, &models.AuditLog{
+		Username:     clientID,
+		Action:       "tamper_detected",
+		ResourceType: "managed_file",
+		ResourceID:   req.GetFilePath(),
+		Details:      string(detailsBytes),
+		IPAddress:    ipAddr,
+	})
+
+	log.Printf("Tamper event recorded: node=%s file=%s processes=%d", clientID, req.GetFilePath(), len(procs))
+
+	return &pb.ReportTamperEventResponse{Success: true}, nil
 }
 
 // modelToProto converts an internal Policy model to its protobuf representation.

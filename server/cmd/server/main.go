@@ -294,7 +294,7 @@ func main() {
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods)),
 	)
-	pb.RegisterPolicyServiceServer(grpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, policyHub))
+	pb.RegisterPolicyServiceServer(grpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, policyHub))
 	enrollpb.RegisterEnrollmentServiceServer(grpcSrv, grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken))
 
 	// Route: if HTTP/2 + Content-Type starts with "application/grpc" → gRPC,

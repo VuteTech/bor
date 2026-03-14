@@ -28,6 +28,9 @@ service PolicyService {
 
   // Send a heartbeat with node metadata
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Report a file tamper event detected by the agent
+  rpc ReportTamperEvent(ReportTamperEventRequest) returns (ReportTamperEventResponse);
 }
 
 // Policy represents a desktop policy configuration
@@ -206,4 +209,38 @@ message HeartbeatRequest {
 
 message HeartbeatResponse {
   bool accepted = 1;
+}
+
+// ─── Tamper event messages ───────────────────────────────────────────────────
+
+// TamperProcessInfo describes a process found holding the tampered file open.
+message TamperProcessInfo {
+  // Process ID
+  int32 pid = 1;
+
+  // Executable name from /proc/<PID>/comm
+  string comm = 2;
+
+  // Resolved username, or numeric UID if name resolution failed
+  string user = 3;
+}
+
+// ReportTamperEventRequest reports that a managed file was externally modified.
+message ReportTamperEventRequest {
+  // Client identifier
+  string client_id = 1;
+
+  // Absolute path of the file that was tampered with
+  string file_path = 2;
+
+  // Timestamp when the tamper event was detected
+  google.protobuf.Timestamp detected_at = 3;
+
+  // Processes that had the file open at detection time (best-effort).
+  repeated TamperProcessInfo processes = 4;
+}
+
+// ReportTamperEventResponse acknowledges a tamper event report.
+message ReportTamperEventResponse {
+  bool success = 1;
 }
