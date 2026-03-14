@@ -51,8 +51,8 @@ export interface AuditLogListResponse {
 export interface AuditLogListParams {
   page?: number;
   per_page?: number;
-  resource_type?: string;
-  action?: string;
+  resource_type?: string[];
+  action?: string[];
   username?: string;
 }
 
@@ -64,8 +64,8 @@ export async function fetchAuditLogs(
   const qp = new URLSearchParams();
   if (params?.page) qp.set("page", String(params.page));
   if (params?.per_page) qp.set("per_page", String(params.per_page));
-  if (params?.resource_type) qp.set("resource_type", params.resource_type);
-  if (params?.action) qp.set("action", params.action);
+  params?.resource_type?.forEach((v) => qp.append("resource_type", v));
+  params?.action?.forEach((v) => qp.append("action", v));
   if (params?.username) qp.set("username", params.username);
 
   const qs = qp.toString();
@@ -79,8 +79,8 @@ export async function exportAuditLogs(
 ): Promise<void> {
   const qp = new URLSearchParams();
   qp.set("format", format);
-  if (params?.resource_type) qp.set("resource_type", params.resource_type);
-  if (params?.action) qp.set("action", params.action);
+  params?.resource_type?.forEach((v) => qp.append("resource_type", v));
+  params?.action?.forEach((v) => qp.append("action", v));
   if (params?.username) qp.set("username", params.username);
 
   const tk = localStorage.getItem(TOKEN_STORAGE_KEY);

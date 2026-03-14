@@ -350,11 +350,11 @@ type AuditLog struct {
 
 // AuditLogListRequest represents query parameters for listing audit logs
 type AuditLogListRequest struct {
-	Page         int    `json:"page"`
-	PerPage      int    `json:"per_page"`
-	ResourceType string `json:"resource_type,omitempty"`
-	Action       string `json:"action,omitempty"`
-	Username     string `json:"username,omitempty"`
+	Page          int      `json:"page"`
+	PerPage       int      `json:"per_page"`
+	ResourceTypes []string `json:"resource_types,omitempty"`
+	Actions       []string `json:"actions,omitempty"`
+	Username      string   `json:"username,omitempty"`
 }
 
 // AuditLogListResponse represents a paginated list of audit logs

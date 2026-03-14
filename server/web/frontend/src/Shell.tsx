@@ -38,9 +38,10 @@ import { NodesPage } from "./views/Nodes";
 import { NodeGroupsPage } from "./views/NodeGroups";
 import { PolicyBindingsPage } from "./views/PolicyBindings";
 import { SettingsPage } from "./views/Settings";
+import { AuditLogsPage } from "./views/AuditLogs";
 import logoWhite from "./assets/logo-white.svg";
 
-type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "settings";
+type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "audit-logs" | "settings";
 
 export const Shell: React.FC = () => {
   /* ── Auth state ── */
@@ -209,7 +210,12 @@ export const Shell: React.FC = () => {
             <NavItem itemId="compliance" isActive={activeScreen === "compliance"}>
               Compliance
             </NavItem>
-            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view") || hasPermission("audit_log:view")) && (
+            {hasPermission("audit_log:view") && (
+              <NavItem itemId="audit-logs" isActive={activeScreen === "audit-logs"}>
+                Audit Logs
+              </NavItem>
+            )}
+            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view")) && (
               <NavItem itemId="settings" isActive={activeScreen === "settings"}>
                 Settings
               </NavItem>
@@ -272,6 +278,8 @@ export const Shell: React.FC = () => {
             </div>
           </PageSection>
         );
+      case "audit-logs":
+        return <AuditLogsPage />;
       case "settings":
         return <SettingsPage />;
       default:

@@ -100,21 +100,30 @@ func (r *AuditLogRepository) Count(ctx context.Context, req *models.AuditLogList
 	return count, nil
 }
 
-// buildAuditLogFilter builds WHERE clause and args for audit log queries
+// buildAuditLogFilter builds WHERE clause and args for audit log queries.
+// Multiple values for Actions or ResourceTypes are OR'd within the field.
 func buildAuditLogFilter(req *models.AuditLogListRequest) (string, []interface{}) {
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
 
-	if req.ResourceType != "" {
-		conditions = append(conditions, fmt.Sprintf("resource_type = $%d", argIdx))
-		args = append(args, req.ResourceType)
-		argIdx++
+	if len(req.ResourceTypes) > 0 {
+		placeholders := make([]string, len(req.ResourceTypes))
+		for i, v := range req.ResourceTypes {
+			placeholders[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, v)
+			argIdx++
+		}
+		conditions = append(conditions, "resource_type IN ("+strings.Join(placeholders, ", ")+")")
 	}
-	if req.Action != "" {
-		conditions = append(conditions, fmt.Sprintf("action = $%d", argIdx))
-		args = append(args, req.Action)
-		argIdx++
+	if len(req.Actions) > 0 {
+		placeholders := make([]string, len(req.Actions))
+		for i, v := range req.Actions {
+			placeholders[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, v)
+			argIdx++
+		}
+		conditions = append(conditions, "action IN ("+strings.Join(placeholders, ", ")+")")
 	}
 	if req.Username != "" {
 		conditions = append(conditions, fmt.Sprintf("username ILIKE $%d", argIdx))
