@@ -32,11 +32,11 @@ func (h *AuditLogHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := &models.AuditLogListRequest{
-		Page:         1,
-		PerPage:      25,
-		ResourceType: r.URL.Query().Get("resource_type"),
-		Action:       r.URL.Query().Get("action"),
-		Username:     r.URL.Query().Get("username"),
+		Page:          1,
+		PerPage:       25,
+		ResourceTypes: r.URL.Query()["resource_type"],
+		Actions:       r.URL.Query()["action"],
+		Username:      r.URL.Query().Get("username"),
 	}
 
 	if p := r.URL.Query().Get("page"); p != "" {
@@ -76,9 +76,9 @@ func (h *AuditLogHandler) Export(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := &models.AuditLogListRequest{
-		ResourceType: r.URL.Query().Get("resource_type"),
-		Action:       r.URL.Query().Get("action"),
-		Username:     r.URL.Query().Get("username"),
+		ResourceTypes: r.URL.Query()["resource_type"],
+		Actions:       r.URL.Query()["action"],
+		Username:      r.URL.Query().Get("username"),
 	}
 
 	switch format {

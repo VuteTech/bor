@@ -38,9 +38,10 @@ import { NodesPage } from "./views/Nodes";
 import { NodeGroupsPage } from "./views/NodeGroups";
 import { PolicyBindingsPage } from "./views/PolicyBindings";
 import { SettingsPage } from "./views/Settings";
+import { AuditLogsPage } from "./views/AuditLogs";
 import logoWhite from "./assets/logo-white.svg";
 
-type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "settings";
+type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "audit-logs" | "settings";
 
 export const Shell: React.FC = () => {
   /* ── Auth state ── */
@@ -126,6 +127,17 @@ export const Shell: React.FC = () => {
     </>
   );
 
+  const PAGE_NAMES: Record<ScreenKey, string> = {
+    dashboard:        "Dashboard",
+    policies:         "Policies",
+    nodes:            "Nodes",
+    "node-groups":    "Node Groups",
+    "policy-bindings":"Policy Bindings",
+    compliance:       "Compliance",
+    "audit-logs":     "Audit Logs",
+    settings:         "Settings",
+  };
+
   /* ── Header / Masthead ── */
   const mastheadBlock = (
     <Masthead>
@@ -155,6 +167,13 @@ export const Shell: React.FC = () => {
       <MastheadContent>
         <Toolbar id="masthead-toolbar" isFullHeight isStatic>
           <ToolbarContent>
+            {/* Separator + current page name */}
+            <ToolbarItem style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.3)" }} />
+              <span style={{ color: "#fff", fontSize: "1rem", fontWeight: 400, opacity: 0.9 }}>
+                {PAGE_NAMES[activeScreen]}
+              </span>
+            </ToolbarItem>
             <ToolbarItem align={{ default: "alignRight" }}>
               <Dropdown
                 isOpen={isUserMenuOpen}
@@ -209,7 +228,12 @@ export const Shell: React.FC = () => {
             <NavItem itemId="compliance" isActive={activeScreen === "compliance"}>
               Compliance
             </NavItem>
-            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view") || hasPermission("audit_log:view")) && (
+            {hasPermission("audit_log:view") && (
+              <NavItem itemId="audit-logs" isActive={activeScreen === "audit-logs"}>
+                Audit Logs
+              </NavItem>
+            )}
+            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view")) && (
               <NavItem itemId="settings" isActive={activeScreen === "settings"}>
                 Settings
               </NavItem>
@@ -250,6 +274,29 @@ export const Shell: React.FC = () => {
     </PageSidebar>
   );
 
+  const PAGE_SUBTITLES: Record<ScreenKey, string> = {
+    dashboard:          "Overview of fleet health and policy compliance.",
+    policies:           "Manage desktop policies for your Linux fleet. Each update creates a new version.",
+    nodes:              "Manage and monitor connected desktop agents.",
+    "node-groups":      "Manage node groups and generate enrollment tokens for agent registration.",
+    "policy-bindings":  "Bind policies to node groups. Nodes inherit policies through group membership.",
+    compliance:         "Track policy enforcement status across your fleet.",
+    "audit-logs":       "Track system changes and security events.",
+    settings:           "Manage users, roles, and system configuration.",
+  };
+
+  const subtitleStrip = PAGE_SUBTITLES[activeScreen] ? (
+    <PageSection
+      variant="light"
+      padding={{ default: "paddingSm" }}
+      style={{ borderBottom: "1px solid var(--pf-v5-global--BorderColor--100)" }}
+    >
+      <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>
+        {PAGE_SUBTITLES[activeScreen]}
+      </span>
+    </PageSection>
+  ) : null;
+
   /* ── Active screen content ── */
   const renderActiveScreen = () => {
     switch (activeScreen) {
@@ -272,6 +319,8 @@ export const Shell: React.FC = () => {
             </div>
           </PageSection>
         );
+      case "audit-logs":
+        return <AuditLogsPage />;
       case "settings":
         return <SettingsPage />;
       default:
@@ -286,6 +335,7 @@ export const Shell: React.FC = () => {
       isManagedSidebar
       defaultManagedSidebarIsOpen={true}
     >
+      {subtitleStrip}
       {renderActiveScreen()}
     </Page>
   );

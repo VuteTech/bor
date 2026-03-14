@@ -283,12 +283,6 @@ export const PolicyBindingsPage: React.FC = () => {
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
-            <Title headingLevel="h1" size="2xl">Policy Bindings</Title>
-            <p style={{ color: "#6a6e73", marginTop: "0.25rem" }}>
-              Bind policies to node groups. Nodes inherit policies through group membership.
-            </p>
-          </FlexItem>
-          <FlexItem>
             <Button variant="primary" icon={<PlusCircleIcon />} onClick={openCreateModal}>
               Create Binding
             </Button>

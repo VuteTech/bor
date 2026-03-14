@@ -250,12 +250,6 @@ export const NodeGroupsPage: React.FC = () => {
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
-            <Title headingLevel="h1" size="2xl">Node Groups</Title>
-            <p style={{ color: "#6a6e73", marginTop: "0.25rem" }}>
-              Manage node groups and generate enrollment tokens for agent registration.
-            </p>
-          </FlexItem>
-          <FlexItem>
             <Button variant="primary" icon={<PlusCircleIcon />} onClick={openCreateModal}>
               Create Node Group
             </Button>

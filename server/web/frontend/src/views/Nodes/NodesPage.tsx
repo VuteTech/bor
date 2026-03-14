@@ -582,12 +582,6 @@ export const NodesPage: React.FC = () => {
 
   return (
     <>
-      <PageSection variant="light">
-        <Title headingLevel="h1" size="2xl">Nodes</Title>
-        <p style={{ color: "#6a6e73", marginTop: "0.25rem" }}>
-          Manage and monitor connected desktop agents.
-        </p>
-      </PageSection>
       <PageSection>
         {actionError && (
           <Alert
