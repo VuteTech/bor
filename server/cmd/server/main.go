@@ -6,11 +6,14 @@ package main
 
 import (
 	"context"
+	"crypto"
 	"crypto/tls"
+	"crypto/x509"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -39,20 +42,45 @@ func main() {
 
 	// ─── Internal CA for agent mTLS (must be created first so it can
 	//     sign the UI cert when auto-generating) ──────────────────────────
-	caCertFile := cfg.CA.CertFile
-	caKeyFile := cfg.CA.KeyFile
-	if caCertFile == "" && caKeyFile == "" {
-		log.Println("BOR_CA_CERT_FILE/KEY not set – generating internal CA")
-		caCertFile, caKeyFile, err = pki.EnsureCA(cfg.CA.AutogenDir)
-		if err != nil {
-			log.Fatalf("Failed to generate internal CA: %v", err)
-		}
-		log.Printf("Internal CA stored in %s", cfg.CA.AutogenDir)
-	}
+	var caCert *x509.Certificate
+	var caKey crypto.Signer
+	var caCertFile string // retained for LoadCACertPool below
 
-	caCert, caKey, err := pki.LoadCA(caCertFile, caKeyFile)
-	if err != nil {
-		log.Fatalf("Failed to load internal CA: %v", err)
+	if cfg.CA.PKCS11.IsConfigured() {
+		// PKCS#11 HSM path: the CA private key lives in the hardware security
+		// module. The CA certificate is still stored on disk so that agents can
+		// fetch and verify it. EnsureCAWithHSM creates the cert if missing.
+		caCertFile = cfg.CA.CertFile
+		if caCertFile == "" {
+			caCertFile = filepath.Join(cfg.CA.AutogenDir, "ca.crt")
+		}
+		log.Printf("Loading CA key from PKCS#11 HSM (token=%q key=%q)",
+			cfg.CA.PKCS11.TokenLabel, cfg.CA.PKCS11.KeyLabel)
+		caCert, caKey, err = pki.EnsureCAWithHSM(
+			caCertFile,
+			cfg.CA.PKCS11.Lib, cfg.CA.PKCS11.TokenLabel,
+			cfg.CA.PKCS11.KeyLabel, cfg.CA.PKCS11.PIN,
+		)
+		if err != nil {
+			log.Fatalf("Failed to initialise CA with PKCS#11 HSM: %v", err)
+		}
+		log.Printf("CA loaded from HSM; certificate at %s", caCertFile)
+	} else {
+		// Software path: CA key stored in a file on disk (default).
+		caCertFile = cfg.CA.CertFile
+		caKeyFile := cfg.CA.KeyFile
+		if caCertFile == "" && caKeyFile == "" {
+			log.Println("BOR_CA_CERT_FILE/KEY not set – generating internal CA")
+			caCertFile, caKeyFile, err = pki.EnsureCA(cfg.CA.AutogenDir)
+			if err != nil {
+				log.Fatalf("Failed to generate internal CA: %v", err)
+			}
+			log.Printf("Internal CA stored in %s", cfg.CA.AutogenDir)
+		}
+		caCert, caKey, err = pki.LoadCA(caCertFile, caKeyFile)
+		if err != nil {
+			log.Fatalf("Failed to load internal CA: %v", err)
+		}
 	}
 
 	caCertPool, err := pki.LoadCACertPool(caCertFile)
@@ -305,12 +333,29 @@ func main() {
 	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, policyHub))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
+	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
+	// These are the only suites allowed for TLS 1.2; TLS 1.3 suites are
+	// automatically selected by Go and not configurable.
+	// CurvePreferences: P-256 and P-384 satisfy FIPS 140-3, BSI, ANSSI, NCSC.
+	// X25519 is listed first for performance where FIPS mode is not enforced;
+	// GODEBUG=fips140=on will automatically remove it at runtime.
 	uiTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{uiTLSCert},
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.VerifyClientCertIfGiven,
 		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"h2", "http/1.1"},
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,    // BSI/ANSSI/NCSC approved; dropped by GODEBUG=fips140=on
+			tls.CurveP256, // FIPS 140-3 + all EU standards
+			tls.CurveP384, // FIPS 140-3 + all EU standards
+		},
 	}
 
 	uiGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

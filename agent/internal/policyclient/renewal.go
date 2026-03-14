@@ -6,8 +6,9 @@ package policyclient
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -63,10 +64,10 @@ func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 
 	log.Printf("Renewing certificate for node %s (expires %s)", nodeName, existing.NotAfter.Format("2006-01-02"))
 
-	// Generate new key pair.
-	newKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Generate new ECDSA P-256 key pair.
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("failed to generate new RSA key: %w", err)
+		return fmt.Errorf("failed to generate new ECDSA P-256 key: %w", err)
 	}
 
 	// Create CSR with same CN.

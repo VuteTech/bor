@@ -60,6 +60,17 @@ ca:
   key_file:  ""
   autogen_dir: "/var/lib/bor/pki/ca"
 
+  # Optional: store the CA private key in a PKCS#11 HSM instead of a file.
+  # Requires the server binary to be built with: make server-pkcs11
+  # The CA certificate is still stored on disk (cert_file / autogen_dir above).
+  # IMPORTANT: set the PIN via the BOR_CA_PKCS11_PIN environment variable
+  # rather than storing it in this file.
+  #
+  #pkcs11:
+  #  lib: "/usr/lib/softhsm/libsofthsm2.so"   # path to PKCS#11 shared library
+  #  token_label: "bor-ca"                      # HSM token label
+  #  key_label: "bor-ca-key"                    # CA key label on the token
+
 ldap:
   enabled: false
   host: "ldap.example.com"

@@ -6,8 +6,8 @@ package services
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
@@ -27,7 +27,7 @@ type EnrollmentService struct {
 	tokens map[string]*models.EnrollmentToken
 
 	caCert *x509.Certificate
-	caKey  *rsa.PrivateKey
+	caKey  crypto.Signer
 
 	nodeGroupSvc *NodeGroupService
 	nodeSvc      *NodeService
@@ -35,7 +35,7 @@ type EnrollmentService struct {
 }
 
 // NewEnrollmentService creates a new EnrollmentService.
-func NewEnrollmentService(caCert *x509.Certificate, caKey *rsa.PrivateKey, nodeGroupSvc *NodeGroupService, nodeSvc *NodeService, revokeRepo *database.RevocationRepository) *EnrollmentService {
+func NewEnrollmentService(caCert *x509.Certificate, caKey crypto.Signer, nodeGroupSvc *NodeGroupService, nodeSvc *NodeService, revokeRepo *database.RevocationRepository) *EnrollmentService {
 	return &EnrollmentService{
 		tokens:       make(map[string]*models.EnrollmentToken),
 		caCert:       caCert,

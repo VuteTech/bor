@@ -107,6 +107,17 @@ func main() {
 	// ─── Enrollment / mTLS bootstrap ──────────────────────────────────
 	paths := policyclient.DefaultPaths(cfg.Enrollment.DataDir)
 
+	// If a token is supplied and the agent is already enrolled, remove the
+	// existing certificates so that re-enrollment proceeds cleanly. This
+	// covers intentional re-enrollment (moving a node to a different group,
+	// CA rotation, etc.).
+	if *enrollToken != "" && policyclient.IsEnrolled(paths) {
+		log.Println("--token provided for an already-enrolled agent – removing old certificates for re-enrollment")
+		if err := policyclient.RemoveEnrollmentCerts(paths); err != nil {
+			log.Fatalf("Failed to remove old enrollment certificates: %v", err)
+		}
+	}
+
 	if !policyclient.IsEnrolled(paths) {
 		if *enrollToken == "" {
 			log.Fatal("Agent is not enrolled and no enrollment token was provided.\n" +
@@ -140,8 +151,6 @@ To follow the agent logs:
 
 `, cfg.Enrollment.DataDir)
 		os.Exit(0)
-	} else if *enrollToken != "" {
-		log.Println("Agent is already enrolled – ignoring --token flag")
 	} else {
 		log.Println("Agent is enrolled – using mTLS credentials")
 	}

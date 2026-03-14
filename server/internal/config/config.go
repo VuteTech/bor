@@ -68,11 +68,27 @@ type TLSConfig struct {
 	AutogenDir string // BOR_TLS_AUTOGEN_DIR – dir for auto-generated self-signed cert
 }
 
+// PKCS11Config holds PKCS#11 HSM configuration for the CA private key.
+// When set, the CA private key is accessed via the HSM rather than a file on disk.
+// The binary must be compiled with -tags pkcs11 to activate HSM support.
+type PKCS11Config struct {
+	Lib        string // BOR_CA_PKCS11_LIB        – path to PKCS#11 shared library (.so)
+	TokenLabel string // BOR_CA_PKCS11_TOKEN_LABEL – label of the HSM token
+	KeyLabel   string // BOR_CA_PKCS11_KEY_LABEL   – label of the CA private key object on the token
+	PIN        string // BOR_CA_PKCS11_PIN         – token PIN (prefer env var; never commit to YAML)
+}
+
+// IsConfigured returns true when the minimum required PKCS#11 fields are all non-empty.
+func (p PKCS11Config) IsConfigured() bool {
+	return p.Lib != "" && p.TokenLabel != "" && p.KeyLabel != ""
+}
+
 // CAConfig holds internal CA configuration for issuing agent certs (mTLS).
 type CAConfig struct {
-	CertFile   string // BOR_CA_CERT_FILE – path to CA certificate
-	KeyFile    string // BOR_CA_KEY_FILE  – path to CA private key
-	AutogenDir string // BOR_CA_AUTOGEN_DIR – dir for auto-generated CA
+	CertFile   string       // BOR_CA_CERT_FILE   – path to CA certificate
+	KeyFile    string       // BOR_CA_KEY_FILE    – path to CA private key (unused when PKCS11 is set)
+	AutogenDir string       // BOR_CA_AUTOGEN_DIR – dir for auto-generated CA
+	PKCS11     PKCS11Config // optional: load CA key from PKCS#11 HSM instead of a file
 }
 
 // LDAPConfig holds LDAP connection configuration.
@@ -120,6 +136,12 @@ type fileConfig struct {
 		CertFile   string `yaml:"cert_file"`
 		KeyFile    string `yaml:"key_file"`
 		AutogenDir string `yaml:"autogen_dir"`
+		PKCS11     struct {
+			Lib        string `yaml:"lib"`
+			TokenLabel string `yaml:"token_label"`
+			KeyLabel   string `yaml:"key_label"`
+			PIN        string `yaml:"pin"` // prefer BOR_CA_PKCS11_PIN env var; avoid storing PIN in YAML
+		} `yaml:"pkcs11"`
 	} `yaml:"ca"`
 	LDAP struct {
 		Enabled      bool   `yaml:"enabled"`
@@ -192,6 +214,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("both BOR_CA_CERT_FILE and BOR_CA_KEY_FILE must be set, or neither")
 	}
 
+	// ─── CA PKCS#11 (optional HSM) ─────────────────────────────────────────
+	pkcs11Lib := getEnv("BOR_CA_PKCS11_LIB", fc.CA.PKCS11.Lib)
+	pkcs11TokenLabel := getEnv("BOR_CA_PKCS11_TOKEN_LABEL", fc.CA.PKCS11.TokenLabel)
+	pkcs11KeyLabel := getEnv("BOR_CA_PKCS11_KEY_LABEL", fc.CA.PKCS11.KeyLabel)
+	pkcs11PIN := getEnv("BOR_CA_PKCS11_PIN", fc.CA.PKCS11.PIN)
+
 	// ─── Hostnames ─────────────────────────────────────────────────────────
 	// BOR_HOSTNAMES env var accepts a comma-separated list and overrides the
 	// YAML hostnames list entirely when set.
@@ -231,6 +259,12 @@ func Load() (*Config, error) {
 			CertFile:   caCertFile,
 			KeyFile:    caKeyFile,
 			AutogenDir: getEnv("BOR_CA_AUTOGEN_DIR", fc.CA.AutogenDir),
+			PKCS11: PKCS11Config{
+				Lib:        pkcs11Lib,
+				TokenLabel: pkcs11TokenLabel,
+				KeyLabel:   pkcs11KeyLabel,
+				PIN:        pkcs11PIN,
+			},
 		},
 		LDAP: LDAPConfig{
 			Enabled:      ldapEnabled,

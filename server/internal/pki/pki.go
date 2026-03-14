@@ -5,6 +5,9 @@
 package pki
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -23,26 +26,26 @@ import (
 // and dir/ui.key. If they exist AND are signed by the provided CA,
 // they are reused. If they do not exist, or were signed by a different
 // CA (e.g. self-signed from a previous run), a new TLS server
-// certificate is generated (RSA 2048, 365 days) and signed by the
+// certificate is generated (ECDSA P-256, 365 days) and signed by the
 // given CA.
+//
+// ECDSA P-256 satisfies FIPS 140-3, BSI TR-02102-1 (2024), ANSSI RGS,
+// ENISA 2023, and ETSI TS 119 312 recommendations.
 //
 // The certificate always includes SANs for localhost, 127.0.0.1, ::1,
 // and the system hostname. Additional DNS names or IP addresses can be
-// provided via extraHostnames — each entry is classified as an IP
-// address if net.ParseIP succeeds, otherwise it is treated as a DNS name.
+// provided via extraHostnames.
 //
 // When caCert/caKey are nil the certificate is self-signed (fallback
 // for when no CA is available).
 // Returns the paths to the cert and key files.
-func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKey, extraHostnames []string) (certPath, keyPath string, err error) {
+func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer, extraHostnames []string) (certPath, keyPath string, err error) {
 	certPath = filepath.Join(dir, "ui.crt")
 	keyPath = filepath.Join(dir, "ui.key")
 
 	if fileExists(certPath) && fileExists(keyPath) {
 		if caCert != nil && !isSignedByCA(certPath, caCert) {
-			// Existing cert is NOT signed by the current CA
-			// (e.g. self-signed from before CA-signing was implemented).
-			// Remove the old cert/key and regenerate below.
+			// Existing cert is NOT signed by the current CA — regenerate.
 			if err := os.Remove(certPath); err != nil {
 				return "", "", fmt.Errorf("failed to remove old server cert %s: %w", certPath, err)
 			}
@@ -58,9 +61,10 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 		return "", "", fmt.Errorf("failed to create TLS autogen dir %s: %w", dir, err)
 	}
 
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	// ECDSA P-256: 128-bit security, FIPS 140-3 + BSI TR-02102-1 + ANSSI + ETSI approved.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate RSA key: %w", err)
+		return "", "", fmt.Errorf("failed to generate ECDSA P-256 key: %w", err)
 	}
 
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
@@ -91,9 +95,11 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 			Organization: []string{"Bor"},
 			CommonName:   "Bor UI",
 		},
-		NotBefore:             time.Now().Add(-1 * time.Minute),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		NotBefore: time.Now().Add(-1 * time.Minute),
+		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+		// KeyUsageDigitalSignature only — KeyUsageKeyEncipherment is RSA-specific
+		// and must not be set for ECDSA certs (ETSI EN 319 412, RFC 5480).
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		DNSNames:              dnsNames,
@@ -101,14 +107,14 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 	}
 
 	// Sign with CA if available, otherwise self-sign.
-	issuer := tmpl
-	signingKey := key
+	issuer := (*x509.Certificate)(tmpl)
+	var signingKey crypto.Signer = key
 	if caCert != nil && caKey != nil {
 		issuer = caCert
 		signingKey = caKey
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, issuer, &key.PublicKey, signingKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, issuer, key.Public(), signingKey)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create server certificate: %w", err)
 	}
@@ -128,7 +134,12 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 }
 
 // EnsureCA checks for an existing CA cert/key at dir/ca.crt and dir/ca.key.
-// If they do not exist it generates a new CA (RSA 2048, 10 years).
+// If they do not exist it generates a new CA (ECDSA P-384, 10 years).
+//
+// ECDSA P-384 provides 192-bit security — appropriate for a CA with a
+// 10-year lifetime. Satisfies FIPS 140-3, BSI TR-02102-1, ANSSI RGS,
+// and ETSI TS 119 312.
+//
 // Returns the paths to the CA cert and key files.
 func EnsureCA(dir string) (certPath, keyPath string, err error) {
 	certPath = filepath.Join(dir, "ca.crt")
@@ -142,9 +153,10 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 		return "", "", fmt.Errorf("failed to create CA autogen dir %s: %w", dir, err)
 	}
 
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	// ECDSA P-384: 192-bit security, appropriate for a long-lived CA key.
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate CA RSA key: %w", err)
+		return "", "", fmt.Errorf("failed to generate ECDSA P-384 CA key: %w", err)
 	}
 
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
@@ -167,7 +179,7 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 		MaxPathLenZero:        true,
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create CA certificate: %w", err)
 	}
@@ -175,11 +187,11 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
-	caKeyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal CA key: %w", err)
 	}
-	if err := writePEM(keyPath, "PRIVATE KEY", caKeyDER); err != nil {
+	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
 		return "", "", err
 	}
 
@@ -187,8 +199,10 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 }
 
 // LoadCA loads a CA certificate and private key from PEM files and returns
-// the parsed certificate, private key, and a tls.Certificate.
-func LoadCA(certPath, keyPath string) (*x509.Certificate, *rsa.PrivateKey, error) {
+// the parsed certificate and a crypto.Signer for the private key.
+// Accepts PKCS#8 ECDSA and RSA keys (the latter for operational flexibility
+// when an externally-provided RSA CA is in use).
+func LoadCA(certPath, keyPath string) (*x509.Certificate, crypto.Signer, error) {
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read CA cert: %w", err)
@@ -210,7 +224,7 @@ func LoadCA(certPath, keyPath string) (*x509.Certificate, *rsa.PrivateKey, error
 	if keyBlock == nil {
 		return nil, nil, fmt.Errorf("failed to decode CA key PEM")
 	}
-	caKey, err := parseRSAPrivateKey(keyBlock)
+	caKey, err := parsePrivateKey(keyBlock)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse CA key: %w", err)
 	}
@@ -218,27 +232,11 @@ func LoadCA(certPath, keyPath string) (*x509.Certificate, *rsa.PrivateKey, error
 	return caCert, caKey, nil
 }
 
-// parseRSAPrivateKey parses an RSA private key from a PKCS#8 PEM block.
-func parseRSAPrivateKey(block *pem.Block) (*rsa.PrivateKey, error) {
-	if block.Type != "PRIVATE KEY" {
-		return nil, fmt.Errorf("expected PKCS#8 PEM block type \"PRIVATE KEY\", got %q", block.Type)
-	}
-	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	rsaKey, ok := key.(*rsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("PKCS#8 key is not an RSA key")
-	}
-	return rsaKey, nil
-}
-
 // SignCSR signs a PEM-encoded CSR with the given CA and returns the signed
 // certificate PEM, the certificate serial number as a hex string, and the
 // NotAfter time. The issued certificate is valid for 90 days with
 // client-auth extended key usage.
-func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey *rsa.PrivateKey) (certPEM []byte, serial string, notAfter time.Time, err error) {
+func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey crypto.Signer) (certPEM []byte, serial string, notAfter time.Time, err error) {
 	block, _ := pem.Decode(csrPEM)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
 		return nil, "", time.Time{}, fmt.Errorf("failed to decode CSR PEM")
@@ -258,11 +256,13 @@ func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey *rsa.PrivateKey) (ce
 	}
 
 	tmpl := &x509.Certificate{
-		SerialNumber:          serialNumber,
-		Subject:               csr.Subject,
-		NotBefore:             time.Now().Add(-1 * time.Minute),
-		NotAfter:              time.Now().Add(90 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		SerialNumber: serialNumber,
+		Subject:      csr.Subject,
+		NotBefore:    time.Now().Add(-1 * time.Minute),
+		NotAfter:     time.Now().Add(90 * 24 * time.Hour),
+		// KeyUsageDigitalSignature only — KeyUsageKeyEncipherment is RSA-specific
+		// and must not appear in ECDSA client certs (RFC 5480, ETSI EN 319 412).
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 	}
@@ -315,9 +315,28 @@ func writePEM(path, pemType string, data []byte) error {
 	return pem.Encode(f, &pem.Block{Type: pemType, Bytes: data})
 }
 
+// parsePrivateKey parses a PKCS#8 private key from a PEM block.
+// Supports ECDSA (generated by Bor) and RSA (for externally-provided CA keys).
+func parsePrivateKey(block *pem.Block) (crypto.Signer, error) {
+	if block.Type != "PRIVATE KEY" {
+		return nil, fmt.Errorf("expected PKCS#8 PEM block type \"PRIVATE KEY\", got %q", block.Type)
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	switch k := key.(type) {
+	case *ecdsa.PrivateKey:
+		return k, nil
+	case *rsa.PrivateKey:
+		return k, nil
+	default:
+		return nil, fmt.Errorf("unsupported key type %T", key)
+	}
+}
+
 // isSignedByCA loads a PEM certificate from path and verifies that it
-// was issued by the given CA. Returns false on any error (file missing,
-// parse failure, verification failure).
+// was issued by the given CA. Returns false on any error.
 func isSignedByCA(certPath string, caCert *x509.Certificate) bool {
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
@@ -335,6 +354,24 @@ func isSignedByCA(certPath string, caCert *x509.Certificate) bool {
 	pool.AddCert(caCert)
 	_, err = cert.Verify(x509.VerifyOptions{Roots: pool})
 	return err == nil
+}
+
+// loadCACert loads only the CA certificate from a PEM file.
+// Used by pkcs11.go where the key comes from an HSM rather than a file.
+func loadCACert(certPath string) (*x509.Certificate, error) {
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA cert %s: %w", certPath, err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode CA cert PEM from %s", certPath)
+	}
+	caCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA cert: %w", err)
+	}
+	return caCert, nil
 }
 
 func fileExists(path string) bool {

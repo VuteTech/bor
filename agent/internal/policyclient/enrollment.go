@@ -6,8 +6,9 @@ package policyclient
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -47,6 +48,18 @@ func IsEnrolled(paths EnrollmentPaths) bool {
 	return errC == nil && errK == nil && errCA == nil
 }
 
+// RemoveEnrollmentCerts deletes the certificate, private key, and CA
+// certificate from disk so that the agent can be re-enrolled. Missing
+// files are silently ignored.
+func RemoveEnrollmentCerts(paths EnrollmentPaths) error {
+	for _, p := range []string{paths.CertFile, paths.KeyFile, paths.CACert} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
 // Enroll performs the one-time enrollment flow:
 //  1. Generate an RSA 2048 key pair.
 //  2. Create a CSR with the agent's node name.
@@ -58,10 +71,10 @@ func Enroll(serverAddr, token, nodeName string, insecureSkipVerify bool, paths E
 		return fmt.Errorf("failed to create data dir: %w", err)
 	}
 
-	// 1. Generate RSA key pair
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	// 1. Generate ECDSA P-256 key pair (FIPS 140-3, BSI TR-02102-1, ANSSI, ENISA approved).
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("failed to generate RSA key: %w", err)
+		return fmt.Errorf("failed to generate ECDSA P-256 key: %w", err)
 	}
 
 	// 2. Create CSR

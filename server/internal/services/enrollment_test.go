@@ -5,8 +5,10 @@
 package services
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -16,7 +18,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/pki"
 )
 
-func newTestCA(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
+func newTestCA(t *testing.T) (*x509.Certificate, crypto.Signer) {
 	t.Helper()
 	dir := t.TempDir()
 	certPath, keyPath, err := pki.EnsureCA(dir)
@@ -94,7 +96,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 	caCert, caKey := newTestCA(t)
 	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
-	agentKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate agent key: %v", err)
 	}

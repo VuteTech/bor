@@ -5,8 +5,9 @@
 package pki
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -241,8 +242,8 @@ func TestSignCSR(t *testing.T) {
 		t.Fatalf("LoadCA() error = %v", err)
 	}
 
-	// Generate a CSR
-	agentKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Generate a CSR (ECDSA P-256)
+	agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate agent key: %v", err)
 	}
