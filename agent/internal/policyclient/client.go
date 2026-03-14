@@ -32,8 +32,9 @@ type Client struct {
 // and private key. If insecureSkipVerify is true, server cert verification
 // is skipped.
 func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string, insecureSkipVerify bool) (*Client, error) {
+	// TLS 1.3 minimum: this client connects to the agent-only mTLS port (8444).
 	tlsCfg := &tls.Config{
-		MinVersion: tls.VersionTLS12,
+		MinVersion: tls.VersionTLS13,
 	}
 
 	if caCertPath != "" {

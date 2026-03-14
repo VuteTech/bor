@@ -111,9 +111,13 @@ func Enroll(serverAddr, token, nodeName string, insecureSkipVerify bool, paths E
 	log.Printf("Enrolled successfully: node_group=%s", resp.GetAssignedNodeGroup())
 
 	// 5. Persist artifacts
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent key: %w", err)
+	}
 	if err := writeFile(paths.KeyFile, pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
+		Type:  "PRIVATE KEY",
+		Bytes: keyDER,
 	}), 0o600); err != nil {
 		return fmt.Errorf("failed to save agent key: %w", err)
 	}

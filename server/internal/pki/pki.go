@@ -116,8 +116,11 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey *rsa.PrivateKe
 	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
-	keyDER := x509.MarshalPKCS1PrivateKey(key)
-	if err := writePEM(keyPath, "RSA PRIVATE KEY", keyDER); err != nil {
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to marshal server key: %w", err)
+	}
+	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
 		return "", "", err
 	}
 
@@ -172,8 +175,11 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
-	keyDER := x509.MarshalPKCS1PrivateKey(key)
-	if err := writePEM(keyPath, "RSA PRIVATE KEY", keyDER); err != nil {
+	caKeyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to marshal CA key: %w", err)
+	}
+	if err := writePEM(keyPath, "PRIVATE KEY", caKeyDER); err != nil {
 		return "", "", err
 	}
 
@@ -204,12 +210,28 @@ func LoadCA(certPath, keyPath string) (*x509.Certificate, *rsa.PrivateKey, error
 	if keyBlock == nil {
 		return nil, nil, fmt.Errorf("failed to decode CA key PEM")
 	}
-	caKey, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	caKey, err := parseRSAPrivateKey(keyBlock)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse CA key: %w", err)
 	}
 
 	return caCert, caKey, nil
+}
+
+// parseRSAPrivateKey parses an RSA private key from a PKCS#8 PEM block.
+func parseRSAPrivateKey(block *pem.Block) (*rsa.PrivateKey, error) {
+	if block.Type != "PRIVATE KEY" {
+		return nil, fmt.Errorf("expected PKCS#8 PEM block type \"PRIVATE KEY\", got %q", block.Type)
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("PKCS#8 key is not an RSA key")
+	}
+	return rsaKey, nil
 }
 
 // SignCSR signs a PEM-encoded CSR with the given CA and returns the signed

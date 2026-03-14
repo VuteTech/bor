@@ -6,17 +6,84 @@ package services
 
 import (
 	"context"
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
+
+// FIPS 140-3 compliant password hashing using PBKDF2-SHA256.
+// NIST SP 800-132 recommends >= 600,000 iterations for SHA-256.
+const (
+	pbkdf2Iterations = 600_000
+	pbkdf2KeyLen     = 32 // 256 bits
+	pbkdf2SaltLen    = 16 // 128 bits
+)
+
+// hashPassword hashes a plaintext password with PBKDF2-SHA256 and returns
+// the encoded string: $pbkdf2$sha256$<iterations>$<base64-salt>$<base64-key>
+func hashPassword(password string) (string, error) {
+	salt := make([]byte, pbkdf2SaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("failed to generate salt: %w", err)
+	}
+	key, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iterations, pbkdf2KeyLen)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive key: %w", err)
+	}
+	return fmt.Sprintf("$pbkdf2$sha256$%d$%s$%s",
+		pbkdf2Iterations,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key),
+	), nil
+}
+
+// verifyPassword checks a plaintext password against a stored PBKDF2 hash.
+func verifyPassword(hash, password string) error {
+	parts := strings.Split(hash, "$")
+	// Expected: ["", "pbkdf2", "sha256", "<iter>", "<salt>", "<key>"]
+	if len(parts) != 6 || parts[1] != "pbkdf2" || parts[2] != "sha256" {
+		return fmt.Errorf("unsupported password hash format")
+	}
+	var iter int
+	if _, err := fmt.Sscanf(parts[3], "%d", &iter); err != nil {
+		return fmt.Errorf("invalid iteration count in hash")
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return fmt.Errorf("invalid salt in hash")
+	}
+	storedKey, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return fmt.Errorf("invalid key in hash")
+	}
+	candidate, err := pbkdf2.Key(sha256.New, password, salt, iter, len(storedKey))
+	if err != nil {
+		return fmt.Errorf("failed to derive key: %w", err)
+	}
+	// Constant-time comparison to prevent timing attacks.
+	if len(candidate) != len(storedKey) {
+		return fmt.Errorf("invalid username or password")
+	}
+	var diff byte
+	for i := range candidate {
+		diff |= candidate[i] ^ storedKey[i]
+	}
+	if diff != 0 {
+		return fmt.Errorf("invalid username or password")
+	}
+	return nil
+}
 
 // AuthService handles authentication and authorization
 type AuthService struct {
@@ -75,7 +142,7 @@ func (s *AuthService) authenticateLocal(user *models.User, password string) (*mo
 		return nil, fmt.Errorf("user account is disabled")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+	if err := verifyPassword(user.PasswordHash, password); err != nil {
 		return nil, fmt.Errorf("invalid username or password")
 	}
 
@@ -197,14 +264,14 @@ func (s *AuthService) CreateUser(ctx context.Context, req *models.CreateUserRequ
 		return nil, fmt.Errorf("username already exists")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	user := &models.User{
 		Username:     req.Username,
-		PasswordHash: string(hashedPassword),
+		PasswordHash: hashedPassword,
 		Email:        req.Email,
 		FullName:     req.FullName,
 		Source:       models.SourceLocal,

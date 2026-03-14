@@ -95,10 +95,11 @@ func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load existing client cert: %w", err)
 	}
+	// TLS 1.3 minimum: renewal connects to the agent-only mTLS port (8444).
 	tlsCfg := &tls.Config{
 		RootCAs:      caPool,
 		Certificates: []tls.Certificate{clientCert},
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 	}
 	conn, err := grpc.NewClient(serverAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
@@ -119,9 +120,13 @@ func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 	}
 
 	// Write new key + cert to disk (key first, then cert).
+	newKeyDER, err := x509.MarshalPKCS8PrivateKey(newKey)
+	if err != nil {
+		return fmt.Errorf("failed to marshal new agent key: %w", err)
+	}
 	newKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(newKey),
+		Type:  "PRIVATE KEY",
+		Bytes: newKeyDER,
 	})
 	if err := writeFile(keyPath, newKeyPEM, 0o600); err != nil {
 		return fmt.Errorf("failed to save new agent key: %w", err)

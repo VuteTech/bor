@@ -329,11 +329,12 @@ func main() {
 	}
 
 	// ─── Agent policy server (:8444) — RequireAndVerifyClientCert ────────
+	// TLS 1.3 minimum: agent-only port, no browser clients, strongest TLS.
 	agentTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{uiTLSCert},
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 		NextProtos:   []string{"h2"},
 	}
 
