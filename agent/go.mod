@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/VuteTech/Bor/server v0.0.0
+	github.com/fsnotify/fsnotify v1.9.0
 	google.golang.org/grpc v1.79.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1

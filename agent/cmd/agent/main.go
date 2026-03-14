@@ -11,13 +11,17 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/VuteTech/Bor/agent/internal/config"
+	"github.com/VuteTech/Bor/agent/internal/filewatcher"
 	"github.com/VuteTech/Bor/agent/internal/notify"
 	"github.com/VuteTech/Bor/agent/internal/policy"
 	"github.com/VuteTech/Bor/agent/internal/policyclient"
+	"github.com/VuteTech/Bor/agent/internal/procinfo"
 	"github.com/VuteTech/Bor/agent/internal/sysinfo"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/protobuf/proto"
@@ -80,6 +84,9 @@ var chromeNotifyConfig = notify.NotifyConfig{
 	Cooldown: 5 * time.Minute,
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
+
+// fileWatcher monitors Bor-managed files and restores them when modified externally.
+var fileWatcher *filewatcher.FileWatcher
 
 func main() {
 	configPath := flag.String("config", defaultConfigPath, "path to configuration file")
@@ -165,6 +172,19 @@ To follow the agent logs:
 		log.Printf("Received signal %s, shutting down...", sig)
 		cancel()
 	}()
+
+	// Start the file watcher to restore managed files if tampered externally.
+	var watcherErr error
+	fileWatcher, watcherErr = filewatcher.New(func(path string) {
+		onTamperedFile(ctx, client, cfg, path)
+	})
+	if watcherErr != nil {
+		log.Printf("Warning: failed to create file watcher (tamper protection disabled): %v", watcherErr)
+	} else {
+		defer fileWatcher.Close()
+		go fileWatcher.Run(ctx)
+		log.Println("File watcher started")
+	}
 
 	// Run the policy enforcement loop — prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
@@ -489,6 +509,15 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		log.Printf("Warning: failed to ensure profile.d script: %v", err)
 	}
 
+	// Suppress watcher events for all files about to be written (current and new).
+	var incomingPaths []string
+	for name := range files {
+		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.ConfigPath, name))
+	}
+	incomingPaths = append(incomingPaths, "/etc/kde5rc", "/etc/kde6rc")
+	suppressManagedWrites(cfg, incomingPaths...)
+	defer updateWatcher(cfg)
+
 	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, files); err != nil {
 		log.Printf("Error syncing KConfig files: %v", err)
 		for _, id := range ids {
@@ -553,6 +582,9 @@ func syncAllFirefox(ctx context.Context, client *policyclient.Client, cfg *confi
 		policies = append(policies, pol)
 		ids = append(ids, id)
 	}
+
+	suppressManagedWrites(cfg, cfg.Firefox.PoliciesPath, cfg.Firefox.FlatpakPoliciesPath)
+	defer updateWatcher(cfg)
 
 	if err := policy.SyncFirefoxPoliciesFromProto(cfg.Firefox.PoliciesPath, policies); err != nil {
 		log.Printf("Error syncing Firefox policies: %v", err)
@@ -631,6 +663,16 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 		}
 	}
 
+	// Suppress watcher events for all Chrome managed files about to be written.
+	var chromeManagedFiles []string
+	for _, dir := range append(activePaths, cfg.Chrome.FlatpakChromiumPoliciesPath) {
+		if dir != "" {
+			chromeManagedFiles = append(chromeManagedFiles, filepath.Join(dir, policy.ChromeManagedFilename))
+		}
+	}
+	suppressManagedWrites(cfg, chromeManagedFiles...)
+	defer updateWatcher(cfg)
+
 	if err := policy.SyncChromeFromProto(policies, activePaths); err != nil {
 		log.Printf("Error syncing Chrome policies: %v", err)
 		for _, id := range ids {
@@ -653,5 +695,106 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
 	return true
+}
+
+// getManagedPaths returns the absolute paths of all files currently managed
+// by Bor, based on the active policy caches and on-disk backup sentinels.
+// This is used to keep the file watcher's watch list up to date.
+func getManagedPaths(cfg *config.Config) []string {
+	var paths []string
+
+	// Firefox.
+	if len(firefoxCache) > 0 {
+		if cfg.Firefox.PoliciesPath != "" {
+			paths = append(paths, cfg.Firefox.PoliciesPath)
+		}
+		if cfg.Firefox.FlatpakPoliciesPath != "" {
+			paths = append(paths, cfg.Firefox.FlatpakPoliciesPath)
+		}
+	}
+
+	// Chrome.
+	if len(chromeCache) > 0 {
+		for _, dir := range []string{
+			cfg.Chrome.ChromePoliciesPath,
+			cfg.Chrome.ChromiumPoliciesPath,
+			cfg.Chrome.ChromiumBrowserPoliciesPath,
+			cfg.Chrome.FlatpakChromiumPoliciesPath,
+		} {
+			if dir != "" {
+				paths = append(paths, filepath.Join(dir, policy.ChromeManagedFilename))
+			}
+		}
+	}
+
+	// KConfig: discover currently managed files from .bor-backup sentinels.
+	if managed, err := policy.ManagedFiles(cfg.KConfig.ConfigPath); err == nil {
+		for _, name := range managed {
+			paths = append(paths, filepath.Join(cfg.KConfig.ConfigPath, name))
+		}
+	}
+	// KCM restriction files in /etc.
+	if len(kconfigCache) > 0 {
+		for _, id := range kconfigCache {
+			for _, e := range id {
+				if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
+					paths = append(paths, "/etc/kde5rc", "/etc/kde6rc")
+					break
+				}
+			}
+		}
+	}
+
+	return paths
+}
+
+// updateWatcher synchronises the file watcher's managed-file set with the
+// current policy state. Call after every sync operation.
+func updateWatcher(cfg *config.Config) {
+	if fileWatcher == nil {
+		return
+	}
+	fileWatcher.SetManaged(getManagedPaths(cfg))
+}
+
+// suppressManagedWrites suppresses file watcher events for all currently
+// managed paths plus any additional paths about to be written. Call before
+// any Bor-initiated file write to avoid self-triggering restores.
+func suppressManagedWrites(cfg *config.Config, extra ...string) {
+	if fileWatcher == nil {
+		return
+	}
+	paths := append(getManagedPaths(cfg), extra...)
+	fileWatcher.Suppress(paths, 2*time.Second)
+}
+
+// onTamperedFile is called by the file watcher when a managed file is modified
+// or removed externally. It re-applies the appropriate policy to restore the
+// file to the Bor-managed state and reports the event to the server.
+func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *config.Config, path string) {
+	log.Printf("Tamper protection: restoring %s", path)
+
+	// Collect process info before restoring — the modifying process may still
+	// hold the file open (e.g. an editor), giving us user/comm attribution.
+	holders := procinfo.FindFileHolders(path)
+	procs := make([]policyclient.TamperProcess, len(holders))
+	for i, h := range holders {
+		procs[i] = policyclient.TamperProcess{PID: h.PID, Comm: h.Comm, User: h.User}
+		log.Printf("Tamper protection: file held by pid=%d comm=%s user=%s", h.PID, h.Comm, h.User)
+	}
+
+	switch {
+	case strings.HasPrefix(path, cfg.KConfig.ConfigPath+string(filepath.Separator)) ||
+		path == "/etc/kde5rc" || path == "/etc/kde6rc":
+		syncAllKConfig(ctx, client, cfg)
+	case path == cfg.Firefox.PoliciesPath || path == cfg.Firefox.FlatpakPoliciesPath:
+		syncAllFirefox(ctx, client, cfg)
+	default:
+		syncAllChrome(ctx, client, cfg)
+	}
+
+	if err := client.ReportTamperEvent(ctx, path, procs); err != nil {
+		log.Printf("Failed to report tamper event to server: %v", err)
+	}
 }
 
