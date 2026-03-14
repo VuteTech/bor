@@ -1,0 +1,94 @@
+version: '3.8'
+
+# Sample podman-compose configuration for Bor Policy Management Server.
+# Copy to podman-compose.yml and adjust the values for your environment.
+#
+# Key things to change:
+#   - BOR_HOSTNAMES: add your server's FQDN / IP so agents can verify TLS
+#   - DB_PASSWORD: use a strong password in production
+#   - JWT_SECRET: use a random secret in production
+#   - BOR_ADMIN_PASSWORD: set the initial admin UI password
+
+services:
+  postgres:
+    image: public.ecr.aws/docker/library/postgres:17.6-alpine3.22
+    container_name: bor-postgres
+    environment:
+      POSTGRES_USER: bor
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: bor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Containerfile
+    container_name: bor-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # ── Database ──────────────────────────────────────────────────────────
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=bor
+      - DB_PASSWORD=change-me
+      - DB_NAME=bor
+      - DB_SSLMODE=disable
+
+      # ── Server ────────────────────────────────────────────────────────────
+      # Server hostname/IP (no port). Leave empty to listen on all interfaces.
+      # - BOR_ADDRESS=
+      # Port for the admin UI and enrollment gRPC (default: 8443).
+      - BOR_ENROLLMENT_PORT=8443
+      # Port for mTLS policy streaming and certificate renewal (default: 8444).
+      # Must be reachable by enrolled agents.
+      - BOR_POLICY_PORT=8444
+      # Comma-separated hostnames/IPs added as SANs to the auto-generated
+      # TLS certificate. Add your server's FQDN so browsers and agents can
+      # verify the certificate without warnings.
+      - BOR_HOSTNAMES=bor.example.com,192.0.2.10
+
+      # ── Security ──────────────────────────────────────────────────────────
+      - JWT_SECRET=change-me-in-production
+      # Initial admin password (only used when no users exist on first startup).
+      - BOR_ADMIN_PASSWORD=change-me-in-production
+
+      # ── PKI (auto-generated if not set) ───────────────────────────────────
+      # - BOR_CA_CERT_FILE=/etc/bor/pki/ca/ca.crt
+      # - BOR_CA_KEY_FILE=/etc/bor/pki/ca/ca.key
+      # - BOR_CA_AUTOGEN_DIR=/var/lib/bor/pki/ca
+      # - BOR_TLS_CERT_FILE=/etc/bor/pki/ui/server.crt
+      # - BOR_TLS_KEY_FILE=/etc/bor/pki/ui/server.key
+      # - BOR_TLS_AUTOGEN_DIR=/var/lib/bor/pki/ui
+
+      # ── LDAP (optional) ───────────────────────────────────────────────────
+      # - LDAP_ENABLED=true
+      # - LDAP_HOST=ldap.example.com
+      # - LDAP_PORT=389
+      # - LDAP_USE_TLS=false
+      # - LDAP_BIND_DN=cn=readonly,dc=example,dc=com
+      # - LDAP_BIND_PASSWORD=secret
+      # - LDAP_BASE_DN=dc=example,dc=com
+      # - LDAP_USER_FILTER=(uid=%s)
+      # - LDAP_ATTR_USERNAME=uid
+      # - LDAP_ATTR_EMAIL=mail
+      # - LDAP_ATTR_FULL_NAME=cn
+    ports:
+      - "8443:8443"   # Admin UI + enrollment gRPC
+      - "8444:8444"   # Agent mTLS policy streaming
+    volumes:
+      - bor_pki:/var/lib/bor/pki:U
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  bor_pki:

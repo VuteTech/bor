@@ -32,7 +32,7 @@ func newTestCA(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
 
 func TestEnrollmentService_CreateToken(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	token, err := svc.CreateToken("test-group-id")
 	if err != nil {
@@ -51,7 +51,7 @@ func TestEnrollmentService_CreateToken(t *testing.T) {
 
 func TestEnrollmentService_CreateToken_EmptyGroupID(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	_, err := svc.CreateToken("")
 	if err == nil {
@@ -61,7 +61,7 @@ func TestEnrollmentService_CreateToken_EmptyGroupID(t *testing.T) {
 
 func TestEnrollmentService_ConsumeToken(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	token, _ := svc.CreateToken("group-1")
 
@@ -82,7 +82,7 @@ func TestEnrollmentService_ConsumeToken(t *testing.T) {
 
 func TestEnrollmentService_ConsumeToken_Invalid(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	_, err := svc.ConsumeToken("nonexistent-token")
 	if err == nil {
@@ -92,7 +92,7 @@ func TestEnrollmentService_ConsumeToken_Invalid(t *testing.T) {
 
 func TestEnrollmentService_SignCSR(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	agentKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 	}
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 
-	certPEM, err := svc.SignCSR(csrPEM)
+	certPEM, _, _, err := svc.SignCSR(csrPEM)
 	if err != nil {
 		t.Fatalf("SignCSR() error = %v", err)
 	}
@@ -130,7 +130,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 
 func TestEnrollmentService_GetCACertPEM(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	caPEM := svc.GetCACertPEM()
 	if len(caPEM) == 0 {

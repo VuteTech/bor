@@ -101,7 +101,7 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	log.Printf("Server: %s", cfg.Server.Address)
+	log.Printf("Server enrollment: %s  policy: %s", cfg.Server.EnrollmentAddr(), cfg.Server.PolicyAddr())
 	log.Printf("Client ID: %s", cfg.Agent.ClientID)
 
 	// ─── Enrollment / mTLS bootstrap ──────────────────────────────────
@@ -115,7 +115,7 @@ func main() {
 		}
 		log.Println("Not yet enrolled – starting enrollment...")
 		if err := policyclient.Enroll(
-			cfg.Server.Address,
+			cfg.Server.EnrollmentAddr(),
 			*enrollToken,
 			cfg.Agent.ClientID,
 			cfg.Server.InsecureSkipVerify,
@@ -146,9 +146,24 @@ To follow the agent logs:
 		log.Println("Agent is enrolled – using mTLS credentials")
 	}
 
+	agentAddr := cfg.Server.PolicyAddr()
+
+	// ─── Certificate renewal check ────────────────────────────────────
+	// Renew the agent certificate if it expires within 30 days.
+	const renewThreshold = 30 * 24 * time.Hour
+	expiring, expiryErr := policyclient.CertExpiringSoon(paths.CertFile, renewThreshold)
+	if expiryErr != nil {
+		log.Printf("Warning: could not check cert expiry: %v", expiryErr)
+	} else if expiring {
+		log.Println("Certificate expires within 30 days, renewing...")
+		if err := policyclient.RenewCertificate(agentAddr, paths.CACert, paths.CertFile, paths.KeyFile); err != nil {
+			log.Printf("Warning: certificate renewal failed: %v — will retry next cycle", err)
+		}
+	}
+
 	// ─── Connect with mTLS credentials ────────────────────────────────
 	client, err := policyclient.New(
-		cfg.Server.Address,
+		agentAddr,
 		cfg.Agent.ClientID,
 		paths.CACert,      // CA cert received during enrollment
 		paths.CertFile,    // agent client cert signed by CA

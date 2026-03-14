@@ -22,8 +22,9 @@ import {
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
 import ExclamationCircleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-circle-icon";
 import QuestionCircleIcon from "@patternfly/react-icons/dist/esm/icons/question-circle-icon";
+import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
 
-import type { FleetOverview } from "../../apiClient/dashboardApi";
+import type { FleetOverview, CertExpiryEntry } from "../../apiClient/dashboardApi";
 
 interface FleetOverviewSectionProps {
   data: FleetOverview;
@@ -79,10 +80,37 @@ const StatCard: React.FC<{
   );
 };
 
+const CertExpiryList: React.FC<{ entries: CertExpiryEntry[]; emptyText: string }> = ({ entries, emptyText }) => {
+  if (entries.length === 0) {
+    return <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>{emptyText}</span>;
+  }
+  return (
+    <DescriptionList isHorizontal isCompact>
+      {entries.map((e) => {
+        const label = e.daysUntilExpiry <= 0
+          ? `Expired ${Math.abs(e.daysUntilExpiry)}d ago`
+          : `${e.daysUntilExpiry}d remaining`;
+        const color = e.daysUntilExpiry <= 0 ? "var(--pf-v5-global--danger-color--100)"
+          : e.daysUntilExpiry <= 30 ? "var(--pf-v5-global--warning-color--100)"
+          : "var(--pf-v5-global--Color--200)";
+        return (
+          <DescriptionListGroup key={e.id}>
+            <DescriptionListTerm>{e.name}</DescriptionListTerm>
+            <DescriptionListDescription>
+              <span style={{ color, fontWeight: 600, fontSize: "0.8125rem" }}>{label}</span>
+            </DescriptionListDescription>
+          </DescriptionListGroup>
+        );
+      })}
+    </DescriptionList>
+  );
+};
+
 export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data }) => {
   const versionEntries = Object.entries(data.agentVersions).sort((a, b) => b[1] - a[1]);
   const osEntries = Object.entries(data.osDistribution).sort((a, b) => b[1] - a[1]);
   const deEntries = Object.entries(data.desktopEnvironment).sort((a, b) => b[1] - a[1]);
+  const hasExpiryData = data.certsExpiringSoon.length > 0 || data.certsExpired.length > 0;
 
   return (
     <>
@@ -177,6 +205,49 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             </CardBody>
           </Card>
         </GridItem>
+
+        {hasExpiryData && (
+          <>
+            {data.certsExpired.length > 0 && (
+              <GridItem span={6}>
+                <Card isCompact isFlat style={{ borderLeft: "3px solid var(--pf-v5-global--danger-color--100)" }}>
+                  <CardTitle>
+                    <Flex alignItems={{ default: "alignItemsCenter" }} spaceItems={{ default: "spaceItemsSm" }}>
+                      <FlexItem>
+                        <ExclamationCircleIcon color="var(--pf-v5-global--danger-color--100)" />
+                      </FlexItem>
+                      <FlexItem>
+                        Expired Certificates ({data.certsExpired.length})
+                      </FlexItem>
+                    </Flex>
+                  </CardTitle>
+                  <CardBody>
+                    <CertExpiryList entries={data.certsExpired} emptyText="No expired certificates" />
+                  </CardBody>
+                </Card>
+              </GridItem>
+            )}
+            {data.certsExpiringSoon.length > 0 && (
+              <GridItem span={data.certsExpired.length > 0 ? 6 : 12}>
+                <Card isCompact isFlat style={{ borderLeft: "3px solid var(--pf-v5-global--warning-color--100)" }}>
+                  <CardTitle>
+                    <Flex alignItems={{ default: "alignItemsCenter" }} spaceItems={{ default: "spaceItemsSm" }}>
+                      <FlexItem>
+                        <ExclamationTriangleIcon color="var(--pf-v5-global--warning-color--100)" />
+                      </FlexItem>
+                      <FlexItem>
+                        Certificates Expiring Soon ({data.certsExpiringSoon.length})
+                      </FlexItem>
+                    </Flex>
+                  </CardTitle>
+                  <CardBody>
+                    <CertExpiryList entries={data.certsExpiringSoon} emptyText="No certificates expiring soon" />
+                  </CardBody>
+                </Card>
+              </GridItem>
+            )}
+          </>
+        )}
       </Grid>
     </>
   );

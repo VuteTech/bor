@@ -39,6 +39,7 @@ interface RawNode {
   node_group_id?: string;
   node_group_name?: string;
   last_seen?: string;
+  cert_not_after?: string;
 }
 
 interface RawNodeGroup {
@@ -73,6 +74,13 @@ interface RawBinding {
 
 /* ── Dashboard data types ── */
 
+export interface CertExpiryEntry {
+  id: string;
+  name: string;
+  certNotAfter: string;
+  daysUntilExpiry: number;
+}
+
 export interface FleetOverview {
   totalNodes: number;
   online: number;
@@ -81,6 +89,8 @@ export interface FleetOverview {
   agentVersions: Record<string, number>;
   osDistribution: Record<string, number>;
   desktopEnvironment: Record<string, number>;
+  certsExpiringSoon: CertExpiryEntry[];   // expiring within 60 days
+  certsExpired: CertExpiryEntry[];        // already expired
 }
 
 export interface GroupSummary {
@@ -156,6 +166,24 @@ export async function fetchDashboardData(): Promise<DashboardData> {
   const online = rawNodes.filter((n) => n.status === "online").length;
   const offline = rawNodes.filter((n) => n.status === "offline").length;
   const unknown = rawNodes.filter((n) => n.status === "unknown").length;
+
+  const now = Date.now();
+  const msPerDay = 86_400_000;
+  const certsExpired: CertExpiryEntry[] = [];
+  const certsExpiringSoon: CertExpiryEntry[] = [];
+  for (const node of rawNodes) {
+    if (!node.cert_not_after) continue;
+    const expiryMs = new Date(node.cert_not_after).getTime();
+    const daysUntilExpiry = Math.ceil((expiryMs - now) / msPerDay);
+    const entry: CertExpiryEntry = { id: node.id, name: node.name, certNotAfter: node.cert_not_after, daysUntilExpiry };
+    if (daysUntilExpiry <= 0) {
+      certsExpired.push(entry);
+    } else if (daysUntilExpiry <= 60) {
+      certsExpiringSoon.push(entry);
+    }
+  }
+  certsExpired.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
+  certsExpiringSoon.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
 
   const agentVersions: Record<string, number> = {};
   const osDistribution: Record<string, number> = {};
@@ -247,7 +275,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     }));
 
   return {
-    fleet: { totalNodes, online, offline, unknown, agentVersions, osDistribution, desktopEnvironment },
+    fleet: { totalNodes, online, offline, unknown, agentVersions, osDistribution, desktopEnvironment, certsExpiringSoon, certsExpired },
     nodesGroups: { totalGroups: rawGroups.length, nodesWithoutGroup, groups },
     policies: { totalPolicies: rawPolicies.length, released, draft, archived, byType },
     bindings: {

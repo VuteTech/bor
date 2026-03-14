@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+
 // Config holds application configuration.
 type Config struct {
 	Database DatabaseConfig
@@ -35,8 +36,20 @@ type DatabaseConfig struct {
 
 // ServerConfig holds server configuration.
 type ServerConfig struct {
-	Addr      string   // BOR_ADDR – HTTPS listen address (default ":8443")
-	Hostnames []string // BOR_HOSTNAMES – additional SANs for the auto-generated TLS cert
+	Address        string   // BOR_ADDRESS – server hostname or IP (no port; default "")
+	EnrollmentPort int      // BOR_ENROLLMENT_PORT – UI + enrollment gRPC listen port (default 8443)
+	PolicyPort     int      // BOR_POLICY_PORT – mTLS agent policy gRPC listen port (default 8444)
+	Hostnames      []string // BOR_HOSTNAMES – additional SANs for the auto-generated TLS cert
+}
+
+// EnrollmentAddr returns the host:port for the UI + enrollment server.
+func (s ServerConfig) EnrollmentAddr() string {
+	return fmt.Sprintf("%s:%d", s.Address, s.EnrollmentPort)
+}
+
+// PolicyAddr returns the host:port for the mTLS agent policy server.
+func (s ServerConfig) PolicyAddr() string {
+	return fmt.Sprintf("%s:%d", s.Address, s.PolicyPort)
 }
 
 // SecurityConfig holds security configuration.
@@ -81,8 +94,10 @@ type LDAPConfig struct {
 // Field names use lowercase_underscore YAML keys.
 type fileConfig struct {
 	Server struct {
-		Addr      string   `yaml:"addr"`
-		Hostnames []string `yaml:"hostnames"`
+		Address        string   `yaml:"address"`
+		EnrollmentPort int      `yaml:"enrollment_port"`
+		PolicyPort     int      `yaml:"policy_port"`
+		Hostnames      []string `yaml:"hostnames"`
 	} `yaml:"server"`
 	Database struct {
 		Host     string `yaml:"host"`
@@ -142,6 +157,18 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid DB_PORT: %w", err)
 	}
 
+	// ─── Server ports ──────────────────────────────────────────────────────
+	enrollPortStr := getEnv("BOR_ENROLLMENT_PORT", strconv.Itoa(fc.Server.EnrollmentPort))
+	enrollPort, err := strconv.Atoi(enrollPortStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_ENROLLMENT_PORT: %w", err)
+	}
+	policyPortStr := getEnv("BOR_POLICY_PORT", strconv.Itoa(fc.Server.PolicyPort))
+	policyPort, err := strconv.Atoi(policyPortStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_POLICY_PORT: %w", err)
+	}
+
 	// ─── LDAP ──────────────────────────────────────────────────────────────
 	ldapEnabled := getEnvBool("LDAP_ENABLED", fc.LDAP.Enabled)
 	ldapPortStr := getEnv("LDAP_PORT", strconv.Itoa(fc.LDAP.Port))
@@ -183,8 +210,10 @@ func Load() (*Config, error) {
 			SSLMode:  getEnv("DB_SSLMODE", fc.Database.SSLMode),
 		},
 		Server: ServerConfig{
-			Addr:      getEnv("BOR_ADDR", fc.Server.Addr),
-			Hostnames: hostnames,
+			Address:        getEnv("BOR_ADDRESS", fc.Server.Address),
+			EnrollmentPort: enrollPort,
+			PolicyPort:     policyPort,
+			Hostnames:      hostnames,
 		},
 		Security: SecurityConfig{
 			JWTSecret:   getEnv("JWT_SECRET", fc.Security.JWTSecret),
@@ -222,7 +251,9 @@ func Load() (*Config, error) {
 // defaultFileConfig returns a fileConfig pre-populated with built-in defaults.
 func defaultFileConfig() fileConfig {
 	var fc fileConfig
-	fc.Server.Addr = ":8443"
+	fc.Server.Address = ""
+	fc.Server.EnrollmentPort = 8443
+	fc.Server.PolicyPort = 8444
 	fc.Database.Host = "localhost"
 	fc.Database.Port = 5432
 	fc.Database.User = "bor"

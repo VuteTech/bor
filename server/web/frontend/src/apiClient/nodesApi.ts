@@ -47,6 +47,8 @@ export interface Node {
   node_group_ids?: string[];
   node_group_names?: string[];
   last_seen?: string;
+  cert_serial?: string;
+  cert_not_after?: string;
   created_at: string;
   updated_at: string;
 }
@@ -142,4 +144,12 @@ export async function deleteNode(id: string): Promise<void> {
     }
     throw new Error(detail);
   }
+}
+
+export async function revokeNodeCertificate(id: string, reason?: string): Promise<void> {
+  await apiRequest<{ status: string }>(`/api/v1/nodes/${id}/revoke`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ reason: reason || "manually revoked" }),
+  });
 }

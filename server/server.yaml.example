@@ -5,8 +5,18 @@
 # Missing fields fall back to built-in defaults.
 
 server:
-  # HTTPS listen address (default: ":8443")
-  addr: ":8443"
+  # Server hostname or IP address (no port). Leave empty to listen on all interfaces.
+  address: ""
+
+  # Port for the admin UI and enrollment gRPC (default: 8443).
+  # Browsers and agents connecting for the first time use this port.
+  # Corresponds to the BOR_ENROLLMENT_PORT environment variable.
+  enrollment_port: 8443
+
+  # Port for mTLS policy streaming and certificate renewal (default: 8444).
+  # Only enrolled agents with a valid, non-revoked client certificate are accepted.
+  # Corresponds to the BOR_POLICY_PORT environment variable.
+  policy_port: 8444
 
   # Additional hostnames and IP addresses to include as Subject Alternative
   # Names in the auto-generated TLS certificate. The system hostname,

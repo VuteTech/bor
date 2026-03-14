@@ -213,43 +213,50 @@ func LoadCA(certPath, keyPath string) (*x509.Certificate, *rsa.PrivateKey, error
 }
 
 // SignCSR signs a PEM-encoded CSR with the given CA and returns the signed
-// certificate PEM. The issued certificate is valid for 365 days with
+// certificate PEM, the certificate serial number as a hex string, and the
+// NotAfter time. The issued certificate is valid for 90 days with
 // client-auth extended key usage.
-func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey *rsa.PrivateKey) ([]byte, error) {
+func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey *rsa.PrivateKey) (certPEM []byte, serial string, notAfter time.Time, err error) {
 	block, _ := pem.Decode(csrPEM)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
-		return nil, fmt.Errorf("failed to decode CSR PEM")
+		return nil, "", time.Time{}, fmt.Errorf("failed to decode CSR PEM")
 	}
 
-	csr, err := x509.ParseCertificateRequest(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse CSR: %w", err)
+	csr, parseErr := x509.ParseCertificateRequest(block.Bytes)
+	if parseErr != nil {
+		return nil, "", time.Time{}, fmt.Errorf("failed to parse CSR: %w", parseErr)
 	}
-	if err := csr.CheckSignature(); err != nil {
-		return nil, fmt.Errorf("CSR signature verification failed: %w", err)
+	if sigErr := csr.CheckSignature(); sigErr != nil {
+		return nil, "", time.Time{}, fmt.Errorf("CSR signature verification failed: %w", sigErr)
 	}
 
-	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	serialNumber, randErr := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if randErr != nil {
+		return nil, "", time.Time{}, fmt.Errorf("failed to generate serial number: %w", randErr)
 	}
 
 	tmpl := &x509.Certificate{
 		SerialNumber:          serialNumber,
 		Subject:               csr.Subject,
 		NotBefore:             time.Now().Add(-1 * time.Minute),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:              time.Now().Add(90 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, csr.PublicKey, caKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign CSR: %w", err)
+	certDER, certErr := x509.CreateCertificate(rand.Reader, tmpl, caCert, csr.PublicKey, caKey)
+	if certErr != nil {
+		return nil, "", time.Time{}, fmt.Errorf("failed to sign CSR: %w", certErr)
 	}
 
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), nil
+	parsedCert, parseErr2 := x509.ParseCertificate(certDER)
+	if parseErr2 != nil {
+		return nil, "", time.Time{}, fmt.Errorf("failed to parse signed cert: %w", parseErr2)
+	}
+	serialHex := parsedCert.SerialNumber.Text(16)
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), serialHex, tmpl.NotAfter, nil
 }
 
 // LoadCACertPool loads a CA certificate from the given path and returns

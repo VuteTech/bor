@@ -105,6 +105,8 @@ type Node struct {
 	LastSeen       *time.Time `json:"last_seen,omitempty" db:"last_seen"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
+	CertSerial     *string    `json:"cert_serial,omitempty" db:"cert_serial"`
+	CertNotAfter   *time.Time `json:"cert_not_after,omitempty" db:"cert_not_after"`
 }
 
 // UpdateNodeRequest represents a request to update a node
@@ -397,6 +399,20 @@ type CreatePolicyBindingRequest struct {
 type UpdatePolicyBindingRequest struct {
 	State    *string `json:"state,omitempty"`
 	Priority *int    `json:"priority,omitempty"`
+}
+
+// RevokedCertificate tracks revoked agent certificate serials.
+type RevokedCertificate struct {
+	ID        string    `json:"id" db:"id"`
+	NodeID    string    `json:"node_id" db:"node_id"`
+	Serial    string    `json:"serial" db:"serial"`
+	RevokedAt time.Time `json:"revoked_at" db:"revoked_at"`
+	Reason    string    `json:"reason" db:"reason"`
+}
+
+// RevokeCertificateRequest is the REST request body for certificate revocation.
+type RevokeCertificateRequest struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 // NodeHeartbeatInfo contains metadata reported by an agent during heartbeat.

@@ -105,6 +105,7 @@ func main() {
 	userGroupRoleBindingRepo := database.NewUserGroupRoleBindingRepository(db)
 	auditLogRepo := database.NewAuditLogRepository(db)
 	settingsRepo := database.NewSettingsRepository(db)
+	revocationRepo := database.NewRevocationRepository(db)
 
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
@@ -144,7 +145,7 @@ func main() {
 	policyBindingSvc := services.NewPolicyBindingService(policyBindingRepo, policyRepo, nodeGroupRepo)
 
 	// Initialize enrollment service
-	enrollSvc := services.NewEnrollmentService(caCert, caKey, nodeGroupSvc, nodeSvc)
+	enrollSvc := services.NewEnrollmentService(caCert, caKey, nodeGroupSvc, nodeSvc, revocationRepo)
 
 	// Initialize audit service
 	auditSvc := services.NewAuditService(auditLogRepo)
@@ -169,7 +170,7 @@ func main() {
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
 	policyHandler := api.NewPolicyHandler(policySvc)
-	nodeHandler := api.NewNodeHandler(nodeSvc, policyHub)
+	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
 	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo)
 	policyBindingHandler := api.NewPolicyBindingHandler(policyBindingSvc)
@@ -277,37 +278,34 @@ func main() {
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
 
-	// ─── Single TLS server for both HTTPS UI and gRPC ───────────────────
+	// ─── TLS certificate for both servers ───────────────────────────────
 	uiTLSCert, err := pki.LoadTLSCert(tlsCertFile, tlsKeyFile)
 	if err != nil {
 		log.Fatalf("Failed to load UI TLS certificate: %v", err)
 	}
 
-	// Setup gRPC server (no TLS credentials – TLS is handled by http.Server).
+	// ─── Enrollment gRPC server (no mandatory client cert at TLS layer) ──
 	// Require a verified client certificate for all RPCs except Enroll
 	// (which is the bootstrapping call that exchanges a token for a cert).
 	exemptMethods := map[string]bool{
 		"/bor.enrollment.v1.EnrollmentService/Enroll": true,
 	}
 
-	grpcSrv := grpc.NewServer(
-		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods)),
-		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods)),
+	enrollGrpcSrv := grpc.NewServer(
+		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods, revocationRepo)),
+		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods, revocationRepo)),
 	)
-	pb.RegisterPolicyServiceServer(grpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, policyHub))
-	enrollpb.RegisterEnrollmentServiceServer(grpcSrv, grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken))
+	enrollpb.RegisterEnrollmentServiceServer(enrollGrpcSrv, grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken))
 
-	// Route: if HTTP/2 + Content-Type starts with "application/grpc" → gRPC,
-	// otherwise → normal HTTP handler (UI, API).
-	grpcHTTPRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcSrv.ServeHTTP(w, r)
-		} else {
-			mux.ServeHTTP(w, r)
-		}
-	})
+	// ─── Policy gRPC server (mandatory client cert — agents only) ────────
+	policyGrpcSrv := grpc.NewServer(
+		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(map[string]bool{}, revocationRepo)),
+		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(map[string]bool{}, revocationRepo)),
+	)
+	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, policyHub))
 
-	tlsConfig := &tls.Config{
+	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
+	uiTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{uiTLSCert},
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.VerifyClientCertIfGiven,
@@ -315,22 +313,56 @@ func main() {
 		NextProtos:   []string{"h2", "http/1.1"},
 	}
 
-	httpServer := &http.Server{
-		Addr:              cfg.Server.Addr,
-		Handler:           grpcHTTPRouter,
-		TLSConfig:         tlsConfig,
+	uiGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			enrollGrpcSrv.ServeHTTP(w, r)
+		} else {
+			mux.ServeHTTP(w, r)
+		}
+	})
+
+	uiServer := &http.Server{
+		Addr:              cfg.Server.EnrollmentAddr(),
+		Handler:           uiGrpcRouter,
+		TLSConfig:         uiTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// Start server – empty cert/key args cause ListenAndServeTLS to use
-	// the TLSConfig already set on the http.Server instead of loading files.
+	// ─── Agent policy server (:8444) — RequireAndVerifyClientCert ────────
+	agentTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{uiTLSCert},
+		ClientCAs:    caCertPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2"},
+	}
+
+	agentGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		policyGrpcSrv.ServeHTTP(w, r)
+	})
+
+	agentServer := &http.Server{
+		Addr:              cfg.Server.PolicyAddr(),
+		Handler:           agentGrpcRouter,
+		TLSConfig:         agentTLSConfig,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Start both servers.
 	go func() {
-		if err := httpServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+		if err := uiServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			log.Fatalf("UI server error: %v", err)
 		}
 	}()
 
-	log.Printf("HTTPS + gRPC (mTLS) listening on %s", cfg.Server.Addr)
+	go func() {
+		if err := agentServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			log.Fatalf("Agent server error: %v", err)
+		}
+	}()
+
+	log.Printf("HTTPS + enrollment gRPC listening on %s", cfg.Server.EnrollmentAddr())
+	log.Printf("Agent policy gRPC (mTLS) listening on %s", cfg.Server.PolicyAddr())
 
 	// Block until shutdown signal
 	sigCh := make(chan os.Signal, 1)
@@ -338,11 +370,15 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down server...")
-	grpcSrv.GracefulStop()
+	enrollGrpcSrv.GracefulStop()
+	policyGrpcSrv.GracefulStop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+	if err := uiServer.Shutdown(ctx); err != nil {
+		log.Printf("UI server shutdown error: %v", err)
+	}
+	if err := agentServer.Shutdown(ctx); err != nil {
+		log.Printf("Agent server shutdown error: %v", err)
 	}
 
 	log.Println("Server stopped")

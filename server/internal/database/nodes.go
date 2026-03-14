@@ -28,7 +28,7 @@ func NewNodeRepository(db *DB) *NodeRepository {
 const nodeSelect = `
 	n.id, n.name, n.fqdn, n.machine_id, n.ip_address, n.os_name, n.os_version, n.desktop_env,
 	n.agent_version, n.status_cached, n.status_reason, n.groups, n.notes,
-	n.last_seen, n.created_at, n.updated_at`
+	n.last_seen, n.created_at, n.updated_at, n.cert_serial, n.cert_not_after`
 
 const nodeFrom = `FROM nodes n`
 
@@ -40,6 +40,7 @@ func scanNode(row interface{ Scan(dest ...interface{}) error }) (*models.Node, e
 		&node.AgentVersion, &node.StatusCached, &node.StatusReason,
 		&node.Groups, &node.Notes,
 		&node.LastSeen, &node.CreatedAt, &node.UpdatedAt,
+		&node.CertSerial, &node.CertNotAfter,
 	)
 	return node, err
 }
@@ -465,6 +466,44 @@ func (r *NodeRepository) RemoveFromGroup(ctx context.Context, nodeID, groupID st
 		return fmt.Errorf("failed to remove node from group: %w", err)
 	}
 	return nil
+}
+
+// UpdateCertificate persists the serial hex and notAfter time for a node's mTLS certificate.
+func (r *NodeRepository) UpdateCertificate(ctx context.Context, nodeID, serial string, notAfter time.Time) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE nodes SET cert_serial = $1, cert_not_after = $2, updated_at = $3 WHERE id = $4`,
+		serial, notAfter, time.Now(), nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to update node certificate: %w", err)
+	}
+	return nil
+}
+
+// ListExpiringCerts returns all nodes whose mTLS certificate expires within
+// the given number of days, ordered by cert_not_after ascending.
+func (r *NodeRepository) ListExpiringCerts(ctx context.Context, withinDays int) ([]*models.Node, error) {
+	cutoff := time.Now().Add(time.Duration(withinDays) * 24 * time.Hour)
+	query := fmt.Sprintf(`SELECT %s %s WHERE n.cert_not_after IS NOT NULL AND n.cert_not_after <= $1 ORDER BY n.cert_not_after ASC`, nodeSelect, nodeFrom)
+	rows, err := r.db.QueryContext(ctx, query, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list expiring certs: %w", err)
+	}
+	defer rows.Close()
+	var nodes []*models.Node
+	for rows.Next() {
+		node, err := scanNode(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan node: %w", err)
+		}
+		nodes = append(nodes, node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.populateGroups(ctx, nodes); err != nil {
+		return nil, err
+	}
+	return nodes, nil
 }
 
 // ListGroupIDs returns all group IDs for a given node.

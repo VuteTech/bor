@@ -26,6 +26,7 @@ const (
 	PolicyService_GetAgentConfig_FullMethodName         = "/bor.policy.v1.PolicyService/GetAgentConfig"
 	PolicyService_Heartbeat_FullMethodName              = "/bor.policy.v1.PolicyService/Heartbeat"
 	PolicyService_ReportTamperEvent_FullMethodName      = "/bor.policy.v1.PolicyService/ReportTamperEvent"
+	PolicyService_RenewCertificate_FullMethodName       = "/bor.policy.v1.PolicyService/RenewCertificate"
 )
 
 // PolicyServiceClient is the client API for PolicyService service.
@@ -48,6 +49,8 @@ type PolicyServiceClient interface {
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	// Report a file tamper event detected by the agent
 	ReportTamperEvent(ctx context.Context, in *ReportTamperEventRequest, opts ...grpc.CallOption) (*ReportTamperEventResponse, error)
+	// Renew the calling agent's mTLS certificate (authenticated with the current cert).
+	RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error)
 }
 
 type policyServiceClient struct {
@@ -137,6 +140,16 @@ func (c *policyServiceClient) ReportTamperEvent(ctx context.Context, in *ReportT
 	return out, nil
 }
 
+func (c *policyServiceClient) RenewCertificate(ctx context.Context, in *RenewCertificateRequest, opts ...grpc.CallOption) (*RenewCertificateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenewCertificateResponse)
+	err := c.cc.Invoke(ctx, PolicyService_RenewCertificate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PolicyServiceServer is the server API for PolicyService service.
 // All implementations must embed UnimplementedPolicyServiceServer
 // for forward compatibility.
@@ -157,6 +170,8 @@ type PolicyServiceServer interface {
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	// Report a file tamper event detected by the agent
 	ReportTamperEvent(context.Context, *ReportTamperEventRequest) (*ReportTamperEventResponse, error)
+	// Renew the calling agent's mTLS certificate (authenticated with the current cert).
+	RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error)
 	mustEmbedUnimplementedPolicyServiceServer()
 }
 
@@ -187,6 +202,9 @@ func (UnimplementedPolicyServiceServer) Heartbeat(context.Context, *HeartbeatReq
 }
 func (UnimplementedPolicyServiceServer) ReportTamperEvent(context.Context, *ReportTamperEventRequest) (*ReportTamperEventResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportTamperEvent not implemented")
+}
+func (UnimplementedPolicyServiceServer) RenewCertificate(context.Context, *RenewCertificateRequest) (*RenewCertificateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RenewCertificate not implemented")
 }
 func (UnimplementedPolicyServiceServer) mustEmbedUnimplementedPolicyServiceServer() {}
 func (UnimplementedPolicyServiceServer) testEmbeddedByValue()                       {}
@@ -328,6 +346,24 @@ func _PolicyService_ReportTamperEvent_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_RenewCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenewCertificateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).RenewCertificate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_RenewCertificate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).RenewCertificate(ctx, req.(*RenewCertificateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PolicyService_ServiceDesc is the grpc.ServiceDesc for PolicyService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -358,6 +394,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportTamperEvent",
 			Handler:    _PolicyService_ReportTamperEvent_Handler,
+		},
+		{
+			MethodName: "RenewCertificate",
+			Handler:    _PolicyService_RenewCertificate_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
