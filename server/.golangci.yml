@@ -39,9 +39,9 @@ linters:
         linters:
           - gosec
           - errcheck
+    paths:
+      - vendor
+      - node_modules
 
 run:
   timeout: 5m
-  exclude-dirs:
-    - vendor
-    - node_modules

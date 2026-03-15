@@ -39,8 +39,8 @@ linters:
         linters:
           - gosec
           - errcheck
+    paths:
+      - vendor
 
 run:
   timeout: 5m
-  exclude-dirs:
-    - vendor
