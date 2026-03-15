@@ -147,6 +147,7 @@ func main() {
 	settingsRepo := database.NewSettingsRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
 	mfaRepo := database.NewMFARepository(db)
+	webauthnRepo := database.NewWebAuthnRepository(db)
 
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
@@ -170,8 +171,23 @@ func main() {
 	// Initialize MFA service
 	mfaSvc := services.NewMFAService(mfaRepo, settingsRepo, cfg.Security.JWTSecret)
 
+	// Initialize WebAuthn service (optional — only if RPID is configured)
+	var webauthnSvc *services.WebAuthnService
+	if cfg.WebAuthn.RPID != "" {
+		var waErr error
+		webauthnSvc, waErr = services.NewWebAuthnService(webauthnRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.DisplayName, cfg.WebAuthn.RPOrigins)
+		if waErr != nil {
+			log.Printf("WARNING: Failed to initialize WebAuthn service: %v", waErr)
+			webauthnSvc = nil
+		} else {
+			log.Printf("WebAuthn enabled (RPID=%s)", cfg.WebAuthn.RPID)
+		}
+	} else {
+		log.Println("WebAuthn disabled: set BOR_WEBAUTHN_RPID to enable")
+	}
+
 	// Initialize auth service
-	authSvc := services.NewAuthServiceWithMFA(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc, mfaSvc)
+	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc, mfaSvc, webauthnSvc)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
@@ -209,7 +225,7 @@ func main() {
 	policyHub := grpcserver.NewPolicyHub()
 
 	// Initialize API handlers
-	authHandler := api.NewAuthHandler(authSvc, mfaSvc)
+	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
@@ -238,6 +254,8 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
 	mux.HandleFunc("/api/v1/auth/begin", authHandler.Begin)
 	mux.HandleFunc("/api/v1/auth/step", authHandler.Step)
+	mux.HandleFunc("/api/v1/auth/webauthn/begin", authHandler.WebAuthnAuthBegin)
+	mux.HandleFunc("/api/v1/auth/webauthn/finish", authHandler.WebAuthnAuthFinish)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -251,6 +269,12 @@ func main() {
 	mux.Handle("/api/v1/users/me/mfa/setup/begin", authMiddleware(http.HandlerFunc(authHandler.MFASetupBegin)))
 	mux.Handle("/api/v1/users/me/mfa/setup/finish", authMiddleware(http.HandlerFunc(authHandler.MFASetupFinish)))
 	mux.Handle("/api/v1/users/me/mfa/disable", authMiddleware(http.HandlerFunc(authHandler.MFADisable)))
+
+	// WebAuthn routes for the current user
+	mux.Handle("/api/v1/users/me/webauthn/register/begin", authMiddleware(http.HandlerFunc(authHandler.WebAuthnRegisterBegin)))
+	mux.Handle("/api/v1/users/me/webauthn/register/finish", authMiddleware(http.HandlerFunc(authHandler.WebAuthnRegisterFinish)))
+	mux.Handle("/api/v1/users/me/webauthn/credentials", authMiddleware(http.HandlerFunc(authHandler.WebAuthnCredentialHandler)))
+	mux.Handle("/api/v1/users/me/webauthn/credentials/", authMiddleware(http.HandlerFunc(authHandler.WebAuthnCredentialHandler)))
 
 	// Policy routes — method-based permission checking
 	policyPerms := api.RequireMethodPermission(az, []api.MethodPermission{

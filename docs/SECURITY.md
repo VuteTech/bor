@@ -11,10 +11,11 @@ This document describes the cryptographic algorithms, standards compliance, depl
 3. [PKI and Certificate Lifecycle](#pki-and-certificate-lifecycle)
 4. [Authentication](#authentication)
 5. [Multi-Factor Authentication (TOTP)](#multi-factor-authentication-totp)
-6. [Standards Compliance](#standards-compliance)
-7. [FIPS 140-3 Build and Runtime](#fips-140-3-build-and-runtime)
-8. [Deployment Security Checklist](#deployment-security-checklist)
-9. [HSM Integration (PKCS#11)](#hsm-integration-pkcs11)
+6. [WebAuthn / FIDO2 (Hardware and Software Security Keys)](#webauthn--fido2-hardware-and-software-security-keys)
+7. [Standards Compliance](#standards-compliance)
+8. [FIPS 140-3 Build and Runtime](#fips-140-3-build-and-runtime)
+9. [Deployment Security Checklist](#deployment-security-checklist)
+10. [HSM Integration (PKCS#11)](#hsm-integration-pkcs11)
 
 ---
 
@@ -333,6 +334,89 @@ exit status 1
 
 ---
 
+## WebAuthn / FIDO2 (Hardware and Software Security Keys)
+
+In addition to TOTP, Bor supports **WebAuthn** (W3C Web Authentication, level 2) as a second factor. Users can register and authenticate with:
+
+- **Roaming authenticators** — FIDO2 hardware tokens such as YubiKey, FIDO2 USB keys, and NFC security keys.
+- **Platform authenticators and passkey managers** — Software-based FIDO2 credentials such as those managed by Bitwarden, 1Password, or the OS passkey store.
+
+When WebAuthn is configured, the login flow automatically presents WebAuthn as the **preferred MFA method** (before TOTP) if the user has a registered credential. Users can always fall back to an authenticator code instead.
+
+### Enabling WebAuthn
+
+WebAuthn is **disabled by default**. To enable it, set `BOR_WEBAUTHN_RPID` (or the equivalent `webauthn.rpid` YAML key). If the RPID is not set, all WebAuthn endpoints return `501 Not Implemented` and the login flow never offers security-key authentication.
+
+#### Environment variables
+
+| Variable | Required | Description | Example |
+|---|---|---|---|
+| `BOR_WEBAUTHN_RPID` | Yes | Relying Party ID — the domain credentials are scoped to. Must match the hostname users browse to (no scheme, no port). | `bor.example.com` |
+| `BOR_WEBAUTHN_ORIGINS` | Yes | Comma-separated list of allowed origins (scheme + host + optional port). Must include every URL the login page is served from. | `https://bor.example.com` |
+| `BOR_WEBAUTHN_DISPLAY_NAME` | No | Human-readable name shown in authenticator prompts. Defaults to `Bor Policy Manager`. | `Acme Bor` |
+
+#### YAML configuration (`/etc/bor/server.yaml`)
+
+```yaml
+webauthn:
+  rpid: "bor.example.com"
+  origins:
+    - "https://bor.example.com"
+  display_name: "Bor Policy Manager"
+```
+
+#### Container / podman-compose
+
+```yaml
+environment:
+  - BOR_WEBAUTHN_RPID=bor.example.com
+  - BOR_WEBAUTHN_ORIGINS=https://bor.example.com
+  - BOR_WEBAUTHN_DISPLAY_NAME=Bor Policy Manager
+```
+
+> **Critical**: `BOR_WEBAUTHN_RPID` must equal the effective domain of the URL your users browse to. If the UI is accessed at `https://bor.example.com`, the RPID must be `bor.example.com` (no scheme, no port). Credentials registered with one RPID cannot be used with another — changing the RPID invalidates all existing credentials.
+
+### Database Schema
+
+WebAuthn data is stored in two tables (migration `000018_add_webauthn`):
+
+- **`user_webauthn_credentials`** — stores each registered credential: base64url-encoded credential ID, COSE-encoded public key bytes, AAGUID, sign counter, friendly name, and transports.
+- **`webauthn_sessions`** — short-lived (5-minute TTL) server-side challenge state for in-progress registration or authentication ceremonies. Challenges are never exposed to the browser; only the session token references the pending ceremony.
+
+### Registration Flow
+
+1. User opens **Account Security → Security Keys → Add security key**.
+2. User enters a friendly name for the credential (e.g. "YubiKey 5").
+3. The browser calls `POST /api/v1/auth/webauthn/register/begin` (authenticated), which generates a `PublicKeyCredentialCreationOptions` challenge and stores the session server-side.
+4. The `@simplewebauthn/browser` library invokes `startRegistration()`, prompting the OS or security key to create a new P-256 or Ed25519 key pair and sign the challenge.
+5. The attestation response is sent to `POST /api/v1/auth/webauthn/register/finish`. The server verifies the response against the stored session, records the credential, and deletes the session.
+
+### Authentication Flow
+
+1. At step 1 of the Kanidm-style login, the server determines available MFA methods for the user.
+2. If the user has registered WebAuthn credentials, `AuthBeginResponse.mfa_methods` will include `"webauthn"` (listed first).
+3. The browser calls `POST /api/v1/auth/webauthn/begin` with the short-lived session token from step 1.
+4. `startAuthentication()` prompts the user to activate their security key or passkey manager.
+5. The assertion response is sent to `POST /api/v1/auth/webauthn/finish`. The server verifies the response, updates the sign counter (replay-attack prevention), and returns an updated session token with `mfa_done: true`.
+6. The user then completes the password step as usual to receive a full JWT.
+
+### Cryptographic Properties
+
+- **Asymmetric challenge-response** — the private key never leaves the authenticator. Unlike TOTP, there is no shared secret that can be stolen from the server.
+- **Origin binding** — responses are bound to the RPID and origin. Phishing attacks on a different domain cannot steal or replay credentials.
+- **Sign counter** — the server tracks the use counter returned by the authenticator. If the server receives a counter ≤ the stored counter, the authentication is rejected as a potential clone attack.
+- **No TOTP fallback required** — when WebAuthn is the only registered MFA method, TOTP is not required. Users who want both for redundancy can register both.
+
+### Credential Management
+
+Users can manage their WebAuthn credentials from **Account Security** (accessible via the user menu):
+
+- **List** — view all registered credentials with name, AAGUID (authenticator model identifier), transports, and registration date.
+- **Rename** — give a credential a meaningful name (e.g. "Office YubiKey").
+- **Delete** — remove a credential. If the user has MFA enforcement active and no remaining MFA methods, they will need to enrol a new method before they can log in.
+
+---
+
 ## Standards Compliance
 
 ### FIPS 140-3
@@ -466,6 +550,13 @@ Without `GODEBUG=fips140=on`, the binary still contains the validated crypto mod
 - [ ] **Restrict the admin token**: Set `BOR_ADMIN_TOKEN` to a cryptographically random string (minimum 32 bytes). This token authorises enrollment RPCs.
   ```bash
   BOR_ADMIN_TOKEN=$(openssl rand -hex 32)
+  ```
+
+- [ ] **Configure WebAuthn (if enabling FIDO2)**: Set `BOR_WEBAUTHN_RPID` to the domain name users browse to, and `BOR_WEBAUTHN_ORIGINS` to the corresponding origin(s). The RPID must match exactly — credentials registered with one RPID cannot be used with another.
+  ```bash
+  BOR_WEBAUTHN_RPID=bor.example.com
+  BOR_WEBAUTHN_ORIGINS=https://bor.example.com
+  BOR_WEBAUTHN_DISPLAY_NAME="Acme Bor"
   ```
 
 - [ ] **Configure hostnames**: Set `BOR_HOSTNAMES` to the FQDN(s) of the server so that agent TLS verification succeeds without `insecureSkipVerify`.

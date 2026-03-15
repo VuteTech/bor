@@ -87,12 +87,13 @@ func verifyPassword(hash, password string) error {
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	userRepo    *database.UserRepository
-	roleRepo    *database.RoleRepository
-	bindingRepo *database.UserRoleBindingRepository
-	jwtSecret   string
-	ldapSvc     *LDAPService
-	mfaSvc      *MFAService
+	userRepo     *database.UserRepository
+	roleRepo     *database.RoleRepository
+	bindingRepo  *database.UserRoleBindingRepository
+	jwtSecret    string
+	ldapSvc      *LDAPService
+	mfaSvc       *MFAService
+	webauthnSvc  *WebAuthnService
 }
 
 // NewAuthService creates a new AuthService
@@ -115,6 +116,19 @@ func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database
 		jwtSecret:   jwtSecret,
 		ldapSvc:     ldapSvc,
 		mfaSvc:      mfaSvc,
+	}
+}
+
+// NewAuthServiceWithMFAAndWebAuthn creates a new AuthService with MFA and WebAuthn support.
+func NewAuthServiceWithMFAAndWebAuthn(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService, webauthnSvc *WebAuthnService) *AuthService {
+	return &AuthService{
+		userRepo:    userRepo,
+		roleRepo:    roleRepo,
+		bindingRepo: bindingRepo,
+		jwtSecret:   jwtSecret,
+		ldapSvc:     ldapSvc,
+		mfaSvc:      mfaSvc,
+		webauthnSvc: webauthnSvc,
 	}
 }
 
@@ -289,6 +303,13 @@ func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
+// GenerateSessionToken creates a short-lived (5 min) JWT for the auth flow.
+// It is exported so that WebAuthn handlers can re-issue a session token with
+// MFA done after a successful WebAuthn assertion.
+func (s *AuthService) GenerateSessionToken(userID, username, source string, totpDone bool) (string, error) {
+	return s.generateSessionToken(userID, username, source, totpDone)
+}
+
 // generateSessionToken creates a short-lived (5 min) JWT for the auth flow.
 func (s *AuthService) generateSessionToken(userID, username, source string, totpDone bool) (string, error) {
 	claims := &AuthSessionClaims{
@@ -305,6 +326,12 @@ func (s *AuthService) generateSessionToken(userID, username, source string, totp
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// ValidateSessionToken parses and validates an AuthSessionClaims token.
+// Exported so WebAuthn handlers can verify the session token.
+func (s *AuthService) ValidateSessionToken(tokenString string) (*AuthSessionClaims, error) {
+	return s.validateSessionToken(tokenString)
 }
 
 // validateSessionToken parses and validates an AuthSessionClaims token.
@@ -352,13 +379,24 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 	// Check whether MFA is needed. Applies to all user sources (local and LDAP).
 	// Only future OAuth/SAML sources, which delegate authentication entirely to an
 	// external IdP, would be exempt — they are not yet implemented.
-	needsMFA := false
+	var mfaMethods []string
 	if s.mfaSvc != nil {
 		enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check user MFA: %w", err)
 		}
-		needsMFA = enabled
+		if enabled {
+			mfaMethods = append(mfaMethods, "totp")
+		}
+	}
+	if s.webauthnSvc != nil {
+		hasCreds, err := s.webauthnSvc.HasCredentials(ctx, user.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check user WebAuthn credentials: %w", err)
+		}
+		if hasCreds {
+			mfaMethods = append([]string{"webauthn"}, mfaMethods...)
+		}
 	}
 
 	sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
@@ -367,13 +405,14 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 	}
 
 	next := "password"
-	if needsMFA {
-		next = "totp"
+	if len(mfaMethods) > 0 {
+		next = "mfa"
 	}
 
 	return &models.AuthBeginResponse{
 		SessionToken: sessionToken,
 		Next:         next,
+		MFAMethods:   mfaMethods,
 	}, nil
 }
 
@@ -403,13 +442,23 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		}, nil
 
 	case "password":
-		// If the user has MFA enabled, the TOTP step must have been completed
-		// before the password step is allowed (regardless of global enforcement).
+		// If the user has MFA enabled (TOTP or WebAuthn), the MFA step must
+		// have been completed before the password step is allowed.
+		hasMFA := false
 		if s.mfaSvc != nil {
 			enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
-			if enabled && !sessionClaims.TOTPDone {
-				return nil, fmt.Errorf("TOTP verification required before password step")
+			if enabled {
+				hasMFA = true
 			}
+		}
+		if !hasMFA && s.webauthnSvc != nil {
+			hasCreds, _ := s.webauthnSvc.HasCredentials(ctx, sessionClaims.UserID)
+			if hasCreds {
+				hasMFA = true
+			}
+		}
+		if hasMFA && !sessionClaims.TOTPDone {
+			return nil, fmt.Errorf("MFA verification required before password step")
 		}
 
 		user, err := s.userRepo.GetByID(ctx, sessionClaims.UserID)
@@ -560,6 +609,23 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, req *models.Upd
 // DeleteUser deletes a user
 func (s *AuthService) DeleteUser(ctx context.Context, id string) error {
 	return s.userRepo.Delete(ctx, id)
+}
+
+// IssueTokenByUserID issues a final JWT for a user by ID without password verification.
+// Used by WebAuthn authentication after a successful assertion.
+func (s *AuthService) IssueTokenByUserID(ctx context.Context, userID string) (*models.LoginResponse, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !user.Enabled {
+		return nil, fmt.Errorf("user account is disabled")
+	}
+	token, err := s.generateToken(user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+	return &models.LoginResponse{Token: token, User: *user}, nil
 }
 
 // EnsureDefaultAdmin creates a default admin user if no admin exists

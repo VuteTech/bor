@@ -65,7 +65,8 @@ export async function login(
 
 export interface AuthBeginResponse {
   session_token: string;
-  next: "totp" | "password";
+  next: "mfa" | "password";
+  mfa_methods: string[]; // e.g. ["webauthn", "totp"]
 }
 
 export interface AuthStepResponse {
@@ -187,4 +188,109 @@ export function logout(): void {
 
 export function getStoredToken(): string | null {
   return storedToken();
+}
+
+/* ── WebAuthn ── */
+
+export interface WebAuthnCredential {
+  id: string;
+  name: string;
+  aaguid?: string;
+  transports?: string[];
+  created_at: string;
+  last_used_at?: string;
+}
+
+export async function webAuthnRegisterBegin(): Promise<{ publicKey: unknown }> {
+  return apiRequest<{ publicKey: unknown }>(
+    "/api/v1/users/me/webauthn/register/begin",
+    { method: "POST", headers: authHeaders() }
+  );
+}
+
+export async function webAuthnRegisterFinish(
+  name: string,
+  credential: unknown
+): Promise<WebAuthnCredential> {
+  return apiRequest<WebAuthnCredential>(
+    "/api/v1/users/me/webauthn/register/finish",
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ name, credential }),
+    }
+  );
+}
+
+export async function listWebAuthnCredentials(): Promise<WebAuthnCredential[]> {
+  return apiRequest<WebAuthnCredential[]>(
+    "/api/v1/users/me/webauthn/credentials",
+    { headers: authHeaders() }
+  );
+}
+
+export async function renameWebAuthnCredential(
+  id: string,
+  name: string
+): Promise<void> {
+  const res = await fetch(`/api/v1/users/me/webauthn/credentials/${id}`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch {
+      /* swallow */
+    }
+    throw new Error(detail);
+  }
+}
+
+export async function deleteWebAuthnCredential(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/users/me/webauthn/credentials/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch {
+      /* swallow */
+    }
+    throw new Error(detail);
+  }
+}
+
+export async function webAuthnAuthBegin(
+  sessionToken: string
+): Promise<{ publicKey: unknown }> {
+  return apiRequest<{ publicKey: unknown }>("/api/v1/auth/webauthn/begin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_token: sessionToken }),
+  });
+}
+
+export async function webAuthnAuthFinish(
+  sessionToken: string,
+  credential: unknown
+): Promise<AuthStepResponse> {
+  const result = await apiRequest<AuthStepResponse>(
+    "/api/v1/auth/webauthn/finish",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_token: sessionToken, credential }),
+    }
+  );
+  if (result.token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
+  }
+  return result;
 }

@@ -82,6 +82,16 @@ services:
       # - LDAP_ATTR_USERNAME=uid
       # - LDAP_ATTR_EMAIL=mail
       # - LDAP_ATTR_FULL_NAME=cn
+
+      # ── WebAuthn / FIDO2 (optional) ───────────────────────────────────────
+      # Enables hardware security keys (YubiKey, FIDO2 tokens) and software
+      # passkey managers (Bitwarden, 1Password) as a second factor.
+      # BOR_WEBAUTHN_RPID must equal the domain users browse to (no scheme/port).
+      # BOR_WEBAUTHN_ORIGINS must include the full origin(s) of the login page.
+      # Leave unset to keep WebAuthn disabled.
+      # - BOR_WEBAUTHN_RPID=bor.example.com
+      # - BOR_WEBAUTHN_ORIGINS=https://bor.example.com
+      # - BOR_WEBAUTHN_DISPLAY_NAME=Bor Policy Manager
     ports:
       - "8443:8443"   # Admin UI + enrollment gRPC
       - "8444:8444"   # Agent mTLS policy streaming

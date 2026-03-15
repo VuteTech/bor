@@ -22,6 +22,14 @@ type Config struct {
 	LDAP     LDAPConfig
 	TLS      TLSConfig
 	CA       CAConfig
+	WebAuthn WebAuthnConfig
+}
+
+// WebAuthnConfig holds WebAuthn (FIDO2) relying party configuration.
+type WebAuthnConfig struct {
+	RPID        string   // BOR_WEBAUTHN_RPID        — relying party ID (domain, e.g. "bor.example.com")
+	RPOrigins   []string // BOR_WEBAUTHN_ORIGINS      — comma-separated allowed origins
+	DisplayName string   // BOR_WEBAUTHN_DISPLAY_NAME — human-readable RP name
 }
 
 // DatabaseConfig holds database configuration.
@@ -156,6 +164,11 @@ type fileConfig struct {
 		AttrEmail    string `yaml:"attr_email"`
 		AttrFullName string `yaml:"attr_full_name"`
 	} `yaml:"ldap"`
+	WebAuthn struct {
+		RPID        string   `yaml:"rpid"`
+		Origins     []string `yaml:"origins"`
+		DisplayName string   `yaml:"display_name"`
+	} `yaml:"webauthn"`
 }
 
 // Load loads configuration from a YAML file (optional) and environment
@@ -228,6 +241,17 @@ func Load() (*Config, error) {
 		hostnames = splitComma(envHostnames)
 	}
 
+	// ─── WebAuthn ──────────────────────────────────────────────────────────
+	webAuthnRPID := getEnv("BOR_WEBAUTHN_RPID", fc.WebAuthn.RPID)
+	webAuthnOrigins := fc.WebAuthn.Origins
+	if envOrigins := os.Getenv("BOR_WEBAUTHN_ORIGINS"); envOrigins != "" {
+		webAuthnOrigins = splitComma(envOrigins)
+	}
+	webAuthnDisplayName := getEnv("BOR_WEBAUTHN_DISPLAY_NAME", fc.WebAuthn.DisplayName)
+	if webAuthnDisplayName == "" {
+		webAuthnDisplayName = "Bor Policy Manager"
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -278,6 +302,11 @@ func Load() (*Config, error) {
 			AttrUsername: getEnv("LDAP_ATTR_USERNAME", fc.LDAP.AttrUsername),
 			AttrEmail:    getEnv("LDAP_ATTR_EMAIL", fc.LDAP.AttrEmail),
 			AttrFullName: getEnv("LDAP_ATTR_FULL_NAME", fc.LDAP.AttrFullName),
+		},
+		WebAuthn: WebAuthnConfig{
+			RPID:        webAuthnRPID,
+			RPOrigins:   webAuthnOrigins,
+			DisplayName: webAuthnDisplayName,
 		},
 	}, nil
 }

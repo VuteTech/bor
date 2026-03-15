@@ -7,3 +7,4 @@ export { MFATab } from "./MFATab";
 export { MFASettingsTab } from "./MFASettingsTab";
 export { MFASetupModal } from "./MFASetupModal";
 export { AccountModal } from "./AccountModal";
+export { WebAuthnSetupModal } from "./WebAuthnSetupModal";

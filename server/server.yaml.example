@@ -83,3 +83,22 @@ ldap:
   attr_username: "uid"
   attr_email: "mail"
   attr_full_name: "cn"
+
+# WebAuthn / FIDO2 (optional — disabled unless rpid is set)
+#
+# Enables hardware security keys (YubiKey, FIDO2 USB/NFC tokens) and software
+# passkey managers (Bitwarden, 1Password, OS passkey store) as a second factor.
+#
+# rpid must equal the domain name of the URL users browse to — no scheme, no
+# port. For example, if the UI is at https://bor.example.com the rpid is
+# "bor.example.com". Credentials are scoped to this value and cannot be used
+# with a different rpid.
+#
+# origins is the list of allowed origins (scheme + host + optional port). It
+# must include every URL from which the login page is served.
+#
+#webauthn:
+#  rpid: "bor.example.com"
+#  origins:
+#    - "https://bor.example.com"
+#  display_name: "Bor Policy Manager"

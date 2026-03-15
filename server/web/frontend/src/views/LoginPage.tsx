@@ -13,8 +13,17 @@ import {
   Button,
   Alert,
   ActionGroup,
+  TextContent,
+  Text,
 } from "@patternfly/react-core";
-import { authBegin, authStep, UserInfo } from "../apiClient/authApi";
+import { startAuthentication } from "@simplewebauthn/browser";
+import {
+  authBegin,
+  authStep,
+  webAuthnAuthBegin,
+  webAuthnAuthFinish,
+  UserInfo,
+} from "../apiClient/authApi";
 import logo from "../assets/logo.svg";
 import background from "../assets/background.svg";
 
@@ -22,7 +31,7 @@ interface LoginPageProps {
   onLoggedIn: (token: string, user: { username: string; full_name: string }) => void;
 }
 
-type Phase = "username" | "totp" | "password";
+type Phase = "username" | "totp" | "password" | "webauthn";
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [phase, setPhase] = useState<Phase>("username");
@@ -31,6 +40,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [sessionToken, setSessionToken] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
+  const [mfaMethods, setMfaMethods] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -56,6 +66,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
     setSessionToken("");
     setTotpCode("");
     setPasswordInput("");
+    setMfaMethods([]);
     setErrorMsg(null);
   };
 
@@ -67,8 +78,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       const result = await authBegin(usernameInput);
       setCurrentUsername(usernameInput);
       setSessionToken(result.session_token);
-      if (result.next === "totp") {
-        setPhase("totp");
+      if (result.next === "mfa") {
+        const methods = result.mfa_methods ?? [];
+        setMfaMethods(methods);
+        if (methods.includes("webauthn")) {
+          setPhase("webauthn");
+        } else {
+          setPhase("totp");
+        }
       } else {
         setPhase("password");
       }
@@ -96,6 +113,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handleWebAuthnSubmit = async () => {
+    setErrorMsg(null);
+    setPending(true);
+    try {
+      const { publicKey } = await webAuthnAuthBegin(sessionToken);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const assertion = await startAuthentication({ optionsJSON: publicKey as any });
+      const result = await webAuthnAuthFinish(sessionToken, assertion);
+      if (result.token && result.user) {
+        onLoggedIn(result.token, result.user as UserInfo);
+      } else {
+        setErrorMsg("Unexpected response from server");
+      }
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "WebAuthn authentication failed");
     } finally {
       setPending(false);
     }
@@ -134,6 +171,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       ? "Enter your username to continue"
       : phase === "totp"
       ? "Enter your authenticator code"
+      : phase === "webauthn"
+      ? "Verify your identity"
       : "Enter your password";
 
   const loginForm = (
@@ -215,6 +254,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
             </Button>
           </ActionGroup>
         </Form>
+      )}
+
+      {phase === "webauthn" && (
+        <div>
+          <TextContent style={{ marginBottom: 24 }}>
+            <Text component="h3">{currentUsername}</Text>
+            <Text>Use your security key or passkey to continue.</Text>
+          </TextContent>
+          <ActionGroup>
+            <Button
+              variant="primary"
+              onClick={handleWebAuthnSubmit}
+              isDisabled={pending}
+              isLoading={pending}
+            >
+              Authenticate with security key
+            </Button>
+            <Button variant="link" onClick={resetToPhase1} isDisabled={pending}>
+              Back
+            </Button>
+          </ActionGroup>
+          {mfaMethods.includes("totp") && (
+            <div style={{ marginTop: 16 }}>
+              <Button
+                variant="link"
+                isInline
+                onClick={() => {
+                  setErrorMsg(null);
+                  setPhase("totp");
+                }}
+                isDisabled={pending}
+              >
+                Use authenticator code instead
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       {phase === "password" && (

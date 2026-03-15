@@ -479,8 +479,9 @@ type AuthBeginRequest struct {
 
 // AuthBeginResponse is returned by POST /api/v1/auth/begin
 type AuthBeginResponse struct {
-	SessionToken string `json:"session_token"` // short-lived JWT for the auth state machine
-	Next         string `json:"next"`          // "totp" or "password"
+	SessionToken string   `json:"session_token"` // short-lived JWT for the auth state machine
+	Next         string   `json:"next"`          // "mfa" or "password"
+	MFAMethods   []string `json:"mfa_methods"`   // e.g. ["webauthn","totp"] when next=="mfa"
 }
 
 // AuthStepRequest is sent by POST /api/v1/auth/step
@@ -497,4 +498,21 @@ type AuthStepResponse struct {
 	Next         string `json:"next,omitempty"`
 	Token        string `json:"token,omitempty"` // full JWT — populated on final step
 	User         *User  `json:"user,omitempty"`
+}
+
+// ─── WebAuthn Models ──────────────────────────────────────────────────────────
+
+// WebAuthnCredential is the API representation of a registered WebAuthn credential.
+type WebAuthnCredential struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	AAGUID     string     `json:"aaguid,omitempty"`
+	Transports []string   `json:"transports,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// RenameWebAuthnCredentialRequest renames a credential.
+type RenameWebAuthnCredentialRequest struct {
+	Name string `json:"name"`
 }

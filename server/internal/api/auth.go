@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -15,13 +16,14 @@ import (
 
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	authSvc *services.AuthService
-	mfaSvc  *services.MFAService
+	authSvc     *services.AuthService
+	mfaSvc      *services.MFAService
+	webauthnSvc *services.WebAuthnService
 }
 
 // NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(authSvc *services.AuthService, mfaSvc *services.MFAService) *AuthHandler {
-	return &AuthHandler{authSvc: authSvc, mfaSvc: mfaSvc}
+func NewAuthHandler(authSvc *services.AuthService, mfaSvc *services.MFAService, webauthnSvc *services.WebAuthnService) *AuthHandler {
+	return &AuthHandler{authSvc: authSvc, mfaSvc: mfaSvc, webauthnSvc: webauthnSvc}
 }
 
 // Login handles POST /api/v1/auth/login
@@ -247,6 +249,270 @@ func (h *AuthHandler) MFASetupFinish(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Failed to encode MFA setup finish response: %v", err)
+	}
+}
+
+// webAuthnNotImplemented returns 501 when WebAuthn is not configured.
+func (h *AuthHandler) webAuthnNotImplemented(w http.ResponseWriter) {
+	http.Error(w, `{"error":"WebAuthn not configured"}`, http.StatusNotImplemented)
+}
+
+// WebAuthnRegisterBegin handles POST /api/v1/users/me/webauthn/register/begin
+func (h *AuthHandler) WebAuthnRegisterBegin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	user, err := h.authSvc.GetUser(r.Context(), claims.UserID)
+	if err != nil || user == nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+	optionsJSON, err := h.webauthnSvc.BeginRegistration(r.Context(), claims.UserID, user.Username)
+	if err != nil {
+		log.Printf("WebAuthn register begin failed for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"failed to begin WebAuthn registration"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(optionsJSON) //nolint:errcheck
+}
+
+// WebAuthnRegisterFinish handles POST /api/v1/users/me/webauthn/register/finish
+func (h *AuthHandler) WebAuthnRegisterFinish(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	user, err := h.authSvc.GetUser(r.Context(), claims.UserID)
+	if err != nil || user == nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Name       string          `json:"name"`
+		Credential json.RawMessage `json:"credential"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	cred, err := h.webauthnSvc.FinishRegistration(r.Context(), claims.UserID, user.Username, body.Name, body.Credential)
+	if err != nil {
+		log.Printf("WebAuthn register finish failed for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"WebAuthn registration failed"}`, http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(cred); err != nil {
+		log.Printf("Failed to encode WebAuthn credential: %v", err)
+	}
+}
+
+// WebAuthnListCredentials handles GET /api/v1/users/me/webauthn/credentials
+func (h *AuthHandler) WebAuthnListCredentials(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	creds, err := h.webauthnSvc.ListCredentials(r.Context(), claims.UserID)
+	if err != nil {
+		log.Printf("WebAuthn list credentials failed for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"failed to list credentials"}`, http.StatusInternalServerError)
+		return
+	}
+	if creds == nil {
+		creds = []*models.WebAuthnCredential{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(creds); err != nil {
+		log.Printf("Failed to encode credentials: %v", err)
+	}
+}
+
+// WebAuthnRenameCredential handles PUT /api/v1/users/me/webauthn/credentials/{id}
+func (h *AuthHandler) WebAuthnRenameCredential(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	// Extract credential ID from URL path: /api/v1/users/me/webauthn/credentials/{id}
+	parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
+	credID := parts[len(parts)-1]
+	if credID == "" {
+		http.Error(w, `{"error":"missing credential id"}`, http.StatusBadRequest)
+		return
+	}
+	var req models.RenameWebAuthnCredentialRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.webauthnSvc.RenameCredential(r.Context(), credID, claims.UserID, req.Name); err != nil {
+		log.Printf("WebAuthn rename credential failed for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"failed to rename credential"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// WebAuthnDeleteCredential handles DELETE /api/v1/users/me/webauthn/credentials/{id}
+func (h *AuthHandler) WebAuthnDeleteCredential(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
+	credID := parts[len(parts)-1]
+	if credID == "" {
+		http.Error(w, `{"error":"missing credential id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.webauthnSvc.DeleteCredential(r.Context(), credID, claims.UserID); err != nil {
+		log.Printf("WebAuthn delete credential failed for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"failed to delete credential"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// WebAuthnCredentialHandler routes GET/PUT/DELETE for /api/v1/users/me/webauthn/credentials and /.../{id}
+func (h *AuthHandler) WebAuthnCredentialHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.WebAuthnListCredentials(w, r)
+	case http.MethodPut:
+		h.WebAuthnRenameCredential(w, r)
+	case http.MethodDelete:
+		h.WebAuthnDeleteCredential(w, r)
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+// WebAuthnAuthBegin handles POST /api/v1/auth/webauthn/begin (public)
+// Body: {"session_token": "..."}
+func (h *AuthHandler) WebAuthnAuthBegin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	var body struct {
+		SessionToken string `json:"session_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	sessionClaims, err := h.authSvc.ValidateSessionToken(body.SessionToken)
+	if err != nil {
+		http.Error(w, `{"error":"invalid session token"}`, http.StatusUnauthorized)
+		return
+	}
+	optionsJSON, err := h.webauthnSvc.BeginAuthentication(r.Context(), sessionClaims.UserID)
+	if err != nil {
+		log.Printf("WebAuthn auth begin failed for user %s: %v", sessionClaims.UserID, err)
+		http.Error(w, `{"error":"failed to begin WebAuthn authentication"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(optionsJSON); err != nil {
+		log.Printf("Failed to write WebAuthn auth begin response: %v", err)
+	}
+}
+
+// WebAuthnAuthFinish handles POST /api/v1/auth/webauthn/finish (public)
+// Body: {"session_token": "...", "credential": <WebAuthn JSON>}
+func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if h.webauthnSvc == nil {
+		h.webAuthnNotImplemented(w)
+		return
+	}
+	var body struct {
+		SessionToken string          `json:"session_token"`
+		Credential   json.RawMessage `json:"credential"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	sessionClaims, err := h.authSvc.ValidateSessionToken(body.SessionToken)
+	if err != nil {
+		http.Error(w, `{"error":"invalid session token"}`, http.StatusUnauthorized)
+		return
+	}
+	if err := h.webauthnSvc.FinishAuthentication(r.Context(), sessionClaims.UserID, body.Credential); err != nil {
+		log.Printf("WebAuthn auth finish failed for user %s: %v", sessionClaims.UserID, err)
+		http.Error(w, `{"error":"WebAuthn authentication failed"}`, http.StatusUnauthorized)
+		return
+	}
+	// WebAuthn fully authenticates the user — issue the final JWT directly, no password needed.
+	loginResp, err := h.authSvc.IssueTokenByUserID(r.Context(), sessionClaims.UserID)
+	if err != nil {
+		log.Printf("Failed to issue token after WebAuthn for user %s: %v", sessionClaims.UserID, err)
+		http.Error(w, `{"error":"failed to issue token"}`, http.StatusInternalServerError)
+		return
+	}
+	resp := models.AuthStepResponse{
+		Token: loginResp.Token,
+		User:  &loginResp.User,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("Failed to encode WebAuthn auth finish response: %v", err)
 	}
 }
 
