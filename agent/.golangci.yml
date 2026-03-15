@@ -44,4 +44,3 @@ run:
   timeout: 5m
   exclude-dirs:
     - vendor
-    - node_modules
