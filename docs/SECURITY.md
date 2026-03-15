@@ -52,6 +52,9 @@ All private keys are stored in **PKCS#8** format (`PRIVATE KEY` PEM header). Leg
 | Certificate serial numbers | `crypto/rand` (128-bit random integer) | — |
 | Web UI password hashing | PBKDF2-SHA-256 | 600,000 iterations, 16-byte salt, 32-byte key |
 | JWT signing | HMAC-SHA-256 (HS256) | Symmetric, key from `JWT_SECRET` |
+| TOTP code generation | HMAC-SHA-256 or HMAC-SHA-512 | RFC 6238, 6 digits, 30-second period |
+| TOTP secret encryption at rest | AES-256-GCM | Random 12-byte nonce per ciphertext; key from `BOR_MFA_SECRET` |
+| TOTP backup code storage | SHA-256 | Single hash, hex-encoded; consumed on use |
 
 **PBKDF2 parameters** follow NIST SP 800-132 and OWASP recommendations. The encoded format is:
 
@@ -188,6 +191,146 @@ Agents do not use API keys or tokens after enrollment. Identity is established e
 
 LDAP authentication is enabled by setting `LDAP_ENABLED=true`. Successful LDAP authentication creates or updates a local user record. Local (PBKDF2) and LDAP users can coexist.
 
+LDAP users are subject to TOTP MFA in the same way as local users. Bor performs the LDAP bind itself, so it is responsible for applying the second factor. The login flow for an LDAP user with MFA enabled is: username → TOTP code → LDAP password.
+
+---
+
+## Multi-Factor Authentication (TOTP)
+
+Bor supports Time-based One-Time Password (TOTP) two-factor authentication for all user accounts managed by the server — both local (PBKDF2 password) and LDAP-authenticated users. TOTP is applied on top of the primary credential check regardless of where the password is verified.
+
+The only accounts exempt from MFA are those authenticated entirely by an external identity provider that handles MFA itself — specifically future OAuth 2.0 / SAML 2.0 integrations (not yet implemented). LDAP is not such an integration: Bor verifies the LDAP bind itself, so Bor is responsible for the second factor.
+
+### How It Works
+
+Authentication with MFA uses a three-step state machine rather than a single username-and-password form:
+
+```
+POST /api/v1/auth/begin   { "username": "alice" }
+  → { "session_token": "<5-min JWT>", "next": "totp" }   # if MFA enabled
+
+POST /api/v1/auth/step    { "session_token": "...", "type": "totp", "credential": "123456" }
+  → { "session_token": "<new 5-min JWT>", "next": "password" }
+
+POST /api/v1/auth/step    { "session_token": "...", "type": "password", "credential": "hunter2" }
+  → { "token": "<24h JWT>", "user": { ... } }            # full access granted
+```
+
+When MFA is not enabled for a user, the `begin` step returns `next: "password"` directly and the TOTP step is skipped.
+
+Session tokens issued by `/auth/begin` and the TOTP `/auth/step` carry `session_type: "auth_session"` in their claims and expire in 5 minutes. The regular auth middleware rejects session tokens — they cannot be used to call protected API endpoints.
+
+### TOTP Parameters
+
+| Parameter | Value |
+|---|---|
+| Standard | RFC 6238 (TOTP) |
+| Algorithm | SHA-256 (default) or SHA-512 (admin-configurable) |
+| Digits | 6 |
+| Period | 30 seconds |
+| Clock skew tolerance | ±1 period (accepts codes from T-1 and T+1) |
+| Library | `github.com/pquerna/otp` |
+
+SHA-256 is the default because it is FIPS 140-3 approved and widely supported by authenticator apps (FreeOTP+, Aegis, Google Authenticator, Authy). SHA-512 is available for deployments that require the stronger hash; verify that your chosen authenticator app supports `SHA512` before enabling it.
+
+### Secret Storage
+
+TOTP secrets are encrypted at rest using **AES-256-GCM** before being stored in the `user_mfa` database table. The encryption key is derived from the `BOR_MFA_SECRET` environment variable (SHA-256 hash). If `BOR_MFA_SECRET` is not set, it falls back to `JWT_SECRET`.
+
+It is strongly recommended to set a dedicated `BOR_MFA_SECRET` that is independent of the JWT signing secret:
+
+```bash
+BOR_MFA_SECRET=$(openssl rand -hex 32)
+```
+
+| Stored field | Format |
+|---|---|
+| `totp_secret` | AES-256-GCM ciphertext, base64-encoded (nonce prepended) |
+| `backup_codes` | SHA-256 hashes of each plain code, stored as a PostgreSQL `TEXT[]` |
+
+### Backup Codes
+
+During MFA setup, the server generates **8 single-use backup codes**. Each code is a 10-character uppercase hex string formatted as `XXXXX-XXXXX` for readability. Codes are hashed with SHA-256 before storage and consumed on use. The plain codes are returned to the user once and are not retrievable afterwards.
+
+Backup codes can be used in place of the TOTP code at the TOTP step of authentication. After use, the consumed code is removed from the stored list.
+
+### Enforcing MFA for All Users
+
+Administrators can require MFA for all local accounts globally. When enforcement is active:
+
+- Any local user who has not set up MFA will see a mandatory setup screen immediately after login. The application is not accessible until MFA is configured.
+- Users can log out from the setup screen without completing setup.
+- Only future OAuth/SAML users would be exempt from this requirement. LDAP users are subject to MFA enforcement in the same way as local users.
+
+#### Via the Admin UI
+
+1. Log in as a Super Admin or Org Admin.
+2. Go to **Settings → MFA Settings**.
+3. Enable **"Require MFA for all local users"**.
+4. Optionally change the TOTP algorithm (SHA-256 or SHA-512). Changing the algorithm only affects new enrolments; existing users keep their current algorithm until they re-enrol.
+5. Click **Save**.
+
+#### Via environment variable / config file
+
+The setting is stored in the `agent_settings` table. It can also be pre-seeded via a database migration or set directly:
+
+```sql
+UPDATE agent_settings SET value = 'true' WHERE key = 'mfa_required';
+UPDATE agent_settings SET value = 'SHA512' WHERE key = 'totp_algorithm';
+```
+
+### Personal MFA Setup (Users)
+
+Individual users can enrol and manage their own TOTP from the **Account Security** dialog, accessible from the user menu in the top-right corner of the header. This menu is available to all authenticated users regardless of RBAC role.
+
+**To enrol:**
+
+1. Click the user menu (top-right) → **Account security**.
+2. Click **Enable MFA**.
+3. Scan the QR code with an authenticator app, or enter the manual secret.
+4. Enter the 6-digit code from the app and click **Verify**.
+5. Store the displayed backup codes in a safe place — they are shown only once.
+
+**To disable:**
+
+1. Click the user menu → **Account security**.
+2. Click **Disable MFA** and confirm your current password.
+
+### Emergency Recovery — Resetting a User's MFA
+
+If an administrator has lost access to their authenticator app and no backup codes remain, MFA can be reset using the server binary's `--reset-mfa` flag. This flag connects directly to the database, deletes the user's MFA record, and exits — the server daemon is not started.
+
+```bash
+bor-server --reset-mfa <username>
+```
+
+**Example:**
+
+```bash
+# Disable MFA for user "admin"
+/usr/sbin/bor-server --reset-mfa admin
+```
+
+Expected output on success:
+
+```
+2026/03/15 14:22:01 MFA disabled for user "admin" (id=3fa85f64-5717-4562-b3fc-2c963f66afa6)
+```
+
+If the username is not found:
+
+```
+2026/03/15 14:22:01 reset-mfa failed: user "alice" not found
+exit status 1
+```
+
+**Security considerations for this command:**
+
+- The command requires local access to the server host and a correctly configured environment (database credentials must be available via environment variables or `/etc/bor/server.env`).
+- It should be run as the `bor` service user or `root`.
+- The action is **not** recorded in the application audit log (since it bypasses the running server). Record the operation in your out-of-band change log.
+- After resetting MFA, the affected user can log in with password only. If MFA enforcement is active, they will be prompted to enrol immediately on next login.
+
 ---
 
 ## Standards Compliance
@@ -201,6 +344,9 @@ LDAP authentication is enabled by setting `LDAP_ENABLED=true`. Successful LDAP a
 | SHA-256 / SHA-384 | Approved | |
 | HMAC-SHA-256 | Approved | Used for JWT signing |
 | PBKDF2-SHA-256 | Approved | 600,000 iterations |
+| HMAC-SHA-256 (TOTP) | Approved | RFC 6238 TOTP default algorithm |
+| HMAC-SHA-512 (TOTP) | Approved | RFC 6238 TOTP optional algorithm |
+| AES-256-GCM (TOTP secrets) | Approved | At-rest encryption of TOTP secrets in the database |
 | X25519 | **Not approved** | Automatically removed when `GODEBUG=fips140=on` |
 | RSA-2048 (external CA keys) | Approved | Accepted for compatibility; not generated by Bor |
 
@@ -306,6 +452,11 @@ Without `GODEBUG=fips140=on`, the binary still contains the validated crypto mod
 - [ ] **Change the JWT secret**: Set `JWT_SECRET` to at least 32 bytes of random data.
   ```bash
   JWT_SECRET=$(openssl rand -hex 32)
+  ```
+
+- [ ] **Set the MFA encryption secret**: Set `BOR_MFA_SECRET` to at least 32 bytes of random data, separate from the JWT secret. TOTP secrets are encrypted at rest with a key derived from this value.
+  ```bash
+  BOR_MFA_SECRET=$(openssl rand -hex 32)
   ```
 
 - [ ] **Change the admin password**: Set `BOR_ADMIN_PASSWORD` to a strong password. The default `"admin"` is logged as a warning and must not be used in production.

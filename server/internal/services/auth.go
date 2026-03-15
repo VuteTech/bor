@@ -349,38 +349,16 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 
 	source := string(user.Source)
 
-	// LDAP users bypass TOTP in this implementation.
-	if user.Source == models.SourceLDAP {
-		sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate session token: %w", err)
-		}
-		return &models.AuthBeginResponse{
-			SessionToken: sessionToken,
-			Next:         "password",
-		}, nil
-	}
-
-	// Check whether MFA is needed.
+	// Check whether MFA is needed. Applies to all user sources (local and LDAP).
+	// Only future OAuth/SAML sources, which delegate authentication entirely to an
+	// external IdP, would be exempt — they are not yet implemented.
 	needsMFA := false
 	if s.mfaSvc != nil {
-		required, err := s.mfaSvc.IsMFARequired(ctx)
+		enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check MFA policy: %w", err)
+			return nil, fmt.Errorf("failed to check user MFA: %w", err)
 		}
-		if required {
-			enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to check user MFA: %w", err)
-			}
-			needsMFA = enabled
-		} else {
-			enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to check user MFA: %w", err)
-			}
-			needsMFA = enabled
-		}
+		needsMFA = enabled
 	}
 
 	sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
@@ -425,19 +403,12 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		}, nil
 
 	case "password":
-		// Check whether TOTP was required but not done.
+		// If the user has MFA enabled, the TOTP step must have been completed
+		// before the password step is allowed (regardless of global enforcement).
 		if s.mfaSvc != nil {
-			required, _ := s.mfaSvc.IsMFARequired(ctx)
-			if required {
-				enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
-				if enabled && !sessionClaims.TOTPDone {
-					return nil, fmt.Errorf("TOTP verification required before password step")
-				}
-			} else {
-				enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
-				if enabled && !sessionClaims.TOTPDone {
-					return nil, fmt.Errorf("TOTP verification required before password step")
-				}
+			enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
+			if enabled && !sessionClaims.TOTPDone {
+				return nil, fmt.Errorf("TOTP verification required before password step")
 			}
 		}
 
