@@ -36,16 +36,26 @@ services:
       - DB_PASSWORD=bor
       - DB_NAME=bor
       - DB_SSLMODE=disable
-      - BOR_ADDR=:8443
-      - BOR_HOSTNAMES=10.28.7.134
-      # Space-separated list of hostnames/IPs added as SANs to the
+      - BOR_ENROLLMENT_PORT=8443
+      - BOR_POLICY_PORT=8444
+      # Comma-separated list of hostnames/IPs added as SANs to the
       # auto-generated TLS certificate. Set to your server's FQDN so
       # browsers and agents can verify the cert without warnings.
       # Overrides the 'hostnames' list in /etc/bor/server.yaml when set.
-      # Example: BOR_HOSTNAMES=bor.example.com,192.0.2.10
       - BOR_HOSTNAMES=localhost,10.28.7.134
+
+      # ── WebAuthn / FIDO2 (optional) ───────────────────────────────────────
+      # Enables hardware security keys (YubiKey, FIDO2 tokens) and software
+      # passkey managers (Bitwarden, 1Password) as a second factor.
+      # BOR_WEBAUTHN_RPID must equal the domain users browse to (no scheme/port).
+      # BOR_WEBAUTHN_ORIGINS must include the full origin(s) of the login page.
+      # Leave unset to keep WebAuthn disabled.
+      - BOR_WEBAUTHN_RPID=localhost
+      - BOR_WEBAUTHN_ORIGINS=https://localhost:8443
+      - BOR_WEBAUTHN_DISPLAY_NAME=Bor Policy Manager
     ports:
       - "8443:8443"
+      - "8444:8444"
     volumes:
       - bor_pki:/var/lib/bor/pki:U
     restart: unless-stopped

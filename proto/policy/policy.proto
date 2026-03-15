@@ -31,6 +31,9 @@ service PolicyService {
 
   // Report a file tamper event detected by the agent
   rpc ReportTamperEvent(ReportTamperEventRequest) returns (ReportTamperEventResponse);
+
+  // Renew the calling agent's mTLS certificate (authenticated with the current cert).
+  rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
 }
 
 // Policy represents a desktop policy configuration
@@ -243,4 +246,16 @@ message ReportTamperEventRequest {
 // ReportTamperEventResponse acknowledges a tamper event report.
 message ReportTamperEventResponse {
   bool success = 1;
+}
+
+// ─── Certificate renewal messages ────────────────────────────────────────────
+
+// RenewCertificateRequest carries a new CSR from the agent.
+message RenewCertificateRequest {
+  bytes csr_pem = 1;
+}
+
+// RenewCertificateResponse carries the freshly signed certificate.
+message RenewCertificateResponse {
+  bytes signed_cert_pem = 1;
 }

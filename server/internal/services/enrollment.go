@@ -6,14 +6,15 @@ package services
 
 import (
 	"context"
+	"crypto"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/pki"
 )
@@ -26,20 +27,22 @@ type EnrollmentService struct {
 	tokens map[string]*models.EnrollmentToken
 
 	caCert *x509.Certificate
-	caKey  *rsa.PrivateKey
+	caKey  crypto.Signer
 
 	nodeGroupSvc *NodeGroupService
 	nodeSvc      *NodeService
+	revokeRepo   *database.RevocationRepository
 }
 
 // NewEnrollmentService creates a new EnrollmentService.
-func NewEnrollmentService(caCert *x509.Certificate, caKey *rsa.PrivateKey, nodeGroupSvc *NodeGroupService, nodeSvc *NodeService) *EnrollmentService {
+func NewEnrollmentService(caCert *x509.Certificate, caKey crypto.Signer, nodeGroupSvc *NodeGroupService, nodeSvc *NodeService, revokeRepo *database.RevocationRepository) *EnrollmentService {
 	return &EnrollmentService{
 		tokens:       make(map[string]*models.EnrollmentToken),
 		caCert:       caCert,
 		caKey:        caKey,
 		nodeGroupSvc: nodeGroupSvc,
 		nodeSvc:      nodeSvc,
+		revokeRepo:   revokeRepo,
 	}
 }
 
@@ -93,8 +96,36 @@ func (s *EnrollmentService) ConsumeToken(tokenStr string) (string, error) {
 }
 
 // SignCSR signs a PEM-encoded certificate signing request with the internal CA.
-func (s *EnrollmentService) SignCSR(csrPEM []byte) ([]byte, error) {
+// Returns the signed cert PEM, serial hex, and notAfter time.
+func (s *EnrollmentService) SignCSR(csrPEM []byte) (certPEM []byte, serial string, notAfter time.Time, err error) {
 	return pki.SignCSR(csrPEM, s.caCert, s.caKey)
+}
+
+// SetNodeCertificate persists the cert serial and notAfter for an enrolled node.
+func (s *EnrollmentService) SetNodeCertificate(ctx context.Context, nodeID, serial string, notAfter time.Time) error {
+	return s.nodeSvc.UpdateNodeCertificate(ctx, nodeID, serial, notAfter)
+}
+
+// RenewCertificate signs a new CSR for an existing node (cert renewal).
+// It replaces the node's cert record and clears any prior revocation for that node.
+func (s *EnrollmentService) RenewCertificate(ctx context.Context, nodeID string, csrPEM []byte) ([]byte, error) {
+	certPEM, serial, notAfter, err := pki.SignCSR(csrPEM, s.caCert, s.caKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign renewal CSR: %w", err)
+	}
+	if err := s.nodeSvc.UpdateNodeCertificate(ctx, nodeID, serial, notAfter); err != nil {
+		return nil, fmt.Errorf("failed to update node certificate: %w", err)
+	}
+	// Clear any stale revocation so the new cert is accepted.
+	if err := s.revokeRepo.DeleteByNodeID(ctx, nodeID); err != nil {
+		return nil, fmt.Errorf("failed to clear revocations: %w", err)
+	}
+	return certPEM, nil
+}
+
+// RevokeCertificate revokes the certificate of a node by serial number.
+func (s *EnrollmentService) RevokeCertificate(ctx context.Context, nodeID, serial, reason string) error {
+	return s.revokeRepo.Revoke(ctx, nodeID, serial, reason)
 }
 
 // CreateNodeOnEnroll creates a Node record in the database for a newly

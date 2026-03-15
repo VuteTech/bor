@@ -60,6 +60,7 @@ import {
   addNodeToGroup,
   removeNodeFromGroup,
   deleteNode,
+  revokeNodeCertificate,
   Node,
   NodeStatus,
 } from "../../apiClient/nodesApi";
@@ -143,6 +144,11 @@ export const NodesPage: React.FC = () => {
   // Metadata refresh (in drawer)
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  // Certificate revocation (in drawer)
+  const [revoking, setRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [revokeSuccess, setRevokeSuccess] = useState(false);
 
   // Action error banner
   const [actionError, setActionError] = useState<string | null>(null);
@@ -302,6 +308,22 @@ export const NodesPage: React.FC = () => {
       setRefreshError(err instanceof Error ? err.message : "Failed to request metadata refresh");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  /* ── Certificate revocation ── */
+  const handleRevokeCertificate = async () => {
+    if (!selectedNode) return;
+    setRevoking(true);
+    setRevokeError(null);
+    setRevokeSuccess(false);
+    try {
+      await revokeNodeCertificate(selectedNode.id);
+      setRevokeSuccess(true);
+    } catch (err) {
+      setRevokeError(err instanceof Error ? err.message : "Failed to revoke certificate");
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -501,6 +523,50 @@ export const NodesPage: React.FC = () => {
             </DescriptionListGroup>
           </DescriptionList>
 
+          {selectedNode.cert_serial && (() => {
+            const notAfter = selectedNode.cert_not_after ? new Date(selectedNode.cert_not_after) : null;
+            const msPerDay = 86_400_000;
+            const daysLeft = notAfter ? Math.ceil((notAfter.getTime() - Date.now()) / msPerDay) : null;
+            const certColor = daysLeft === null ? "#6a6e73"
+              : daysLeft <= 0 ? "var(--pf-v5-global--danger-color--100)"
+              : daysLeft <= 30 ? "var(--pf-v5-global--warning-color--100)"
+              : "var(--pf-v5-global--success-color--100)";
+            const certLabel = daysLeft === null ? "Unknown"
+              : daysLeft <= 0 ? `Expired ${Math.abs(daysLeft)}d ago`
+              : `Expires in ${daysLeft}d`;
+            return (
+              <>
+                <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "1rem" }}>
+                  Certificate
+                </Title>
+                <DescriptionList isHorizontal isCompact>
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Serial</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      <span style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
+                        {selectedNode.cert_serial.length > 16
+                          ? `…${selectedNode.cert_serial.slice(-16)}`
+                          : selectedNode.cert_serial}
+                      </span>
+                    </DescriptionListDescription>
+                  </DescriptionListGroup>
+                  {notAfter && (
+                    <DescriptionListGroup>
+                      <DescriptionListTerm>Expires</DescriptionListTerm>
+                      <DescriptionListDescription>
+                        <span style={{ color: certColor, fontWeight: 600 }}>
+                          {notAfter.toLocaleDateString()}
+                        </span>
+                        {" "}
+                        <span style={{ color: certColor, fontSize: "0.8rem" }}>({certLabel})</span>
+                      </DescriptionListDescription>
+                    </DescriptionListGroup>
+                  )}
+                </DescriptionList>
+              </>
+            );
+          })()}
+
           <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}>
             Actions
           </Title>
@@ -547,6 +613,29 @@ export const NodesPage: React.FC = () => {
                 Decommission
               </Button>
             </FlexItem>
+            {selectedNode.cert_serial && (
+              <FlexItem>
+                {revokeError && (
+                  <Alert variant="danger" title="Revocation failed" isInline style={{ marginBottom: "0.5rem" }}>
+                    {revokeError}
+                  </Alert>
+                )}
+                {revokeSuccess && (
+                  <Alert variant="success" title="Certificate revoked" isInline style={{ marginBottom: "0.5rem" }}>
+                    The agent will be denied on its next reconnect attempt.
+                  </Alert>
+                )}
+                <Button
+                  variant="secondary"
+                  isDanger
+                  isLoading={revoking}
+                  isDisabled={revoking || revokeSuccess}
+                  onClick={handleRevokeCertificate}
+                >
+                  Revoke Certificate
+                </Button>
+              </FlexItem>
+            )}
           </Flex>
         </DrawerPanelBody>
       )}
@@ -817,6 +906,8 @@ export const NodesPage: React.FC = () => {
                         onRowClick={() => {
                           setSelectedNode(node);
                           setDrawerExpanded(true);
+                          setRevokeError(null);
+                          setRevokeSuccess(false);
                         }}
                       >
                         <Td

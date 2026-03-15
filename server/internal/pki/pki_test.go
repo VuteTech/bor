@@ -5,8 +5,9 @@
 package pki
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -241,8 +242,8 @@ func TestSignCSR(t *testing.T) {
 		t.Fatalf("LoadCA() error = %v", err)
 	}
 
-	// Generate a CSR
-	agentKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Generate a CSR (ECDSA P-256)
+	agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate agent key: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestSignCSR(t *testing.T) {
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 
 	// Sign the CSR
-	certPEM, err := SignCSR(csrPEM, caCert, caKey)
+	certPEM, _, _, err := SignCSR(csrPEM, caCert, caKey)
 	if err != nil {
 		t.Fatalf("SignCSR() error = %v", err)
 	}
@@ -306,7 +307,7 @@ func TestSignCSR_InvalidPEM(t *testing.T) {
 	caCertPath, caKeyPath, _ := EnsureCA(dir)
 	caCert, caKey, _ := LoadCA(caCertPath, caKeyPath)
 
-	_, err := SignCSR([]byte("not a PEM"), caCert, caKey)
+	_, _, _, err := SignCSR([]byte("not a PEM"), caCert, caKey)
 	if err == nil {
 		t.Error("SignCSR() should return error for invalid PEM")
 	}

@@ -14,10 +14,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// RevocationChecker is the interface used by the interceptors to check
+// whether a client certificate serial has been revoked.
+type RevocationChecker interface {
+	IsRevoked(ctx context.Context, serial string) (bool, error)
+}
+
 // RequireClientCertInterceptor returns a unary server interceptor that
 // requires a verified TLS client certificate for all methods except those
 // in the exemptMethods set (e.g. the Enroll RPC which bootstraps mTLS).
-func RequireClientCertInterceptor(exemptMethods map[string]bool) grpc.UnaryServerInterceptor {
+// If rc is non-nil the cert serial is also checked against the revocation list.
+func RequireClientCertInterceptor(exemptMethods map[string]bool, rc RevocationChecker) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -32,6 +39,12 @@ func RequireClientCertInterceptor(exemptMethods map[string]bool) grpc.UnaryServe
 			return nil, err
 		}
 
+		if rc != nil {
+			if err := checkRevocation(ctx, rc); err != nil {
+				return nil, err
+			}
+		}
+
 		return handler(ctx, req)
 	}
 }
@@ -39,7 +52,8 @@ func RequireClientCertInterceptor(exemptMethods map[string]bool) grpc.UnaryServe
 // RequireClientCertStreamInterceptor returns a stream server interceptor
 // that requires a verified TLS client certificate for all streaming
 // methods except those in the exemptMethods set.
-func RequireClientCertStreamInterceptor(exemptMethods map[string]bool) grpc.StreamServerInterceptor {
+// If rc is non-nil the cert serial is also checked against the revocation list.
+func RequireClientCertStreamInterceptor(exemptMethods map[string]bool, rc RevocationChecker) grpc.StreamServerInterceptor {
 	return func(
 		srv interface{},
 		ss grpc.ServerStream,
@@ -52,6 +66,12 @@ func RequireClientCertStreamInterceptor(exemptMethods map[string]bool) grpc.Stre
 
 		if err := verifyClientCert(ss.Context()); err != nil {
 			return err
+		}
+
+		if rc != nil {
+			if err := checkRevocation(ss.Context(), rc); err != nil {
+				return err
+			}
 		}
 
 		return handler(srv, ss)
@@ -74,5 +94,37 @@ func verifyClientCert(ctx context.Context) error {
 		return status.Errorf(codes.Unauthenticated, "client certificate required – please enroll first")
 	}
 
+	return nil
+}
+
+// extractCertSerial extracts the serial number (as a lowercase hex string) from
+// the verified TLS client certificate in the context.
+func extractCertSerial(ctx context.Context) (string, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return "", status.Errorf(codes.Unauthenticated, "no peer info")
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
+		return "", status.Errorf(codes.Unauthenticated, "no verified client certificate")
+	}
+	cert := tlsInfo.State.VerifiedChains[0][0]
+	return cert.SerialNumber.Text(16), nil
+}
+
+// checkRevocation returns a gRPC Unauthenticated error when the client
+// certificate serial has been revoked.
+func checkRevocation(ctx context.Context, rc RevocationChecker) error {
+	serial, err := extractCertSerial(ctx)
+	if err != nil {
+		return err
+	}
+	revoked, err := rc.IsRevoked(ctx, serial)
+	if err != nil {
+		return status.Errorf(codes.Internal, "revocation check failed")
+	}
+	if revoked {
+		return status.Errorf(codes.Unauthenticated, "certificate has been revoked")
+	}
 	return nil
 }

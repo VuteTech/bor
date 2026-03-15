@@ -1,4 +1,4 @@
-.PHONY: help server agent frontend proto proto-go proto-ts clean test lint install-deps dev \
+.PHONY: help server server-pkcs11 agent frontend proto proto-go proto-ts clean test lint install-deps dev \
         packages packages-agent packages-server
 
 # Versioning — override with: make packages VERSION=1.2.3
@@ -31,11 +31,28 @@ help:
 	@echo "  packages-server    - Build server packages only"
 	@echo ""
 	@echo "Package versioning:  make packages VERSION=1.2.3 ARCH=amd64"
+	@echo "All builds use GOFIPS140=v1.0.0 (FIPS 140-3 validated crypto module)."
+	@echo "FIPS enforcement:    GODEBUG=fips140=on ./server  (restricts to FIPS-approved algorithms at runtime)"
+	@echo ""
+	@echo "HSM / PKCS#11 build (requires CGO and crypto11 dependency):"
+	@echo "  cd server && go get github.com/ThalesIgnite/crypto11"
+	@echo "  make server-pkcs11"
+
+# All Go builds use GOFIPS140=v1.0.0 to pin the FIPS 140-3 validated crypto
+# module snapshot (CAVP certificate A6650). This ensures the binary contains
+# only the validated implementation regardless of the host Go toolchain.
+# To enforce FIPS-only algorithms at runtime: GODEBUG=fips140=on ./server
 
 # Build server
 server:
-	@echo "Building server..."
-	cd server && go build -o server ./cmd/server
+	@echo "Building server (FIPS 140-3)..."
+	cd server && GOFIPS140=v1.0.0 go build -o server ./cmd/server
+
+# Build server with PKCS#11 HSM support (requires CGO + pkcs11 headers)
+# Before first use: cd server && go get github.com/ThalesIgnite/crypto11
+server-pkcs11:
+	@echo "Building server (FIPS 140-3 + PKCS#11 HSM support)..."
+	cd server && GOFIPS140=v1.0.0 CGO_ENABLED=1 go build -tags pkcs11 -o server ./cmd/server
 
 # Build frontend
 frontend:
@@ -44,8 +61,8 @@ frontend:
 
 # Build agent
 agent:
-	@echo "Building agent..."
-	cd agent && go build -o bor-agent ./cmd/agent
+	@echo "Building agent (FIPS 140-3)..."
+	cd agent && GOFIPS140=v1.0.0 go build -o bor-agent ./cmd/agent
 
 # Generate Protocol Buffers (Go + TypeScript)
 proto: proto-go proto-ts
@@ -160,7 +177,7 @@ fmt:
 
 # Run server in development mode
 run-server:
-	cd server && go run ./cmd/server
+	cd server && GOFIPS140=v1.0.0 go run ./cmd/server
 
 # Database migrations
 migrate-up:

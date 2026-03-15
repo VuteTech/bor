@@ -6,11 +6,16 @@ package main
 
 import (
 	"context"
+	"crypto"
 	"crypto/tls"
+	"crypto/x509"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -29,6 +34,16 @@ import (
 )
 
 func main() {
+	resetMFAUser := flag.String("reset-mfa", "", "Disable MFA for the given username and exit")
+	flag.Parse()
+
+	if *resetMFAUser != "" {
+		if err := resetMFAForUser(*resetMFAUser); err != nil {
+			log.Fatalf("reset-mfa failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
 	log.Println("Bor Policy Management Server")
 
 	// Initialize configuration
@@ -39,20 +54,45 @@ func main() {
 
 	// ─── Internal CA for agent mTLS (must be created first so it can
 	//     sign the UI cert when auto-generating) ──────────────────────────
-	caCertFile := cfg.CA.CertFile
-	caKeyFile := cfg.CA.KeyFile
-	if caCertFile == "" && caKeyFile == "" {
-		log.Println("BOR_CA_CERT_FILE/KEY not set – generating internal CA")
-		caCertFile, caKeyFile, err = pki.EnsureCA(cfg.CA.AutogenDir)
-		if err != nil {
-			log.Fatalf("Failed to generate internal CA: %v", err)
-		}
-		log.Printf("Internal CA stored in %s", cfg.CA.AutogenDir)
-	}
+	var caCert *x509.Certificate
+	var caKey crypto.Signer
+	var caCertFile string // retained for LoadCACertPool below
 
-	caCert, caKey, err := pki.LoadCA(caCertFile, caKeyFile)
-	if err != nil {
-		log.Fatalf("Failed to load internal CA: %v", err)
+	if cfg.CA.PKCS11.IsConfigured() {
+		// PKCS#11 HSM path: the CA private key lives in the hardware security
+		// module. The CA certificate is still stored on disk so that agents can
+		// fetch and verify it. EnsureCAWithHSM creates the cert if missing.
+		caCertFile = cfg.CA.CertFile
+		if caCertFile == "" {
+			caCertFile = filepath.Join(cfg.CA.AutogenDir, "ca.crt")
+		}
+		log.Printf("Loading CA key from PKCS#11 HSM (token=%q key=%q)",
+			cfg.CA.PKCS11.TokenLabel, cfg.CA.PKCS11.KeyLabel)
+		caCert, caKey, err = pki.EnsureCAWithHSM(
+			caCertFile,
+			cfg.CA.PKCS11.Lib, cfg.CA.PKCS11.TokenLabel,
+			cfg.CA.PKCS11.KeyLabel, cfg.CA.PKCS11.PIN,
+		)
+		if err != nil {
+			log.Fatalf("Failed to initialise CA with PKCS#11 HSM: %v", err)
+		}
+		log.Printf("CA loaded from HSM; certificate at %s", caCertFile)
+	} else {
+		// Software path: CA key stored in a file on disk (default).
+		caCertFile = cfg.CA.CertFile
+		caKeyFile := cfg.CA.KeyFile
+		if caCertFile == "" && caKeyFile == "" {
+			log.Println("BOR_CA_CERT_FILE/KEY not set – generating internal CA")
+			caCertFile, caKeyFile, err = pki.EnsureCA(cfg.CA.AutogenDir)
+			if err != nil {
+				log.Fatalf("Failed to generate internal CA: %v", err)
+			}
+			log.Printf("Internal CA stored in %s", cfg.CA.AutogenDir)
+		}
+		caCert, caKey, err = pki.LoadCA(caCertFile, caKeyFile)
+		if err != nil {
+			log.Fatalf("Failed to load internal CA: %v", err)
+		}
 	}
 
 	caCertPool, err := pki.LoadCACertPool(caCertFile)
@@ -105,6 +145,9 @@ func main() {
 	userGroupRoleBindingRepo := database.NewUserGroupRoleBindingRepository(db)
 	auditLogRepo := database.NewAuditLogRepository(db)
 	settingsRepo := database.NewSettingsRepository(db)
+	revocationRepo := database.NewRevocationRepository(db)
+	mfaRepo := database.NewMFARepository(db)
+	webauthnRepo := database.NewWebAuthnRepository(db)
 
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
@@ -125,8 +168,26 @@ func main() {
 		log.Println("LDAP authentication enabled")
 	}
 
+	// Initialize MFA service
+	mfaSvc := services.NewMFAService(mfaRepo, settingsRepo, cfg.Security.JWTSecret)
+
+	// Initialize WebAuthn service (optional — only if RPID is configured)
+	var webauthnSvc *services.WebAuthnService
+	if cfg.WebAuthn.RPID != "" {
+		var waErr error
+		webauthnSvc, waErr = services.NewWebAuthnService(webauthnRepo, cfg.WebAuthn.RPID, cfg.WebAuthn.DisplayName, cfg.WebAuthn.RPOrigins)
+		if waErr != nil {
+			log.Printf("WARNING: Failed to initialize WebAuthn service: %v", waErr)
+			webauthnSvc = nil
+		} else {
+			log.Printf("WebAuthn enabled (RPID=%s)", cfg.WebAuthn.RPID)
+		}
+	} else {
+		log.Println("WebAuthn disabled: set BOR_WEBAUTHN_RPID to enable")
+	}
+
 	// Initialize auth service
-	authSvc := services.NewAuthService(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc)
+	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc, mfaSvc, webauthnSvc)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
@@ -144,7 +205,7 @@ func main() {
 	policyBindingSvc := services.NewPolicyBindingService(policyBindingRepo, policyRepo, nodeGroupRepo)
 
 	// Initialize enrollment service
-	enrollSvc := services.NewEnrollmentService(caCert, caKey, nodeGroupSvc, nodeSvc)
+	enrollSvc := services.NewEnrollmentService(caCert, caKey, nodeGroupSvc, nodeSvc, revocationRepo)
 
 	// Initialize audit service
 	auditSvc := services.NewAuditService(auditLogRepo)
@@ -164,17 +225,17 @@ func main() {
 	policyHub := grpcserver.NewPolicyHub()
 
 	// Initialize API handlers
-	authHandler := api.NewAuthHandler(authSvc)
+	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
 	policyHandler := api.NewPolicyHandler(policySvc)
-	nodeHandler := api.NewNodeHandler(nodeSvc, policyHub)
+	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
 	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo)
 	policyBindingHandler := api.NewPolicyBindingHandler(policyBindingSvc)
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
-	settingsHandler := api.NewSettingsHandler(settingsSvc)
+	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
 
 	// Wire policy and binding change notifications to the hub so that
 	// connected streaming agents receive a fresh snapshot when the
@@ -191,6 +252,10 @@ func main() {
 
 	// Public routes
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/v1/auth/begin", authHandler.Begin)
+	mux.HandleFunc("/api/v1/auth/step", authHandler.Step)
+	mux.HandleFunc("/api/v1/auth/webauthn/begin", authHandler.WebAuthnAuthBegin)
+	mux.HandleFunc("/api/v1/auth/webauthn/finish", authHandler.WebAuthnAuthFinish)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -198,6 +263,18 @@ func main() {
 
 	// Auth routes (no additional permission needed — user just needs to be authenticated)
 	mux.Handle("/api/v1/auth/me", authMiddleware(http.HandlerFunc(authHandler.Me)))
+
+	// MFA routes for the current user
+	mux.Handle("/api/v1/users/me/mfa", authMiddleware(http.HandlerFunc(authHandler.MFAStatus)))
+	mux.Handle("/api/v1/users/me/mfa/setup/begin", authMiddleware(http.HandlerFunc(authHandler.MFASetupBegin)))
+	mux.Handle("/api/v1/users/me/mfa/setup/finish", authMiddleware(http.HandlerFunc(authHandler.MFASetupFinish)))
+	mux.Handle("/api/v1/users/me/mfa/disable", authMiddleware(http.HandlerFunc(authHandler.MFADisable)))
+
+	// WebAuthn routes for the current user
+	mux.Handle("/api/v1/users/me/webauthn/register/begin", authMiddleware(http.HandlerFunc(authHandler.WebAuthnRegisterBegin)))
+	mux.Handle("/api/v1/users/me/webauthn/register/finish", authMiddleware(http.HandlerFunc(authHandler.WebAuthnRegisterFinish)))
+	mux.Handle("/api/v1/users/me/webauthn/credentials", authMiddleware(http.HandlerFunc(authHandler.WebAuthnCredentialHandler)))
+	mux.Handle("/api/v1/users/me/webauthn/credentials/", authMiddleware(http.HandlerFunc(authHandler.WebAuthnCredentialHandler)))
 
 	// Policy routes — method-based permission checking
 	policyPerms := api.RequireMethodPermission(az, []api.MethodPermission{
@@ -273,64 +350,114 @@ func main() {
 
 	// Settings routes
 	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(api.RequirePermission(az, "settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
+	mux.Handle("/api/v1/settings/mfa", authMiddleware(api.RequirePermission(az, "settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
 
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
 
-	// ─── Single TLS server for both HTTPS UI and gRPC ───────────────────
+	// ─── TLS certificate for both servers ───────────────────────────────
 	uiTLSCert, err := pki.LoadTLSCert(tlsCertFile, tlsKeyFile)
 	if err != nil {
 		log.Fatalf("Failed to load UI TLS certificate: %v", err)
 	}
 
-	// Setup gRPC server (no TLS credentials – TLS is handled by http.Server).
+	// ─── Enrollment gRPC server (no mandatory client cert at TLS layer) ──
 	// Require a verified client certificate for all RPCs except Enroll
 	// (which is the bootstrapping call that exchanges a token for a cert).
 	exemptMethods := map[string]bool{
 		"/bor.enrollment.v1.EnrollmentService/Enroll": true,
 	}
 
-	grpcSrv := grpc.NewServer(
-		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods)),
-		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods)),
+	enrollGrpcSrv := grpc.NewServer(
+		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods, revocationRepo)),
+		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods, revocationRepo)),
 	)
-	pb.RegisterPolicyServiceServer(grpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, policyHub))
-	enrollpb.RegisterEnrollmentServiceServer(grpcSrv, grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken))
+	enrollpb.RegisterEnrollmentServiceServer(enrollGrpcSrv, grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken))
 
-	// Route: if HTTP/2 + Content-Type starts with "application/grpc" → gRPC,
-	// otherwise → normal HTTP handler (UI, API).
-	grpcHTTPRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcSrv.ServeHTTP(w, r)
-		} else {
-			mux.ServeHTTP(w, r)
-		}
-	})
+	// ─── Policy gRPC server (mandatory client cert — agents only) ────────
+	policyGrpcSrv := grpc.NewServer(
+		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(map[string]bool{}, revocationRepo)),
+		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(map[string]bool{}, revocationRepo)),
+	)
+	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, policyHub))
 
-	tlsConfig := &tls.Config{
+	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
+	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
+	// These are the only suites allowed for TLS 1.2; TLS 1.3 suites are
+	// automatically selected by Go and not configurable.
+	// CurvePreferences: P-256 and P-384 satisfy FIPS 140-3, BSI, ANSSI, NCSC.
+	// X25519 is listed first for performance where FIPS mode is not enforced;
+	// GODEBUG=fips140=on will automatically remove it at runtime.
+	uiTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{uiTLSCert},
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.VerifyClientCertIfGiven,
 		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"h2", "http/1.1"},
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,    // BSI/ANSSI/NCSC approved; dropped by GODEBUG=fips140=on
+			tls.CurveP256, // FIPS 140-3 + all EU standards
+			tls.CurveP384, // FIPS 140-3 + all EU standards
+		},
 	}
 
-	httpServer := &http.Server{
-		Addr:              cfg.Server.Addr,
-		Handler:           grpcHTTPRouter,
-		TLSConfig:         tlsConfig,
+	uiGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			enrollGrpcSrv.ServeHTTP(w, r)
+		} else {
+			mux.ServeHTTP(w, r)
+		}
+	})
+
+	uiServer := &http.Server{
+		Addr:              cfg.Server.EnrollmentAddr(),
+		Handler:           uiGrpcRouter,
+		TLSConfig:         uiTLSConfig,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// Start server – empty cert/key args cause ListenAndServeTLS to use
-	// the TLSConfig already set on the http.Server instead of loading files.
+	// ─── Agent policy server (:8444) — RequireAndVerifyClientCert ────────
+	// TLS 1.3 minimum: agent-only port, no browser clients, strongest TLS.
+	agentTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{uiTLSCert},
+		ClientCAs:    caCertPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		MinVersion:   tls.VersionTLS13,
+		NextProtos:   []string{"h2"},
+	}
+
+	agentGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		policyGrpcSrv.ServeHTTP(w, r)
+	})
+
+	agentServer := &http.Server{
+		Addr:              cfg.Server.PolicyAddr(),
+		Handler:           agentGrpcRouter,
+		TLSConfig:         agentTLSConfig,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Start both servers.
 	go func() {
-		if err := httpServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+		if err := uiServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			log.Fatalf("UI server error: %v", err)
 		}
 	}()
 
-	log.Printf("HTTPS + gRPC (mTLS) listening on %s", cfg.Server.Addr)
+	go func() {
+		if err := agentServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+			log.Fatalf("Agent server error: %v", err)
+		}
+	}()
+
+	log.Printf("HTTPS + enrollment gRPC listening on %s", cfg.Server.EnrollmentAddr())
+	log.Printf("Agent policy gRPC (mTLS) listening on %s", cfg.Server.PolicyAddr())
 
 	// Block until shutdown signal
 	sigCh := make(chan os.Signal, 1)
@@ -338,12 +465,56 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down server...")
-	grpcSrv.GracefulStop()
+	enrollGrpcSrv.GracefulStop()
+	policyGrpcSrv.GracefulStop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+	if err := uiServer.Shutdown(ctx); err != nil {
+		log.Printf("UI server shutdown error: %v", err)
+	}
+	if err := agentServer.Shutdown(ctx); err != nil {
+		log.Printf("Agent server shutdown error: %v", err)
 	}
 
 	log.Println("Server stopped")
+}
+
+// resetMFAForUser connects to the database using environment config, looks up
+// the user by username, and deletes their MFA record.
+func resetMFAForUser(username string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	db, err := database.New(database.Config{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		Database: cfg.Database.Database,
+		SSLMode:  cfg.Database.SSLMode,
+	})
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer db.Close()
+
+	userRepo := database.NewUserRepository(db)
+	ctx := context.Background()
+	user, err := userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return fmt.Errorf("look up user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user %q not found", username)
+	}
+
+	mfaRepo := database.NewMFARepository(db)
+	if err := mfaRepo.Delete(ctx, user.ID); err != nil {
+		return fmt.Errorf("delete MFA record: %w", err)
+	}
+
+	log.Printf("MFA disabled for user %q (id=%s)", username, user.ID)
+	return nil
 }

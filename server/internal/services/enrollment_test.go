@@ -5,8 +5,10 @@
 package services
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -16,7 +18,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/pki"
 )
 
-func newTestCA(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
+func newTestCA(t *testing.T) (*x509.Certificate, crypto.Signer) {
 	t.Helper()
 	dir := t.TempDir()
 	certPath, keyPath, err := pki.EnsureCA(dir)
@@ -32,7 +34,7 @@ func newTestCA(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
 
 func TestEnrollmentService_CreateToken(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	token, err := svc.CreateToken("test-group-id")
 	if err != nil {
@@ -51,7 +53,7 @@ func TestEnrollmentService_CreateToken(t *testing.T) {
 
 func TestEnrollmentService_CreateToken_EmptyGroupID(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	_, err := svc.CreateToken("")
 	if err == nil {
@@ -61,7 +63,7 @@ func TestEnrollmentService_CreateToken_EmptyGroupID(t *testing.T) {
 
 func TestEnrollmentService_ConsumeToken(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	token, _ := svc.CreateToken("group-1")
 
@@ -82,7 +84,7 @@ func TestEnrollmentService_ConsumeToken(t *testing.T) {
 
 func TestEnrollmentService_ConsumeToken_Invalid(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	_, err := svc.ConsumeToken("nonexistent-token")
 	if err == nil {
@@ -92,9 +94,9 @@ func TestEnrollmentService_ConsumeToken_Invalid(t *testing.T) {
 
 func TestEnrollmentService_SignCSR(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
-	agentKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate agent key: %v", err)
 	}
@@ -106,7 +108,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 	}
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 
-	certPEM, err := svc.SignCSR(csrPEM)
+	certPEM, _, _, err := svc.SignCSR(csrPEM)
 	if err != nil {
 		t.Fatalf("SignCSR() error = %v", err)
 	}
@@ -130,7 +132,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 
 func TestEnrollmentService_GetCACertPEM(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
 
 	caPEM := svc.GetCACertPEM()
 	if len(caPEM) == 0 {

@@ -68,7 +68,7 @@ func (s *EnrollmentServer) Enroll(ctx context.Context, req *pb.EnrollRequest) (*
 		return nil, status.Errorf(codes.Unauthenticated, "enrollment failed: %v", err)
 	}
 
-	signedCert, err := s.enrollSvc.SignCSR(req.GetCsrPem())
+	signedCert, serial, notAfter, err := s.enrollSvc.SignCSR(req.GetCsrPem())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to sign CSR: %v", err)
 	}
@@ -86,7 +86,13 @@ func (s *EnrollmentServer) Enroll(ctx context.Context, req *pb.EnrollRequest) (*
 		return nil, status.Errorf(codes.Internal, "enrolled but failed to create node record: %v", err)
 	}
 
-	log.Printf("Agent enrolled: name=%s group=%s node_id=%s", nodeName, nodeGroupID, nodeID)
+	// Persist certificate tracking info for the new node.
+	if err := s.enrollSvc.SetNodeCertificate(ctx, nodeID, serial, notAfter); err != nil {
+		log.Printf("Warning: failed to store cert serial for node %s: %v", nodeID, err)
+	}
+
+	log.Printf("Agent enrolled: name=%s group=%s node_id=%s cert_serial=%s expires=%s",
+		nodeName, nodeGroupID, nodeID, serial, notAfter.Format("2006-01-02"))
 
 	return &pb.EnrollResponse{
 		NodeId:            nodeID,

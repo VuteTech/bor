@@ -105,6 +105,8 @@ type Node struct {
 	LastSeen       *time.Time `json:"last_seen,omitempty" db:"last_seen"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
+	CertSerial     *string    `json:"cert_serial,omitempty" db:"cert_serial"`
+	CertNotAfter   *time.Time `json:"cert_not_after,omitempty" db:"cert_not_after"`
 }
 
 // UpdateNodeRequest represents a request to update a node
@@ -399,6 +401,20 @@ type UpdatePolicyBindingRequest struct {
 	Priority *int    `json:"priority,omitempty"`
 }
 
+// RevokedCertificate tracks revoked agent certificate serials.
+type RevokedCertificate struct {
+	ID        string    `json:"id" db:"id"`
+	NodeID    string    `json:"node_id" db:"node_id"`
+	Serial    string    `json:"serial" db:"serial"`
+	RevokedAt time.Time `json:"revoked_at" db:"revoked_at"`
+	Reason    string    `json:"reason" db:"reason"`
+}
+
+// RevokeCertificateRequest is the REST request body for certificate revocation.
+type RevokeCertificateRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
 // NodeHeartbeatInfo contains metadata reported by an agent during heartbeat.
 type NodeHeartbeatInfo struct {
 	FQDN         string
@@ -408,4 +424,95 @@ type NodeHeartbeatInfo struct {
 	DesktopEnvs  []string
 	AgentVersion string
 	MachineID    string
+}
+
+// ─── MFA Models ───────────────────────────────────────────────────────────────
+
+// UserMFA holds the MFA state for a user.
+type UserMFA struct {
+	UserID        string `json:"user_id"`
+	TOTPEnabled   bool   `json:"totp_enabled"`
+	TOTPAlgorithm string `json:"totp_algorithm"`
+}
+
+// MFAStatusResponse is returned by GET /api/v1/users/me/mfa
+type MFAStatusResponse struct {
+	Enabled     bool   `json:"enabled"`
+	Algorithm   string `json:"algorithm,omitempty"`
+	MFARequired bool   `json:"mfa_required"` // true when the admin has enforced MFA globally
+}
+
+// MFASetupBeginResponse is returned by POST /api/v1/users/me/mfa/setup/begin
+type MFASetupBeginResponse struct {
+	Secret    string `json:"secret"`      // base32 TOTP secret (show to user)
+	QRCodeURL string `json:"qr_code_url"` // otpauth:// URI for QR code
+	Algorithm string `json:"algorithm"`
+}
+
+// MFASetupFinishRequest is sent by POST /api/v1/users/me/mfa/setup/finish
+type MFASetupFinishRequest struct {
+	Code string `json:"code"` // 6-digit TOTP code for verification
+}
+
+// MFASetupFinishResponse is returned on success
+type MFASetupFinishResponse struct {
+	BackupCodes []string `json:"backup_codes"`
+}
+
+// MFADisableRequest is sent by DELETE /api/v1/users/me/mfa
+type MFADisableRequest struct {
+	Password string `json:"password"`
+}
+
+// MFASettings holds the global MFA configuration.
+type MFASettings struct {
+	MFARequired   bool   `json:"mfa_required"`
+	TOTPAlgorithm string `json:"totp_algorithm"` // "SHA256" or "SHA512"
+}
+
+// ─── Kanidm-style auth flow Models ────────────────────────────────────────────
+
+// AuthBeginRequest is sent by POST /api/v1/auth/begin
+type AuthBeginRequest struct {
+	Username string `json:"username"`
+}
+
+// AuthBeginResponse is returned by POST /api/v1/auth/begin
+type AuthBeginResponse struct {
+	SessionToken string   `json:"session_token"` // short-lived JWT for the auth state machine
+	Next         string   `json:"next"`          // "mfa" or "password"
+	MFAMethods   []string `json:"mfa_methods"`   // e.g. ["webauthn","totp"] when next=="mfa"
+}
+
+// AuthStepRequest is sent by POST /api/v1/auth/step
+type AuthStepRequest struct {
+	SessionToken string `json:"session_token"`
+	Type         string `json:"type"`       // "totp" or "password"
+	Credential   string `json:"credential"` // TOTP code or password
+}
+
+// AuthStepResponse is returned by POST /api/v1/auth/step
+// When next == "" the full token is populated; otherwise session_token continues the flow.
+type AuthStepResponse struct {
+	SessionToken string `json:"session_token,omitempty"` // non-empty means more steps
+	Next         string `json:"next,omitempty"`
+	Token        string `json:"token,omitempty"` // full JWT — populated on final step
+	User         *User  `json:"user,omitempty"`
+}
+
+// ─── WebAuthn Models ──────────────────────────────────────────────────────────
+
+// WebAuthnCredential is the API representation of a registered WebAuthn credential.
+type WebAuthnCredential struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	AAGUID     string     `json:"aaguid,omitempty"`
+	Transports []string   `json:"transports,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// RenameWebAuthnCredentialRequest renames a credential.
+type RenameWebAuthnCredentialRequest struct {
+	Name string `json:"name"`
 }

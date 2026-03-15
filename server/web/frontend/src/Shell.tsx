@@ -29,9 +29,11 @@ import {
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 
-import { checkSession, logout, getStoredToken, UserInfo } from "./apiClient/authApi";
+import { checkSession, logout, getStoredToken, getMFAStatus, UserInfo } from "./apiClient/authApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
 import { LoginPage } from "./views/LoginPage";
+import { AccountModal } from "./views/Settings/AccountModal";
+import { MFARequiredGate } from "./views/MFARequiredGate";
 import { DashboardPage } from "./views/Dashboard";
 import { PoliciesPage } from "./views/Policies";
 import { NodesPage } from "./views/Nodes";
@@ -51,6 +53,23 @@ export const Shell: React.FC = () => {
 
   const [activeScreen, setActiveScreen] = useState<ScreenKey>("dashboard");
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [mfaGateActive, setMfaGateActive] = useState(false);
+
+  /* ── After session is established, check if MFA setup is required ── */
+  const applySession = useCallback(async (user: UserInfo) => {
+    setPermissions(user.permissions || []);
+    setCurrentUser(user.full_name || user.username);
+    setIsLoggedIn(true);
+    // Check whether MFA is enforced but not yet set up for this user.
+    // A failure here is non-fatal — we simply don't show the gate.
+    try {
+      const mfa = await getMFAStatus();
+      setMfaGateActive(mfa.mfa_required && !mfa.enabled);
+    } catch {
+      setMfaGateActive(false);
+    }
+  }, []);
 
   /* ── Validate existing session on mount ── */
   useEffect(() => {
@@ -60,35 +79,26 @@ export const Shell: React.FC = () => {
       return;
     }
     checkSession()
-      .then((user: UserInfo) => {
-        setPermissions(user.permissions || []);
-        setIsLoggedIn(true);
-        setCurrentUser(user.full_name || user.username);
-      })
+      .then((user: UserInfo) => applySession(user))
       .catch(() => {
         clearPermissions();
         logout();
       })
       .finally(() => setAuthChecked(true));
-  }, []);
+  }, [applySession]);
 
   const handleLoggedIn = useCallback(
     (_token: string, user: { username: string; full_name: string }) => {
-      // After login, fetch the full /me response to get permissions
-      // before updating login state so the UI has permissions ready.
       checkSession()
-        .then((me: UserInfo) => {
-          setPermissions(me.permissions || []);
-          setIsLoggedIn(true);
-          setCurrentUser(me.full_name || me.username);
-        })
+        .then((me: UserInfo) => applySession(me))
         .catch(() => {
-          // If permission fetch fails, still allow login but with empty permissions
+          // If /me fails, still allow login without the MFA gate check
+          setPermissions([]);
           setIsLoggedIn(true);
           setCurrentUser(user.full_name || user.username);
         });
     },
-    []
+    [applySession]
   );
 
   const performLogout = useCallback(() => {
@@ -97,6 +107,7 @@ export const Shell: React.FC = () => {
     setIsLoggedIn(false);
     setCurrentUser("");
     setActiveScreen("dashboard");
+    setMfaGateActive(false);
   }, []);
 
   /* ── Show login page if not signed in ── */
@@ -112,9 +123,27 @@ export const Shell: React.FC = () => {
     return <LoginPage onLoggedIn={handleLoggedIn} />;
   }
 
+  if (mfaGateActive) {
+    return (
+      <MFARequiredGate
+        onMFAConfigured={() => setMfaGateActive(false)}
+        onLogout={performLogout}
+      />
+    );
+  }
+
   /* ── User dropdown items ── */
   const userDropdownItems = (
     <>
+      <DropdownItem
+        key="security"
+        onClick={() => {
+          setIsUserMenuOpen(false);
+          setIsAccountModalOpen(true);
+        }}
+      >
+        Account security
+      </DropdownItem>
       <DropdownItem
         key="logout"
         onClick={() => {
@@ -329,14 +358,20 @@ export const Shell: React.FC = () => {
   };
 
   return (
-    <Page
-      header={mastheadBlock}
-      sidebar={sideNavBlock}
-      isManagedSidebar
-      defaultManagedSidebarIsOpen={true}
-    >
-      {subtitleStrip}
-      {renderActiveScreen()}
-    </Page>
+    <>
+      <Page
+        header={mastheadBlock}
+        sidebar={sideNavBlock}
+        isManagedSidebar
+        defaultManagedSidebarIsOpen={true}
+      >
+        {subtitleStrip}
+        {renderActiveScreen()}
+      </Page>
+      <AccountModal
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
+      />
+    </>
   );
 };

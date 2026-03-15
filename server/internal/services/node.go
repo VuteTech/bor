@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
@@ -123,6 +124,16 @@ func (s *NodeService) RemoveNodeFromGroup(ctx context.Context, nodeID, groupID s
 // ListNodeGroupIDs returns all group IDs a node belongs to.
 func (s *NodeService) ListNodeGroupIDs(ctx context.Context, nodeID string) ([]string, error) {
 	return s.nodeRepo.ListGroupIDs(ctx, nodeID)
+}
+
+// UpdateNodeCertificate persists the serial and notAfter for a node's mTLS certificate.
+func (s *NodeService) UpdateNodeCertificate(ctx context.Context, nodeID, serial string, notAfter time.Time) error {
+	return s.nodeRepo.UpdateCertificate(ctx, nodeID, serial, notAfter)
+}
+
+// ListExpiringCerts returns nodes whose mTLS certificate expires within withinDays days.
+func (s *NodeService) ListExpiringCerts(ctx context.Context, withinDays int) ([]*models.Node, error) {
+	return s.nodeRepo.ListExpiringCerts(ctx, withinDays)
 }
 
 // isValidNodeStatus checks if the given status is a valid node status

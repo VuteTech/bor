@@ -14,6 +14,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/services"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -27,12 +28,13 @@ type PolicyServer struct {
 	nodeSvc     *services.NodeService
 	settingsSvc *services.SettingsService
 	auditSvc    *services.AuditService
+	enrollSvc   *services.EnrollmentService
 	hub         *PolicyHub
 }
 
 // NewPolicyServer creates a new PolicyServer.
-func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, hub *PolicyHub) *PolicyServer {
-	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, hub: hub}
+func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, enrollSvc *services.EnrollmentService, hub *PolicyHub) *PolicyServer {
+	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, enrollSvc: enrollSvc, hub: hub}
 }
 
 // GetPolicy returns a single policy by ID.
@@ -345,6 +347,43 @@ func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamp
 	log.Printf("Tamper event recorded: node=%s file=%s processes=%d", clientID, req.GetFilePath(), len(procs))
 
 	return &pb.ReportTamperEventResponse{Success: true}, nil
+}
+
+// RenewCertificate handles a certificate renewal request from an already-enrolled agent.
+// The agent authenticates with its current (expiring) certificate, provides a new CSR,
+// and receives a freshly signed certificate in return.
+func (s *PolicyServer) RenewCertificate(ctx context.Context, req *pb.RenewCertificateRequest) (*pb.RenewCertificateResponse, error) {
+	if len(req.GetCsrPem()) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "csr_pem is required")
+	}
+
+	// Extract node name from the verified client certificate CN.
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "failed to get peer info")
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
+		return nil, status.Errorf(codes.Unauthenticated, "no client certificate")
+	}
+	clientCN := tlsInfo.State.VerifiedChains[0][0].Subject.CommonName
+
+	// Look up node by name (CN = node name set during enrollment).
+	node, err := s.nodeSvc.GetNodeByName(ctx, clientCN)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to look up node: %v", err)
+	}
+	if node == nil {
+		return nil, status.Errorf(codes.NotFound, "node not registered: %s", clientCN)
+	}
+
+	certPEM, err := s.enrollSvc.RenewCertificate(ctx, node.ID, req.GetCsrPem())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to renew certificate: %v", err)
+	}
+
+	log.Printf("Renewed certificate for node %s (%s)", node.Name, node.ID)
+	return &pb.RenewCertificateResponse{SignedCertPem: certPEM}, nil
 }
 
 // modelToProto converts an internal Policy model to its protobuf representation.

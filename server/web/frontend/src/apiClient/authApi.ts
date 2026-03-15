@@ -61,6 +61,121 @@ export async function login(
   return result;
 }
 
+/* ── New multi-step auth flow ── */
+
+export interface AuthBeginResponse {
+  session_token: string;
+  next: "mfa" | "password";
+  mfa_methods: string[]; // e.g. ["webauthn", "totp"]
+}
+
+export interface AuthStepResponse {
+  session_token?: string;
+  next?: string;
+  token?: string;
+  user?: UserInfo;
+}
+
+export async function authBegin(username: string): Promise<AuthBeginResponse> {
+  return apiRequest<AuthBeginResponse>("/api/v1/auth/begin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
+  });
+}
+
+export async function authStep(
+  sessionToken: string,
+  type: "totp" | "password",
+  credential: string
+): Promise<AuthStepResponse> {
+  const result = await apiRequest<AuthStepResponse>("/api/v1/auth/step", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_token: sessionToken, type, credential }),
+  });
+  if (result.token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
+  }
+  return result;
+}
+
+/* ── MFA ── */
+
+export interface MFAStatus {
+  enabled: boolean;
+  algorithm?: string;
+  mfa_required: boolean;
+}
+
+export interface MFASetupBeginResult {
+  secret: string;
+  qr_code_url: string;
+  algorithm: string;
+}
+
+export interface MFASetupFinishResult {
+  backup_codes: string[];
+}
+
+export interface MFASettings {
+  mfa_required: boolean;
+  totp_algorithm: "SHA256" | "SHA512";
+}
+
+export async function getMFAStatus(): Promise<MFAStatus> {
+  return apiRequest<MFAStatus>("/api/v1/users/me/mfa", {
+    headers: authHeaders(),
+  });
+}
+
+export async function mfaSetupBegin(): Promise<MFASetupBeginResult> {
+  return apiRequest<MFASetupBeginResult>("/api/v1/users/me/mfa/setup/begin", {
+    method: "POST",
+    headers: authHeaders(),
+  });
+}
+
+export async function mfaSetupFinish(code: string): Promise<MFASetupFinishResult> {
+  return apiRequest<MFASetupFinishResult>("/api/v1/users/me/mfa/setup/finish", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function mfaDisable(password: string): Promise<void> {
+  const res = await fetch("/api/v1/users/me/mfa/disable", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch {
+      /* swallow */
+    }
+    throw new Error(detail);
+  }
+}
+
+export async function getMFASettings(): Promise<MFASettings> {
+  return apiRequest<MFASettings>("/api/v1/settings/mfa", {
+    headers: authHeaders(),
+  });
+}
+
+export async function updateMFASettings(settings: MFASettings): Promise<MFASettings> {
+  return apiRequest<MFASettings>("/api/v1/settings/mfa", {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify(settings),
+  });
+}
+
 export async function checkSession(): Promise<UserInfo> {
   return apiRequest<UserInfo>("/api/v1/auth/me", {
     headers: authHeaders(),
@@ -73,4 +188,109 @@ export function logout(): void {
 
 export function getStoredToken(): string | null {
   return storedToken();
+}
+
+/* ── WebAuthn ── */
+
+export interface WebAuthnCredential {
+  id: string;
+  name: string;
+  aaguid?: string;
+  transports?: string[];
+  created_at: string;
+  last_used_at?: string;
+}
+
+export async function webAuthnRegisterBegin(): Promise<{ publicKey: unknown }> {
+  return apiRequest<{ publicKey: unknown }>(
+    "/api/v1/users/me/webauthn/register/begin",
+    { method: "POST", headers: authHeaders() }
+  );
+}
+
+export async function webAuthnRegisterFinish(
+  name: string,
+  credential: unknown
+): Promise<WebAuthnCredential> {
+  return apiRequest<WebAuthnCredential>(
+    "/api/v1/users/me/webauthn/register/finish",
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ name, credential }),
+    }
+  );
+}
+
+export async function listWebAuthnCredentials(): Promise<WebAuthnCredential[]> {
+  return apiRequest<WebAuthnCredential[]>(
+    "/api/v1/users/me/webauthn/credentials",
+    { headers: authHeaders() }
+  );
+}
+
+export async function renameWebAuthnCredential(
+  id: string,
+  name: string
+): Promise<void> {
+  const res = await fetch(`/api/v1/users/me/webauthn/credentials/${id}`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch {
+      /* swallow */
+    }
+    throw new Error(detail);
+  }
+}
+
+export async function deleteWebAuthnCredential(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/users/me/webauthn/credentials/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch {
+      /* swallow */
+    }
+    throw new Error(detail);
+  }
+}
+
+export async function webAuthnAuthBegin(
+  sessionToken: string
+): Promise<{ publicKey: unknown }> {
+  return apiRequest<{ publicKey: unknown }>("/api/v1/auth/webauthn/begin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_token: sessionToken }),
+  });
+}
+
+export async function webAuthnAuthFinish(
+  sessionToken: string,
+  credential: unknown
+): Promise<AuthStepResponse> {
+  const result = await apiRequest<AuthStepResponse>(
+    "/api/v1/auth/webauthn/finish",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_token: sessionToken, credential }),
+    }
+  );
+  if (result.token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
+  }
+  return result;
 }

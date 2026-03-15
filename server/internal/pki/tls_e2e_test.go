@@ -5,8 +5,9 @@
 package pki_test
 
 import (
+    "crypto/ecdsa"
+    "crypto/elliptic"
     "crypto/rand"
-    "crypto/rsa"
     "crypto/tls"
     "crypto/x509"
     "crypto/x509/pkix"
@@ -46,8 +47,8 @@ func TestFullTLSChain(t *testing.T) {
         t.Fatal("EnsureServerCert:", err)
     }
 
-    // Step 3: Generate agent cert (simulating enrollment)
-    agentKey, err := rsa.GenerateKey(rand.Reader, 2048)
+    // Step 3: Generate agent cert (simulating enrollment — ECDSA P-256)
+    agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
     if err != nil {
         t.Fatal("GenerateKey:", err)
     }
@@ -59,7 +60,7 @@ func TestFullTLSChain(t *testing.T) {
         t.Fatal("CreateCertificateRequest:", err)
     }
     csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
-    agentCertPEM, err := pki.SignCSR(csrPEM, caCert, caKey)
+    agentCertPEM, _, _, err := pki.SignCSR(csrPEM, caCert, caKey)
     if err != nil {
         t.Fatal("SignCSR:", err)
     }
@@ -71,7 +72,11 @@ func TestFullTLSChain(t *testing.T) {
     if err := os.WriteFile(agentCertFile, agentCertPEM, 0644); err != nil {
         t.Fatal("WriteFile agent cert:", err)
     }
-    if err := os.WriteFile(agentKeyFile, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(agentKey)}), 0600); err != nil {
+    agentKeyDER, err := x509.MarshalPKCS8PrivateKey(agentKey)
+    if err != nil {
+        t.Fatal("MarshalPKCS8PrivateKey:", err)
+    }
+    if err := os.WriteFile(agentKeyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: agentKeyDER}), 0600); err != nil {
         t.Fatal("WriteFile agent key:", err)
     }
     caCertPEM := pki.EncodeCertPEM(caCert)

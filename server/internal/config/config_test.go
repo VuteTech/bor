@@ -14,7 +14,7 @@ func TestLoad_Defaults(t *testing.T) {
 	for _, key := range []string{
 		"BOR_TLS_CERT_FILE", "BOR_TLS_KEY_FILE",
 		"BOR_CA_CERT_FILE", "BOR_CA_KEY_FILE",
-		"BOR_ADDR", "BOR_ADMIN_TOKEN",
+		"BOR_ADDRESS", "BOR_ENROLLMENT_PORT", "BOR_POLICY_PORT", "BOR_ADMIN_TOKEN",
 	} {
 		os.Unsetenv(key)
 	}
@@ -24,8 +24,14 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Server.Addr != ":8443" {
-		t.Errorf("Server.Addr = %q, want %q", cfg.Server.Addr, ":8443")
+	if cfg.Server.EnrollmentPort != 8443 {
+		t.Errorf("Server.EnrollmentPort = %d, want %d", cfg.Server.EnrollmentPort, 8443)
+	}
+	if cfg.Server.PolicyPort != 8444 {
+		t.Errorf("Server.PolicyPort = %d, want %d", cfg.Server.PolicyPort, 8444)
+	}
+	if cfg.Server.EnrollmentAddr() != ":8443" {
+		t.Errorf("Server.EnrollmentAddr() = %q, want %q", cfg.Server.EnrollmentAddr(), ":8443")
 	}
 	if cfg.TLS.AutogenDir != "/var/lib/bor/pki/ui" {
 		t.Errorf("TLS.AutogenDir = %q, want %q", cfg.TLS.AutogenDir, "/var/lib/bor/pki/ui")
@@ -79,16 +85,19 @@ func TestLoad_FailFast_CAKeyWithoutCert(t *testing.T) {
 	}
 }
 
-func TestLoad_CustomAddr(t *testing.T) {
-	os.Setenv("BOR_ADDR", ":9443")
-	defer os.Unsetenv("BOR_ADDR")
+func TestLoad_CustomPort(t *testing.T) {
+	os.Setenv("BOR_ENROLLMENT_PORT", "9443")
+	defer os.Unsetenv("BOR_ENROLLMENT_PORT")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.Server.Addr != ":9443" {
-		t.Errorf("Server.Addr = %q, want %q", cfg.Server.Addr, ":9443")
+	if cfg.Server.EnrollmentPort != 9443 {
+		t.Errorf("Server.EnrollmentPort = %d, want %d", cfg.Server.EnrollmentPort, 9443)
+	}
+	if cfg.Server.EnrollmentAddr() != ":9443" {
+		t.Errorf("Server.EnrollmentAddr() = %q, want %q", cfg.Server.EnrollmentAddr(), ":9443")
 	}
 }
 

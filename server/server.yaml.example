@@ -5,8 +5,18 @@
 # Missing fields fall back to built-in defaults.
 
 server:
-  # HTTPS listen address (default: ":8443")
-  addr: ":8443"
+  # Server hostname or IP address (no port). Leave empty to listen on all interfaces.
+  address: ""
+
+  # Port for the admin UI and enrollment gRPC (default: 8443).
+  # Browsers and agents connecting for the first time use this port.
+  # Corresponds to the BOR_ENROLLMENT_PORT environment variable.
+  enrollment_port: 8443
+
+  # Port for mTLS policy streaming and certificate renewal (default: 8444).
+  # Only enrolled agents with a valid, non-revoked client certificate are accepted.
+  # Corresponds to the BOR_POLICY_PORT environment variable.
+  policy_port: 8444
 
   # Additional hostnames and IP addresses to include as Subject Alternative
   # Names in the auto-generated TLS certificate. The system hostname,
@@ -50,6 +60,17 @@ ca:
   key_file:  ""
   autogen_dir: "/var/lib/bor/pki/ca"
 
+  # Optional: store the CA private key in a PKCS#11 HSM instead of a file.
+  # Requires the server binary to be built with: make server-pkcs11
+  # The CA certificate is still stored on disk (cert_file / autogen_dir above).
+  # IMPORTANT: set the PIN via the BOR_CA_PKCS11_PIN environment variable
+  # rather than storing it in this file.
+  #
+  #pkcs11:
+  #  lib: "/usr/lib/softhsm/libsofthsm2.so"   # path to PKCS#11 shared library
+  #  token_label: "bor-ca"                      # HSM token label
+  #  key_label: "bor-ca-key"                    # CA key label on the token
+
 ldap:
   enabled: false
   host: "ldap.example.com"
@@ -62,3 +83,22 @@ ldap:
   attr_username: "uid"
   attr_email: "mail"
   attr_full_name: "cn"
+
+# WebAuthn / FIDO2 (optional — disabled unless rpid is set)
+#
+# Enables hardware security keys (YubiKey, FIDO2 USB/NFC tokens) and software
+# passkey managers (Bitwarden, 1Password, OS passkey store) as a second factor.
+#
+# rpid must equal the domain name of the URL users browse to — no scheme, no
+# port. For example, if the UI is at https://bor.example.com the rpid is
+# "bor.example.com". Credentials are scoped to this value and cannot be used
+# with a different rpid.
+#
+# origins is the list of allowed origins (scheme + host + optional port). It
+# must include every URL from which the login page is served.
+#
+#webauthn:
+#  rpid: "bor.example.com"
+#  origins:
+#    - "https://bor.example.com"
+#  display_name: "Bor Policy Manager"

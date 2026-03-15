@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+
 // Config holds the agent configuration.
 type Config struct {
 	Server     ServerConfig     `yaml:"server"`
@@ -23,10 +24,25 @@ type Config struct {
 }
 
 // ServerConfig holds server connection settings.
+// ServerConfig holds server connection settings.
+// The server runs on two ports: one for enrollment + UI (no mandatory client cert),
+// and one for policy streaming / cert renewal (RequireAndVerifyClientCert).
 type ServerConfig struct {
-	Address            string `yaml:"address"`
-	CACert             string `yaml:"ca_cert"`              // optional path to CA certificate for TLS verification
-	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // skip server certificate verification (for self-signed)
+	Address        string `yaml:"address"`         // server hostname or IP (no port)
+	EnrollmentPort int    `yaml:"enrollment_port"` // port for enrollment RPC and admin UI (default 8443)
+	PolicyPort     int    `yaml:"policy_port"`     // port for mTLS policy streaming and cert renewal (default 8444)
+	CACert         string `yaml:"ca_cert"`         // optional path to CA cert for TLS verification
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify"` // skip TLS verification during enrollment
+}
+
+// EnrollmentAddr returns the host:port for the enrollment / UI server.
+func (s ServerConfig) EnrollmentAddr() string {
+	return fmt.Sprintf("%s:%d", s.Address, s.EnrollmentPort)
+}
+
+// PolicyAddr returns the host:port for the mTLS policy streaming server.
+func (s ServerConfig) PolicyAddr() string {
+	return fmt.Sprintf("%s:%d", s.Address, s.PolicyPort)
 }
 
 // AgentConfig holds agent identification settings.
@@ -67,7 +83,9 @@ type EnrollmentConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Address: "localhost:8443",
+			Address:        "localhost",
+			EnrollmentPort: 8443,
+			PolicyPort:     8444,
 		},
 		Agent: AgentConfig{},
 		Firefox: FirefoxConfig{

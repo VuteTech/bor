@@ -22,12 +22,13 @@ type MetadataRequestSender interface {
 // NodeHandler handles node API endpoints
 type NodeHandler struct {
 	nodeSvc    *services.NodeService
+	enrollSvc  *services.EnrollmentService
 	metaSender MetadataRequestSender // may be nil if hub not available
 }
 
 // NewNodeHandler creates a new NodeHandler
-func NewNodeHandler(nodeSvc *services.NodeService, hub MetadataRequestSender) *NodeHandler {
-	return &NodeHandler{nodeSvc: nodeSvc, metaSender: hub}
+func NewNodeHandler(nodeSvc *services.NodeService, enrollSvc *services.EnrollmentService, hub MetadataRequestSender) *NodeHandler {
+	return &NodeHandler{nodeSvc: nodeSvc, enrollSvc: enrollSvc, metaSender: hub}
 }
 
 // List handles GET /api/v1/nodes
@@ -282,6 +283,15 @@ func (h *NodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if action == "revoke" {
+		if r.Method != http.MethodPost {
+			http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+			return
+		}
+		h.RevokeNodeCertificate(w, r, id)
+		return
+	}
+
 	if action == "groups" {
 		switch r.Method {
 		case http.MethodPost:
@@ -303,6 +313,38 @@ func (h *NodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Delete(w, r)
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+// RevokeNodeCertificate handles POST /api/v1/nodes/{id}/revoke.
+// It revokes the current mTLS certificate of the node, preventing it from
+// connecting to the policy gRPC server until a new certificate is issued.
+func (h *NodeHandler) RevokeNodeCertificate(w http.ResponseWriter, r *http.Request, nodeID string) {
+	node, err := h.nodeSvc.GetNode(r.Context(), nodeID)
+	if err != nil || node == nil {
+		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+		return
+	}
+	if node.CertSerial == nil || *node.CertSerial == "" {
+		http.Error(w, `{"error":"node has no certificate to revoke"}`, http.StatusBadRequest)
+		return
+	}
+	var req models.RevokeCertificateRequest
+	if r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	reason := req.Reason
+	if reason == "" {
+		reason = "manually revoked"
+	}
+	if err := h.enrollSvc.RevokeCertificate(r.Context(), nodeID, *node.CertSerial, reason); err != nil {
+		log.Printf("Failed to revoke certificate for node %s: %v", nodeID, err)
+		http.Error(w, `{"error":"failed to revoke certificate"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "revoked"}); err != nil {
+		log.Printf("Failed to encode revoke response: %v", err)
 	}
 }
 

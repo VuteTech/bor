@@ -2,8 +2,14 @@
 # Protect this file: chmod 0600 /etc/bor/config.yaml
 
 server:
-  # Server address (host:port) — same address as the web UI
-  address: "localhost:8443"
+  # Server hostname or IP address (no port).
+  address: "localhost"
+  # Port for enrollment RPC and admin UI — no mandatory client certificate.
+  # Agents connect here on first run to obtain their mTLS certificate.
+  enrollment_port: 8443
+  # Port for mTLS policy streaming and certificate renewal.
+  # Requires a valid, non-revoked client certificate (RequireAndVerifyClientCert).
+  policy_port: 8444
   # Skip server certificate verification during enrollment only.
   # Set to true when the server uses a self-signed certificate.
   # After enrollment, the CA cert is stored locally and used for verification.

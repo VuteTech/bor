@@ -204,3 +204,13 @@ export interface ReportTamperEventRequest {
 export interface ReportTamperEventResponse {
   success: boolean;
 }
+
+/** RenewCertificateRequest carries a new CSR from the agent. */
+export interface RenewCertificateRequest {
+  csr_pem: Uint8Array;
+}
+
+/** RenewCertificateResponse carries the freshly signed certificate. */
+export interface RenewCertificateResponse {
+  signed_cert_pem: Uint8Array;
+}

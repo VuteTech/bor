@@ -6,25 +6,94 @@ package services
 
 import (
 	"context"
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
+
+// FIPS 140-3 compliant password hashing using PBKDF2-SHA256.
+// NIST SP 800-132 recommends >= 600,000 iterations for SHA-256.
+const (
+	pbkdf2Iterations = 600_000
+	pbkdf2KeyLen     = 32 // 256 bits
+	pbkdf2SaltLen    = 16 // 128 bits
+)
+
+// hashPassword hashes a plaintext password with PBKDF2-SHA256 and returns
+// the encoded string: $pbkdf2$sha256$<iterations>$<base64-salt>$<base64-key>
+func hashPassword(password string) (string, error) {
+	salt := make([]byte, pbkdf2SaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("failed to generate salt: %w", err)
+	}
+	key, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iterations, pbkdf2KeyLen)
+	if err != nil {
+		return "", fmt.Errorf("failed to derive key: %w", err)
+	}
+	return fmt.Sprintf("$pbkdf2$sha256$%d$%s$%s",
+		pbkdf2Iterations,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key),
+	), nil
+}
+
+// verifyPassword checks a plaintext password against a stored PBKDF2 hash.
+func verifyPassword(hash, password string) error {
+	parts := strings.Split(hash, "$")
+	// Expected: ["", "pbkdf2", "sha256", "<iter>", "<salt>", "<key>"]
+	if len(parts) != 6 || parts[1] != "pbkdf2" || parts[2] != "sha256" {
+		return fmt.Errorf("unsupported password hash format")
+	}
+	var iter int
+	if _, err := fmt.Sscanf(parts[3], "%d", &iter); err != nil {
+		return fmt.Errorf("invalid iteration count in hash")
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return fmt.Errorf("invalid salt in hash")
+	}
+	storedKey, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return fmt.Errorf("invalid key in hash")
+	}
+	candidate, err := pbkdf2.Key(sha256.New, password, salt, iter, len(storedKey))
+	if err != nil {
+		return fmt.Errorf("failed to derive key: %w", err)
+	}
+	// Constant-time comparison to prevent timing attacks.
+	if len(candidate) != len(storedKey) {
+		return fmt.Errorf("invalid username or password")
+	}
+	var diff byte
+	for i := range candidate {
+		diff |= candidate[i] ^ storedKey[i]
+	}
+	if diff != 0 {
+		return fmt.Errorf("invalid username or password")
+	}
+	return nil
+}
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	userRepo    *database.UserRepository
-	roleRepo    *database.RoleRepository
-	bindingRepo *database.UserRoleBindingRepository
-	jwtSecret   string
-	ldapSvc     *LDAPService
+	userRepo     *database.UserRepository
+	roleRepo     *database.RoleRepository
+	bindingRepo  *database.UserRoleBindingRepository
+	jwtSecret    string
+	ldapSvc      *LDAPService
+	mfaSvc       *MFAService
+	webauthnSvc  *WebAuthnService
 }
 
 // NewAuthService creates a new AuthService
@@ -38,10 +107,45 @@ func NewAuthService(userRepo *database.UserRepository, roleRepo *database.RoleRe
 	}
 }
 
+// NewAuthServiceWithMFA creates a new AuthService with MFA support.
+func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService) *AuthService {
+	return &AuthService{
+		userRepo:    userRepo,
+		roleRepo:    roleRepo,
+		bindingRepo: bindingRepo,
+		jwtSecret:   jwtSecret,
+		ldapSvc:     ldapSvc,
+		mfaSvc:      mfaSvc,
+	}
+}
+
+// NewAuthServiceWithMFAAndWebAuthn creates a new AuthService with MFA and WebAuthn support.
+func NewAuthServiceWithMFAAndWebAuthn(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService, webauthnSvc *WebAuthnService) *AuthService {
+	return &AuthService{
+		userRepo:    userRepo,
+		roleRepo:    roleRepo,
+		bindingRepo: bindingRepo,
+		jwtSecret:   jwtSecret,
+		ldapSvc:     ldapSvc,
+		mfaSvc:      mfaSvc,
+		webauthnSvc: webauthnSvc,
+	}
+}
+
 // Claims represents JWT claims
 type Claims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
+	jwt.RegisteredClaims
+}
+
+// AuthSessionClaims is a short-lived JWT used during the multi-step auth flow.
+type AuthSessionClaims struct {
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	Source      string `json:"source"`       // "local" or "ldap"
+	TOTPDone    bool   `json:"totp_done"`
+	SessionType string `json:"session_type"` // always "auth_session"
 	jwt.RegisteredClaims
 }
 
@@ -75,7 +179,7 @@ func (s *AuthService) authenticateLocal(user *models.User, password string) (*mo
 		return nil, fmt.Errorf("user account is disabled")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+	if err := verifyPassword(user.PasswordHash, password); err != nil {
 		return nil, fmt.Errorf("invalid username or password")
 	}
 
@@ -159,7 +263,9 @@ func (s *AuthService) generateToken(user *models.User) (string, error) {
 	return token.SignedString([]byte(s.jwtSecret))
 }
 
-// ValidateToken validates a JWT token and returns the claims
+// ValidateToken validates a JWT token and returns the claims.
+// It rejects auth session tokens (session_type == "auth_session") so they
+// cannot be used as regular bearer tokens.
 func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -176,7 +282,211 @@ func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	// Reject auth-session tokens — they must not be used as bearer tokens.
+	// We parse the raw map to check the session_type field because Claims
+	// does not carry it.
+	if raw, ok2 := token.Claims.(*Claims); ok2 {
+		// Re-parse as MapClaims to check session_type without a full decode.
+		mapToken, _ := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, func(t *jwt.Token) (interface{}, error) {
+			return []byte(s.jwtSecret), nil
+		})
+		if mapToken != nil {
+			if mc, ok3 := mapToken.Claims.(jwt.MapClaims); ok3 {
+				if st, ok4 := mc["session_type"].(string); ok4 && st == "auth_session" {
+					return nil, fmt.Errorf("invalid token: auth session tokens cannot be used as bearer tokens")
+				}
+			}
+		}
+		_ = raw
+	}
+
 	return claims, nil
+}
+
+// GenerateSessionToken creates a short-lived (5 min) JWT for the auth flow.
+// It is exported so that WebAuthn handlers can re-issue a session token with
+// MFA done after a successful WebAuthn assertion.
+func (s *AuthService) GenerateSessionToken(userID, username, source string, totpDone bool) (string, error) {
+	return s.generateSessionToken(userID, username, source, totpDone)
+}
+
+// generateSessionToken creates a short-lived (5 min) JWT for the auth flow.
+func (s *AuthService) generateSessionToken(userID, username, source string, totpDone bool) (string, error) {
+	claims := &AuthSessionClaims{
+		UserID:      userID,
+		Username:    username,
+		Source:      source,
+		TOTPDone:    totpDone,
+		SessionType: "auth_session",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   userID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// ValidateSessionToken parses and validates an AuthSessionClaims token.
+// Exported so WebAuthn handlers can verify the session token.
+func (s *AuthService) ValidateSessionToken(tokenString string) (*AuthSessionClaims, error) {
+	return s.validateSessionToken(tokenString)
+}
+
+// validateSessionToken parses and validates an AuthSessionClaims token.
+func (s *AuthService) validateSessionToken(tokenString string) (*AuthSessionClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &AuthSessionClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid session token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*AuthSessionClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid session token claims")
+	}
+	if claims.SessionType != "auth_session" {
+		return nil, fmt.Errorf("invalid session token: wrong session_type")
+	}
+	return claims, nil
+}
+
+// AuthBegin starts the multi-step authentication flow.
+// Returns a short-lived session token and the next required step.
+func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginRequest) (*models.AuthBeginResponse, error) {
+	if req.Username == "" {
+		return nil, fmt.Errorf("username is required")
+	}
+
+	user, err := s.userRepo.GetByUsername(ctx, req.Username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("invalid username or password")
+	}
+	if !user.Enabled {
+		return nil, fmt.Errorf("user account is disabled")
+	}
+
+	source := string(user.Source)
+
+	// Check whether MFA is needed. Applies to all user sources (local and LDAP).
+	// Only future OAuth/SAML sources, which delegate authentication entirely to an
+	// external IdP, would be exempt — they are not yet implemented.
+	var mfaMethods []string
+	if s.mfaSvc != nil {
+		enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check user MFA: %w", err)
+		}
+		if enabled {
+			mfaMethods = append(mfaMethods, "totp")
+		}
+	}
+	if s.webauthnSvc != nil {
+		hasCreds, err := s.webauthnSvc.HasCredentials(ctx, user.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check user WebAuthn credentials: %w", err)
+		}
+		if hasCreds {
+			mfaMethods = append([]string{"webauthn"}, mfaMethods...)
+		}
+	}
+
+	sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate session token: %w", err)
+	}
+
+	next := "password"
+	if len(mfaMethods) > 0 {
+		next = "mfa"
+	}
+
+	return &models.AuthBeginResponse{
+		SessionToken: sessionToken,
+		Next:         next,
+		MFAMethods:   mfaMethods,
+	}, nil
+}
+
+// AuthStep advances the multi-step authentication flow.
+func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest) (*models.AuthStepResponse, error) {
+	sessionClaims, err := s.validateSessionToken(req.SessionToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session: %w", err)
+	}
+
+	switch req.Type {
+	case "totp":
+		if s.mfaSvc == nil {
+			return nil, fmt.Errorf("MFA not configured")
+		}
+		if err := s.mfaSvc.VerifyCode(ctx, sessionClaims.UserID, req.Credential); err != nil {
+			return nil, fmt.Errorf("invalid TOTP code")
+		}
+		// Issue new session token with totp_done=true.
+		newToken, err := s.generateSessionToken(sessionClaims.UserID, sessionClaims.Username, sessionClaims.Source, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate session token: %w", err)
+		}
+		return &models.AuthStepResponse{
+			SessionToken: newToken,
+			Next:         "password",
+		}, nil
+
+	case "password":
+		// If the user has MFA enabled (TOTP or WebAuthn), the MFA step must
+		// have been completed before the password step is allowed.
+		hasMFA := false
+		if s.mfaSvc != nil {
+			enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
+			if enabled {
+				hasMFA = true
+			}
+		}
+		if !hasMFA && s.webauthnSvc != nil {
+			hasCreds, _ := s.webauthnSvc.HasCredentials(ctx, sessionClaims.UserID)
+			if hasCreds {
+				hasMFA = true
+			}
+		}
+		if hasMFA && !sessionClaims.TOTPDone {
+			return nil, fmt.Errorf("MFA verification required before password step")
+		}
+
+		user, err := s.userRepo.GetByID(ctx, sessionClaims.UserID)
+		if err != nil || user == nil {
+			return nil, fmt.Errorf("invalid username or password")
+		}
+		if !user.Enabled {
+			return nil, fmt.Errorf("user account is disabled")
+		}
+
+		var loginResp *models.LoginResponse
+		if sessionClaims.Source == string(models.SourceLDAP) {
+			loginResp, err = s.authenticateLDAP(ctx, user.Username, req.Credential)
+		} else {
+			loginResp, err = s.authenticateLocal(user, req.Credential)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return &models.AuthStepResponse{
+			Token: loginResp.Token,
+			User:  &loginResp.User,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown step type: %s", req.Type)
+	}
 }
 
 // CreateUser creates a new local user
@@ -197,14 +507,14 @@ func (s *AuthService) CreateUser(ctx context.Context, req *models.CreateUserRequ
 		return nil, fmt.Errorf("username already exists")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := hashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	user := &models.User{
 		Username:     req.Username,
-		PasswordHash: string(hashedPassword),
+		PasswordHash: hashedPassword,
 		Email:        req.Email,
 		FullName:     req.FullName,
 		Source:       models.SourceLocal,
@@ -299,6 +609,23 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, req *models.Upd
 // DeleteUser deletes a user
 func (s *AuthService) DeleteUser(ctx context.Context, id string) error {
 	return s.userRepo.Delete(ctx, id)
+}
+
+// IssueTokenByUserID issues a final JWT for a user by ID without password verification.
+// Used by WebAuthn authentication after a successful assertion.
+func (s *AuthService) IssueTokenByUserID(ctx context.Context, userID string) (*models.LoginResponse, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !user.Enabled {
+		return nil, fmt.Errorf("user account is disabled")
+	}
+	token, err := s.generateToken(user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+	return &models.LoginResponse{Token: token, User: *user}, nil
 }
 
 // EnsureDefaultAdmin creates a default admin user if no admin exists
