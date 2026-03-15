@@ -1,3 +1,5 @@
+version: "2"
+
 linters:
   enable:
     - errcheck
@@ -15,22 +17,22 @@ linters:
     - unconvert
     - unparam
     - bodyclose
-
-linters-settings:
-  govet:
-    check-shadowing: true
-  gocyclo:
-    min-complexity: 15
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-  gosec:
-    excludes:
-      - G104 # Unhandled errors - we handle this with errcheck
+  settings:
+    govet:
+      enable:
+        - shadow
+    gocyclo:
+      min-complexity: 15
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    gosec:
+      excludes:
+        - G104 # Unhandled errors — covered by errcheck
 
 issues:
   exclude-rules:
@@ -40,9 +42,9 @@ issues:
         - errcheck
   max-issues-per-linter: 0
   max-same-issues: 0
+  exclude-dirs:
+    - vendor
+    - node_modules
 
 run:
   timeout: 5m
-  skip-dirs:
-    - vendor
-    - node_modules
