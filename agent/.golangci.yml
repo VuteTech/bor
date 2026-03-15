@@ -8,8 +8,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - gocritic
     - gosec
     - misspell
@@ -41,6 +39,11 @@ linters:
           - errcheck
     paths:
       - vendor
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 run:
   timeout: 5m
