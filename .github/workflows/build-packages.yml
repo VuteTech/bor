@@ -1,16 +1,77 @@
-name: Build Packages
+name: CI
 
 on:
   push:
-    branches:
-      - master
+    branches: ['**']
+  pull_request:
   release:
     types: [published]
 
 jobs:
-  build-packages:
-    name: Build (${{ matrix.arch }})
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Lint server
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: server
+
+      - name: Lint agent
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: agent
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Test server
+        run: cd server && go test ./...
+
+      - name: Test agent
+        run: cd agent && go test ./...
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '25'
+          cache: npm
+          cache-dependency-path: server/web/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd server/web/frontend && npm ci
+
+      - name: Build
+        run: cd server/web/frontend && npm run build
+
+  build-packages:
+    name: Build Packages (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.event_name == 'release'
+    needs: [lint, test, build-frontend]
     permissions:
       contents: write
     strategy:
