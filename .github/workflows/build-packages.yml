@@ -3,32 +3,40 @@ name: Build Packages
 on:
   push:
     branches:
-      - '**'
+      - master
   release:
     types: [published]
 
 jobs:
   build-packages:
+    name: Build (${{ matrix.arch }})
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: agent/go.mod
+          go-version-file: server/go.mod
+          cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '25'
+          cache: npm
+          cache-dependency-path: server/web/frontend/package-lock.json
 
       - name: Install nfpm
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        run: |
+          curl -sfL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_linux_amd64.tar.gz \
+            | tar -xz -C /usr/local/bin nfpm
 
       - name: Determine version
         id: version
@@ -41,14 +49,14 @@ jobs:
           fi
 
       - name: Build packages
-        run: make packages VERSION=${{ steps.version.outputs.version }} ARCH=amd64
+        run: make packages VERSION=${{ steps.version.outputs.version }} ARCH=${{ matrix.arch }}
 
       - name: Upload packages as workflow artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: packages-${{ steps.version.outputs.version }}
+          name: packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
           path: builds/
-          retention-days: 7
+          retention-days: 30
 
       - name: Upload packages to GitHub release
         if: github.event_name == 'release'
