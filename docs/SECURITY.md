@@ -10,10 +10,11 @@ This document describes the cryptographic algorithms, standards compliance, depl
 2. [TLS Configuration](#tls-configuration)
 3. [PKI and Certificate Lifecycle](#pki-and-certificate-lifecycle)
 4. [Authentication](#authentication)
-5. [Standards Compliance](#standards-compliance)
-6. [FIPS 140-3 Build and Runtime](#fips-140-3-build-and-runtime)
-7. [Deployment Security Checklist](#deployment-security-checklist)
-8. [HSM Integration (PKCS#11)](#hsm-integration-pkcs11)
+5. [Multi-Factor Authentication (TOTP)](#multi-factor-authentication-totp)
+6. [Standards Compliance](#standards-compliance)
+7. [FIPS 140-3 Build and Runtime](#fips-140-3-build-and-runtime)
+8. [Deployment Security Checklist](#deployment-security-checklist)
+9. [HSM Integration (PKCS#11)](#hsm-integration-pkcs11)
 
 ---
 
