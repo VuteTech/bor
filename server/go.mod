@@ -16,8 +16,10 @@ require (
 
 require (
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.7 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/pquerna/otp v1.5.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect

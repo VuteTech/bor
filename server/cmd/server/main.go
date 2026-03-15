@@ -9,6 +9,8 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -32,6 +34,16 @@ import (
 )
 
 func main() {
+	resetMFAUser := flag.String("reset-mfa", "", "Disable MFA for the given username and exit")
+	flag.Parse()
+
+	if *resetMFAUser != "" {
+		if err := resetMFAForUser(*resetMFAUser); err != nil {
+			log.Fatalf("reset-mfa failed: %v", err)
+		}
+		os.Exit(0)
+	}
+
 	log.Println("Bor Policy Management Server")
 
 	// Initialize configuration
@@ -134,6 +146,7 @@ func main() {
 	auditLogRepo := database.NewAuditLogRepository(db)
 	settingsRepo := database.NewSettingsRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
+	mfaRepo := database.NewMFARepository(db)
 
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
@@ -154,8 +167,11 @@ func main() {
 		log.Println("LDAP authentication enabled")
 	}
 
+	// Initialize MFA service
+	mfaSvc := services.NewMFAService(mfaRepo, settingsRepo, cfg.Security.JWTSecret)
+
 	// Initialize auth service
-	authSvc := services.NewAuthService(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc)
+	authSvc := services.NewAuthServiceWithMFA(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc, mfaSvc)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
@@ -193,7 +209,7 @@ func main() {
 	policyHub := grpcserver.NewPolicyHub()
 
 	// Initialize API handlers
-	authHandler := api.NewAuthHandler(authSvc)
+	authHandler := api.NewAuthHandler(authSvc, mfaSvc)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
@@ -203,7 +219,7 @@ func main() {
 	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo)
 	policyBindingHandler := api.NewPolicyBindingHandler(policyBindingSvc)
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
-	settingsHandler := api.NewSettingsHandler(settingsSvc)
+	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
 
 	// Wire policy and binding change notifications to the hub so that
 	// connected streaming agents receive a fresh snapshot when the
@@ -220,6 +236,8 @@ func main() {
 
 	// Public routes
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/v1/auth/begin", authHandler.Begin)
+	mux.HandleFunc("/api/v1/auth/step", authHandler.Step)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -227,6 +245,12 @@ func main() {
 
 	// Auth routes (no additional permission needed — user just needs to be authenticated)
 	mux.Handle("/api/v1/auth/me", authMiddleware(http.HandlerFunc(authHandler.Me)))
+
+	// MFA routes for the current user
+	mux.Handle("/api/v1/users/me/mfa", authMiddleware(http.HandlerFunc(authHandler.MFAStatus)))
+	mux.Handle("/api/v1/users/me/mfa/setup/begin", authMiddleware(http.HandlerFunc(authHandler.MFASetupBegin)))
+	mux.Handle("/api/v1/users/me/mfa/setup/finish", authMiddleware(http.HandlerFunc(authHandler.MFASetupFinish)))
+	mux.Handle("/api/v1/users/me/mfa/disable", authMiddleware(http.HandlerFunc(authHandler.MFADisable)))
 
 	// Policy routes — method-based permission checking
 	policyPerms := api.RequireMethodPermission(az, []api.MethodPermission{
@@ -302,6 +326,7 @@ func main() {
 
 	// Settings routes
 	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(api.RequirePermission(az, "settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
+	mux.Handle("/api/v1/settings/mfa", authMiddleware(api.RequirePermission(az, "settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
 
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
@@ -428,4 +453,44 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// resetMFAForUser connects to the database using environment config, looks up
+// the user by username, and deletes their MFA record.
+func resetMFAForUser(username string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	db, err := database.New(database.Config{
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		User:     cfg.Database.User,
+		Password: cfg.Database.Password,
+		Database: cfg.Database.Database,
+		SSLMode:  cfg.Database.SSLMode,
+	})
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer db.Close()
+
+	userRepo := database.NewUserRepository(db)
+	ctx := context.Background()
+	user, err := userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return fmt.Errorf("look up user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user %q not found", username)
+	}
+
+	mfaRepo := database.NewMFARepository(db)
+	if err := mfaRepo.Delete(ctx, user.ID); err != nil {
+		return fmt.Errorf("delete MFA record: %w", err)
+	}
+
+	log.Printf("MFA disabled for user %q (id=%s)", username, user.ID)
+	return nil
 }

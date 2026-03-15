@@ -15,6 +15,7 @@ import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { UserGroupsTab } from "./UserGroupsTab";
 import { AgentNotificationsTab } from "./AgentNotificationsTab";
+import { MFASettingsTab } from "./MFASettingsTab";
 
 export const SettingsPage: React.FC = () => {
   const canUsers = hasPermission("user:manage");
@@ -23,7 +24,7 @@ export const SettingsPage: React.FC = () => {
   const canSettings = hasPermission("settings:manage");
 
   const [activeTab, setActiveTab] = useState<string>(
-    canUsers ? "users" : canRoles ? "roles" : canUserGroups ? "user-groups" : canSettings ? "agent-notifications" : ""
+    canUsers ? "users" : canRoles ? "roles" : canUserGroups ? "user-groups" : "agent-notifications"
   );
 
   if (!canUsers && !canRoles && !canUserGroups && !canSettings) {
@@ -66,6 +67,13 @@ export const SettingsPage: React.FC = () => {
           <Tab eventKey="agent-notifications" title={<TabTitleText>Agent Notifications</TabTitleText>}>
             <div style={{ paddingTop: 16 }}>
               <AgentNotificationsTab />
+            </div>
+          </Tab>
+        )}
+        {canSettings && (
+          <Tab eventKey="mfa-settings" title={<TabTitleText>MFA Settings</TabTitleText>}>
+            <div style={{ paddingTop: 16 }}>
+              <MFASettingsTab />
             </div>
           </Tab>
         )}

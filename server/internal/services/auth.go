@@ -92,6 +92,7 @@ type AuthService struct {
 	bindingRepo *database.UserRoleBindingRepository
 	jwtSecret   string
 	ldapSvc     *LDAPService
+	mfaSvc      *MFAService
 }
 
 // NewAuthService creates a new AuthService
@@ -105,10 +106,32 @@ func NewAuthService(userRepo *database.UserRepository, roleRepo *database.RoleRe
 	}
 }
 
+// NewAuthServiceWithMFA creates a new AuthService with MFA support.
+func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService) *AuthService {
+	return &AuthService{
+		userRepo:    userRepo,
+		roleRepo:    roleRepo,
+		bindingRepo: bindingRepo,
+		jwtSecret:   jwtSecret,
+		ldapSvc:     ldapSvc,
+		mfaSvc:      mfaSvc,
+	}
+}
+
 // Claims represents JWT claims
 type Claims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
+	jwt.RegisteredClaims
+}
+
+// AuthSessionClaims is a short-lived JWT used during the multi-step auth flow.
+type AuthSessionClaims struct {
+	UserID      string `json:"user_id"`
+	Username    string `json:"username"`
+	Source      string `json:"source"`       // "local" or "ldap"
+	TOTPDone    bool   `json:"totp_done"`
+	SessionType string `json:"session_type"` // always "auth_session"
 	jwt.RegisteredClaims
 }
 
@@ -226,7 +249,9 @@ func (s *AuthService) generateToken(user *models.User) (string, error) {
 	return token.SignedString([]byte(s.jwtSecret))
 }
 
-// ValidateToken validates a JWT token and returns the claims
+// ValidateToken validates a JWT token and returns the claims.
+// It rejects auth session tokens (session_type == "auth_session") so they
+// cannot be used as regular bearer tokens.
 func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -243,7 +268,205 @@ func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	// Reject auth-session tokens — they must not be used as bearer tokens.
+	// We parse the raw map to check the session_type field because Claims
+	// does not carry it.
+	if raw, ok2 := token.Claims.(*Claims); ok2 {
+		// Re-parse as MapClaims to check session_type without a full decode.
+		mapToken, _ := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, func(t *jwt.Token) (interface{}, error) {
+			return []byte(s.jwtSecret), nil
+		})
+		if mapToken != nil {
+			if mc, ok3 := mapToken.Claims.(jwt.MapClaims); ok3 {
+				if st, ok4 := mc["session_type"].(string); ok4 && st == "auth_session" {
+					return nil, fmt.Errorf("invalid token: auth session tokens cannot be used as bearer tokens")
+				}
+			}
+		}
+		_ = raw
+	}
+
 	return claims, nil
+}
+
+// generateSessionToken creates a short-lived (5 min) JWT for the auth flow.
+func (s *AuthService) generateSessionToken(userID, username, source string, totpDone bool) (string, error) {
+	claims := &AuthSessionClaims{
+		UserID:      userID,
+		Username:    username,
+		Source:      source,
+		TOTPDone:    totpDone,
+		SessionType: "auth_session",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   userID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// validateSessionToken parses and validates an AuthSessionClaims token.
+func (s *AuthService) validateSessionToken(tokenString string) (*AuthSessionClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &AuthSessionClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid session token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*AuthSessionClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid session token claims")
+	}
+	if claims.SessionType != "auth_session" {
+		return nil, fmt.Errorf("invalid session token: wrong session_type")
+	}
+	return claims, nil
+}
+
+// AuthBegin starts the multi-step authentication flow.
+// Returns a short-lived session token and the next required step.
+func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginRequest) (*models.AuthBeginResponse, error) {
+	if req.Username == "" {
+		return nil, fmt.Errorf("username is required")
+	}
+
+	user, err := s.userRepo.GetByUsername(ctx, req.Username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("invalid username or password")
+	}
+	if !user.Enabled {
+		return nil, fmt.Errorf("user account is disabled")
+	}
+
+	source := string(user.Source)
+
+	// LDAP users bypass TOTP in this implementation.
+	if user.Source == models.SourceLDAP {
+		sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate session token: %w", err)
+		}
+		return &models.AuthBeginResponse{
+			SessionToken: sessionToken,
+			Next:         "password",
+		}, nil
+	}
+
+	// Check whether MFA is needed.
+	needsMFA := false
+	if s.mfaSvc != nil {
+		required, err := s.mfaSvc.IsMFARequired(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check MFA policy: %w", err)
+		}
+		if required {
+			enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check user MFA: %w", err)
+			}
+			needsMFA = enabled
+		} else {
+			enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check user MFA: %w", err)
+			}
+			needsMFA = enabled
+		}
+	}
+
+	sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate session token: %w", err)
+	}
+
+	next := "password"
+	if needsMFA {
+		next = "totp"
+	}
+
+	return &models.AuthBeginResponse{
+		SessionToken: sessionToken,
+		Next:         next,
+	}, nil
+}
+
+// AuthStep advances the multi-step authentication flow.
+func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest) (*models.AuthStepResponse, error) {
+	sessionClaims, err := s.validateSessionToken(req.SessionToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session: %w", err)
+	}
+
+	switch req.Type {
+	case "totp":
+		if s.mfaSvc == nil {
+			return nil, fmt.Errorf("MFA not configured")
+		}
+		if err := s.mfaSvc.VerifyCode(ctx, sessionClaims.UserID, req.Credential); err != nil {
+			return nil, fmt.Errorf("invalid TOTP code")
+		}
+		// Issue new session token with totp_done=true.
+		newToken, err := s.generateSessionToken(sessionClaims.UserID, sessionClaims.Username, sessionClaims.Source, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate session token: %w", err)
+		}
+		return &models.AuthStepResponse{
+			SessionToken: newToken,
+			Next:         "password",
+		}, nil
+
+	case "password":
+		// Check whether TOTP was required but not done.
+		if s.mfaSvc != nil {
+			required, _ := s.mfaSvc.IsMFARequired(ctx)
+			if required {
+				enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
+				if enabled && !sessionClaims.TOTPDone {
+					return nil, fmt.Errorf("TOTP verification required before password step")
+				}
+			} else {
+				enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
+				if enabled && !sessionClaims.TOTPDone {
+					return nil, fmt.Errorf("TOTP verification required before password step")
+				}
+			}
+		}
+
+		user, err := s.userRepo.GetByID(ctx, sessionClaims.UserID)
+		if err != nil || user == nil {
+			return nil, fmt.Errorf("invalid username or password")
+		}
+		if !user.Enabled {
+			return nil, fmt.Errorf("user account is disabled")
+		}
+
+		var loginResp *models.LoginResponse
+		if sessionClaims.Source == string(models.SourceLDAP) {
+			loginResp, err = s.authenticateLDAP(ctx, user.Username, req.Credential)
+		} else {
+			loginResp, err = s.authenticateLocal(user, req.Credential)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return &models.AuthStepResponse{
+			Token: loginResp.Token,
+			User:  &loginResp.User,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown step type: %s", req.Type)
+	}
 }
 
 // CreateUser creates a new local user

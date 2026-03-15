@@ -6,6 +6,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 
@@ -63,6 +64,32 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 	}
 
 	return settings, rows.Err()
+}
+
+// Get retrieves a single agent_settings value by key. Returns "" if not found.
+func (r *SettingsRepository) Get(ctx context.Context, key string) (string, error) {
+	var value string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM agent_settings WHERE key = $1`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get setting %s: %w", key, err)
+	}
+	return value, nil
+}
+
+// Set upserts a single key/value pair in agent_settings.
+func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO agent_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+		key, value,
+	)
+	if err != nil {
+		return fmt.Errorf("set setting %s: %w", key, err)
+	}
+	return nil
 }
 
 // UpdateAgentNotificationSettings upserts the agent notification settings
