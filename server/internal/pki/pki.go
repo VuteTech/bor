@@ -119,14 +119,14 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 		return "", "", fmt.Errorf("failed to create server certificate: %w", err)
 	}
 
-	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil {
+	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal server key: %w", err)
 	}
-	if err = writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
+	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
 		return "", "", err
 	}
 
@@ -184,14 +184,14 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 		return "", "", fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
-	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil {
+	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal CA key: %w", err)
 	}
-	if err = writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
+	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
 		return "", "", err
 	}
 
@@ -284,7 +284,7 @@ func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey crypto.Signer) (cert
 // LoadCACertPool loads a CA certificate from the given path and returns
 // a CertPool containing it.
 func LoadCACertPool(certPath string) (*x509.CertPool, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA cert: %w", err)
 	}
@@ -306,7 +306,7 @@ func EncodeCertPEM(cert *x509.Certificate) []byte {
 }
 
 func writePEM(path, pemType string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // path is admin-configured
 	if err != nil {
 		return fmt.Errorf("failed to create %s: %w", path, err)
 	}
@@ -338,7 +338,7 @@ func parsePrivateKey(block *pem.Block) (crypto.Signer, error) {
 // isSignedByCA loads a PEM certificate from path and verifies that it
 // was issued by the given CA. Returns false on any error.
 func isSignedByCA(certPath string, caCert *x509.Certificate) bool {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
 	if err != nil {
 		return false
 	}

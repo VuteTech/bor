@@ -359,7 +359,7 @@ func main() {
 	// ─── TLS certificate for both servers ───────────────────────────────
 	uiTLSCert, err := pki.LoadTLSCert(tlsCertFile, tlsKeyFile)
 	if err != nil {
-		log.Fatalf("Failed to load UI TLS certificate: %v", err)
+		log.Fatalf("Failed to load UI TLS certificate: %v", err) //nolint:gocritic // process is exiting, deferred cleanup not needed
 	}
 
 	// ─── Enrollment gRPC server (no mandatory client cert at TLS layer) ──

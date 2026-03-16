@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package database provides PostgreSQL repositories and migrations for Bor.
 package database
 
 import (

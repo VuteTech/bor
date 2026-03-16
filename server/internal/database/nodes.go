@@ -32,7 +32,9 @@ const nodeSelect = `
 
 const nodeFrom = `FROM nodes n`
 
-func scanNode(row interface{ Scan(dest ...interface{}) error }) (*models.Node, error) {
+func scanNode(row interface {
+	Scan(dest ...interface{}) error
+}) (*models.Node, error) {
 	node := &models.Node{}
 	err := row.Scan(
 		&node.ID, &node.Name, &node.FQDN, &node.MachineID,
@@ -162,7 +164,7 @@ func (r *NodeRepository) ListAll(ctx context.Context) ([]*models.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*models.Node
 	for rows.Next() {
@@ -191,7 +193,7 @@ func (r *NodeRepository) ListByStatus(ctx context.Context, status string) ([]*mo
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes by status: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*models.Node
 	for rows.Next() {
@@ -223,7 +225,7 @@ func (r *NodeRepository) Search(ctx context.Context, term string) ([]*models.Nod
 	if err != nil {
 		return nil, fmt.Errorf("failed to search nodes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*models.Node
 	for rows.Next() {

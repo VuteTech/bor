@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package authz provides role-based access control for Bor.
 package authz
 
 import (

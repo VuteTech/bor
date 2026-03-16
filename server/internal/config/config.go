@@ -14,7 +14,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-
 // Config holds application configuration.
 type Config struct {
 	Database DatabaseConfig

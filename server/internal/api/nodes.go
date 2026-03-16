@@ -342,7 +342,7 @@ func (h *NodeHandler) RevokeNodeCertificate(w http.ResponseWriter, r *http.Reque
 		reason = "manually revoked"
 	}
 	if err := h.enrollSvc.RevokeCertificate(r.Context(), nodeID, *node.CertSerial, reason); err != nil {
-		log.Printf("Failed to revoke certificate for node %s: %v", nodeID, err)
+		log.Printf("Failed to revoke certificate for node %s: %v", nodeID, err) //nolint:gosec // nodeID comes from authenticated request
 		http.Error(w, `{"error":"failed to revoke certificate"}`, http.StatusInternalServerError)
 		return
 	}

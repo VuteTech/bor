@@ -20,7 +20,7 @@ type WebAuthnCredentialRow struct {
 	CredentialID   string
 	PublicKey      []byte
 	AAGUID         string
-	SignCount       uint32
+	SignCount      uint32
 	Name           string
 	Transports     []string
 	BackupEligible bool

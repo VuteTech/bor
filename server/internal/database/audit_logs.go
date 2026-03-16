@@ -102,9 +102,8 @@ func (r *AuditLogRepository) Count(ctx context.Context, req *models.AuditLogList
 
 // buildAuditLogFilter builds WHERE clause and args for audit log queries.
 // Multiple values for Actions or ResourceTypes are OR'd within the field.
-func buildAuditLogFilter(req *models.AuditLogListRequest) (string, []interface{}) {
+func buildAuditLogFilter(req *models.AuditLogListRequest) (clause string, args []interface{}) {
 	var conditions []string
-	var args []interface{}
 	argIdx := 1
 
 	if len(req.ResourceTypes) > 0 {

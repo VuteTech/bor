@@ -21,7 +21,7 @@ func TestAuthMiddleware_MissingHeader(t *testing.T) {
 		t.Fatal("handler should not be called")
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -38,7 +38,7 @@ func TestAuthMiddleware_InvalidFormat(t *testing.T) {
 		t.Fatal("handler should not be called")
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", http.NoBody)
 	req.Header.Set("Authorization", "InvalidFormat")
 	rec := httptest.NewRecorder()
 
@@ -69,7 +69,7 @@ func TestAdminOnly_NoUser(t *testing.T) {
 		t.Fatal("handler should not be called")
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -131,7 +131,7 @@ type permCheckingAuthorizer struct {
 	calls   []string
 }
 
-func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _ string, resource, action, _ string, _ *string) (bool, error) {
+func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _, resource, action, _ string, _ *string) (bool, error) {
 	key := resource + ":" + action
 	m.calls = append(m.calls, key)
 	return m.allowed[key], nil
@@ -150,7 +150,7 @@ func TestRequirePermission_DenyNoRoles(t *testing.T) {
 	az := &mockAuthorizer{result: false}
 	mw := RequirePermission(az, "policy", "view")
 
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler should not be called when permission is denied")
 	}))
 
@@ -197,7 +197,7 @@ func TestRequireMethodPermission_DenyUserWithNoRoles(t *testing.T) {
 	}
 
 	mw := RequireMethodPermission(az, perms)
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler should not be called for denied user")
 	}))
 
@@ -254,7 +254,7 @@ func TestRequireMethodPermission_UnmappedMethodDenied(t *testing.T) {
 	}
 
 	mw := RequireMethodPermission(az, perms)
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler should not be called for unmapped method")
 	}))
 

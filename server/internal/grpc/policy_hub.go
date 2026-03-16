@@ -137,7 +137,7 @@ func IsResyncSignal(ev *pb.PolicyUpdate) bool {
 // cancel function. The caller MUST call cancel when done (e.g. when
 // the gRPC stream ends) to avoid resource leaks. clientID is used
 // for targeted dispatch via SendMetadataRefreshRequest.
-func (h *PolicyHub) Subscribe(_ context.Context, clientID string) (<-chan *pb.PolicyUpdate, func()) {
+func (h *PolicyHub) Subscribe(_ context.Context, clientID string) (<-chan *pb.PolicyUpdate, func()) { //nolint:gocritic // named returns conflict with internal channel variables
 	// Buffer provides headroom so the publisher doesn't drop events
 	// during short bursts.
 	ch := make(chan *pb.PolicyUpdate, 64)
