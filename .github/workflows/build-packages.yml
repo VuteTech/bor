@@ -24,11 +24,13 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           working-directory: server
+          version: v2.1.6
 
       - name: Lint agent
         uses: golangci/golangci-lint-action@v6
         with:
           working-directory: agent
+          version: v2.1.6
 
   test:
     name: Test
