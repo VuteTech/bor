@@ -181,12 +181,12 @@ type UserRoleBinding struct {
 
 // Default role name constants
 const (
-	RoleSuperAdmin      = "Super Admin"
-	RoleOrgAdmin        = "Org Admin"
-	RolePolicyEditor    = "Policy Editor"
-	RolePolicyReviewer  = "Policy Reviewer"
+	RoleSuperAdmin       = "Super Admin"
+	RoleOrgAdmin         = "Org Admin"
+	RolePolicyEditor     = "Policy Editor"
+	RolePolicyReviewer   = "Policy Reviewer"
 	RoleComplianceViewer = "Compliance Viewer"
-	RoleAuditor         = "Auditor"
+	RoleAuditor          = "Auditor"
 )
 
 // UserSource constants

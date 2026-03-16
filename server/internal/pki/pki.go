@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package pki provides internal certificate authority and TLS certificate management for Bor.
 package pki
 
 import (
@@ -119,14 +120,14 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 		return "", "", fmt.Errorf("failed to create server certificate: %w", err)
 	}
 
-	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
+	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil { //nolint:gocritic // sloppyReassign: named return err updated intentionally
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal server key: %w", err)
 	}
-	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
+	if err = writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil { //nolint:gocritic // sloppyReassign: named return err updated intentionally
 		return "", "", err
 	}
 
@@ -184,14 +185,14 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 		return "", "", fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
-	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
+	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil { //nolint:gocritic // sloppyReassign: named return err updated intentionally
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal CA key: %w", err)
 	}
-	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
+	if err = writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil { //nolint:gocritic // sloppyReassign: named return err updated intentionally
 		return "", "", err
 	}
 

@@ -295,7 +295,7 @@ func TestSignCSR(t *testing.T) {
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
 	_, err = signedCert.Verify(x509.VerifyOptions{
-		Roots:    pool,
+		Roots:     pool,
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	})
 	if err != nil {

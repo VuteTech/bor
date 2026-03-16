@@ -405,7 +405,7 @@ func (r *NodeRepository) CountByStatus(ctx context.Context) (map[string]int, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to count nodes by status: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := make(map[string]int)
 	for rows.Next() {
@@ -490,7 +490,7 @@ func (r *NodeRepository) ListExpiringCerts(ctx context.Context, withinDays int) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to list expiring certs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var nodes []*models.Node
 	for rows.Next() {
 		node, err := scanNode(rows)
@@ -516,7 +516,7 @@ func (r *NodeRepository) ListGroupIDs(ctx context.Context, nodeID string) ([]str
 	if err != nil {
 		return nil, fmt.Errorf("failed to list node group IDs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string

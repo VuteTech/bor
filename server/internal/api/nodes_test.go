@@ -13,7 +13,7 @@ import (
 func TestNodeHandler_List_MethodNotAllowed(t *testing.T) {
 	handler := &NodeHandler{}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.List(rr, req)
@@ -26,7 +26,7 @@ func TestNodeHandler_List_MethodNotAllowed(t *testing.T) {
 func TestNodeHandler_Get_MethodNotAllowed(t *testing.T) {
 	handler := &NodeHandler{}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/123", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/123", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.Get(rr, req)

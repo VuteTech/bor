@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package grpc implements the gRPC server-side handlers for Bor's policy and enrollment services.
 package grpc
 
 import (
@@ -19,7 +20,7 @@ import (
 // EnrollmentServer implements the gRPC EnrollmentService.
 type EnrollmentServer struct {
 	pb.UnimplementedEnrollmentServiceServer
-	enrollSvc *services.EnrollmentService
+	enrollSvc  *services.EnrollmentService
 	adminToken string
 }
 

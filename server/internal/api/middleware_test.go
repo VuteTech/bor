@@ -139,7 +139,7 @@ func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _, resource, a
 
 // helper to build a request with user claims in context
 func reqWithUser(method, url string) *http.Request {
-	r := httptest.NewRequest(method, url, nil)
+	r := httptest.NewRequest(method, url, http.NoBody)
 	claims := &services.Claims{UserID: "test-user", Username: "tester"}
 	ctx := context.WithValue(r.Context(), userContextKey, claims)
 	return r.WithContext(ctx)
@@ -306,7 +306,7 @@ func TestRequireMethodPermission_AllEndpoints_DenyByDefault(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mw := RequireMethodPermission(az, tt.perms)
-			handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := mw(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 				t.Fatal("handler should not be called")
 			}))
 
