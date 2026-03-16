@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"time"
 
@@ -212,7 +213,7 @@ func (c *Client) ReportTamperEvent(ctx context.Context, filePath string, process
 	var pbProcs []*pb.TamperProcessInfo
 	for _, p := range processes {
 		pbProcs = append(pbProcs, &pb.TamperProcessInfo{
-			Pid:  int32(p.PID), //nolint:gosec // G115: PID fits in int32
+			Pid:  int32(min(p.PID, math.MaxInt32)),
 			Comm: p.Comm,
 			User: p.User,
 		})
