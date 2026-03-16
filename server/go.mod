@@ -6,7 +6,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.10
 	github.com/go-webauthn/webauthn v0.16.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.11.2
 	github.com/pquerna/otp v1.5.0
 	google.golang.org/grpc v1.79.2
 	google.golang.org/protobuf v1.36.11
