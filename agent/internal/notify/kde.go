@@ -26,8 +26,8 @@ import (
 	"time"
 )
 
-// NotifyConfig holds server-provided notification settings.
-type NotifyConfig struct {
+// Config holds server-provided notification settings.
+type Config struct {
 	Enabled  bool
 	Cooldown time.Duration
 	Message  string
@@ -41,14 +41,14 @@ const NotifyDebounce = 10 * time.Second
 // Notifier sends desktop notifications and KDE reconfigure signals
 // to active user sessions via D-Bus.
 type Notifier struct {
-	mu             sync.Mutex
-	lastSent       map[uint32]time.Time // UID → last notification time
-	lastNotifyID   map[uint32]uint32    // UID → last notify-send notification ID
+	mu           sync.Mutex
+	lastSent     map[uint32]time.Time // UID → last notification time
+	lastNotifyID map[uint32]uint32    // UID → last notify-send notification ID
 
 	debounceMu    sync.Mutex
 	debounceTimer *time.Timer
 	pendingFiles  map[string]bool
-	pendingConfig NotifyConfig
+	pendingConfig Config
 }
 
 // New creates a Notifier.
@@ -63,7 +63,7 @@ func New() *Notifier {
 // debounce timer. When the timer fires (after NotifyDebounce of
 // inactivity), a single NotifyAndReconfigure call is made covering
 // all accumulated files.
-func (n *Notifier) ScheduleNotification(cfg NotifyConfig, changedFiles map[string]bool) {
+func (n *Notifier) ScheduleNotification(cfg Config, changedFiles map[string]bool) {
 	n.debounceMu.Lock()
 	defer n.debounceMu.Unlock()
 
@@ -112,7 +112,7 @@ type session struct {
 //
 // All errors are logged but never returned — notification is
 // best-effort and must not block policy enforcement.
-func (n *Notifier) NotifyAndReconfigure(cfg NotifyConfig, changedFiles map[string]bool) {
+func (n *Notifier) NotifyAndReconfigure(cfg Config, changedFiles map[string]bool) {
 	if !cfg.Enabled && len(changedFiles) == 0 {
 		return
 	}

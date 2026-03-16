@@ -68,7 +68,7 @@ func (r *RoleRepository) List(ctx context.Context) ([]*models.Role, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list roles: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var roles []*models.Role
 	for rows.Next() {
@@ -110,7 +110,7 @@ func (r *RoleRepository) GetPermissionsByRoleID(ctx context.Context, roleID stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to get permissions for role: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var perms []*models.Permission
 	for rows.Next() {

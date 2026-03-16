@@ -50,7 +50,7 @@ func (r *UserGroupMemberRepository) ListByGroupID(ctx context.Context, groupID s
 	if err != nil {
 		return nil, fmt.Errorf("failed to list group members: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []*models.UserGroupMember
 	for rows.Next() {

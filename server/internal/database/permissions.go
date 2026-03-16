@@ -46,7 +46,7 @@ func (r *PermissionRepository) List(ctx context.Context) ([]*models.Permission, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to list permissions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var perms []*models.Permission
 	for rows.Next() {

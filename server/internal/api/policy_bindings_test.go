@@ -13,7 +13,7 @@ import (
 func TestPolicyBindingHandler_List_MethodNotAllowed(t *testing.T) {
 	handler := &PolicyBindingHandler{}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-bindings", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy-bindings", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.List(rr, req)
@@ -26,7 +26,7 @@ func TestPolicyBindingHandler_List_MethodNotAllowed(t *testing.T) {
 func TestPolicyBindingHandler_Create_MethodNotAllowed(t *testing.T) {
 	handler := &PolicyBindingHandler{}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/policy-bindings", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/policy-bindings", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.Create(rr, req)

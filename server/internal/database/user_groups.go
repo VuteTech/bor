@@ -61,7 +61,7 @@ func (r *UserGroupRepository) ListAll(ctx context.Context) ([]*models.UserGroup,
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var groups []*models.UserGroup
 	for rows.Next() {

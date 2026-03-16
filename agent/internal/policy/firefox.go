@@ -183,7 +183,7 @@ func SyncFirefoxFlatpakPolicies(targetPath string, contents []string) error {
 // if they do not exist. The file is written with mode 0644.
 func WriteFileAtomically(targetPath string, data []byte) error {
 	dir := filepath.Dir(targetPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: policy directories must be world-readable
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -194,22 +194,22 @@ func WriteFileAtomically(targetPath string, data []byte) error {
 	tmpName := tmp.Name()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := os.Chmod(tmpName, 0644); err != nil {
-		os.Remove(tmpName)
+	if err := os.Chmod(tmpName, 0o644); err != nil { //nolint:gosec // G302: policy files must be world-readable
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed to set permissions: %w", err)
 	}
 
 	if err := os.Rename(tmpName, targetPath); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed to rename temp file to %s: %w", targetPath, err)
 	}
 

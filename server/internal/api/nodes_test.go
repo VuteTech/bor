@@ -39,7 +39,7 @@ func TestNodeHandler_Get_MethodNotAllowed(t *testing.T) {
 func TestNodeHandler_Update_MethodNotAllowed(t *testing.T) {
 	handler := &NodeHandler{}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/123", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/123", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.Update(rr, req)
@@ -52,7 +52,7 @@ func TestNodeHandler_Update_MethodNotAllowed(t *testing.T) {
 func TestNodeHandler_CountByStatus_MethodNotAllowed(t *testing.T) {
 	handler := &NodeHandler{}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/status-counts", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/status-counts", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.CountByStatus(rr, req)

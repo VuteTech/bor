@@ -144,7 +144,7 @@ func BackupOriginal(targetPath string) error {
 		return nil // backup already exists — never overwrite
 	}
 
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) //nolint:gosec // G304: path comes from server-managed policy config
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("failed to read original file %s: %w", targetPath, err)
@@ -165,7 +165,7 @@ func BackupOriginal(targetPath string) error {
 func RestoreOriginal(targetPath string) error {
 	backupPath := targetPath + BackupSuffix
 
-	data, err := os.ReadFile(backupPath)
+	data, err := os.ReadFile(backupPath) //nolint:gosec // G304: backup path derived from managed config path
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // nothing to restore
@@ -175,7 +175,7 @@ func RestoreOriginal(targetPath string) error {
 
 	if len(data) == 0 {
 		// Empty sentinel — no original existed; remove the managed file.
-		os.Remove(targetPath)
+		_ = os.Remove(targetPath)
 	} else {
 		if err := WriteFileAtomically(targetPath, data); err != nil {
 			return fmt.Errorf("failed to restore %s: %w", targetPath, err)
@@ -391,7 +391,7 @@ func EnsureProfileScript(basePath string) error {
 		return nil // already up to date
 	}
 
-	if err := os.MkdirAll(filepath.Dir(profileScriptPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(profileScriptPath), 0o755); err != nil { //nolint:gosec // G301: profile.d must be world-readable
 		return fmt.Errorf("failed to create profile.d directory: %w", err)
 	}
 
@@ -400,7 +400,7 @@ func EnsureProfileScript(basePath string) error {
 	}
 
 	// Ensure the script is executable.
-	if err := os.Chmod(profileScriptPath, 0755); err != nil {
+	if err := os.Chmod(profileScriptPath, 0o755); err != nil { //nolint:gosec // G302: profile script must be executable
 		return fmt.Errorf("failed to chmod %s: %w", profileScriptPath, err)
 	}
 

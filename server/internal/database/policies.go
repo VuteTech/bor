@@ -120,7 +120,7 @@ func (r *PolicyRepository) scanPolicies(ctx context.Context, query string, args 
 	if err != nil {
 		return nil, fmt.Errorf("failed to list policies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var policies []*models.Policy
 	for rows.Next() {

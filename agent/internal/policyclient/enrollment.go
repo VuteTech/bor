@@ -93,7 +93,7 @@ func Enroll(serverAddr, token, nodeName string, insecureSkipVerify bool, paths E
 	// 3. Connect to server with TLS (no client cert yet — this is the bootstrap call)
 	tlsCfg := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: insecureSkipVerify,
+		InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // G402: controlled by admin config, only used for initial enrollment
 	}
 	if insecureSkipVerify {
 		log.Println("WARNING: server certificate verification disabled for enrollment")
@@ -105,7 +105,7 @@ func Enroll(serverAddr, token, nodeName string, insecureSkipVerify bool, paths E
 	if err != nil {
 		return fmt.Errorf("failed to connect for enrollment: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// 4. Call Enroll RPC
 	client := enrollpb.NewEnrollmentServiceClient(conn)

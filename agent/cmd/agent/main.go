@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package main is the entry point for the Bor agent daemon.
 package main
 
 import (
@@ -46,7 +47,7 @@ var kdeNotifier = notify.New()
 
 // notifyConfig holds the current server-provided notification settings.
 // It is refreshed on each stream connect.
-var notifyConfig = notify.NotifyConfig{
+var notifyConfig = notify.Config{
 	Enabled:  true,
 	Cooldown: 5 * time.Minute,
 	Message:  "Desktop policies have been updated. Please log out and log back in for all changes to take effect.",
@@ -62,7 +63,7 @@ var firefoxSnapshotStaging map[string]*pb.FirefoxPolicy
 var firefoxNotifier = notify.New()
 
 // firefoxNotifyConfig holds Firefox-specific notification settings.
-var firefoxNotifyConfig = notify.NotifyConfig{
+var firefoxNotifyConfig = notify.Config{
 	Enabled:  true,
 	Cooldown: 5 * time.Minute,
 	Message:  "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
@@ -79,7 +80,7 @@ var chromeSnapshotStaging map[string]*pb.ChromePolicy
 var chromeNotifier = notify.New()
 
 // chromeNotifyConfig holds Chrome-specific notification settings.
-var chromeNotifyConfig = notify.NotifyConfig{
+var chromeNotifyConfig = notify.Config{
 	Enabled:  true,
 	Cooldown: 5 * time.Minute,
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
@@ -113,8 +114,8 @@ func main() {
 	// CA rotation, etc.).
 	if *enrollToken != "" && policyclient.IsEnrolled(paths) {
 		log.Println("--token provided for an already-enrolled agent – removing old certificates for re-enrollment")
-		if err := policyclient.RemoveEnrollmentCerts(paths); err != nil {
-			log.Fatalf("Failed to remove old enrollment certificates: %v", err)
+		if removeErr := policyclient.RemoveEnrollmentCerts(paths); removeErr != nil {
+			log.Fatalf("Failed to remove old enrollment certificates: %v", removeErr)
 		}
 	}
 
@@ -125,14 +126,14 @@ func main() {
 				"Generate a token from the Node Groups page in the Bor web UI.")
 		}
 		log.Println("Not yet enrolled – starting enrollment...")
-		if err := policyclient.Enroll(
+		if enrollErr := policyclient.Enroll(
 			cfg.Server.EnrollmentAddr(),
 			*enrollToken,
 			cfg.Agent.ClientID,
 			cfg.Server.InsecureSkipVerify,
 			paths,
-		); err != nil {
-			log.Fatalf("Enrollment failed: %v", err)
+		); enrollErr != nil {
+			log.Fatalf("Enrollment failed: %v", enrollErr)
 		}
 		fmt.Printf(`
 Enrollment successful. Certificates stored in %s
@@ -151,9 +152,8 @@ To follow the agent logs:
 
 `, cfg.Enrollment.DataDir)
 		os.Exit(0)
-	} else {
-		log.Println("Agent is enrolled – using mTLS credentials")
 	}
+	log.Println("Agent is enrolled – using mTLS credentials")
 
 	agentAddr := cfg.Server.PolicyAddr()
 
@@ -165,8 +165,8 @@ To follow the agent logs:
 		log.Printf("Warning: could not check cert expiry: %v", expiryErr)
 	} else if expiring {
 		log.Println("Certificate expires within 30 days, renewing...")
-		if err := policyclient.RenewCertificate(agentAddr, paths.CACert, paths.CertFile, paths.KeyFile); err != nil {
-			log.Printf("Warning: certificate renewal failed: %v — will retry next cycle", err)
+		if renewErr := policyclient.RenewCertificate(agentAddr, paths.CACert, paths.CertFile, paths.KeyFile); renewErr != nil {
+			log.Printf("Warning: certificate renewal failed: %v — will retry next cycle", renewErr)
 		}
 	}
 
@@ -174,15 +174,15 @@ To follow the agent logs:
 	client, err := policyclient.New(
 		agentAddr,
 		cfg.Agent.ClientID,
-		paths.CACert,      // CA cert received during enrollment
-		paths.CertFile,    // agent client cert signed by CA
-		paths.KeyFile,     // agent private key
-		false,             // never skip verify after enrollment – we have the CA cert
+		paths.CACert,   // CA cert received during enrollment
+		paths.CertFile, // agent client cert signed by CA
+		paths.KeyFile,  // agent private key
+		false,          // never skip verify after enrollment – we have the CA cert
 	)
 	if err != nil {
 		log.Fatalf("Failed to create policy client: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -205,7 +205,7 @@ To follow the agent logs:
 	if watcherErr != nil {
 		log.Printf("Warning: failed to create file watcher (tamper protection disabled): %v", watcherErr)
 	} else {
-		defer fileWatcher.Close()
+		defer func() { _ = fileWatcher.Close() }()
 		go fileWatcher.Run(ctx)
 		log.Println("File watcher started")
 	}
@@ -237,18 +237,18 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		if agentCfg, err := client.GetAgentConfig(ctx); err != nil {
 			log.Printf("Failed to fetch agent config (using defaults): %v", err)
 		} else {
-			notifyConfig = notify.NotifyConfig{
+			notifyConfig = notify.Config{
 				Enabled:  agentCfg.NotifyUsers,
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  agentCfg.NotifyMessage,
 			}
 			log.Printf("Agent notification config: enabled=%v cooldown=%v", notifyConfig.Enabled, notifyConfig.Cooldown)
-			firefoxNotifyConfig = notify.NotifyConfig{
+			firefoxNotifyConfig = notify.Config{
 				Enabled:  agentCfg.NotifyUsers,
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  agentCfg.NotifyMessageFirefox,
 			}
-			chromeNotifyConfig = notify.NotifyConfig{
+			chromeNotifyConfig = notify.Config{
 				Enabled:  agentCfg.NotifyUsers,
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  agentCfg.NotifyMessageChrome,
@@ -282,7 +282,7 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		}
 
 		// Exponential backoff capped at 60 s.
-		backoff = backoff * 2
+		backoff *= 2
 		if backoff > 60*time.Second {
 			backoff = 60 * time.Second
 		}
@@ -821,4 +821,3 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		log.Printf("Failed to report tamper event to server: %v", err)
 	}
 }
-

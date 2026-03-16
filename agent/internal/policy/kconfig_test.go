@@ -5,6 +5,7 @@
 package policy
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ import (
 // writeFile is a test helper that writes data and fails the test on error.
 func writeFile(t *testing.T, path string, data []byte) {
 	t.Helper()
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("writeFile(%s): %v", path, err)
 	}
 }
@@ -202,7 +203,7 @@ func TestBackupOriginal_CreatesBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("backup not created: %v", err)
 	}
-	if string(backup) != string(original) {
+	if !bytes.Equal(backup, original) {
 		t.Errorf("backup content mismatch: got %q", backup)
 	}
 
@@ -213,7 +214,7 @@ func TestBackupOriginal_CreatesBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	backup, _ = os.ReadFile(target + BackupSuffix)
-	if string(backup) != string(original) {
+	if !bytes.Equal(backup, original) {
 		t.Error("second BackupOriginal call overwrote existing backup")
 	}
 }
@@ -252,7 +253,7 @@ func TestRestoreOriginal_WithContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != string(original) {
+	if !bytes.Equal(data, original) {
 		t.Errorf("restored content mismatch: got %q", data)
 	}
 
@@ -341,7 +342,7 @@ func TestSyncKConfigFiles_BackupAndHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(backup) != string(original) {
+	if !bytes.Equal(backup, original) {
 		t.Errorf("backup mismatch: got %q", backup)
 	}
 
@@ -378,7 +379,7 @@ func TestSyncKConfigFiles_CleanupRestoresOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != string(original) {
+	if !bytes.Equal(data, original) {
 		t.Errorf("expected original content restored, got %q", data)
 	}
 

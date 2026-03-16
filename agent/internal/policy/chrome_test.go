@@ -21,12 +21,12 @@ func TestSyncChromeFromProto_SinglePolicy(t *testing.T) {
 	homepageLoc := "https://example.com"
 	homepageIsNewTab := false
 	pol := &pb.ChromePolicy{
-		HomepageLocation:    &homepageLoc,
+		HomepageLocation:     &homepageLoc,
 		HomepageIsNewTabPage: &homepageIsNewTab,
 	}
 
-	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
-		t.Fatal(err)
+	if syncErr := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); syncErr != nil {
+		t.Fatal(syncErr)
 	}
 
 	target := filepath.Join(managedDir, ChromeManagedFilename)
@@ -36,8 +36,8 @@ func TestSyncChromeFromProto_SinglePolicy(t *testing.T) {
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
+	if unmarshalErr := json.Unmarshal(data, &result); unmarshalErr != nil {
+		t.Fatal(unmarshalErr)
 	}
 
 	if result["HomepageLocation"] != "https://example.com" {
@@ -71,8 +71,8 @@ func TestSyncChromeFromProto_MultiplePolicies(t *testing.T) {
 		{ExtensionSettings: extMap},
 	}
 
-	if err := SyncChromeFromProto(policies, []string{managedDir}); err != nil {
-		t.Fatal(err)
+	if syncErr := SyncChromeFromProto(policies, []string{managedDir}); syncErr != nil {
+		t.Fatal(syncErr)
 	}
 
 	target := filepath.Join(managedDir, ChromeManagedFilename)
@@ -82,8 +82,8 @@ func TestSyncChromeFromProto_MultiplePolicies(t *testing.T) {
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
+	if unmarshalErr := json.Unmarshal(data, &result); unmarshalErr != nil {
+		t.Fatal(unmarshalErr)
 	}
 
 	if result["HomepageLocation"] != "https://example.com" {
@@ -131,8 +131,8 @@ func TestSyncChromeFromProto_NoCommentKey(t *testing.T) {
 	homepageLoc := "https://example.com"
 	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
 
-	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
-		t.Fatal(err)
+	if syncErr := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); syncErr != nil {
+		t.Fatal(syncErr)
 	}
 
 	target := filepath.Join(managedDir, ChromeManagedFilename)
@@ -142,7 +142,7 @@ func TestSyncChromeFromProto_NoCommentKey(t *testing.T) {
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
+	if unmarshalErr := json.Unmarshal(data, &result); unmarshalErr != nil {
 		t.Fatal(err)
 	}
 
@@ -158,8 +158,8 @@ func TestSyncChromeFromProto_WritesFile(t *testing.T) {
 	homepageLoc := "https://example.com"
 	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
 
-	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
-		t.Fatal(err)
+	if syncErr := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); syncErr != nil {
+		t.Fatal(syncErr)
 	}
 
 	target := filepath.Join(managedDir, ChromeManagedFilename)
@@ -169,8 +169,8 @@ func TestSyncChromeFromProto_WritesFile(t *testing.T) {
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
+	if unmarshalErr := json.Unmarshal(data, &result); unmarshalErr != nil {
+		t.Fatal(unmarshalErr)
 	}
 
 	if result["HomepageLocation"] != "https://example.com" {
@@ -182,8 +182,8 @@ func TestSyncChromeFromProto_WritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0644 {
-		t.Errorf("expected permissions 0644, got %o", info.Mode().Perm())
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("expected permissions 0o644, got %o", info.Mode().Perm())
 	}
 }
 
@@ -194,8 +194,8 @@ func TestSyncChromeFromProto_RemovesFileOnEmpty(t *testing.T) {
 	// First write a file.
 	homepageLoc := "https://example.com"
 	pol := &pb.ChromePolicy{HomepageLocation: &homepageLoc}
-	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
-		t.Fatal(err)
+	if syncErr := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); syncErr != nil {
+		t.Fatal(syncErr)
 	}
 
 	target := filepath.Join(managedDir, ChromeManagedFilename)
@@ -230,8 +230,8 @@ func TestSyncChromeFromProto_CreatesDir(t *testing.T) {
 
 	searchEnabled := true
 	pol := &pb.ChromePolicy{DefaultSearchProviderEnabled: &searchEnabled}
-	if err := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); err != nil {
-		t.Fatal(err)
+	if syncErr := SyncChromeFromProto([]*pb.ChromePolicy{pol}, []string{managedDir}); syncErr != nil {
+		t.Fatal(syncErr)
 	}
 
 	target := filepath.Join(managedDir, ChromeManagedFilename)
@@ -244,8 +244,8 @@ func TestSyncChromeFromProto_CreatesDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0755 {
-		t.Errorf("expected directory permissions 0755, got %o", info.Mode().Perm())
+	if info.Mode().Perm() != 0o755 {
+		t.Errorf("expected directory permissions 0o755, got %o", info.Mode().Perm())
 	}
 }
 
@@ -268,7 +268,7 @@ func TestSyncChromeFromProto_MultipleDirs(t *testing.T) {
 			t.Fatalf("expected bor_managed.json in %s: %v", d, err)
 		}
 		var result map[string]interface{}
-		if err := json.Unmarshal(data, &result); err != nil {
+		if unmarshalErr := json.Unmarshal(data, &result); unmarshalErr != nil {
 			t.Fatal(err)
 		}
 		if result["HomepageLocation"] != "https://example.com" {
@@ -296,7 +296,7 @@ func TestSyncChromeFromProto_NilPoliciesAreSkipped(t *testing.T) {
 	}
 
 	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
+	if unmarshalErr := json.Unmarshal(data, &result); unmarshalErr != nil {
 		t.Fatal(err)
 	}
 	if result["HomepageLocation"] != "https://example.com" {

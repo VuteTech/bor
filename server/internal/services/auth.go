@@ -87,13 +87,13 @@ func verifyPassword(hash, password string) error {
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	userRepo     *database.UserRepository
-	roleRepo     *database.RoleRepository
-	bindingRepo  *database.UserRoleBindingRepository
-	jwtSecret    string
-	ldapSvc      *LDAPService
-	mfaSvc       *MFAService
-	webauthnSvc  *WebAuthnService
+	userRepo    *database.UserRepository
+	roleRepo    *database.RoleRepository
+	bindingRepo *database.UserRoleBindingRepository
+	jwtSecret   string
+	ldapSvc     *LDAPService
+	mfaSvc      *MFAService
+	webauthnSvc *WebAuthnService
 }
 
 // NewAuthService creates a new AuthService
@@ -143,7 +143,7 @@ type Claims struct {
 type AuthSessionClaims struct {
 	UserID      string `json:"user_id"`
 	Username    string `json:"username"`
-	Source      string `json:"source"`       // "local" or "ldap"
+	Source      string `json:"source"` // "local" or "ldap"
 	TOTPDone    bool   `json:"totp_done"`
 	SessionType string `json:"session_type"` // always "auth_session"
 	jwt.RegisteredClaims

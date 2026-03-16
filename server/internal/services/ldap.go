@@ -22,7 +22,7 @@ type LDAPConfig struct {
 	BindPassword string `json:"-"`
 	BaseDN       string `json:"base_dn"`
 	UserFilter   string `json:"user_filter"`
-	AttrUsername  string `json:"attr_username"`
+	AttrUsername string `json:"attr_username"`
 	AttrEmail    string `json:"attr_email"`
 	AttrFullName string `json:"attr_full_name"`
 }

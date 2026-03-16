@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package policy implements policy enforcement for the Bor agent.
 package policy
 
 import (
@@ -74,7 +75,7 @@ func SyncChromeFromProto(policies []*pb.ChromePolicy, dirPaths []string) error {
 // writeChromeManaged creates dir (mode 0755) if needed and atomically writes
 // data as bor_managed.json inside it.
 func writeChromeManaged(dirPath string, data []byte) error {
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
+	if err := os.MkdirAll(dirPath, 0o755); err != nil { //nolint:gosec // G301: Chrome policy directories must be world-readable
 		return fmt.Errorf("failed to create Chrome policy directory %s: %w", dirPath, err)
 	}
 	target := filepath.Join(dirPath, ChromeManagedFilename)

@@ -23,7 +23,7 @@ agent:
 firefox:
   policies_path: "/tmp/test/policies.json"
 `
-	if err := os.WriteFile(cfgPath, []byte(yaml), 0600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,7 +48,7 @@ func TestLoadDefaults(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 
 	// Minimal config (empty YAML)
-	if err := os.WriteFile(cfgPath, []byte("{}"), 0600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
