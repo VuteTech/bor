@@ -68,7 +68,7 @@ func (r *AuditLogRepository) List(ctx context.Context, req *models.AuditLogListR
 	if err != nil {
 		return nil, fmt.Errorf("failed to list audit logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []*models.AuditLog
 	for rows.Next() {
@@ -128,7 +128,6 @@ func buildAuditLogFilter(req *models.AuditLogListRequest) (string, []interface{}
 	if req.Username != "" {
 		conditions = append(conditions, fmt.Sprintf("username ILIKE $%d", argIdx))
 		args = append(args, "%"+req.Username+"%")
-		argIdx++
 	}
 
 	where := ""

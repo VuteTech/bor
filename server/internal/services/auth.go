@@ -216,7 +216,8 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 			Source:   models.SourceLDAP,
 			Enabled:  true,
 		}
-		if err := s.userRepo.Create(ctx, user); err != nil {
+		err = s.userRepo.Create(ctx, user)
+		if err != nil {
 			return nil, fmt.Errorf("failed to create LDAP user: %w", err)
 		}
 	} else {
@@ -226,10 +227,11 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 		// Update user info from LDAP
 		email := ldapUser.Email
 		fullName := ldapUser.FullName
-		if err := s.userRepo.Update(ctx, user.ID, &models.UpdateUserRequest{
+		err = s.userRepo.Update(ctx, user.ID, &models.UpdateUserRequest{
 			Email:    &email,
 			FullName: &fullName,
-		}); err != nil {
+		})
+		if err != nil {
 			return nil, fmt.Errorf("failed to update LDAP user: %w", err)
 		}
 		user.Email = email
@@ -287,7 +289,7 @@ func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 	// does not carry it.
 	if raw, ok2 := token.Claims.(*Claims); ok2 {
 		// Re-parse as MapClaims to check session_type without a full decode.
-		mapToken, _ := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, func(t *jwt.Token) (interface{}, error) {
+		mapToken, _ := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, func(_ *jwt.Token) (interface{}, error) {
 			return []byte(s.jwtSecret), nil
 		})
 		if mapToken != nil {
@@ -374,14 +376,15 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 		return nil, fmt.Errorf("user account is disabled")
 	}
 
-	source := string(user.Source)
+	source := user.Source
 
 	// Check whether MFA is needed. Applies to all user sources (local and LDAP).
 	// Only future OAuth/SAML sources, which delegate authentication entirely to an
 	// external IdP, would be exempt — they are not yet implemented.
 	var mfaMethods []string
 	if s.mfaSvc != nil {
-		enabled, err := s.mfaSvc.IsMFAEnabled(ctx, user.ID)
+		var enabled bool
+		enabled, err = s.mfaSvc.IsMFAEnabled(ctx, user.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check user MFA: %w", err)
 		}
@@ -390,7 +393,8 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 		}
 	}
 	if s.webauthnSvc != nil {
-		hasCreds, err := s.webauthnSvc.HasCredentials(ctx, user.ID)
+		var hasCreds bool
+		hasCreds, err = s.webauthnSvc.HasCredentials(ctx, user.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check user WebAuthn credentials: %w", err)
 		}

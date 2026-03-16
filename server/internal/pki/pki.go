@@ -46,10 +46,10 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 	if fileExists(certPath) && fileExists(keyPath) {
 		if caCert != nil && !isSignedByCA(certPath, caCert) {
 			// Existing cert is NOT signed by the current CA — regenerate.
-			if err := os.Remove(certPath); err != nil {
+			if err = os.Remove(certPath); err != nil {
 				return "", "", fmt.Errorf("failed to remove old server cert %s: %w", certPath, err)
 			}
-			if err := os.Remove(keyPath); err != nil {
+			if err = os.Remove(keyPath); err != nil {
 				return "", "", fmt.Errorf("failed to remove old server key %s: %w", keyPath, err)
 			}
 		} else {
@@ -57,7 +57,7 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 		}
 	}
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err = os.MkdirAll(dir, 0o700); err != nil {
 		return "", "", fmt.Errorf("failed to create TLS autogen dir %s: %w", dir, err)
 	}
 
@@ -107,7 +107,7 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 	}
 
 	// Sign with CA if available, otherwise self-sign.
-	issuer := (*x509.Certificate)(tmpl)
+	issuer := tmpl
 	var signingKey crypto.Signer = key
 	if caCert != nil && caKey != nil {
 		issuer = caCert
@@ -119,14 +119,14 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 		return "", "", fmt.Errorf("failed to create server certificate: %w", err)
 	}
 
-	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
+	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal server key: %w", err)
 	}
-	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
+	if err = writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
 		return "", "", err
 	}
 
@@ -149,7 +149,7 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 		return certPath, keyPath, nil
 	}
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err = os.MkdirAll(dir, 0o700); err != nil {
 		return "", "", fmt.Errorf("failed to create CA autogen dir %s: %w", dir, err)
 	}
 
@@ -184,14 +184,14 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 		return "", "", fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
-	if err := writePEM(certPath, "CERTIFICATE", certDER); err != nil {
+	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil {
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to marshal CA key: %w", err)
 	}
-	if err := writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
+	if err = writePEM(keyPath, "PRIVATE KEY", keyDER); err != nil {
 		return "", "", err
 	}
 
@@ -203,7 +203,7 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 // Accepts PKCS#8 ECDSA and RSA keys (the latter for operational flexibility
 // when an externally-provided RSA CA is in use).
 func LoadCA(certPath, keyPath string) (*x509.Certificate, crypto.Signer, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read CA cert: %w", err)
 	}
@@ -216,7 +216,7 @@ func LoadCA(certPath, keyPath string) (*x509.Certificate, crypto.Signer, error) 
 		return nil, nil, fmt.Errorf("failed to parse CA cert: %w", err)
 	}
 
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := os.ReadFile(keyPath) //nolint:gosec // cert path is admin-configured
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read CA key: %w", err)
 	}
@@ -310,7 +310,7 @@ func writePEM(path, pemType string, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to create %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	return pem.Encode(f, &pem.Block{Type: pemType, Bytes: data})
 }
@@ -358,8 +358,10 @@ func isSignedByCA(certPath string, caCert *x509.Certificate) bool {
 
 // loadCACert loads only the CA certificate from a PEM file.
 // Used by pkcs11.go where the key comes from an HSM rather than a file.
+//
+//nolint:unused // used by pkcs11.go under the pkcs11 build tag
 func loadCACert(certPath string) (*x509.Certificate, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA cert %s: %w", certPath, err)
 	}

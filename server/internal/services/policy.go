@@ -132,7 +132,7 @@ func (s *PolicyService) UpdatePolicy(ctx context.Context, id string, req *models
 }
 
 // SetPolicyState changes the state of a policy with validation
-func (s *PolicyService) SetPolicyState(ctx context.Context, id string, newState string) (*models.Policy, error) {
+func (s *PolicyService) SetPolicyState(ctx context.Context, id, newState string) (*models.Policy, error) {
 	if !isValidState(newState) {
 		return nil, fmt.Errorf("invalid policy state: %s (valid states: draft, released, archived)", newState)
 	}

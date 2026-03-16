@@ -113,7 +113,7 @@ func main() {
 	}
 
 	// Initialize database connection
-	db, err := database.New(database.Config{
+	db, err := database.New(&database.Config{
 		Host:     cfg.Database.Host,
 		Port:     cfg.Database.Port,
 		User:     cfg.Database.User,
@@ -124,12 +124,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
 
 	// Run database migrations
-	if err := db.RunMigrations(); err != nil {
+	err = db.RunMigrations()
+	if err != nil {
 		log.Fatalf("Failed to run database migrations: %v", err)
 	}
+	defer func() { _ = db.Close() }()
 
 	// Initialize repositories
 	userRepo := database.NewUserRepository(db)
@@ -152,7 +153,7 @@ func main() {
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
 	if cfg.LDAP.Enabled {
-		ldapSvc = services.NewLDAPService(services.LDAPConfig{
+		ldapSvc = services.NewLDAPService(&services.LDAPConfig{
 			Enabled:      cfg.LDAP.Enabled,
 			Host:         cfg.LDAP.Host,
 			Port:         cfg.LDAP.Port,
@@ -161,7 +162,7 @@ func main() {
 			BindPassword: cfg.LDAP.BindPassword,
 			BaseDN:       cfg.LDAP.BaseDN,
 			UserFilter:   cfg.LDAP.UserFilter,
-			AttrUsername:  cfg.LDAP.AttrUsername,
+			AttrUsername: cfg.LDAP.AttrUsername,
 			AttrEmail:    cfg.LDAP.AttrEmail,
 			AttrFullName: cfg.LDAP.AttrFullName,
 		})
@@ -217,8 +218,8 @@ func main() {
 	az := authz.New(userRoleBindingRepo, roleRepo)
 
 	// Create default admin if no users exist
-	if err := authSvc.EnsureDefaultAdmin(context.Background()); err != nil {
-		log.Printf("Warning: failed to ensure default admin: %v", err)
+	if adminErr := authSvc.EnsureDefaultAdmin(context.Background()); adminErr != nil {
+		log.Printf("Warning: failed to ensure default admin: %v", adminErr)
 	}
 
 	// PolicyHub provides in-process pub/sub for streaming policy updates.
@@ -487,7 +488,7 @@ func resetMFAForUser(username string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	db, err := database.New(database.Config{
+	db, err := database.New(&database.Config{
 		Host:     cfg.Database.Host,
 		Port:     cfg.Database.Port,
 		User:     cfg.Database.User,
@@ -498,7 +499,7 @@ func resetMFAForUser(username string) error {
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	userRepo := database.NewUserRepository(db)
 	ctx := context.Background()
@@ -511,7 +512,8 @@ func resetMFAForUser(username string) error {
 	}
 
 	mfaRepo := database.NewMFARepository(db)
-	if err := mfaRepo.Delete(ctx, user.ID); err != nil {
+	err = mfaRepo.Delete(ctx, user.ID)
+	if err != nil {
 		return fmt.Errorf("delete MFA record: %w", err)
 	}
 

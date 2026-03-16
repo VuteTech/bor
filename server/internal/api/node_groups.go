@@ -224,7 +224,7 @@ func (h *NodeGroupHandler) GenerateToken(w http.ResponseWriter, r *http.Request,
 
 // extractNodeGroupIDAndSubpath extracts the ID and optional sub-path from
 // URL paths like /api/v1/node-groups/{id} or /api/v1/node-groups/{id}/tokens
-func extractNodeGroupIDAndSubpath(path string) (string, string) {
+func extractNodeGroupIDAndSubpath(path string) (id, subpath string) {
 	const prefix = "/api/v1/node-groups/"
 	if !strings.HasPrefix(path, prefix) {
 		return "", ""
@@ -233,12 +233,11 @@ func extractNodeGroupIDAndSubpath(path string) (string, string) {
 	rest = strings.TrimSuffix(rest, "/")
 
 	parts := strings.SplitN(rest, "/", 2)
-	id := parts[0]
+	id = parts[0]
 	if id == "" {
 		return "", ""
 	}
 
-	subpath := ""
 	if len(parts) > 1 {
 		subpath = parts[1]
 	}

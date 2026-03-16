@@ -7,6 +7,7 @@ package services
 import (
 	"crypto/tls"
 	"fmt"
+	"net/url"
 
 	"github.com/go-ldap/ldap/v3"
 )
@@ -35,11 +36,11 @@ type LDAPUser struct {
 
 // LDAPService handles LDAP authentication
 type LDAPService struct {
-	config LDAPConfig
+	config *LDAPConfig
 }
 
 // NewLDAPService creates a new LDAPService
-func NewLDAPService(config LDAPConfig) *LDAPService {
+func NewLDAPService(config *LDAPConfig) *LDAPService {
 	return &LDAPService{config: config}
 }
 
@@ -58,10 +59,11 @@ func (s *LDAPService) Authenticate(username, password string) (*LDAPUser, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to LDAP: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Bind with service account to search for the user
-	if err := conn.Bind(s.config.BindDN, s.config.BindPassword); err != nil {
+	err = conn.Bind(s.config.BindDN, s.config.BindPassword)
+	if err != nil {
 		return nil, fmt.Errorf("failed to bind with service account: %w", err)
 	}
 
@@ -103,9 +105,10 @@ func (s *LDAPService) connect() (*ldap.Conn, error) {
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
 
 	if s.config.UseTLS {
-		return ldap.DialTLS("tcp", addr, &tls.Config{
+		u := &url.URL{Scheme: "ldaps", Host: addr}
+		return ldap.DialURL(u.String(), ldap.DialWithTLSConfig(&tls.Config{
 			MinVersion: tls.VersionTLS12,
-		})
+		}))
 	}
 
 	return ldap.DialURL(fmt.Sprintf("ldap://%s", addr))

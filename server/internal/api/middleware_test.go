@@ -17,7 +17,7 @@ import (
 func TestAuthMiddleware_MissingHeader(t *testing.T) {
 	middleware := AuthMiddleware(nil)
 
-	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler should not be called")
 	}))
 
@@ -34,7 +34,7 @@ func TestAuthMiddleware_MissingHeader(t *testing.T) {
 func TestAuthMiddleware_InvalidFormat(t *testing.T) {
 	middleware := AuthMiddleware(nil)
 
-	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler should not be called")
 	}))
 
@@ -55,7 +55,7 @@ type mockAuthorizer struct {
 	err    error
 }
 
-func (m *mockAuthorizer) HasPermission(_ context.Context, _ string, _ string, _ string, _ string, _ *string) (bool, error) {
+func (m *mockAuthorizer) HasPermission(_ context.Context, _, _, _, _ string, _ *string) (bool, error) {
 	return m.result, m.err
 }
 
@@ -65,7 +65,7 @@ var _ authz.Authorizer = (*mockAuthorizer)(nil)
 func TestAdminOnly_NoUser(t *testing.T) {
 	az := &mockAuthorizer{result: false}
 	middleware := AdminOnly(az)
-	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("handler should not be called")
 	}))
 
@@ -131,7 +131,7 @@ type permCheckingAuthorizer struct {
 	calls   []string
 }
 
-func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _ string, resource string, action string, _ string, _ *string) (bool, error) {
+func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _ string, resource, action, _ string, _ *string) (bool, error) {
 	key := resource + ":" + action
 	m.calls = append(m.calls, key)
 	return m.allowed[key], nil
@@ -168,7 +168,7 @@ func TestRequirePermission_AllowWithPermission(t *testing.T) {
 	mw := RequirePermission(az, "policy", "view")
 
 	called := false
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -227,7 +227,7 @@ func TestRequireMethodPermission_AllowViewDenyCreate(t *testing.T) {
 	}
 
 	mw := RequireMethodPermission(az, perms)
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

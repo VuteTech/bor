@@ -73,7 +73,7 @@ func (h *AuthHandler) Begin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode auth begin response: %v", err)
 	}
 }
@@ -99,7 +99,7 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode auth step response: %v", err)
 	}
 }
@@ -210,7 +210,7 @@ func (h *AuthHandler) MFASetupBegin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode MFA setup begin response: %v", err)
 	}
 }
@@ -284,7 +284,7 @@ func (h *AuthHandler) WebAuthnRegisterBegin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(optionsJSON) //nolint:errcheck
+	_, _ = w.Write(optionsJSON)
 }
 
 // WebAuthnRegisterFinish handles POST /api/v1/users/me/webauthn/register/finish
@@ -311,7 +311,8 @@ func (h *AuthHandler) WebAuthnRegisterFinish(w http.ResponseWriter, r *http.Requ
 		Name       string          `json:"name"`
 		Credential json.RawMessage `json:"credential"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	err = json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
 	}
@@ -494,7 +495,8 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"invalid session token"}`, http.StatusUnauthorized)
 		return
 	}
-	if err := h.webauthnSvc.FinishAuthentication(r.Context(), sessionClaims.UserID, body.Credential); err != nil {
+	err = h.webauthnSvc.FinishAuthentication(r.Context(), sessionClaims.UserID, body.Credential)
+	if err != nil {
 		log.Printf("WebAuthn auth finish failed for user %s: %v", sessionClaims.UserID, err)
 		http.Error(w, `{"error":"WebAuthn authentication failed"}`, http.StatusUnauthorized)
 		return
@@ -511,7 +513,7 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 		User:  &loginResp.User,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode WebAuthn auth finish response: %v", err)
 	}
 }

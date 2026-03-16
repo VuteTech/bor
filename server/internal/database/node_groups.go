@@ -61,7 +61,7 @@ func (r *NodeGroupRepository) ListAll(ctx context.Context) ([]*models.NodeGroup,
 	if err != nil {
 		return nil, fmt.Errorf("failed to list node groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var groups []*models.NodeGroup
 	for rows.Next() {

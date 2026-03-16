@@ -50,11 +50,12 @@ func (h *NodeHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if search != "" {
+	switch {
+	case search != "":
 		nodes, err = h.nodeSvc.SearchNodes(r.Context(), search)
-	} else if status != "" {
+	case status != "":
 		nodes, err = h.nodeSvc.ListNodesByStatus(r.Context(), status)
-	} else {
+	default:
 		nodes, err = h.nodeSvc.ListAllNodes(r.Context())
 	}
 
@@ -174,7 +175,7 @@ func (h *NodeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.nodeSvc.DeleteNode(r.Context(), id); err != nil {
-		log.Printf("Failed to delete node %s: %v", id, err)
+		log.Printf("Failed to delete node %s: %v", id, err) //nolint:gosec // id comes from URL path parameter
 		http.Error(w, `{"error":"failed to delete node"}`, http.StatusInternalServerError)
 		return
 	}
@@ -203,7 +204,7 @@ func (h *NodeHandler) RefreshMetadata(w http.ResponseWriter, r *http.Request, id
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"ok":true}`))
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // AddToGroup handles POST /api/v1/nodes/{id}/groups — adds node to a group.
@@ -225,8 +226,9 @@ func (h *NodeHandler) AddToGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
 		return
 	}
-	if err := h.nodeSvc.AddNodeToGroup(r.Context(), id, req.GroupID); err != nil {
-		log.Printf("Failed to add node %s to group %s: %v", id, req.GroupID, err)
+	err = h.nodeSvc.AddNodeToGroup(r.Context(), id, req.GroupID)
+	if err != nil {
+		log.Printf("Failed to add node %s to group %s: %v", id, req.GroupID, err) //nolint:gosec // id comes from URL path parameter
 		http.Error(w, `{"error":"failed to add node to group"}`, http.StatusInternalServerError)
 		return
 	}
@@ -237,7 +239,9 @@ func (h *NodeHandler) AddToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updated)
+	if err := json.NewEncoder(w).Encode(updated); err != nil {
+		log.Printf("Failed to encode updated node response: %v", err)
+	}
 }
 
 // RemoveFromGroup handles DELETE /api/v1/nodes/{id}/groups/{groupId}.
@@ -253,7 +257,7 @@ func (h *NodeHandler) RemoveFromGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.nodeSvc.RemoveNodeFromGroup(r.Context(), id, groupID); err != nil {
-		log.Printf("Failed to remove node %s from group %s: %v", id, groupID, err)
+		log.Printf("Failed to remove node %s from group %s: %v", id, groupID, err) //nolint:gosec // id comes from URL path parameter
 		http.Error(w, `{"error":"failed to remove node from group"}`, http.StatusInternalServerError)
 		return
 	}

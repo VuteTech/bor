@@ -69,18 +69,18 @@ func TestFullTLSChain(t *testing.T) {
     agentCertFile := agentDir + "/agent.crt"
     agentKeyFile := agentDir + "/agent.key"
     agentCACertFile := agentDir + "/ca.crt"
-    if err := os.WriteFile(agentCertFile, agentCertPEM, 0644); err != nil {
+    if err := os.WriteFile(agentCertFile, agentCertPEM, 0o644); err != nil {
         t.Fatal("WriteFile agent cert:", err)
     }
     agentKeyDER, err := x509.MarshalPKCS8PrivateKey(agentKey)
     if err != nil {
         t.Fatal("MarshalPKCS8PrivateKey:", err)
     }
-    if err := os.WriteFile(agentKeyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: agentKeyDER}), 0600); err != nil {
+    if err := os.WriteFile(agentKeyFile, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: agentKeyDER}), 0o600); err != nil {
         t.Fatal("WriteFile agent key:", err)
     }
     caCertPEM := pki.EncodeCertPEM(caCert)
-    if err := os.WriteFile(agentCACertFile, caCertPEM, 0644); err != nil {
+    if err := os.WriteFile(agentCACertFile, caCertPEM, 0o644); err != nil {
         t.Fatal("WriteFile CA cert:", err)
     }
 
@@ -105,7 +105,7 @@ func TestFullTLSChain(t *testing.T) {
     tlsListener := tls.NewListener(listener, serverTLSConfig)
 
     server := &http.Server{
-        Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
             fmt.Fprintf(w, "OK")
         }),
     }

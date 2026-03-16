@@ -5,6 +5,7 @@
 package pki
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -174,7 +175,7 @@ func TestEnsureServerCert_RegeneratesWhenCAChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read regenerated cert: %v", err)
 	}
-	if string(newCertPEM) == string(oldCertPEM) {
+	if bytes.Equal(newCertPEM, oldCertPEM) {
 		t.Error("Cert was NOT regenerated — should have been replaced when CA changed")
 	}
 

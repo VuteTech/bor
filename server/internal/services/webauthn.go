@@ -113,12 +113,13 @@ func (s *WebAuthnService) BeginRegistration(ctx context.Context, userID, usernam
 		return nil, fmt.Errorf("marshal webauthn session: %w", err)
 	}
 
-	if err := s.repo.CreateSession(ctx, &database.WebAuthnSessionRow{
+	err = s.repo.CreateSession(ctx, &database.WebAuthnSessionRow{
 		UserID:      userID,
 		SessionType: "registration",
 		SessionData: string(sessionJSON),
 		ExpiresAt:   time.Now().Add(5 * time.Minute),
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("store webauthn session: %w", err)
 	}
 
@@ -140,7 +141,8 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, userID, userna
 	}
 
 	var sessionData webauthn.SessionData
-	if err := json.Unmarshal([]byte(sessionRow.SessionData), &sessionData); err != nil {
+	err = json.Unmarshal([]byte(sessionRow.SessionData), &sessionData)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal webauthn session data: %w", err)
 	}
 
@@ -189,7 +191,8 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, userID, userna
 		BackupEligible: credential.Flags.BackupEligible,
 		BackupState:    credential.Flags.BackupState,
 	}
-	if err := s.repo.Create(ctx, row); err != nil {
+	err = s.repo.Create(ctx, row)
+	if err != nil {
 		return nil, fmt.Errorf("store webauthn credential: %w", err)
 	}
 
@@ -226,8 +229,8 @@ func (s *WebAuthnService) BeginAuthentication(ctx context.Context, userID string
 		displayName: userID,
 	}
 	for _, row := range rows {
-		rawID, err := base64.RawURLEncoding.DecodeString(row.CredentialID)
-		if err != nil {
+		rawID, decodeErr := base64.RawURLEncoding.DecodeString(row.CredentialID)
+		if decodeErr != nil {
 			continue
 		}
 		transports := make([]protocol.AuthenticatorTransport, len(row.Transports))
@@ -259,12 +262,13 @@ func (s *WebAuthnService) BeginAuthentication(ctx context.Context, userID string
 		return nil, fmt.Errorf("marshal webauthn session: %w", err)
 	}
 
-	if err := s.repo.CreateSession(ctx, &database.WebAuthnSessionRow{
+	err = s.repo.CreateSession(ctx, &database.WebAuthnSessionRow{
 		UserID:      userID,
 		SessionType: "authentication",
 		SessionData: string(sessionJSON),
 		ExpiresAt:   time.Now().Add(5 * time.Minute),
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("store webauthn session: %w", err)
 	}
 
@@ -286,7 +290,8 @@ func (s *WebAuthnService) FinishAuthentication(ctx context.Context, userID strin
 	}
 
 	var sessionData webauthn.SessionData
-	if err := json.Unmarshal([]byte(sessionRow.SessionData), &sessionData); err != nil {
+	err = json.Unmarshal([]byte(sessionRow.SessionData), &sessionData)
+	if err != nil {
 		return fmt.Errorf("unmarshal webauthn session data: %w", err)
 	}
 
@@ -301,8 +306,8 @@ func (s *WebAuthnService) FinishAuthentication(ctx context.Context, userID strin
 		displayName: userID,
 	}
 	for _, row := range rows {
-		rawID, err := base64.RawURLEncoding.DecodeString(row.CredentialID)
-		if err != nil {
+		rawID, decodeErr := base64.RawURLEncoding.DecodeString(row.CredentialID)
+		if decodeErr != nil {
 			continue
 		}
 		transports := make([]protocol.AuthenticatorTransport, len(row.Transports))

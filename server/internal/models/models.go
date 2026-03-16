@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package models defines the data models and DTOs for the Bor server.
 package models
 
 import (

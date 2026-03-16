@@ -70,7 +70,7 @@ func (r *NodeRepository) populateGroups(ctx context.Context, nodes []*models.Nod
 	if err != nil {
 		return fmt.Errorf("failed to load node group memberships: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	nodeMap := make(map[string]*models.Node, len(nodes))
 	for _, n := range nodes {
 		nodeMap[n.ID] = n

@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // register postgres driver
 )
 
 //go:embed migrations/*.up.sql
@@ -34,7 +34,7 @@ type Config struct {
 }
 
 // New creates a new database connection
-func New(cfg Config) (*DB, error) {
+func New(cfg *Config) (*DB, error) {
 	connStr := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Database, cfg.SSLMode,

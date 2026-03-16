@@ -21,7 +21,7 @@ func TestFrontendHandler_ServesIndexHTML(t *testing.T) {
 
 	handler := FrontendHandler(staticFS)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -36,13 +36,13 @@ func TestFrontendHandler_ServesIndexHTML(t *testing.T) {
 
 func TestFrontendHandler_ServesStaticFile(t *testing.T) {
 	staticFS := fstest.MapFS{
-		"static/index.html":    &fstest.MapFile{Data: []byte("<html>index</html>")},
-		"static/style.css":     &fstest.MapFile{Data: []byte("body{}")},
+		"static/index.html": &fstest.MapFile{Data: []byte("<html>index</html>")},
+		"static/style.css":  &fstest.MapFile{Data: []byte("body{}")},
 	}
 
 	handler := FrontendHandler(staticFS)
 
-	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
+	req := httptest.NewRequest(http.MethodGet, "/style.css", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -62,7 +62,7 @@ func TestFrontendHandler_SPAFallback(t *testing.T) {
 
 	handler := FrontendHandler(staticFS)
 
-	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req := httptest.NewRequest(http.MethodGet, "/dashboard", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -82,7 +82,7 @@ func TestFrontendHandler_APIRoutesNotServed(t *testing.T) {
 
 	handler := FrontendHandler(staticFS)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/something", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/something", http.NoBody)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
