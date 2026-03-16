@@ -72,8 +72,7 @@ jobs:
   build-packages:
     name: Build Packages (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.event_name == 'release'
-    # needs: [lint, test, build-frontend]
+    if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
     needs: [test, build-frontend]
     permissions:
       contents: write
@@ -99,7 +98,7 @@ jobs:
 
       - name: Install nfpm
         run: |
-          curl -sfL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_linux_amd64.tar.gz \
+          curl -sfL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_linux_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz \
             | tar -xz -C /usr/local/bin nfpm
 
       - name: Determine version
