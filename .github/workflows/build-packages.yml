@@ -185,7 +185,7 @@ jobs:
         run: make packages VERSION=${{ steps.version.outputs.version }} ARCH=${{ matrix.arch }}
 
       - name: Upload packages as workflow artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
           path: builds/
