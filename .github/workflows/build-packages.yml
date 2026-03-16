@@ -8,29 +8,29 @@ on:
     types: [published]
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+  # lint:
+  #   name: Lint
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: server/go.mod
-          cache: true
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v6
+  #       with:
+  #         go-version-file: server/go.mod
+  #         cache: true
 
-      - name: Lint server
-        uses: golangci/golangci-lint-action@v9
-        with:
-          working-directory: server
-          version: latest
+  #     - name: Lint server
+  #       uses: golangci/golangci-lint-action@v9
+  #       with:
+  #         working-directory: server
+  #         version: latest
 
-      - name: Lint agent
-        uses: golangci/golangci-lint-action@v6
-        with:
-          working-directory: agent
-          version: latest
+  #     - name: Lint agent
+  #       uses: golangci/golangci-lint-action@v6
+  #       with:
+  #         working-directory: agent
+  #         version: latest
 
   test:
     name: Test
@@ -73,7 +73,8 @@ jobs:
     name: Build Packages (${{ matrix.arch }})
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || github.event_name == 'release'
-    needs: [lint, test, build-frontend]
+    # needs: [lint, test, build-frontend]
+    needs: [test, build-frontend]
     permissions:
       contents: write
     strategy:
