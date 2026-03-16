@@ -38,7 +38,6 @@ linters:
           - errcheck
     paths:
       - vendor
-      - node_modules
 
 formatters:
   enable:

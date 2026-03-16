@@ -68,7 +68,7 @@ func (r *RoleRepository) List(ctx context.Context) ([]*models.Role, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list roles: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var roles []*models.Role
 	for rows.Next() {
@@ -110,7 +110,7 @@ func (r *RoleRepository) GetPermissionsByRoleID(ctx context.Context, roleID stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to get permissions for role: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var perms []*models.Permission
 	for rows.Next() {
@@ -187,7 +187,7 @@ func (r *RoleRepository) SetPermissions(ctx context.Context, roleID string, perm
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete existing permissions
 	if _, err := tx.ExecContext(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID); err != nil {

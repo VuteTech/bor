@@ -40,7 +40,7 @@ type testAuthorizer struct {
 	roleRepo    *mockRoleRepo
 }
 
-func (a *testAuthorizer) HasPermission(ctx context.Context, userID string, resource string, action string, scopeType string, scopeID *string) (bool, error) {
+func (a *testAuthorizer) HasPermission(ctx context.Context, userID, resource, action, scopeType string, scopeID *string) (bool, error) {
 	bindings, err := a.bindingRepo.ListByUserID(ctx, userID)
 	if err != nil {
 		return false, err

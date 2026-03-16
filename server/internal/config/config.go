@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package config provides server configuration loading.
 package config
 
 import (
@@ -12,7 +13,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
 
 // Config holds application configuration.
 type Config struct {
@@ -179,7 +179,7 @@ func Load() (*Config, error) {
 	fc := defaultFileConfig()
 
 	cfgPath := getEnv("BOR_CONFIG", "/etc/bor/server.yaml")
-	if data, err := os.ReadFile(cfgPath); err == nil {
+	if data, err := os.ReadFile(cfgPath); err == nil { //nolint:gosec // config file path is admin-controlled
 		if err := yaml.Unmarshal(data, &fc); err != nil {
 			return nil, fmt.Errorf("failed to parse config file %s: %w", cfgPath, err)
 		}

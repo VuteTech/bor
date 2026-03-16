@@ -326,7 +326,7 @@ func (h *PolicyHandler) Delete(w http.ResponseWriter, r *http.Request, id string
 }
 
 // extractPolicyIDAndSubpath extracts a policy ID and optional sub-path from URL
-func extractPolicyIDAndSubpath(path string) (string, string) {
+func extractPolicyIDAndSubpath(path string) (id, subpath string) {
 	const prefix = "/api/v1/policies/all/"
 	if !strings.HasPrefix(path, prefix) {
 		return "", ""
@@ -338,8 +338,7 @@ func extractPolicyIDAndSubpath(path string) (string, string) {
 	}
 
 	parts := strings.SplitN(rest, "/", 2)
-	id := parts[0]
-	subpath := ""
+	id = parts[0]
 	if len(parts) > 1 {
 		subpath = parts[1]
 	}

@@ -31,7 +31,7 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to query agent notification settings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	settings := &models.AgentNotificationSettings{
 		NotifyUsers:          true,

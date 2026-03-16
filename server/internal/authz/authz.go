@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package authz provides role-based access control for Bor.
 package authz
 
 import (
@@ -14,7 +15,7 @@ import (
 
 // Authorizer defines the interface for checking user permissions
 type Authorizer interface {
-	HasPermission(ctx context.Context, userID string, resource string, action string, scopeType string, scopeID *string) (bool, error)
+	HasPermission(ctx context.Context, userID, resource, action, scopeType string, scopeID *string) (bool, error)
 }
 
 // authorizer implements the Authorizer interface using the RBAC database tables
@@ -41,7 +42,7 @@ func New(bindingRepo *database.UserRoleBindingRepository, roleRepo *database.Rol
 //   - "group" applies only if scope matches
 //   - Collect permissions via role_permissions
 //   - Match resource + action
-func (a *authorizer) HasPermission(ctx context.Context, userID string, resource string, action string, scopeType string, scopeID *string) (bool, error) {
+func (a *authorizer) HasPermission(ctx context.Context, userID, resource, action, scopeType string, scopeID *string) (bool, error) {
 	bindings, err := a.bindingRepo.ListByUserID(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch role bindings: %w", err)

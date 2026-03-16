@@ -16,13 +16,14 @@ func TestLoad(t *testing.T) {
 
 	yaml := `
 server:
-  address: "myserver:9090"
+  address: "myserver"
+  enrollment_port: 9090
 agent:
   client_id: "test-agent"
 firefox:
   policies_path: "/tmp/test/policies.json"
 `
-	if err := os.WriteFile(cfgPath, []byte(yaml), 0600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -31,8 +32,8 @@ firefox:
 		t.Fatal(err)
 	}
 
-	if cfg.Server.Address != "myserver:9090" {
-		t.Errorf("expected address myserver:9090, got %s", cfg.Server.Address)
+	if cfg.Server.EnrollmentAddr() != "myserver:9090" {
+		t.Errorf("expected enrollment addr myserver:9090, got %s", cfg.Server.EnrollmentAddr())
 	}
 	if cfg.Agent.ClientID != "test-agent" {
 		t.Errorf("expected client_id test-agent, got %s", cfg.Agent.ClientID)
@@ -47,7 +48,7 @@ func TestLoadDefaults(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 
 	// Minimal config (empty YAML)
-	if err := os.WriteFile(cfgPath, []byte("{}"), 0600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,8 +57,8 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Server.Address != "localhost:8443" {
-		t.Errorf("expected default address localhost:8443, got %s", cfg.Server.Address)
+	if cfg.Server.EnrollmentAddr() != "localhost:8443" {
+		t.Errorf("expected default enrollment addr localhost:8443, got %s", cfg.Server.EnrollmentAddr())
 	}
 	if cfg.Firefox.PoliciesPath != "/etc/firefox/policies/policies.json" {
 		t.Errorf("expected default policies_path, got %s", cfg.Firefox.PoliciesPath)

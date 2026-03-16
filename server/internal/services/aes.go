@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package services contains the business logic for the Bor server.
 package services
 
 import (
@@ -23,7 +24,7 @@ func deriveAESKey(passphrase string) []byte {
 
 // aesEncrypt encrypts plaintext with AES-256-GCM using a random nonce.
 // Returns base64(nonce || ciphertext || tag).
-func aesEncrypt(key []byte, plaintext []byte) (string, error) {
+func aesEncrypt(key, plaintext []byte) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("aes cipher: %w", err)

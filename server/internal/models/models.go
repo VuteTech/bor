@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package models defines the data models and DTOs for the Bor server.
 package models
 
 import (
@@ -180,12 +181,12 @@ type UserRoleBinding struct {
 
 // Default role name constants
 const (
-	RoleSuperAdmin      = "Super Admin"
-	RoleOrgAdmin        = "Org Admin"
-	RolePolicyEditor    = "Policy Editor"
-	RolePolicyReviewer  = "Policy Reviewer"
+	RoleSuperAdmin       = "Super Admin"
+	RoleOrgAdmin         = "Org Admin"
+	RolePolicyEditor     = "Policy Editor"
+	RolePolicyReviewer   = "Policy Reviewer"
 	RoleComplianceViewer = "Compliance Viewer"
-	RoleAuditor         = "Auditor"
+	RoleAuditor          = "Auditor"
 )
 
 // UserSource constants

@@ -52,7 +52,7 @@ func (r *UserGroupRoleBindingRepository) ListByGroupID(ctx context.Context, grou
 	if err != nil {
 		return nil, fmt.Errorf("failed to list group role bindings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var bindings []*models.UserGroupRoleBinding
 	for rows.Next() {

@@ -68,7 +68,7 @@ func (r *AuditLogRepository) List(ctx context.Context, req *models.AuditLogListR
 	if err != nil {
 		return nil, fmt.Errorf("failed to list audit logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []*models.AuditLog
 	for rows.Next() {
@@ -102,9 +102,8 @@ func (r *AuditLogRepository) Count(ctx context.Context, req *models.AuditLogList
 
 // buildAuditLogFilter builds WHERE clause and args for audit log queries.
 // Multiple values for Actions or ResourceTypes are OR'd within the field.
-func buildAuditLogFilter(req *models.AuditLogListRequest) (string, []interface{}) {
+func buildAuditLogFilter(req *models.AuditLogListRequest) (clause string, args []interface{}) {
 	var conditions []string
-	var args []interface{}
 	argIdx := 1
 
 	if len(req.ResourceTypes) > 0 {
@@ -128,7 +127,6 @@ func buildAuditLogFilter(req *models.AuditLogListRequest) (string, []interface{}
 	if req.Username != "" {
 		conditions = append(conditions, fmt.Sprintf("username ILIKE $%d", argIdx))
 		args = append(args, "%"+req.Username+"%")
-		argIdx++
 	}
 
 	where := ""

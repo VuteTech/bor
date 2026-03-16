@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package sysinfo collects system information for agent heartbeats.
 package sysinfo
 
 import (
@@ -71,7 +72,7 @@ func collectFQDN() string {
 func collectIPAddress() string {
 	// UDP dial does not transmit data; it only selects the outbound interface.
 	if conn, err := net.Dial("udp4", "8.8.8.8:80"); err == nil {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		return conn.LocalAddr().(*net.UDPAddr).IP.String()
 	}
 	return collectIPFallback()
@@ -120,11 +121,11 @@ func collectOS() OSInfo {
 }
 
 func parseOSRelease(path string) (map[string]string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is a trusted system path (/etc/os-release)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	m := make(map[string]string)
 	scanner := bufio.NewScanner(f)

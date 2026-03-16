@@ -26,7 +26,7 @@ import (
 // CertExpiringSoon returns true if the certificate at certPath expires
 // within the given threshold duration.
 func CertExpiringSoon(certPath string, threshold time.Duration) (bool, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // G304: path comes from trusted config
 	if err != nil {
 		return false, fmt.Errorf("failed to read cert %s: %w", certPath, err)
 	}
@@ -48,7 +48,7 @@ func CertExpiringSoon(certPath string, threshold time.Duration) (bool, error) {
 //  4. Atomically replaces key + cert on disk.
 func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 	// Load existing cert to extract CN.
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // G304: path comes from trusted config
 	if err != nil {
 		return fmt.Errorf("failed to read existing cert: %w", err)
 	}
@@ -84,7 +84,7 @@ func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 
 	// Connect with existing cert (mTLS).
-	caPEM, err := os.ReadFile(caCertPath)
+	caPEM, err := os.ReadFile(caCertPath) //nolint:gosec // G304: path comes from trusted config
 	if err != nil {
 		return fmt.Errorf("failed to read CA cert: %w", err)
 	}
@@ -108,7 +108,7 @@ func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect for renewal: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

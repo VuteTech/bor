@@ -51,7 +51,7 @@ func (r *UserRoleBindingRepository) ListByUserID(ctx context.Context, userID str
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user role bindings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var bindings []*models.UserRoleBinding
 	for rows.Next() {

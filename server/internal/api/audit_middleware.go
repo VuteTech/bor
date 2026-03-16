@@ -91,7 +91,7 @@ func methodToAction(method string) string {
 }
 
 // parseResourceFromPath extracts resource type and ID from API paths
-func parseResourceFromPath(path string) (string, string) {
+func parseResourceFromPath(path string) (resource, action string) {
 	// Remove /api/v1/ prefix
 	trimmed := strings.TrimPrefix(path, "/api/v1/")
 	trimmed = strings.TrimSuffix(trimmed, "/")

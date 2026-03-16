@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package config loads and provides the agent configuration.
 package config
 
 import (
@@ -11,7 +12,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
 
 // Config holds the agent configuration.
 type Config struct {
@@ -28,11 +28,11 @@ type Config struct {
 // The server runs on two ports: one for enrollment + UI (no mandatory client cert),
 // and one for policy streaming / cert renewal (RequireAndVerifyClientCert).
 type ServerConfig struct {
-	Address        string `yaml:"address"`         // server hostname or IP (no port)
-	EnrollmentPort int    `yaml:"enrollment_port"` // port for enrollment RPC and admin UI (default 8443)
-	PolicyPort     int    `yaml:"policy_port"`     // port for mTLS policy streaming and cert renewal (default 8444)
-	CACert         string `yaml:"ca_cert"`         // optional path to CA cert for TLS verification
-	InsecureSkipVerify bool `yaml:"insecure_skip_verify"` // skip TLS verification during enrollment
+	Address            string `yaml:"address"`              // server hostname or IP (no port)
+	EnrollmentPort     int    `yaml:"enrollment_port"`      // port for enrollment RPC and admin UI (default 8443)
+	PolicyPort         int    `yaml:"policy_port"`          // port for mTLS policy streaming and cert renewal (default 8444)
+	CACert             string `yaml:"ca_cert"`              // optional path to CA cert for TLS verification
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"` // skip TLS verification during enrollment
 }
 
 // EnrollmentAddr returns the host:port for the enrollment / UI server.
@@ -52,7 +52,7 @@ type AgentConfig struct {
 
 // FirefoxConfig holds Firefox policy file settings.
 type FirefoxConfig struct {
-	PoliciesPath       string `yaml:"policies_path"`
+	PoliciesPath        string `yaml:"policies_path"`
 	FlatpakPoliciesPath string `yaml:"flatpak_policies_path"`
 }
 
@@ -111,7 +111,7 @@ func DefaultConfig() *Config {
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is user-supplied config file path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}

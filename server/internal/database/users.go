@@ -99,7 +99,7 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*models
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var users []*models.User
 	for rows.Next() {

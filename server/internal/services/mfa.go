@@ -64,10 +64,7 @@ func (s *MFAService) GetStatus(ctx context.Context, userID string) (*models.MFAS
 
 // BeginSetup generates a new TOTP secret for the user (not yet enabled).
 func (s *MFAService) BeginSetup(ctx context.Context, userID, username string) (*models.MFASetupBeginResponse, error) {
-	algorithm, err := s.getTOTPAlgorithm(ctx)
-	if err != nil {
-		return nil, err
-	}
+	algorithm := s.getTOTPAlgorithm(ctx)
 
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      totpIssuer,
@@ -193,13 +190,14 @@ func (s *MFAService) VerifyCode(ctx context.Context, userID, code string) error 
 	// Try backup codes
 	normalised := strings.ToUpper(strings.ReplaceAll(code, "-", ""))
 	for i, hashed := range row.BackupCodes {
-		if verifyBackupCode(normalised, hashed) {
-			remaining := make([]string, 0, len(row.BackupCodes)-1)
-			remaining = append(remaining, row.BackupCodes[:i]...)
-			remaining = append(remaining, row.BackupCodes[i+1:]...)
-			_ = s.mfaRepo.SetEnabled(ctx, userID, true, remaining)
-			return nil
+		if !verifyBackupCode(normalised, hashed) {
+			continue
 		}
+		remaining := make([]string, 0, len(row.BackupCodes)-1)
+		remaining = append(remaining, row.BackupCodes[:i]...)
+		remaining = append(remaining, row.BackupCodes[i+1:]...)
+		_ = s.mfaRepo.SetEnabled(ctx, userID, true, remaining)
+		return nil
 	}
 
 	return fmt.Errorf("invalid TOTP code")
@@ -248,16 +246,16 @@ func (s *MFAService) decryptSecret(encSecret string) (string, error) {
 	return string(b), nil
 }
 
-func (s *MFAService) getTOTPAlgorithm(ctx context.Context) (otp.Algorithm, error) {
+func (s *MFAService) getTOTPAlgorithm(ctx context.Context) otp.Algorithm {
 	algStr, err := s.settingsRepo.Get(ctx, "totp_algorithm")
 	if err != nil || algStr == "" {
 		algStr = "SHA256"
 	}
-	return stringToOTPAlgorithm(algStr), nil
+	return stringToOTPAlgorithm(algStr)
 }
 
 func stringToOTPAlgorithm(s string) otp.Algorithm {
-	if strings.ToUpper(s) == "SHA512" {
+	if strings.EqualFold(s, "SHA512") {
 		return otp.AlgorithmSHA512
 	}
 	return otp.AlgorithmSHA256
@@ -270,7 +268,7 @@ func otpAlgorithmToString(a otp.Algorithm) string {
 	return "SHA256"
 }
 
-func generateBackupCodes() (plain []string, hashed []string, err error) {
+func generateBackupCodes() (plain, hashed []string, err error) {
 	for i := 0; i < backupCodeNum; i++ {
 		b := make([]byte, 5)
 		if _, err = rand.Read(b); err != nil {

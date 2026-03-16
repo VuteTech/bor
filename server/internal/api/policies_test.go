@@ -13,7 +13,7 @@ import (
 func TestPolicyHandler_List_MethodNotAllowed(t *testing.T) {
 	handler := &PolicyHandler{}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/policies", http.NoBody)
 	rr := httptest.NewRecorder()
 
 	handler.List(rr, req)

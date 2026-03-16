@@ -76,7 +76,7 @@ func (r *RevocationRepository) ListAll(ctx context.Context) ([]*models.RevokedCe
 	if err != nil {
 		return nil, fmt.Errorf("failed to list revocations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var revs []*models.RevokedCertificate
 	for rows.Next() {
 		rev := &models.RevokedCertificate{}

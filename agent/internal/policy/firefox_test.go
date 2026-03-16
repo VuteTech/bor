@@ -5,6 +5,7 @@
 package policy
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -194,7 +195,7 @@ func TestWriteFileAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(data) {
+	if !bytes.Equal(got, data) {
 		t.Errorf("expected %q, got %q", data, got)
 	}
 
@@ -202,7 +203,7 @@ func TestWriteFileAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0644 {
-		t.Errorf("expected permissions 0644, got %o", info.Mode().Perm())
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("expected permissions 0o644, got %o", info.Mode().Perm())
 	}
 }

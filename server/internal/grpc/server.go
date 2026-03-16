@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -96,7 +97,7 @@ func (s *PolicyServer) ListPolicies(ctx context.Context, req *pb.ListPoliciesReq
 
 	return &pb.ListPoliciesResponse{
 		Policies:   result,
-		TotalCount: int32(len(result)),
+		TotalCount: int32(len(result)), //nolint:gosec // result count fits in int32
 	}, nil
 }
 
@@ -228,7 +229,7 @@ func (s *PolicyServer) sendSnapshot(ctx context.Context, stream pb.PolicyService
 }
 
 // ReportCompliance accepts a compliance report from a client.
-func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportComplianceRequest) (*pb.ReportComplianceResponse, error) {
+func (s *PolicyServer) ReportCompliance(_ context.Context, req *pb.ReportComplianceRequest) (*pb.ReportComplianceResponse, error) {
 	if req.GetClientId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
 	}
@@ -243,7 +244,7 @@ func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportCompl
 }
 
 // GetAgentConfig returns the agent configuration (notification settings, etc.).
-func (s *PolicyServer) GetAgentConfig(ctx context.Context, req *pb.GetAgentConfigRequest) (*pb.GetAgentConfigResponse, error) {
+func (s *PolicyServer) GetAgentConfig(ctx context.Context, _ *pb.GetAgentConfigRequest) (*pb.GetAgentConfigResponse, error) {
 	settings, err := s.settingsSvc.GetAgentNotificationSettings(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get agent config: %v", err)
@@ -252,7 +253,7 @@ func (s *PolicyServer) GetAgentConfig(ctx context.Context, req *pb.GetAgentConfi
 	return &pb.GetAgentConfigResponse{
 		Config: &pb.AgentConfig{
 			NotifyUsers:           settings.NotifyUsers,
-			NotifyCooldownSeconds: int32(settings.NotifyCooldown),
+			NotifyCooldownSeconds: int32(min(settings.NotifyCooldown, math.MaxInt32)), //nolint:gosec // G115: overflow prevented by min() bound
 			NotifyMessage:         settings.NotifyMessage,
 			NotifyMessageFirefox:  settings.NotifyMessageFirefox,
 			NotifyMessageChrome:   settings.NotifyMessageChrome,
@@ -394,7 +395,7 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		Description: p.Description,
 		Type:        p.Type,
 		Content:     p.Content,
-		Version:     int32(p.Version),
+		Version:     int32(p.Version), //nolint:gosec // version fits in int32
 		CreatedAt:   timestamppb.New(p.CreatedAt),
 		UpdatedAt:   timestamppb.New(p.UpdatedAt),
 		Enabled:     p.State == models.PolicyStateReleased,

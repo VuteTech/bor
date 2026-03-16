@@ -32,7 +32,9 @@ const nodeSelect = `
 
 const nodeFrom = `FROM nodes n`
 
-func scanNode(row interface{ Scan(dest ...interface{}) error }) (*models.Node, error) {
+func scanNode(row interface {
+	Scan(dest ...interface{}) error
+}) (*models.Node, error) {
 	node := &models.Node{}
 	err := row.Scan(
 		&node.ID, &node.Name, &node.FQDN, &node.MachineID,
@@ -70,7 +72,7 @@ func (r *NodeRepository) populateGroups(ctx context.Context, nodes []*models.Nod
 	if err != nil {
 		return fmt.Errorf("failed to load node group memberships: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	nodeMap := make(map[string]*models.Node, len(nodes))
 	for _, n := range nodes {
 		nodeMap[n.ID] = n
@@ -162,7 +164,7 @@ func (r *NodeRepository) ListAll(ctx context.Context) ([]*models.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*models.Node
 	for rows.Next() {
@@ -191,7 +193,7 @@ func (r *NodeRepository) ListByStatus(ctx context.Context, status string) ([]*mo
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes by status: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*models.Node
 	for rows.Next() {
@@ -223,7 +225,7 @@ func (r *NodeRepository) Search(ctx context.Context, term string) ([]*models.Nod
 	if err != nil {
 		return nil, fmt.Errorf("failed to search nodes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var nodes []*models.Node
 	for rows.Next() {
@@ -403,7 +405,7 @@ func (r *NodeRepository) CountByStatus(ctx context.Context) (map[string]int, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to count nodes by status: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := make(map[string]int)
 	for rows.Next() {
@@ -488,7 +490,7 @@ func (r *NodeRepository) ListExpiringCerts(ctx context.Context, withinDays int) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to list expiring certs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var nodes []*models.Node
 	for rows.Next() {
 		node, err := scanNode(rows)
@@ -514,7 +516,7 @@ func (r *NodeRepository) ListGroupIDs(ctx context.Context, nodeID string) ([]str
 	if err != nil {
 		return nil, fmt.Errorf("failed to list node group IDs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string

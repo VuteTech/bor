@@ -138,7 +138,7 @@ VERSION_ID=40
 PRETTY_NAME="Fedora Linux 40 (Workstation Edition)"
 VARIANT_ID=workstation
 `
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -176,13 +176,13 @@ func TestDesktopInfoString(t *testing.T) {
 	}
 }
 
-func TestCollectMachineID_Missing(t *testing.T) {
+func TestCollectMachineID_Missing(_ *testing.T) {
 	// Should not panic when file doesn't exist
 	id := collectMachineID()
 	_ = id // may be empty or a real ID depending on test environment
 }
 
-func TestCollectIPAddress_NoPanic(t *testing.T) {
+func TestCollectIPAddress_NoPanic(_ *testing.T) {
 	// Should not panic even if dial fails
 	ip := collectIPAddress()
 	_ = ip

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// Package policyclient provides the gRPC client for agent-server communication.
 package policyclient
 
 import (
@@ -10,6 +11,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"time"
 
@@ -37,8 +39,9 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 		MinVersion: tls.VersionTLS13,
 	}
 
-	if caCertPath != "" {
-		caPEM, err := os.ReadFile(caCertPath)
+	switch {
+	case caCertPath != "":
+		caPEM, err := os.ReadFile(caCertPath) //nolint:gosec // G304: path comes from trusted config
 		if err != nil {
 			return nil, fmt.Errorf("failed to read CA certificate %s: %w", caCertPath, err)
 		}
@@ -47,10 +50,10 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 			return nil, fmt.Errorf("failed to parse CA certificate from %s", caCertPath)
 		}
 		tlsCfg.RootCAs = pool
-	} else if insecureSkipVerify {
-		tlsCfg.InsecureSkipVerify = true
+	case insecureSkipVerify:
+		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: controlled by admin config, only used before enrollment
 		log.Println("WARNING: server certificate verification is disabled (insecure_skip_verify)")
-	} else {
+	default:
 		return nil, fmt.Errorf("no CA certificate configured and insecure_skip_verify is false – cannot connect securely; enroll first or set insecure_skip_verify")
 	}
 
@@ -90,13 +93,12 @@ type PolicyInfo struct {
 	ID             string
 	Name           string
 	Type           string
-	Content        string             // kept for compatibility / fallback
+	Content        string // kept for compatibility / fallback
 	Version        int32
 	KConfigEntries []*pb.KConfigEntry // populated from typed_content for Kconfig type
 	FirefoxPolicy  *pb.FirefoxPolicy  // populated from typed_content for Firefox type
 	ChromePolicy   *pb.ChromePolicy   // populated from typed_content for Chrome type
 }
-
 
 // ReportCompliance sends a compliance report for a policy back to the server.
 func (c *Client) ReportCompliance(ctx context.Context, policyID string, compliant bool, message string) error {
@@ -157,13 +159,13 @@ func (c *Client) GetAgentConfig(ctx context.Context) (*AgentConfig, error) {
 
 // NodeInfo holds system metadata sent with each heartbeat.
 type NodeInfo struct {
-	FQDN        string
-	IPAddress   string
-	OSName      string
-	OSVersion   string
-	DesktopEnvs []string
+	FQDN         string
+	IPAddress    string
+	OSName       string
+	OSVersion    string
+	DesktopEnvs  []string
 	AgentVersion string
-	MachineID   string
+	MachineID    string
 }
 
 // Heartbeat sends a heartbeat with node metadata to the server.
@@ -211,7 +213,7 @@ func (c *Client) ReportTamperEvent(ctx context.Context, filePath string, process
 	var pbProcs []*pb.TamperProcessInfo
 	for _, p := range processes {
 		pbProcs = append(pbProcs, &pb.TamperProcessInfo{
-			Pid:  int32(p.PID),
+			Pid:  int32(min(p.PID, math.MaxInt32)),
 			Comm: p.Comm,
 			User: p.User,
 		})

@@ -120,7 +120,7 @@ func (r *PolicyRepository) scanPolicies(ctx context.Context, query string, args 
 	if err != nil {
 		return nil, fmt.Errorf("failed to list policies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var policies []*models.Policy
 	for rows.Next() {
@@ -163,7 +163,7 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *models.Policy) er
 }
 
 // SetState updates the state of a policy
-func (r *PolicyRepository) SetState(ctx context.Context, id string, state string) error {
+func (r *PolicyRepository) SetState(ctx context.Context, id, state string) error {
 	query := `UPDATE policies SET status = $1, updated_at = $2 WHERE id = $3`
 	result, err := r.db.ExecContext(ctx, query, state, time.Now(), id)
 	if err != nil {
@@ -180,7 +180,7 @@ func (r *PolicyRepository) SetState(ctx context.Context, id string, state string
 }
 
 // SetDeprecation sets or clears deprecation metadata on a policy
-func (r *PolicyRepository) SetDeprecation(ctx context.Context, id string, deprecatedAt *time.Time, message *string, replacementID *string) error {
+func (r *PolicyRepository) SetDeprecation(ctx context.Context, id string, deprecatedAt *time.Time, message, replacementID *string) error {
 	query := `UPDATE policies SET deprecated_at = $1, deprecation_message = $2, replacement_policy_id = $3, updated_at = $4 WHERE id = $5`
 	result, err := r.db.ExecContext(ctx, query, deprecatedAt, message, replacementID, time.Now(), id)
 	if err != nil {

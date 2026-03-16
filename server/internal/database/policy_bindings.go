@@ -74,7 +74,7 @@ func (r *PolicyBindingRepository) ListAll(ctx context.Context) ([]*models.Policy
 	if err != nil {
 		return nil, fmt.Errorf("failed to list policy bindings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var bindings []*models.PolicyBindingWithDetails
 	for rows.Next() {
@@ -166,7 +166,7 @@ func (r *PolicyBindingRepository) ListPoliciesByGroupID(ctx context.Context, gro
 	if err != nil {
 		return nil, fmt.Errorf("failed to list policies by group: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var policies []*models.Policy
 	for rows.Next() {
@@ -208,7 +208,7 @@ func (r *PolicyBindingRepository) ListPoliciesByGroupIDs(ctx context.Context, gr
 	if err != nil {
 		return nil, fmt.Errorf("failed to list policies by groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var policies []*models.Policy
 	for rows.Next() {
 		p := &models.Policy{}

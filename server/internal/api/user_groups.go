@@ -181,7 +181,7 @@ func (h *UserGroupHandler) Delete(w http.ResponseWriter, r *http.Request, id str
 }
 
 // handleMembers routes member sub-resource requests
-func (h *UserGroupHandler) handleMembers(w http.ResponseWriter, r *http.Request, groupID string, memberID string) {
+func (h *UserGroupHandler) handleMembers(w http.ResponseWriter, r *http.Request, groupID, memberID string) {
 	if memberID == "" {
 		switch r.Method {
 		case http.MethodGet:
@@ -263,7 +263,7 @@ func (h *UserGroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleRoleBindings routes role binding sub-resource requests
-func (h *UserGroupHandler) handleRoleBindings(w http.ResponseWriter, r *http.Request, groupID string, bindingID string) {
+func (h *UserGroupHandler) handleRoleBindings(w http.ResponseWriter, r *http.Request, groupID, bindingID string) {
 	if bindingID == "" {
 		switch r.Method {
 		case http.MethodGet:
@@ -347,11 +347,12 @@ func (h *UserGroupHandler) RemoveGroupRoleBinding(w http.ResponseWriter, r *http
 }
 
 // parseUserGroupPath extracts group ID, sub-resource name, and sub-resource ID from paths like:
-//   /api/v1/user-groups/{id}
-//   /api/v1/user-groups/{id}/members
-//   /api/v1/user-groups/{id}/members/{member_id}
-//   /api/v1/user-groups/{id}/role-bindings
-//   /api/v1/user-groups/{id}/role-bindings/{binding_id}
+//
+//	/api/v1/user-groups/{id}
+//	/api/v1/user-groups/{id}/members
+//	/api/v1/user-groups/{id}/members/{member_id}
+//	/api/v1/user-groups/{id}/role-bindings
+//	/api/v1/user-groups/{id}/role-bindings/{binding_id}
 func parseUserGroupPath(path string) (id, sub, subID string) {
 	const prefix = "/api/v1/user-groups/"
 	if !strings.HasPrefix(path, prefix) {

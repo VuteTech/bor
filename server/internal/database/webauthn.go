@@ -20,7 +20,7 @@ type WebAuthnCredentialRow struct {
 	CredentialID   string
 	PublicKey      []byte
 	AAGUID         string
-	SignCount       uint32
+	SignCount      uint32
 	Name           string
 	Transports     []string
 	BackupEligible bool
@@ -53,7 +53,7 @@ func (r *WebAuthnRepository) ListByUserID(ctx context.Context, userID string) ([
 	if err != nil {
 		return nil, fmt.Errorf("list webauthn credentials: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*WebAuthnCredentialRow
 	for rows.Next() {
