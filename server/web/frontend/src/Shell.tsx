@@ -26,9 +26,14 @@ import {
   DropdownItem,
   DropdownList,
   PageToggleButton,
+  Button,
+  Tooltip,
 } from "@patternfly/react-core";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
+import SunIcon from "@patternfly/react-icons/dist/esm/icons/sun-icon";
+import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
+import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
 
 import { checkSession, logout, getStoredToken, getMFAStatus, UserInfo } from "./apiClient/authApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
@@ -45,8 +50,41 @@ import { AuditLogsPage } from "./views/AuditLogs";
 import logoWhite from "./assets/logo-white.svg";
 
 type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "audit-logs" | "settings";
+type ThemeMode = "light" | "dark" | "system";
 
 export const Shell: React.FC = () => {
+  /* ── Theme state ── */
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    return (localStorage.getItem("bor-theme") as ThemeMode) || "system";
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const applyDark = (dark: boolean) => root.classList.toggle("pf-v6-theme-dark", dark);
+
+    if (themeMode === "dark") {
+      applyDark(true);
+      return;
+    }
+    if (themeMode === "light") {
+      applyDark(false);
+      return;
+    }
+    // system: follow prefers-color-scheme
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    applyDark(mq.matches);
+    const handler = (e: MediaQueryListEvent) => applyDark(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [themeMode]);
+
+  const cycleTheme = () => {
+    const next: ThemeMode =
+      themeMode === "light" ? "dark" : themeMode === "dark" ? "system" : "light";
+    localStorage.setItem("bor-theme", next);
+    setThemeMode(next);
+  };
+
   /* ── Auth state ── */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
@@ -206,7 +244,38 @@ export const Shell: React.FC = () => {
                 {PAGE_NAMES[activeScreen]}
               </span>
             </ToolbarItem>
-            <ToolbarItem align={{ default: "alignEnd" }}>
+            <ToolbarItem align={{ default: "alignEnd" }} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <Tooltip
+                content={
+                  themeMode === "light"
+                    ? "Light theme (click for dark)"
+                    : themeMode === "dark"
+                    ? "Dark theme (click for system)"
+                    : "System theme (click for light)"
+                }
+                position="bottom"
+              >
+                <Button
+                  variant="plain"
+                  aria-label={
+                    themeMode === "light"
+                      ? "Switch to dark theme"
+                      : themeMode === "dark"
+                      ? "Switch to system theme"
+                      : "Switch to light theme"
+                  }
+                  onClick={cycleTheme}
+                  style={{ color: "#fff", padding: "0.375rem" }}
+                >
+                  {themeMode === "light" ? (
+                    <SunIcon />
+                  ) : themeMode === "dark" ? (
+                    <MoonIcon />
+                  ) : (
+                    <DesktopIcon />
+                  )}
+                </Button>
+              </Tooltip>
               <Dropdown
                 isOpen={isUserMenuOpen}
                 onSelect={() => setIsUserMenuOpen(false)}

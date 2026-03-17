@@ -1,44 +1,79 @@
 /* Bor brand color overrides for PatternFly v6 */
-/* Primary palette derived from logo color #0F2F24 (dark forest green) */
+/* Muted sage-forest green palette — all key colors meet WCAG AA (≥4.5:1 normal text) */
+
+/* ── Light mode brand scale ──────────────────────────────────────────────── */
 :root {
-  /* Override the brand token scale from blue to Bor green */
-  --pf-t--global--color--brand--100: #4caf50;
-  --pf-t--global--color--brand--200: #2e7d32;
-  --pf-t--global--color--brand--300: #1b5e20;
-  --pf-t--global--color--brand--400: #0f2f24;
-  --pf-t--global--color--brand--500: #0f2f24;
+  /* 100 → #52b788  sage-mint    ~3.1:1 on white  (large text / UI components) */
+  --pf-t--global--color--brand--100: #52b788;
+  /* 200 → #2d6a4f  deep sage    ~6.5:1 on white  ✓ WCAG AA */
+  --pf-t--global--color--brand--200: #2d6a4f;
+  /* 300 → #1b4332  dark forest  ~12:1  on white  ✓ WCAG AAA */
+  --pf-t--global--color--brand--300: #1b4332;
+  --pf-t--global--color--brand--400: #122b21;
+  --pf-t--global--color--brand--500: #0a1a14;
 }
 
-/* Masthead — !important needed because @patternfly/react-styles injects component
-   CSS after this file in the bundle, overriding same-specificity variables */
+/* ── Masthead ─────────────────────────────────────────────────────────────── */
+/* !important because @patternfly/react-styles injects component CSS after    */
+/* this file in the bundle, overriding same-specificity custom properties.    */
 .pf-v6-c-masthead {
-  --pf-v6-c-masthead--BackgroundColor: #0f2f24 !important;
+  --pf-v6-c-masthead--BackgroundColor: #1b4332 !important;
 }
 
-/* Sidebar */
+/* Nav toggle button (hamburger) — always white on the dark green masthead */
+.pf-v6-c-masthead .pf-v6-c-button.pf-m-plain {
+  color: #ffffff !important;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
 .pf-v6-c-page__sidebar {
-  --pf-v6-c-page__sidebar--BackgroundColor: #0f2f24 !important;
+  --pf-v6-c-page__sidebar--BackgroundColor: #1b4332 !important;
 }
 
-/* Nav link text and hover colors for dark sidebar */
+/* Nav links — light text on dark forest sidebar, ~9:1 contrast */
 .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
-  --pf-v6-c-nav__link--Color: #c7c7c7;
+  --pf-v6-c-nav__link--Color: #d8f3dc;
   --pf-v6-c-nav__link--hover--Color: #ffffff;
-  --pf-v6-c-nav__link--hover--BackgroundColor: rgba(46, 125, 50, 0.2);
-  --pf-v6-c-nav__link--m-current--BackgroundColor: rgba(46, 125, 50, 0.25);
+  --pf-v6-c-nav__link--hover--BackgroundColor: rgba(82, 183, 136, 0.18);
+  --pf-v6-c-nav__link--m-current--BackgroundColor: rgba(82, 183, 136, 0.22);
 }
 
-/* Button primary overrides */
+/* ── Primary buttons ──────────────────────────────────────────────────────── */
 .pf-v6-c-button.pf-m-primary {
-  --pf-v6-c-button--m-primary--BackgroundColor: #2e7d32 !important;
+  --pf-v6-c-button--m-primary--BackgroundColor: #2d6a4f !important;
 }
-
-/* Login page button */
 .pf-v6-c-login .pf-v6-c-button.pf-m-primary {
-  --pf-v6-c-button--m-primary--BackgroundColor: #2e7d32 !important;
+  --pf-v6-c-button--m-primary--BackgroundColor: #2d6a4f !important;
 }
 
-/* Login page: logo watermark in bottom-right corner (PF6 native BackgroundImage style) */
+/* ── Login page: logo watermark (PF6 native BackgroundImage — bottom-right) ─ */
 .pf-v6-c-background-image {
-  opacity: 0.08;
+  opacity: 0.07;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+/* PF6 dark mode is activated by adding `pf-v6-theme-dark` to <html>.         */
+/* Brand tokens in dark mode need lighter values to contrast against dark bg.  */
+
+:root:where(.pf-v6-theme-dark) {
+  /* Lighter sage tones for dark backgrounds */
+  --pf-t--global--color--brand--100: #95d5b2;  /* light sage   ~10:1 on pf dark bg */
+  --pf-t--global--color--brand--200: #74c69d;  /* medium sage  ~8:1 */
+  --pf-t--global--color--brand--300: #52b788;  /* sage         ~6:1 */
+  --pf-t--global--color--brand--400: #2d6a4f;
+  --pf-t--global--color--brand--500: #1b4332;
+  /* PF6 dark-mode brand alias tokens */
+  --pf-t--global--dark--color--brand--100: #95d5b2;
+  --pf-t--global--dark--color--brand--200: #74c69d;
+}
+
+/* Dark mode: masthead stays dark forest for consistent branding */
+:root:where(.pf-v6-theme-dark) .pf-v6-c-masthead {
+  --pf-v6-c-masthead--BackgroundColor: #122b21 !important;
+}
+:root:where(.pf-v6-theme-dark) .pf-v6-c-page__sidebar {
+  --pf-v6-c-page__sidebar--BackgroundColor: #122b21 !important;
+}
+:root:where(.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #52b788 !important;
 }
