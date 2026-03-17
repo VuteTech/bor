@@ -14,9 +14,12 @@ import {
   FlexItem,
   Modal,
   ModalVariant,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   Pagination,
   Spinner,
-  TextContent,
+  Content,
   TextInput,
   Toolbar,
   ToolbarContent,
@@ -408,24 +411,26 @@ export const AuditLogsTab: React.FC = () => {
 
       <Modal
         variant={ModalVariant.small}
-        title={expandedField?.label ?? ""}
         isOpen={expandedField !== null}
         onClose={() => setExpandedField(null)}
-        actions={[
+      >
+        <ModalHeader title={expandedField?.label ?? ""} />
+        <ModalBody>
+          {expandedField?.tamperData ? (
+            <TamperDetailsView data={expandedField.tamperData} />
+          ) : (
+            <Content>
+              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
+                {expandedField?.content}
+              </pre>
+            </Content>
+          )}
+        </ModalBody>
+        <ModalFooter>
           <Button key="close" variant="primary" onClick={() => setExpandedField(null)}>
             Close
-          </Button>,
-        ]}
-      >
-        {expandedField?.tamperData ? (
-          <TamperDetailsView data={expandedField.tamperData} />
-        ) : (
-          <TextContent>
-            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
-              {expandedField?.content}
-            </pre>
-          </TextContent>
-        )}
+          </Button>
+        </ModalFooter>
       </Modal>
     </>
   );

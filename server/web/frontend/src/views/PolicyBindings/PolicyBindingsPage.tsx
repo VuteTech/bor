@@ -13,6 +13,9 @@ import {
   FlexItem,
   Button,
   Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   ModalVariant,
   Form,
   FormGroup,
@@ -21,8 +24,6 @@ import {
   Switch,
   EmptyState,
   EmptyStateBody,
-  EmptyStateHeader,
-  EmptyStateIcon,
   Label,
   FormSelect,
   FormSelectOption,
@@ -302,12 +303,7 @@ export const PolicyBindingsPage: React.FC = () => {
         )}
 
         {bindings.length === 0 ? (
-          <EmptyState>
-            <EmptyStateHeader
-              titleText="No policy bindings"
-              headingLevel="h2"
-              icon={<EmptyStateIcon icon={CubesIcon} />}
-            />
+          <EmptyState titleText="No policy bindings" headingLevel="h2" icon={CubesIcon}>
             <EmptyStateBody>
               Create a binding to connect a policy to a node group. Nodes get
               policies only through group membership.
@@ -446,10 +442,69 @@ export const PolicyBindingsPage: React.FC = () => {
       {/* ── Create / Edit Modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={editingBinding ? "Edit Binding" : "Create Binding"}
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        actions={[
+      >
+        <ModalHeader title={editingBinding ? "Edit Binding" : "Create Binding"} />
+        <ModalBody>
+          {formError && (
+            <Alert variant="danger" title={formError} isInline style={{ marginBottom: "1rem" }} />
+          )}
+          <Form>
+            <FormGroup label="Policy" isRequired fieldId="bind-policy">
+              <FormSelect
+                id="bind-policy"
+                value={formPolicyId}
+                onChange={(_ev, val) => setFormPolicyId(val)}
+                isDisabled={!!editingBinding}
+                aria-label="Select a policy"
+              >
+                <FormSelectOption key="" value="" label="Select a policy…" isPlaceholder />
+                {policies.map((p) => (
+                  <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.state})`} />
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup label="Node Group" isRequired fieldId="bind-group">
+              <FormSelect
+                id="bind-group"
+                value={formGroupId}
+                onChange={(_ev, val) => setFormGroupId(val)}
+                isDisabled={!!editingBinding}
+                aria-label="Select a node group"
+              >
+                <FormSelectOption key="" value="" label="Select a group…" isPlaceholder />
+                {groups.map((g) => (
+                  <FormSelectOption
+                    key={g.id}
+                    value={g.id}
+                    label={`${g.name} (${g.node_count} nodes)`}
+                  />
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup label="Binding State" fieldId="bind-state">
+              <Switch
+                id="bind-state"
+                label="Enabled"
+                labelOff="Disabled"
+                isChecked={formState === "enabled"}
+                onChange={(_ev, val) => setFormState(val ? "enabled" : "disabled")}
+                aria-label="Binding state"
+                hasCheckIcon
+              />
+            </FormGroup>
+            <FormGroup label="Priority" fieldId="bind-priority">
+              <TextInput
+                id="bind-priority"
+                type="number"
+                value={formPriority}
+                onChange={(_ev, val) => setFormPriority(parseInt(val, 10) || 0)}
+              />
+            </FormGroup>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
           <Button
             key="save"
             variant="primary"
@@ -458,78 +513,21 @@ export const PolicyBindingsPage: React.FC = () => {
             isDisabled={formSaving}
           >
             {editingBinding ? "Save" : "Create"}
-          </Button>,
+          </Button>
           <Button key="cancel" variant="link" onClick={() => setIsFormOpen(false)}>
             Cancel
-          </Button>,
-        ]}
-      >
-        {formError && (
-          <Alert variant="danger" title={formError} isInline style={{ marginBottom: "1rem" }} />
-        )}
-        <Form>
-          <FormGroup label="Policy" isRequired fieldId="bind-policy">
-            <FormSelect
-              id="bind-policy"
-              value={formPolicyId}
-              onChange={(_ev, val) => setFormPolicyId(val)}
-              isDisabled={!!editingBinding}
-              aria-label="Select a policy"
-            >
-              <FormSelectOption key="" value="" label="Select a policy…" isPlaceholder />
-              {policies.map((p) => (
-                <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.state})`} />
-              ))}
-            </FormSelect>
-          </FormGroup>
-          <FormGroup label="Node Group" isRequired fieldId="bind-group">
-            <FormSelect
-              id="bind-group"
-              value={formGroupId}
-              onChange={(_ev, val) => setFormGroupId(val)}
-              isDisabled={!!editingBinding}
-              aria-label="Select a node group"
-            >
-              <FormSelectOption key="" value="" label="Select a group…" isPlaceholder />
-              {groups.map((g) => (
-                <FormSelectOption
-                  key={g.id}
-                  value={g.id}
-                  label={`${g.name} (${g.node_count} nodes)`}
-                />
-              ))}
-            </FormSelect>
-          </FormGroup>
-          <FormGroup label="Binding State" fieldId="bind-state">
-            <Switch
-              id="bind-state"
-              label="Enabled"
-              labelOff="Disabled"
-              isChecked={formState === "enabled"}
-              onChange={(_ev, val) => setFormState(val ? "enabled" : "disabled")}
-              aria-label="Binding state"
-              hasCheckIcon
-            />
-          </FormGroup>
-          <FormGroup label="Priority" fieldId="bind-priority">
-            <TextInput
-              id="bind-priority"
-              type="number"
-              value={formPriority}
-              onChange={(_ev, val) => setFormPriority(parseInt(val, 10) || 0)}
-            />
-          </FormGroup>
-        </Form>
+          </Button>
+        </ModalFooter>
       </Modal>
 
       {/* ── Delete Confirmation Modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={`Delete Binding${deleteTargetIds.length !== 1 ? "s" : ""}`}
-        titleIconVariant="warning"
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
       >
+        <ModalHeader title={`Delete Binding${deleteTargetIds.length !== 1 ? "s" : ""}`} titleIconVariant="warning" />
+        <ModalBody>
         <Form>
           <p>
             {deleteTargetIds.length === 1 ? (
@@ -576,6 +574,7 @@ export const PolicyBindingsPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
 
       {/* ── Policy Details Modal (opened by clicking policy name) ── */}

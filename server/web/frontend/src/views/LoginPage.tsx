@@ -13,8 +13,7 @@ import {
   Button,
   Alert,
   ActionGroup,
-  TextContent,
-  Text,
+  Content,
 } from "@patternfly/react-core";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
@@ -25,7 +24,6 @@ import {
   UserInfo,
 } from "../apiClient/authApi";
 import logo from "../assets/logo.svg";
-import background from "../assets/background.svg";
 
 interface LoginPageProps {
   onLoggedIn: (token: string, user: { username: string; full_name: string }) => void;
@@ -43,23 +41,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [mfaMethods, setMfaMethods] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    const injected = document.createElement("style");
-    injected.textContent = `
-      .pf-v5-c-login {
-        background: url(${background}) no-repeat center center fixed !important;
-        background-size: cover !important;
-      }
-      .pf-v5-c-login__container {
-        background: transparent !important;
-      }
-    `;
-    document.head.appendChild(injected);
-    return () => {
-      injected.remove();
-    };
-  }, []);
 
   const resetToPhase1 = () => {
     setPhase("username");
@@ -258,10 +239,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
 
       {phase === "webauthn" && (
         <div>
-          <TextContent style={{ marginBottom: 24 }}>
-            <Text component="h3">{currentUsername}</Text>
-            <Text>Use your security key or passkey to continue.</Text>
-          </TextContent>
+          <Content style={{ marginBottom: 24 }}>
+            <Content component="h3">{currentUsername}</Content>
+            <Content>Use your security key or passkey to continue.</Content>
+          </Content>
           <ActionGroup>
             <Button
               variant="primary"
@@ -336,6 +317,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       footerListVariants={ListVariant.inline}
       brandImgSrc={logo}
       brandImgAlt="Bor logo"
+      backgroundImgSrc={logo}
       textContent="Enterprise Linux Desktop Policy Manager"
       loginTitle="Log in to your account"
       loginSubtitle={subtitle}

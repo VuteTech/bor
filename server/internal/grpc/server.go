@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -253,7 +252,7 @@ func (s *PolicyServer) GetAgentConfig(ctx context.Context, _ *pb.GetAgentConfigR
 	return &pb.GetAgentConfigResponse{
 		Config: &pb.AgentConfig{
 			NotifyUsers:           settings.NotifyUsers,
-			NotifyCooldownSeconds: int32(min(settings.NotifyCooldown, math.MaxInt32)), //nolint:gosec // G115: overflow prevented by min() bound
+			NotifyCooldownSeconds: int32(settings.NotifyCooldown), //nolint:gosec // G115: value capped to int32 range at parse time
 			NotifyMessage:         settings.NotifyMessage,
 			NotifyMessageFirefox:  settings.NotifyMessageFirefox,
 			NotifyMessageChrome:   settings.NotifyMessageChrome,

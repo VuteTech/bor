@@ -8,6 +8,7 @@ import {
   Masthead,
   MastheadMain,
   MastheadBrand,
+  MastheadLogo,
   MastheadContent,
   MastheadToggle,
   PageSidebar,
@@ -170,27 +171,29 @@ export const Shell: React.FC = () => {
   /* ── Header / Masthead ── */
   const mastheadBlock = (
     <Masthead>
-      <MastheadToggle>
-        <PageToggleButton variant="plain" aria-label="Global navigation">
-          <BarsIcon />
-        </PageToggleButton>
-      </MastheadToggle>
       <MastheadMain>
+        <MastheadToggle>
+          <PageToggleButton variant="plain" aria-label="Global navigation">
+            <BarsIcon />
+          </PageToggleButton>
+        </MastheadToggle>
         <MastheadBrand>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <img src={logoWhite} alt="Bor" style={{ height: "36px" }} />
-            <span
-              style={{
-                fontFamily: "RedHatDisplay, Overpass, Arial, sans-serif",
-                fontSize: "1.125rem",
-                fontWeight: 600,
-                color: "#fff",
-                letterSpacing: "0.02em",
-              }}
-            >
-              Bor
-            </span>
-          </div>
+          <MastheadLogo>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <img src={logoWhite} alt="Bor" style={{ height: "36px" }} />
+              <span
+                style={{
+                  fontFamily: "RedHatDisplay, Overpass, Arial, sans-serif",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  color: "#fff",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Bor
+              </span>
+            </div>
+          </MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
@@ -203,7 +206,7 @@ export const Shell: React.FC = () => {
                 {PAGE_NAMES[activeScreen]}
               </span>
             </ToolbarItem>
-            <ToolbarItem align={{ default: "alignRight" }}>
+            <ToolbarItem align={{ default: "alignEnd" }}>
               <Dropdown
                 isOpen={isUserMenuOpen}
                 onSelect={() => setIsUserMenuOpen(false)}
@@ -318,7 +321,7 @@ export const Shell: React.FC = () => {
     <PageSection
       variant="light"
       padding={{ default: "paddingSm" }}
-      style={{ borderBottom: "1px solid var(--pf-v5-global--BorderColor--100)" }}
+      style={{ borderBottom: "1px solid var(--pf-t--global--border--color--default)" }}
     >
       <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>
         {PAGE_SUBTITLES[activeScreen]}
@@ -342,7 +345,7 @@ export const Shell: React.FC = () => {
       case "compliance":
         return (
           <PageSection>
-            <div className="pf-v5-c-content">
+            <div className="pf-v6-c-content">
               <h1>Compliance</h1>
               <p>View compliance reports and status.</p>
             </div>
@@ -360,7 +363,7 @@ export const Shell: React.FC = () => {
   return (
     <>
       <Page
-        header={mastheadBlock}
+        masthead={mastheadBlock}
         sidebar={sideNavBlock}
         isManagedSidebar
         defaultManagedSidebarIsOpen={true}

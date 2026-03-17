@@ -5,6 +5,9 @@
 import React, { useState, useEffect } from "react";
 import {
   Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   ModalVariant,
   Button,
   Tabs,
@@ -3178,36 +3181,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     <>
     <Modal
       variant={ModalVariant.large}
-      title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"}
       isOpen={isOpen}
       onClose={handleClose}
-      actions={[
-        ...(isEditable ? [
-        <Button
-          key="save"
-          variant="primary"
-          onClick={handleSave}
-          isLoading={saving}
-          isDisabled={saving || !name.trim()}
-        >
-          {isEditMode ? "Save Changes" : "Create Policy"}
-        </Button>,
-        ] : []),
-        ...(isEditMode ? [
-        <Button
-          key="delete"
-          variant="danger"
-          onClick={() => setShowDeleteConfirm(true)}
-          isDisabled={saving}
-        >
-          Delete
-        </Button>,
-        ] : []),
-        <Button key="cancel" variant="link" onClick={handleClose}>
-          Cancel
-        </Button>,
-      ]}
     >
+      <ModalHeader title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"} />
+      <ModalBody>
       {error && (
         <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
           {error}
@@ -3231,15 +3209,47 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           {renderConfigurationTab()}
         </Tab>
       </Tabs>
+      </ModalBody>
+      <ModalFooter>
+        {isEditable && (
+        <Button
+          key="save"
+          variant="primary"
+          onClick={handleSave}
+          isLoading={saving}
+          isDisabled={saving || !name.trim()}
+        >
+          {isEditMode ? "Save Changes" : "Create Policy"}
+        </Button>
+        )}
+        {isEditMode && (
+        <Button
+          key="delete"
+          variant="danger"
+          onClick={() => setShowDeleteConfirm(true)}
+          isDisabled={saving}
+        >
+          Delete
+        </Button>
+        )}
+        <Button key="cancel" variant="link" onClick={handleClose}>
+          Cancel
+        </Button>
+      </ModalFooter>
     </Modal>
 
     {/* Delete confirmation dialog */}
     <Modal
       variant={ModalVariant.small}
-      title="Delete Policy"
       isOpen={showDeleteConfirm}
       onClose={() => setShowDeleteConfirm(false)}
-      actions={[
+    >
+      <ModalHeader title="Delete Policy" />
+      <ModalBody>
+      Are you sure you want to delete the policy <strong>{name}</strong>?
+      This action cannot be undone. All associated bindings will also be removed.
+      </ModalBody>
+      <ModalFooter>
         <Button
           key="confirm-delete"
           variant="danger"
@@ -3248,14 +3258,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           isDisabled={saving}
         >
           Delete
-        </Button>,
+        </Button>
         <Button key="cancel-delete" variant="link" onClick={() => setShowDeleteConfirm(false)}>
           Cancel
-        </Button>,
-      ]}
-    >
-      Are you sure you want to delete the policy <strong>{name}</strong>?
-      This action cannot be undone. All associated bindings will also be removed.
+        </Button>
+      </ModalFooter>
     </Modal>
     </>
   );

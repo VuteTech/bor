@@ -51,8 +51,8 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 		case "notify_users":
 			settings.NotifyUsers = value == "true"
 		case "notify_cooldown":
-			if v, err := strconv.Atoi(value); err == nil {
-				settings.NotifyCooldown = v
+			if v, err := strconv.ParseInt(value, 10, 32); err == nil {
+				settings.NotifyCooldown = int(v)
 			}
 		case "notify_message":
 			settings.NotifyMessage = value

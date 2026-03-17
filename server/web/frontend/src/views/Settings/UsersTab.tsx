@@ -9,6 +9,9 @@ import {
   Spinner,
   Modal,
   ModalVariant,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   Form,
   FormGroup,
   TextInput,
@@ -218,10 +221,48 @@ const CreateUserModal: React.FC<{
   return (
     <Modal
       variant={ModalVariant.medium}
-      title="Create User"
       isOpen
       onClose={onClose}
-      actions={[
+    >
+      <ModalHeader title="Create User" />
+      <ModalBody>
+        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <Form>
+          <FormGroup label="Username" isRequired fieldId="cu-username">
+            <TextInput
+              id="cu-username"
+              value={username}
+              onChange={(_ev, v) => setUsername(v)}
+              isRequired
+            />
+          </FormGroup>
+          <FormGroup label="Email" fieldId="cu-email">
+            <TextInput
+              id="cu-email"
+              type="email"
+              value={email}
+              onChange={(_ev, v) => setEmail(v)}
+            />
+          </FormGroup>
+          <FormGroup label="Full Name" fieldId="cu-fullname">
+            <TextInput
+              id="cu-fullname"
+              value={fullName}
+              onChange={(_ev, v) => setFullName(v)}
+            />
+          </FormGroup>
+          <FormGroup label="Password" isRequired fieldId="cu-password">
+            <TextInput
+              id="cu-password"
+              type="password"
+              value={password}
+              onChange={(_ev, v) => setPassword(v)}
+              isRequired
+            />
+          </FormGroup>
+        </Form>
+      </ModalBody>
+      <ModalFooter>
         <Button
           key="save"
           variant="primary"
@@ -230,47 +271,11 @@ const CreateUserModal: React.FC<{
           isLoading={saving}
         >
           Create
-        </Button>,
+        </Button>
         <Button key="cancel" variant="link" onClick={onClose}>
           Cancel
-        </Button>,
-      ]}
-    >
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
-      <Form>
-        <FormGroup label="Username" isRequired fieldId="cu-username">
-          <TextInput
-            id="cu-username"
-            value={username}
-            onChange={(_ev, v) => setUsername(v)}
-            isRequired
-          />
-        </FormGroup>
-        <FormGroup label="Email" fieldId="cu-email">
-          <TextInput
-            id="cu-email"
-            type="email"
-            value={email}
-            onChange={(_ev, v) => setEmail(v)}
-          />
-        </FormGroup>
-        <FormGroup label="Full Name" fieldId="cu-fullname">
-          <TextInput
-            id="cu-fullname"
-            value={fullName}
-            onChange={(_ev, v) => setFullName(v)}
-          />
-        </FormGroup>
-        <FormGroup label="Password" isRequired fieldId="cu-password">
-          <TextInput
-            id="cu-password"
-            type="password"
-            value={password}
-            onChange={(_ev, v) => setPassword(v)}
-            isRequired
-          />
-        </FormGroup>
-      </Form>
+        </Button>
+      </ModalFooter>
     </Modal>
   );
 };
@@ -287,31 +292,33 @@ const EditUserModal: React.FC<{
   return (
     <Modal
       variant={ModalVariant.large}
-      title={`Edit User: ${user.username}`}
       isOpen
       onClose={onClose}
     >
-      <Tabs
-        activeKey={activeTab}
-        onSelect={(_ev, k) => setActiveTab(k as string)}
-      >
-        <Tab
-          eventKey="profile"
-          title={<TabTitleText>Profile</TabTitleText>}
+      <ModalHeader title={`Edit User: ${user.username}`} />
+      <ModalBody>
+        <Tabs
+          activeKey={activeTab}
+          onSelect={(_ev, k) => setActiveTab(k as string)}
         >
-          <div style={{ padding: "16px 0" }}>
-            <ProfileTab user={user} onSaved={onSaved} />
-          </div>
-        </Tab>
-        <Tab
-          eventKey="roles"
-          title={<TabTitleText>Role Assignments</TabTitleText>}
-        >
-          <div style={{ padding: "16px 0" }}>
-            <RoleAssignmentsTab userId={user.id} />
-          </div>
-        </Tab>
-      </Tabs>
+          <Tab
+            eventKey="profile"
+            title={<TabTitleText>Profile</TabTitleText>}
+          >
+            <div style={{ padding: "16px 0" }}>
+              <ProfileTab user={user} onSaved={onSaved} />
+            </div>
+          </Tab>
+          <Tab
+            eventKey="roles"
+            title={<TabTitleText>Role Assignments</TabTitleText>}
+          >
+            <div style={{ padding: "16px 0" }}>
+              <RoleAssignmentsTab userId={user.id} />
+            </div>
+          </Tab>
+        </Tabs>
+      </ModalBody>
     </Modal>
   );
 };
@@ -506,10 +513,52 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
       {showAdd && (
         <Modal
           variant={ModalVariant.small}
-          title="Add Role Assignment"
           isOpen
           onClose={() => setShowAdd(false)}
-          actions={[
+        >
+          <ModalHeader title="Add Role Assignment" />
+          <ModalBody>
+            <Form>
+              <FormGroup label="Role" isRequired fieldId="ar-role">
+                <select
+                  id="ar-role"
+                  className="pf-v6-c-form-control"
+                  value={newRoleId}
+                  onChange={(e) => setNewRoleId(e.target.value)}
+                >
+                  <option value="">Select a role...</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </FormGroup>
+              <FormGroup label="Scope Type" isRequired fieldId="ar-scope">
+                <select
+                  id="ar-scope"
+                  className="pf-v6-c-form-control"
+                  value={newScopeType}
+                  onChange={(e) => setNewScopeType(e.target.value)}
+                >
+                  <option value="global">Global</option>
+                  <option value="organization">Organization</option>
+                  <option value="group">User Group</option>
+                </select>
+              </FormGroup>
+              {newScopeType !== "global" && (
+                <FormGroup label="Scope Target" fieldId="ar-scope-id">
+                  <TextInput
+                    id="ar-scope-id"
+                    value={newScopeId}
+                    onChange={(_ev, v) => setNewScopeId(v)}
+                    placeholder="Enter scope ID"
+                  />
+                </FormGroup>
+              )}
+            </Form>
+          </ModalBody>
+          <ModalFooter>
             <Button
               key="add"
               variant="primary"
@@ -518,51 +567,11 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
               isLoading={addSaving}
             >
               Add
-            </Button>,
+            </Button>
             <Button key="cancel" variant="link" onClick={() => setShowAdd(false)}>
               Cancel
-            </Button>,
-          ]}
-        >
-          <Form>
-            <FormGroup label="Role" isRequired fieldId="ar-role">
-              <select
-                id="ar-role"
-                className="pf-v5-c-form-control"
-                value={newRoleId}
-                onChange={(e) => setNewRoleId(e.target.value)}
-              >
-                <option value="">Select a role...</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </FormGroup>
-            <FormGroup label="Scope Type" isRequired fieldId="ar-scope">
-              <select
-                id="ar-scope"
-                className="pf-v5-c-form-control"
-                value={newScopeType}
-                onChange={(e) => setNewScopeType(e.target.value)}
-              >
-                <option value="global">Global</option>
-                <option value="organization">Organization</option>
-                <option value="group">User Group</option>
-              </select>
-            </FormGroup>
-            {newScopeType !== "global" && (
-              <FormGroup label="Scope Target" fieldId="ar-scope-id">
-                <TextInput
-                  id="ar-scope-id"
-                  value={newScopeId}
-                  onChange={(_ev, v) => setNewScopeId(v)}
-                  placeholder="Enter scope ID"
-                />
-              </FormGroup>
-            )}
-          </Form>
+            </Button>
+          </ModalFooter>
         </Modal>
       )}
     </>

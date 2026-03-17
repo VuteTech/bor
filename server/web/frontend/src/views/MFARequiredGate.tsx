@@ -7,13 +7,10 @@ import {
   Page,
   PageSection,
   EmptyState,
-  EmptyStateHeader,
-  EmptyStateIcon,
   EmptyStateBody,
   EmptyStateFooter,
   EmptyStateActions,
   Button,
-  Title,
 } from "@patternfly/react-core";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import { MFASetupModal } from "./Settings/MFASetupModal";
@@ -40,12 +37,7 @@ export const MFARequiredGate: React.FC<MFARequiredGateProps> = ({
           minHeight: "100vh",
         }}
       >
-        <EmptyState variant="full">
-          <EmptyStateHeader
-            titleText="Two-factor authentication required"
-            headingLevel="h1"
-            icon={<EmptyStateIcon icon={LockIcon} color="var(--pf-v5-global--warning-color--100)" />}
-          />
+        <EmptyState variant="full" titleText="Two-factor authentication required" headingLevel="h1" icon={LockIcon}>
           <EmptyStateBody>
             Your organization requires all users to set up two-factor
             authentication before accessing the application. Please set up an

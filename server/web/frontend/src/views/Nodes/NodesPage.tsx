@@ -40,9 +40,9 @@ import {
   DescriptionListDescription,
   EmptyState,
   EmptyStateBody,
-  EmptyStateHeader,
-  EmptyStateIcon,
   Modal,
+  ModalHeader,
+  ModalBody,
   ModalVariant,
   TextInput,
   Form,
@@ -866,12 +866,7 @@ export const NodesPage: React.FC = () => {
 
               {/* ── Table ── */}
               {sortedNodes.length === 0 ? (
-                <EmptyState>
-                  <EmptyStateHeader
-                    titleText="No nodes found"
-                    headingLevel="h2"
-                    icon={<EmptyStateIcon icon={CubesIcon} />}
-                  />
+                <EmptyState titleText="No nodes found" headingLevel="h2" icon={CubesIcon}>
                   <EmptyStateBody>
                     {appliedSearch || activeFilters.length > 0
                       ? "No nodes match the current filters. Try adjusting your search or filters."
@@ -947,10 +942,11 @@ export const NodesPage: React.FC = () => {
       {/* ── Add to group modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={`Add to group (${groupModalTargetIds.length} node${groupModalTargetIds.length !== 1 ? "s" : ""})`}
         isOpen={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
       >
+        <ModalHeader title={`Add to group (${groupModalTargetIds.length} node${groupModalTargetIds.length !== 1 ? "s" : ""})`} />
+        <ModalBody>
         <Form>
           {groupActionError && (
             <Alert variant="danger" title="Error" isInline>{groupActionError}</Alert>
@@ -998,15 +994,17 @@ export const NodesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
 
       {/* ── Remove from group modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title="Remove from group"
         isOpen={removeGroupModalOpen}
         onClose={() => setRemoveGroupModalOpen(false)}
       >
+        <ModalHeader title="Remove from group" />
+        <ModalBody>
         <Form>
           {removeGroupOptions.length === 0 ? (
             <p>The selected node(s) are not in any groups.</p>
@@ -1047,16 +1045,17 @@ export const NodesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
 
       {/* ── Decommission confirmation modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title="Decommission node"
-        titleIconVariant="warning"
         isOpen={decommModalOpen}
         onClose={() => setDecommModalOpen(false)}
       >
+        <ModalHeader title="Decommission node" titleIconVariant="warning" />
+        <ModalBody>
         <Form>
           <p>
             {decommTargetIds.length === 1 ? (
@@ -1097,6 +1096,7 @@ export const NodesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
     </>
   );

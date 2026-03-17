@@ -5,6 +5,9 @@
 import React, { useState, useEffect } from "react";
 import {
   Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   ModalVariant,
   Button,
   TextInput,
@@ -12,8 +15,7 @@ import {
   Form,
   FormGroup,
   Spinner,
-  TextContent,
-  Text,
+  Content,
 } from "@patternfly/react-core";
 import { startRegistration } from "@simplewebauthn/browser";
 import {
@@ -105,11 +107,11 @@ export const WebAuthnSetupModal: React.FC<WebAuthnSetupModalProps> = ({
   return (
     <Modal
       variant={ModalVariant.small}
-      title={title}
       isOpen={isOpen}
       onClose={onClose}
-      actions={step === "success" ? successActions : step === "name" ? nameActions : []}
     >
+      <ModalHeader title={title} />
+      <ModalBody>
       {step === "name" && (
         <>
           {error && (
@@ -120,12 +122,12 @@ export const WebAuthnSetupModal: React.FC<WebAuthnSetupModalProps> = ({
               style={{ marginBottom: 16 }}
             />
           )}
-          <TextContent style={{ marginBottom: 16 }}>
-            <Text>
+          <Content style={{ marginBottom: 16 }}>
+            <Content>
               Give your security key a name so you can identify it later (e.g.
               "YubiKey 5", "Bitwarden", "Face ID").
-            </Text>
-          </TextContent>
+            </Content>
+          </Content>
           <Form>
             <FormGroup label="Security key name" fieldId="webauthn-cred-name">
               <TextInput
@@ -143,22 +145,26 @@ export const WebAuthnSetupModal: React.FC<WebAuthnSetupModalProps> = ({
       {step === "registering" && (
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <Spinner size="lg" />
-          <TextContent>
-            <Text>{statusMsg}</Text>
-          </TextContent>
+          <Content>
+            <Content>{statusMsg}</Content>
+          </Content>
         </div>
       )}
 
       {step === "success" && (
-        <TextContent>
-          <Text>
+        <Content>
+          <Content>
             Security key registered successfully!
-          </Text>
-          <Text>
+          </Content>
+          <Content>
             Name: <strong>{registeredCred?.name}</strong>
-          </Text>
-        </TextContent>
+          </Content>
+        </Content>
       )}
+      </ModalBody>
+      <ModalFooter>
+        {step === "success" ? successActions : step === "name" ? nameActions : null}
+      </ModalFooter>
     </Modal>
   );
 };

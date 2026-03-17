@@ -9,6 +9,9 @@ import {
   Spinner,
   Modal,
   ModalVariant,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   Form,
   FormGroup,
   TextInput,
@@ -180,10 +183,31 @@ const CreateRoleModal: React.FC<{
   return (
     <Modal
       variant={ModalVariant.medium}
-      title="Create Role"
       isOpen
       onClose={onClose}
-      actions={[
+    >
+      <ModalHeader title="Create Role" />
+      <ModalBody>
+        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <Form>
+          <FormGroup label="Role Name" isRequired fieldId="cr-name">
+            <TextInput
+              id="cr-name"
+              value={name}
+              onChange={(_ev, v) => setName(v)}
+              isRequired
+            />
+          </FormGroup>
+          <FormGroup label="Description" fieldId="cr-desc">
+            <TextArea
+              id="cr-desc"
+              value={description}
+              onChange={(_ev, v) => setDescription(v)}
+            />
+          </FormGroup>
+        </Form>
+      </ModalBody>
+      <ModalFooter>
         <Button
           key="save"
           variant="primary"
@@ -192,30 +216,11 @@ const CreateRoleModal: React.FC<{
           isLoading={saving}
         >
           Create
-        </Button>,
+        </Button>
         <Button key="cancel" variant="link" onClick={onClose}>
           Cancel
-        </Button>,
-      ]}
-    >
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
-      <Form>
-        <FormGroup label="Role Name" isRequired fieldId="cr-name">
-          <TextInput
-            id="cr-name"
-            value={name}
-            onChange={(_ev, v) => setName(v)}
-            isRequired
-          />
-        </FormGroup>
-        <FormGroup label="Description" fieldId="cr-desc">
-          <TextArea
-            id="cr-desc"
-            value={description}
-            onChange={(_ev, v) => setDescription(v)}
-          />
-        </FormGroup>
-      </Form>
+        </Button>
+      </ModalFooter>
     </Modal>
   );
 };
@@ -283,10 +288,64 @@ const EditRoleModal: React.FC<{
   return (
     <Modal
       variant={ModalVariant.large}
-      title={`Edit Role: ${role.name}`}
       isOpen
       onClose={onClose}
-      actions={[
+    >
+      <ModalHeader title={`Edit Role: ${role.name}`} />
+      <ModalBody>
+        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        {loading ? (
+          <Spinner size="lg" />
+        ) : (
+          <>
+            <Form style={{ marginBottom: 24 }}>
+              <FormGroup label="Role Name" isRequired fieldId="er-name">
+                <TextInput
+                  id="er-name"
+                  value={name}
+                  onChange={(_ev, v) => setName(v)}
+                  isRequired
+                />
+              </FormGroup>
+              <FormGroup label="Description" fieldId="er-desc">
+                <TextArea
+                  id="er-desc"
+                  value={description}
+                  onChange={(_ev, v) => setDescription(v)}
+                />
+              </FormGroup>
+            </Form>
+
+            <Title headingLevel="h3" style={{ marginBottom: 12 }}>
+              Permission Matrix
+            </Title>
+
+            {Object.entries(grouped)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([resource, perms]) => (
+                <div key={resource} style={{ marginBottom: 16 }}>
+                  <Title headingLevel="h4" style={{ textTransform: "capitalize", marginBottom: 8 }}>
+                    {resource}
+                  </Title>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 24px" }}>
+                    {perms
+                      .sort((a, b) => a.action.localeCompare(b.action))
+                      .map((p) => (
+                        <Checkbox
+                          key={p.id}
+                          id={`perm-${p.id}`}
+                          label={p.action}
+                          isChecked={selectedIds.has(p.id)}
+                          onChange={() => handleToggle(p.id)}
+                        />
+                      ))}
+                  </div>
+                </div>
+              ))}
+          </>
+        )}
+      </ModalBody>
+      <ModalFooter>
         <Button
           key="save"
           variant="primary"
@@ -295,63 +354,11 @@ const EditRoleModal: React.FC<{
           isLoading={saving}
         >
           Save
-        </Button>,
+        </Button>
         <Button key="cancel" variant="link" onClick={onClose}>
           Cancel
-        </Button>,
-      ]}
-    >
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
-      {loading ? (
-        <Spinner size="lg" />
-      ) : (
-        <>
-          <Form style={{ marginBottom: 24 }}>
-            <FormGroup label="Role Name" isRequired fieldId="er-name">
-              <TextInput
-                id="er-name"
-                value={name}
-                onChange={(_ev, v) => setName(v)}
-                isRequired
-              />
-            </FormGroup>
-            <FormGroup label="Description" fieldId="er-desc">
-              <TextArea
-                id="er-desc"
-                value={description}
-                onChange={(_ev, v) => setDescription(v)}
-              />
-            </FormGroup>
-          </Form>
-
-          <Title headingLevel="h3" style={{ marginBottom: 12 }}>
-            Permission Matrix
-          </Title>
-
-          {Object.entries(grouped)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([resource, perms]) => (
-              <div key={resource} style={{ marginBottom: 16 }}>
-                <Title headingLevel="h4" style={{ textTransform: "capitalize", marginBottom: 8 }}>
-                  {resource}
-                </Title>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 24px" }}>
-                  {perms
-                    .sort((a, b) => a.action.localeCompare(b.action))
-                    .map((p) => (
-                      <Checkbox
-                        key={p.id}
-                        id={`perm-${p.id}`}
-                        label={p.action}
-                        isChecked={selectedIds.has(p.id)}
-                        onChange={() => handleToggle(p.id)}
-                      />
-                    ))}
-                </div>
-              </div>
-            ))}
-        </>
-      )}
+        </Button>
+      </ModalFooter>
     </Modal>
   );
 };

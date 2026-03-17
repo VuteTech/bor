@@ -13,6 +13,9 @@ import {
   Button,
   Modal,
   ModalVariant,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   Form,
   FormGroup,
   TextInput,
@@ -20,8 +23,6 @@ import {
   ActionGroup,
   EmptyState,
   EmptyStateBody,
-  EmptyStateHeader,
-  EmptyStateIcon,
   ClipboardCopy,
   Label,
   Dropdown,
@@ -259,12 +260,7 @@ export const NodeGroupsPage: React.FC = () => {
 
       <PageSection>
         {groups.length === 0 ? (
-          <EmptyState>
-            <EmptyStateHeader
-              titleText="No node groups"
-              headingLevel="h2"
-              icon={<EmptyStateIcon icon={CubesIcon} />}
-            />
+          <EmptyState titleText="No node groups" headingLevel="h2" icon={CubesIcon}>
             <EmptyStateBody>
               Create a node group to organize your desktop agents and generate enrollment tokens.
             </EmptyStateBody>
@@ -383,10 +379,36 @@ export const NodeGroupsPage: React.FC = () => {
       {/* ── Create / Edit Modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={editingGroup ? "Edit Node Group" : "Create Node Group"}
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        actions={[
+      >
+        <ModalHeader title={editingGroup ? "Edit Node Group" : "Create Node Group"} />
+        <ModalBody>
+          {formError && (
+            <Alert variant="danger" title={formError} isInline style={{ marginBottom: "1rem" }} />
+          )}
+          <Form>
+            <FormGroup label="Name" isRequired fieldId="ng-name">
+              <TextInput
+                id="ng-name"
+                value={formName}
+                onChange={(_ev, val) => setFormName(val)}
+                isRequired
+                placeholder="e.g. Engineering Desktops"
+              />
+            </FormGroup>
+            <FormGroup label="Description" fieldId="ng-description">
+              <TextArea
+                id="ng-description"
+                value={formDescription}
+                onChange={(_ev, val) => setFormDescription(val)}
+                placeholder="Optional description for this group"
+                rows={3}
+              />
+            </FormGroup>
+          </Form>
+        </ModalBody>
+        <ModalFooter>
           <Button
             key="save"
             variant="primary"
@@ -395,46 +417,25 @@ export const NodeGroupsPage: React.FC = () => {
             isDisabled={formSaving}
           >
             {editingGroup ? "Save" : "Create"}
-          </Button>,
+          </Button>
           <Button key="cancel" variant="link" onClick={() => setIsFormOpen(false)}>
             Cancel
-          </Button>,
-        ]}
-      >
-        {formError && (
-          <Alert variant="danger" title={formError} isInline style={{ marginBottom: "1rem" }} />
-        )}
-        <Form>
-          <FormGroup label="Name" isRequired fieldId="ng-name">
-            <TextInput
-              id="ng-name"
-              value={formName}
-              onChange={(_ev, val) => setFormName(val)}
-              isRequired
-              placeholder="e.g. Engineering Desktops"
-            />
-          </FormGroup>
-          <FormGroup label="Description" fieldId="ng-description">
-            <TextArea
-              id="ng-description"
-              value={formDescription}
-              onChange={(_ev, val) => setFormDescription(val)}
-              placeholder="Optional description for this group"
-              rows={3}
-            />
-          </FormGroup>
-        </Form>
+          </Button>
+        </ModalFooter>
       </Modal>
 
       {/* ── Delete Confirmation Modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={`Delete Node Group${deleteTargetIds.length !== 1 ? "s" : ""}`}
-        titleIconVariant="warning"
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
       >
-        <Form>
+        <ModalHeader
+          title={`Delete Node Group${deleteTargetIds.length !== 1 ? "s" : ""}`}
+          titleIconVariant="warning"
+        />
+        <ModalBody>
+          <Form>
           <p>
             {deleteTargetIds.length === 1 ? (
               <>
@@ -489,95 +490,101 @@ export const NodeGroupsPage: React.FC = () => {
               Cancel
             </Button>
           </ActionGroup>
-        </Form>
+          </Form>
+        </ModalBody>
       </Modal>
 
       {/* ── Token Generation Modal ── */}
       <Modal
         variant={ModalVariant.medium}
-        title={`Enrollment Token — ${tokenGroup?.name || ""}`}
         isOpen={tokenGroup !== null}
         onClose={() => { setTokenGroup(null); setGeneratedToken(null); }}
-        actions={
-          generatedToken
-            ? [
+      >
+        <ModalHeader title={`Enrollment Token — ${tokenGroup?.name || ""}`} />
+        <ModalBody>
+          {tokenError && (
+            <Alert variant="danger" title={tokenError} isInline style={{ marginBottom: "1rem" }} />
+          )}
+          {!generatedToken ? (
+            <div>
+              <p>
+                Generate a one-time enrollment token for the node group{" "}
+                <strong>{tokenGroup?.name}</strong>.
+              </p>
+              <Alert variant="info" title="Token details" isInline style={{ marginTop: "1rem" }}>
+                <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+                  <li>The token expires in <strong>5 minutes</strong></li>
+                  <li>The token is <strong>single-use</strong> — it can only be used once</li>
+                  <li>Copy the token immediately — it will not be shown again</li>
+                </ul>
+              </Alert>
+            </div>
+          ) : (
+            <div>
+              <Alert
+                variant="success"
+                title="Token generated successfully"
+                isInline
+                style={{ marginBottom: "1rem" }}
+              >
+                Copy the token below. It will <strong>expire at{" "}
+                {formatDate(generatedToken.expires_at)}</strong> and can only be used{" "}
+                <strong>once</strong>.
+              </Alert>
+              <FormGroup label="Enrollment Command" fieldId="enroll-command">
+                <p style={{ marginBottom: "0.5rem", color: "#6a6e73", fontSize: "0.875rem" }}>
+                  Run this command on the target machine to enroll the agent:
+                </p>
+                <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied!">
+                  {`sudo bor-agent --token ${generatedToken.token}`}
+                </ClipboardCopy>
+              </FormGroup>
+              <FormGroup label="Token Only" fieldId="token-value" style={{ marginTop: "1rem" }}>
+                <ClipboardCopy
+                  isReadOnly
+                  hoverTip="Copy"
+                  clickTip="Copied!"
+                  variant="expansion"
+                >
+                  {generatedToken.token}
+                </ClipboardCopy>
+              </FormGroup>
+              <Alert variant="warning" title="Save this token now" isInline style={{ marginTop: "1rem" }}>
+                This token will not be shown again after closing this dialog. Generate a new
+                token if needed.
+              </Alert>
+            </div>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          {generatedToken
+            ? (
                 <Button
                   key="close"
                   variant="primary"
                   onClick={() => { setTokenGroup(null); setGeneratedToken(null); }}
                 >
                   Done
-                </Button>,
-              ]
-            : [
-                <Button
-                  key="generate"
-                  variant="primary"
-                  onClick={handleGenerateToken}
-                  isLoading={tokenLoading}
-                  isDisabled={tokenLoading}
-                >
-                  Generate Token
-                </Button>,
-                <Button key="cancel" variant="link" onClick={() => setTokenGroup(null)}>
-                  Cancel
-                </Button>,
-              ]
-        }
-      >
-        {tokenError && (
-          <Alert variant="danger" title={tokenError} isInline style={{ marginBottom: "1rem" }} />
-        )}
-        {!generatedToken ? (
-          <div>
-            <p>
-              Generate a one-time enrollment token for the node group{" "}
-              <strong>{tokenGroup?.name}</strong>.
-            </p>
-            <Alert variant="info" title="Token details" isInline style={{ marginTop: "1rem" }}>
-              <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-                <li>The token expires in <strong>5 minutes</strong></li>
-                <li>The token is <strong>single-use</strong> — it can only be used once</li>
-                <li>Copy the token immediately — it will not be shown again</li>
-              </ul>
-            </Alert>
-          </div>
-        ) : (
-          <div>
-            <Alert
-              variant="success"
-              title="Token generated successfully"
-              isInline
-              style={{ marginBottom: "1rem" }}
-            >
-              Copy the token below. It will <strong>expire at{" "}
-              {formatDate(generatedToken.expires_at)}</strong> and can only be used{" "}
-              <strong>once</strong>.
-            </Alert>
-            <FormGroup label="Enrollment Command" fieldId="enroll-command">
-              <p style={{ marginBottom: "0.5rem", color: "#6a6e73", fontSize: "0.875rem" }}>
-                Run this command on the target machine to enroll the agent:
-              </p>
-              <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied!">
-                {`sudo bor-agent --token ${generatedToken.token}`}
-              </ClipboardCopy>
-            </FormGroup>
-            <FormGroup label="Token Only" fieldId="token-value" style={{ marginTop: "1rem" }}>
-              <ClipboardCopy
-                isReadOnly
-                hoverTip="Copy"
-                clickTip="Copied!"
-                variant="expansion"
-              >
-                {generatedToken.token}
-              </ClipboardCopy>
-            </FormGroup>
-            <Alert variant="warning" title="Save this token now" isInline style={{ marginTop: "1rem" }}>
-              This token will not be shown again after closing this dialog. Generate a new
-              token if needed.
-            </Alert>
-          </div>
-        )}
+                </Button>
+              )
+            : (
+                <>
+                  <Button
+                    key="generate"
+                    variant="primary"
+                    onClick={handleGenerateToken}
+                    isLoading={tokenLoading}
+                    isDisabled={tokenLoading}
+                  >
+                    Generate Token
+                  </Button>
+                  <Button key="cancel" variant="link" onClick={() => setTokenGroup(null)}>
+                    Cancel
+                  </Button>
+                </>
+              )
+          }
+        </ModalFooter>
       </Modal>
     </>
   );
