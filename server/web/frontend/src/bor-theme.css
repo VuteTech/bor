@@ -13,6 +13,26 @@
   --pf-t--global--color--brand--500: #0a1a14;
 }
 
+/* ── Skip navigation link ─────────────────────────────────────────────────── */
+/* Visually hidden until focused — lets keyboard users jump past navigation   */
+.bor-skip-nav {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 10000;
+  padding: 0.6rem 1.25rem;
+  background: #000000;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  border-bottom-right-radius: 4px;
+  transition: top 0.1s;
+}
+.bor-skip-nav:focus {
+  top: 0;
+}
+
 /* ── Masthead ─────────────────────────────────────────────────────────────── */
 /* !important because @patternfly/react-styles injects component CSS after    */
 /* this file in the bundle, overriding same-specificity custom properties.    */
@@ -76,4 +96,144 @@
 }
 :root:where(.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
   --pf-v6-c-button--m-primary--BackgroundColor: #52b788 !important;
+}
+
+/* ── High Contrast mode ───────────────────────────────────────────────────── */
+/* Activated by .bor-theme-hc on <html> (manual toggle) or OS media queries.  */
+/* Targets WCAG 2.1 AAA (≥7:1) for text; AA+ (≥4.5:1) for all UI controls.  */
+
+:root:where(.bor-theme-hc) {
+  /* Brand escalated to AAA-level contrast on white bg */
+  --pf-t--global--color--brand--100: #005500;  /* 8.6:1 on #fff ✓ AAA */
+  --pf-t--global--color--brand--200: #004400;  /* 11:1  on #fff ✓ AAA */
+  --pf-t--global--color--brand--300: #003300;  /* 14:1  on #fff ✓ AAA */
+  --pf-t--global--color--brand--400: #002200;
+  --pf-t--global--color--brand--500: #001100;
+  /* All borders become opaque black for maximum visibility */
+  --pf-t--global--border--color--default: #000000;
+  --pf-t--global--border--color--strong: #000000;
+}
+
+/* HC masthead: pure black — maximum contrast */
+:root:where(.bor-theme-hc) .pf-v6-c-masthead {
+  --pf-v6-c-masthead--BackgroundColor: #000000 !important;
+}
+:root:where(.bor-theme-hc) .pf-v6-c-masthead .pf-v6-c-button.pf-m-plain {
+  color: #ffffff !important;
+}
+
+/* HC sidebar: black bg, white text, yellow active/hover */
+:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar {
+  --pf-v6-c-page__sidebar--BackgroundColor: #000000 !important;
+}
+:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+  --pf-v6-c-nav__link--Color: #ffffff;
+  --pf-v6-c-nav__link--hover--Color: #000000;
+  --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--Color: #000000;
+}
+
+/* HC primary button: black bg, white text, explicit border */
+:root:where(.bor-theme-hc) .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #000000 !important;
+  outline: 2px solid #000000;
+}
+
+/* HC focus ring: thick, always-visible, no reliance on color alone */
+:root:where(.bor-theme-hc) :focus-visible {
+  outline: 3px solid #000000 !important;
+  outline-offset: 3px !important;
+}
+/* Focus inside dark masthead/sidebar: white outline on dark bg */
+:root:where(.bor-theme-hc) .pf-v6-c-masthead :focus-visible,
+:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar :focus-visible {
+  outline: 3px solid #ffffff !important;
+  outline-offset: 3px !important;
+}
+
+/* HC + dark mode: yellow interactive elements (Windows HC Dark pattern) */
+:root:where(.bor-theme-hc.pf-v6-theme-dark) {
+  --pf-t--global--color--brand--100: #b3ffb3;  /* ~16:1 on #000 */
+  --pf-t--global--color--brand--200: #99ff99;
+  --pf-t--global--color--brand--300: #7fff7f;
+  --pf-t--global--color--brand--400: #5fff5f;
+  --pf-t--global--color--brand--500: #3fff3f;
+  --pf-t--global--border--color--default: #ffffff;
+  --pf-t--global--border--color--strong: #ffffff;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #ffff00 !important;
+  color: #000000 !important;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+  --pf-v6-c-nav__link--Color: #ffffff;
+  --pf-v6-c-nav__link--hover--Color: #000000;
+  --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--Color: #000000;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) :focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 3px !important;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-masthead :focus-visible,
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-page__sidebar :focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 3px !important;
+}
+
+/* ── OS: prefers-contrast: more (auto-apply HC without toggle) ─────────────── */
+@media (prefers-contrast: more) {
+  :root {
+    --pf-t--global--color--brand--100: #005500;
+    --pf-t--global--color--brand--200: #004400;
+    --pf-t--global--color--brand--300: #003300;
+    --pf-t--global--border--color--default: #000000;
+    --pf-t--global--border--color--strong: #000000;
+  }
+  .pf-v6-c-masthead {
+    --pf-v6-c-masthead--BackgroundColor: #000000 !important;
+  }
+  .pf-v6-c-page__sidebar {
+    --pf-v6-c-page__sidebar--BackgroundColor: #000000 !important;
+  }
+  .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+    --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
+    --pf-v6-c-nav__link--hover--Color: #000000;
+    --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
+    --pf-v6-c-nav__link--m-current--Color: #000000;
+  }
+  .pf-v6-c-button.pf-m-primary {
+    --pf-v6-c-button--m-primary--BackgroundColor: #000000 !important;
+  }
+  :focus-visible {
+    outline: 3px solid currentColor !important;
+    outline-offset: 3px !important;
+  }
+}
+
+/* ── OS: forced-colors (Windows High Contrast / browser-controlled) ─────────── */
+/* Let the browser override colors freely; only fix focus rings and icons.     */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 3px !important;
+  }
+  /* SVG icons may lose their fill in forced-colors mode */
+  svg {
+    forced-color-adjust: auto;
+  }
+}
+
+/* ── prefers-reduced-motion ───────────────────────────────────────────────── */
+/* Disable CSS transitions for users who prefer reduced motion (WCAG 2.3.3)   */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

@@ -34,6 +34,7 @@ import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
 import SunIcon from "@patternfly/react-icons/dist/esm/icons/sun-icon";
 import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
 import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
+import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
 import { checkSession, logout, getStoredToken, getMFAStatus, UserInfo } from "./apiClient/authApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
@@ -51,6 +52,17 @@ import logoWhite from "./assets/logo-white.svg";
 
 type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "audit-logs" | "settings";
 type ThemeMode = "light" | "dark" | "system";
+
+const PAGE_NAMES: Record<ScreenKey, string> = {
+  dashboard:         "Dashboard",
+  policies:          "Policies",
+  nodes:             "Nodes",
+  "node-groups":     "Node Groups",
+  "policy-bindings": "Policy Bindings",
+  compliance:        "Compliance",
+  "audit-logs":      "Audit Logs",
+  settings:          "Settings",
+};
 
 export const Shell: React.FC = () => {
   /* ── Theme state ── */
@@ -85,12 +97,28 @@ export const Shell: React.FC = () => {
     setThemeMode(next);
   };
 
+  /* ── High contrast state ── */
+  const [isHighContrast, setIsHighContrast] = useState(
+    () => localStorage.getItem("bor-hc") === "true"
+  );
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("bor-theme-hc", isHighContrast);
+    localStorage.setItem("bor-hc", String(isHighContrast));
+  }, [isHighContrast]);
+
   /* ── Auth state ── */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
   const [authChecked, setAuthChecked] = useState(false);
 
   const [activeScreen, setActiveScreen] = useState<ScreenKey>("dashboard");
+
+  /* ── Update document title on screen change (WCAG 2.4.2) ── */
+  useEffect(() => {
+    document.title = `${PAGE_NAMES[activeScreen]} | Bor`;
+  }, [activeScreen]);
+
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [mfaGateActive, setMfaGateActive] = useState(false);
@@ -195,17 +223,6 @@ export const Shell: React.FC = () => {
     </>
   );
 
-  const PAGE_NAMES: Record<ScreenKey, string> = {
-    dashboard:        "Dashboard",
-    policies:         "Policies",
-    nodes:            "Nodes",
-    "node-groups":    "Node Groups",
-    "policy-bindings":"Policy Bindings",
-    compliance:       "Compliance",
-    "audit-logs":     "Audit Logs",
-    settings:         "Settings",
-  };
-
   /* ── Header / Masthead ── */
   const mastheadBlock = (
     <Masthead>
@@ -245,6 +262,28 @@ export const Shell: React.FC = () => {
               </span>
             </ToolbarItem>
             <ToolbarItem align={{ default: "alignEnd" }} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <Tooltip
+                content={isHighContrast ? "High contrast on (click to disable)" : "High contrast off (click to enable)"}
+                position="bottom"
+              >
+                <Button
+                  variant="plain"
+                  aria-label={isHighContrast ? "Disable high contrast" : "Enable high contrast"}
+                  aria-pressed={isHighContrast}
+                  onClick={() => setIsHighContrast(v => !v)}
+                  style={{
+                    color: "#fff",
+                    padding: "0.375rem",
+                    ...(isHighContrast && {
+                      backgroundColor: "rgba(255,255,255,0.2)",
+                      borderRadius: "3px",
+                      outline: "2px solid #fff",
+                    }),
+                  }}
+                >
+                  <AdjustIcon />
+                </Button>
+              </Tooltip>
               <Tooltip
                 content={
                   themeMode === "light"
@@ -431,11 +470,16 @@ export const Shell: React.FC = () => {
 
   return (
     <>
+      {/* Skip navigation — first focusable element, visible on focus (WCAG 2.4.1) */}
+      <a href="#bor-main-content" className="bor-skip-nav">
+        Skip to main content
+      </a>
       <Page
         masthead={mastheadBlock}
         sidebar={sideNavBlock}
         isManagedSidebar
         defaultManagedSidebarIsOpen={true}
+        mainContainerId="bor-main-content"
       >
         {subtitleStrip}
         {renderActiveScreen()}
