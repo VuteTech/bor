@@ -20,6 +20,7 @@ import {
   List,
   ListItem,
 } from "@patternfly/react-core";
+import { LiveAlert } from "../../components/LiveAlert";
 import { mfaSetupBegin, mfaSetupFinish } from "../../apiClient/authApi";
 
 interface MFASetupModalProps {
@@ -124,16 +125,13 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
       <ModalBody>
       {step === "qr" && (
         <>
-          {error && (
-            <Alert
-              variant="danger"
-              title={error}
-              isInline
-              style={{ marginBottom: 16 }}
-            />
-          )}
+          <LiveAlert
+            message={error}
+            isInline
+            style={{ marginBottom: 16 }}
+          />
           {loading ? (
-            <Spinner size="lg" />
+            <Spinner size="lg" aria-label="Loading" />
           ) : (
             <>
               <Content style={{ marginBottom: 16 }}>

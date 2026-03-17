@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   PageSection,
   Title,
@@ -227,7 +228,7 @@ export const NodeGroupsPage: React.FC = () => {
     return (
       <PageSection>
         <Flex justifyContent={{ default: "justifyContentCenter" }}>
-          <FlexItem><Spinner size="xl" /></FlexItem>
+          <FlexItem><Spinner size="xl" aria-label="Loading" /></FlexItem>
         </Flex>
       </PageSection>
     );
@@ -236,7 +237,9 @@ export const NodeGroupsPage: React.FC = () => {
   if (error) {
     return (
       <PageSection>
-        <Alert variant="danger" title="Error loading node groups">{error}</Alert>
+        <div aria-live="assertive" aria-atomic="true">
+          <Alert variant="danger" title="Error loading node groups">{error}</Alert>
+        </div>
       </PageSection>
     );
   }
@@ -384,9 +387,7 @@ export const NodeGroupsPage: React.FC = () => {
       >
         <ModalHeader title={editingGroup ? "Edit Node Group" : "Create Node Group"} />
         <ModalBody>
-          {formError && (
-            <Alert variant="danger" title={formError} isInline style={{ marginBottom: "1rem" }} />
-          )}
+          <LiveAlert id="err-ng-form" message={formError} isInline style={{ marginBottom: "1rem" }} />
           <Form>
             <FormGroup label="Name" isRequired fieldId="ng-name">
               <TextInput
@@ -395,6 +396,8 @@ export const NodeGroupsPage: React.FC = () => {
                 onChange={(_ev, val) => setFormName(val)}
                 isRequired
                 placeholder="e.g. Engineering Desktops"
+                aria-invalid={formError ? true : undefined}
+                aria-describedby={formError ? "err-ng-form" : undefined}
               />
             </FormGroup>
             <FormGroup label="Description" fieldId="ng-description">
@@ -457,17 +460,21 @@ export const NodeGroupsPage: React.FC = () => {
             const withNodes = targets.filter((g) => g.node_count > 0);
             if (withNodes.length === 0) return null;
             return (
-              <Alert variant="warning" title="Some groups have nodes assigned" isInline>
-                {withNodes
-                  .map((g) => `${g.name} (${g.node_count} node${g.node_count !== 1 ? "s" : ""})`)
-                  .join(", ")}
-                {" — these nodes will lose their group membership."}
-              </Alert>
+              <div aria-live="assertive" aria-atomic="true">
+                <Alert variant="warning" title="Some groups have nodes assigned" isInline>
+                  {withNodes
+                    .map((g) => `${g.name} (${g.node_count} node${g.node_count !== 1 ? "s" : ""})`)
+                    .join(", ")}
+                  {" — these nodes will lose their group membership."}
+                </Alert>
+              </div>
             );
           })()}
-          {deleteError && (
-            <Alert variant="danger" title="Error" isInline>{deleteError}</Alert>
-          )}
+          <div aria-live="assertive" aria-atomic="true">
+            {deleteError && (
+              <Alert variant="danger" title="Error" isInline>{deleteError}</Alert>
+            )}
+          </div>
           <FormGroup label={deleteConfirmLabel} isRequired fieldId="delete-confirm">
             <TextInput
               id="delete-confirm"
@@ -502,9 +509,7 @@ export const NodeGroupsPage: React.FC = () => {
       >
         <ModalHeader title={`Enrollment Token — ${tokenGroup?.name || ""}`} />
         <ModalBody>
-          {tokenError && (
-            <Alert variant="danger" title={tokenError} isInline style={{ marginBottom: "1rem" }} />
-          )}
+          <LiveAlert message={tokenError} isInline style={{ marginBottom: "1rem" }} />
           {!generatedToken ? (
             <div>
               <p>
@@ -521,16 +526,18 @@ export const NodeGroupsPage: React.FC = () => {
             </div>
           ) : (
             <div>
-              <Alert
-                variant="success"
-                title="Token generated successfully"
-                isInline
-                style={{ marginBottom: "1rem" }}
-              >
-                Copy the token below. It will <strong>expire at{" "}
-                {formatDate(generatedToken.expires_at)}</strong> and can only be used{" "}
-                <strong>once</strong>.
-              </Alert>
+              <div aria-live="polite" aria-atomic="true">
+                <Alert
+                  variant="success"
+                  title="Token generated successfully"
+                  isInline
+                  style={{ marginBottom: "1rem" }}
+                >
+                  Copy the token below. It will <strong>expire at{" "}
+                  {formatDate(generatedToken.expires_at)}</strong> and can only be used{" "}
+                  <strong>once</strong>.
+                </Alert>
+              </div>
               <FormGroup label="Enrollment Command" fieldId="enroll-command">
                 <p style={{ marginBottom: "0.5rem", color: "#6a6e73", fontSize: "0.875rem" }}>
                   Run this command on the target machine to enroll the agent:

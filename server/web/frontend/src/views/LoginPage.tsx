@@ -11,10 +11,10 @@ import {
   FormGroup,
   TextInput,
   Button,
-  Alert,
   ActionGroup,
   Content,
 } from "@patternfly/react-core";
+import { LiveAlert } from "../components/LiveAlert";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
   authBegin,
@@ -158,19 +158,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
 
   const loginForm = (
     <div style={{ padding: "24px 0" }}>
-      {errorMsg && (
-        <Alert
-          variant="danger"
-          title={errorMsg}
-          isInline
-          actionClose={
-            <Button variant="plain" onClick={() => setErrorMsg(null)}>
-              &times;
-            </Button>
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      <LiveAlert
+        message={errorMsg}
+        isInline
+        actionClose={
+          <Button variant="plain" onClick={() => setErrorMsg(null)}>
+            &times;
+          </Button>
+        }
+        style={{ marginBottom: 16 }}
+      />
 
       {phase === "username" && (
         <Form onSubmit={handleUsernameSubmit}>

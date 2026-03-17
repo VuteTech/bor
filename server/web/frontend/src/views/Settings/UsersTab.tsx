@@ -3,9 +3,9 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   Button,
-  Alert,
   Spinner,
   Modal,
   ModalVariant,
@@ -83,13 +83,11 @@ export const UsersTab: React.FC = () => {
     }
   };
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
-      {error && (
-        <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />
-      )}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Flex style={{ marginBottom: 16 }}>
         <FlexItem align={{ default: "alignRight" }}>
@@ -226,7 +224,7 @@ const CreateUserModal: React.FC<{
     >
       <ModalHeader title="Create User" />
       <ModalBody>
-        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <LiveAlert id="err-create-user" message={error} isInline style={{ marginBottom: 16 }} />
         <Form>
           <FormGroup label="Username" isRequired fieldId="cu-username">
             <TextInput
@@ -234,6 +232,8 @@ const CreateUserModal: React.FC<{
               value={username}
               onChange={(_ev, v) => setUsername(v)}
               isRequired
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "err-create-user" : undefined}
             />
           </FormGroup>
           <FormGroup label="Email" fieldId="cu-email">
@@ -258,6 +258,8 @@ const CreateUserModal: React.FC<{
               value={password}
               onChange={(_ev, v) => setPassword(v)}
               isRequired
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "err-create-user" : undefined}
             />
           </FormGroup>
         </Form>
@@ -350,7 +352,7 @@ const ProfileTab: React.FC<{
 
   return (
     <>
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
       <Form>
         <FormGroup label="Email" fieldId="eu-email">
           <TextInput
@@ -455,11 +457,11 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
     }
   };
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Flex style={{ marginBottom: 16 }}>
         <FlexItem align={{ default: "alignRight" }}>

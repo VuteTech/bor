@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Alert,
   Button,
   Form,
   FormGroup,
@@ -13,6 +12,7 @@ import {
   Label,
   ActionGroup,
 } from "@patternfly/react-core";
+import { LiveAlert } from "../../components/LiveAlert";
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
 import PencilAltIcon from "@patternfly/react-icons/dist/esm/icons/pencil-alt-icon";
 import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
@@ -233,7 +233,7 @@ export const MFATab: React.FC = () => {
   if (loading) {
     return (
       <div style={{ padding: "32px 0", textAlign: "center" }}>
-        <Spinner size="lg" />
+        <Spinner size="lg" aria-label="Loading" />
       </div>
     );
   }
@@ -244,24 +244,19 @@ export const MFATab: React.FC = () => {
     <div style={{ padding: "4px 0" }}>
 
       {/* ── Global alerts ── */}
-      {error && (
-        <Alert
-          variant="danger"
-          title={error}
-          isInline
-          actionClose={<Button variant="plain" onClick={() => setError(null)}>&times;</Button>}
-          style={{ marginBottom: 16 }}
-        />
-      )}
-      {successMsg && (
-        <Alert
-          variant="success"
-          title={successMsg}
-          isInline
-          actionClose={<Button variant="plain" onClick={() => setSuccessMsg(null)}>&times;</Button>}
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      <LiveAlert
+        message={error}
+        isInline
+        actionClose={<Button variant="plain" onClick={() => setError(null)}>&times;</Button>}
+        style={{ marginBottom: 16 }}
+      />
+      <LiveAlert
+        message={successMsg}
+        variant="success"
+        isInline
+        actionClose={<Button variant="plain" onClick={() => setSuccessMsg(null)}>&times;</Button>}
+        style={{ marginBottom: 16 }}
+      />
 
       {/* ── Section header ── */}
       <div style={{ marginBottom: 20 }}>
@@ -319,9 +314,7 @@ export const MFATab: React.FC = () => {
             }}
           >
             <Form onSubmit={handleDisable} style={{ maxWidth: 420 }}>
-              {disableError && (
-                <Alert variant="danger" title={disableError} isInline style={{ marginBottom: 12 }} />
-              )}
+              <LiveAlert message={disableError} isInline style={{ marginBottom: 12 }} />
               <FormGroup
                 label="Confirm your password to remove the authenticator app"
                 fieldId="mfa-disable-password"

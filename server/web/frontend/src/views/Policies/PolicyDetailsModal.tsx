@@ -2872,11 +2872,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         style={{ fontFamily: "monospace", fontSize: "0.85rem" }}
         aria-label="Policy content JSON editor"
       />
-      {validationError && (
-        <Alert variant="danger" isInline title="Validation Error" style={{ marginTop: "0.5rem" }}>
-          {validationError}
-        </Alert>
-      )}
+      <div aria-live="assertive" aria-atomic="true">
+        {validationError && (
+          <Alert variant="danger" isInline title="Validation Error" style={{ marginTop: "0.5rem" }}>
+            {validationError}
+          </Alert>
+        )}
+      </div>
     </div>
   );
 
@@ -3186,11 +3188,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     >
       <ModalHeader title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"} />
       <ModalBody>
-      {error && (
-        <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
-          {error}
-        </Alert>
-      )}
+      <div aria-live="assertive" aria-atomic="true">
+        {error && (
+          <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
+            {error}
+          </Alert>
+        )}
+      </div>
 
       <Tabs
         activeKey={activeTab}

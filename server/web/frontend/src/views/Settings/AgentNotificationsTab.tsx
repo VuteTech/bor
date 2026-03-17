@@ -3,8 +3,8 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
-  Alert,
   Button,
   Form,
   FormGroup,
@@ -79,7 +79,7 @@ export const AgentNotificationsTab: React.FC = () => {
     }
   }, [notifyUsers, notifyCooldown, notifyMessage, notifyMessageFirefox, notifyMessageChrome]);
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   const MIN_COOLDOWN = 60;
 
@@ -98,32 +98,27 @@ export const AgentNotificationsTab: React.FC = () => {
 
   return (
     <>
-      {error && (
-        <Alert
-          variant="danger"
-          title={error}
-          isInline
-          actionClose={
-            <Button variant="plain" onClick={() => setError(null)}>
-              &times;
-            </Button>
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
-      {success && (
-        <Alert
-          variant="success"
-          title={success}
-          isInline
-          actionClose={
-            <Button variant="plain" onClick={() => setSuccess(null)}>
-              &times;
-            </Button>
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      <LiveAlert
+        message={error}
+        isInline
+        actionClose={
+          <Button variant="plain" onClick={() => setError(null)}>
+            &times;
+          </Button>
+        }
+        style={{ marginBottom: 16 }}
+      />
+      <LiveAlert
+        message={success}
+        variant="success"
+        isInline
+        actionClose={
+          <Button variant="plain" onClick={() => setSuccess(null)}>
+            &times;
+          </Button>
+        }
+        style={{ marginBottom: 16 }}
+      />
 
       <Form style={{ maxWidth: 600 }}>
         <FormGroup label="Enable desktop notifications" fieldId="an-notify-users">

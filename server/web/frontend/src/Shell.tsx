@@ -121,6 +121,8 @@ export const Shell: React.FC = () => {
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  // Tracks the element that opened AccountModal so focus returns on close (WCAG 2.1.1)
+  const accountModalTriggerRef = React.useRef<HTMLElement | null>(null);
   const [mfaGateActive, setMfaGateActive] = useState(false);
 
   /* ── After session is established, check if MFA setup is required ── */
@@ -205,6 +207,7 @@ export const Shell: React.FC = () => {
       <DropdownItem
         key="security"
         onClick={() => {
+          accountModalTriggerRef.current = document.activeElement as HTMLElement;
           setIsUserMenuOpen(false);
           setIsAccountModalOpen(true);
         }}
@@ -486,7 +489,10 @@ export const Shell: React.FC = () => {
       </Page>
       <AccountModal
         isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
+        onClose={() => {
+          setIsAccountModalOpen(false);
+          setTimeout(() => accountModalTriggerRef.current?.focus(), 0);
+        }}
       />
     </>
   );

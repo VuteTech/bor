@@ -11,12 +11,12 @@ import {
   ModalVariant,
   Button,
   TextInput,
-  Alert,
   Form,
   FormGroup,
   Spinner,
   Content,
 } from "@patternfly/react-core";
+import { LiveAlert } from "../../components/LiveAlert";
 import { startRegistration } from "@simplewebauthn/browser";
 import {
   webAuthnRegisterBegin,
@@ -114,14 +114,11 @@ export const WebAuthnSetupModal: React.FC<WebAuthnSetupModalProps> = ({
       <ModalBody>
       {step === "name" && (
         <>
-          {error && (
-            <Alert
-              variant="danger"
-              title={error}
-              isInline
-              style={{ marginBottom: 16 }}
-            />
-          )}
+          <LiveAlert
+            message={error}
+            isInline
+            style={{ marginBottom: 16 }}
+          />
           <Content style={{ marginBottom: 16 }}>
             <Content>
               Give your security key a name so you can identify it later (e.g.
@@ -144,7 +141,7 @@ export const WebAuthnSetupModal: React.FC<WebAuthnSetupModalProps> = ({
 
       {step === "registering" && (
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <Spinner size="lg" />
+          <Spinner size="lg" aria-label="Loading" />
           <Content>
             <Content>{statusMsg}</Content>
           </Content>

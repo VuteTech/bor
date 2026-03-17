@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   PageSection,
   Title,
@@ -270,7 +271,7 @@ export const PolicyBindingsPage: React.FC = () => {
     return (
       <PageSection>
         <Flex justifyContent={{ default: "justifyContentCenter" }}>
-          <FlexItem><Spinner size="xl" /></FlexItem>
+          <FlexItem><Spinner size="xl" aria-label="Loading" /></FlexItem>
         </Flex>
       </PageSection>
     );
@@ -292,15 +293,12 @@ export const PolicyBindingsPage: React.FC = () => {
       </PageSection>
 
       <PageSection>
-        {error && (
-          <Alert
-            variant="danger"
-            title={error}
-            isInline
-            actionClose={<AlertActionCloseButton onClose={() => setError(null)} />}
-            style={{ marginBottom: "1rem" }}
-          />
-        )}
+        <LiveAlert
+          message={error}
+          isInline
+          actionClose={<AlertActionCloseButton onClose={() => setError(null)} />}
+          style={{ marginBottom: "1rem" }}
+        />
 
         {bindings.length === 0 ? (
           <EmptyState titleText="No policy bindings" headingLevel="h2" icon={CubesIcon}>
@@ -447,9 +445,7 @@ export const PolicyBindingsPage: React.FC = () => {
       >
         <ModalHeader title={editingBinding ? "Edit Binding" : "Create Binding"} />
         <ModalBody>
-          {formError && (
-            <Alert variant="danger" title={formError} isInline style={{ marginBottom: "1rem" }} />
-          )}
+          <LiveAlert message={formError} isInline style={{ marginBottom: "1rem" }} />
           <Form>
             <FormGroup label="Policy" isRequired fieldId="bind-policy">
               <FormSelect
@@ -548,9 +544,11 @@ export const PolicyBindingsPage: React.FC = () => {
               </>
             )}
           </p>
-          {deleteError && (
-            <Alert variant="danger" title="Error" isInline>{deleteError}</Alert>
-          )}
+          <div aria-live="assertive" aria-atomic="true">
+            {deleteError && (
+              <Alert variant="danger" title="Error" isInline>{deleteError}</Alert>
+            )}
+          </div>
           <FormGroup label={deleteConfirmLabel} isRequired fieldId="binding-delete-confirm">
             <TextInput
               id="binding-delete-confirm"

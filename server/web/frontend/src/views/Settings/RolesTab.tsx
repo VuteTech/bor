@@ -3,9 +3,9 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   Button,
-  Alert,
   Spinner,
   Modal,
   ModalVariant,
@@ -70,13 +70,11 @@ export const RolesTab: React.FC = () => {
     }
   };
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
-      {error && (
-        <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />
-      )}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Flex style={{ marginBottom: 16 }}>
         <FlexItem align={{ default: "alignRight" }}>
@@ -188,7 +186,7 @@ const CreateRoleModal: React.FC<{
     >
       <ModalHeader title="Create Role" />
       <ModalBody>
-        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <LiveAlert id="err-create-role" message={error} isInline style={{ marginBottom: 16 }} />
         <Form>
           <FormGroup label="Role Name" isRequired fieldId="cr-name">
             <TextInput
@@ -196,6 +194,8 @@ const CreateRoleModal: React.FC<{
               value={name}
               onChange={(_ev, v) => setName(v)}
               isRequired
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "err-create-role" : undefined}
             />
           </FormGroup>
           <FormGroup label="Description" fieldId="cr-desc">
@@ -293,9 +293,9 @@ const EditRoleModal: React.FC<{
     >
       <ModalHeader title={`Edit Role: ${role.name}`} />
       <ModalBody>
-        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <LiveAlert id="err-edit-role" message={error} isInline style={{ marginBottom: 16 }} />
         {loading ? (
-          <Spinner size="lg" />
+          <Spinner size="lg" aria-label="Loading" />
         ) : (
           <>
             <Form style={{ marginBottom: 24 }}>
@@ -305,6 +305,8 @@ const EditRoleModal: React.FC<{
                   value={name}
                   onChange={(_ev, v) => setName(v)}
                   isRequired
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "err-edit-role" : undefined}
                 />
               </FormGroup>
               <FormGroup label="Description" fieldId="er-desc">

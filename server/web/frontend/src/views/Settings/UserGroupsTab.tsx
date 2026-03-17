@@ -3,9 +3,9 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   Button,
-  Alert,
   Spinner,
   Modal,
   ModalVariant,
@@ -89,13 +89,11 @@ export const UserGroupsTab: React.FC = () => {
     }
   };
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
-      {error && (
-        <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />
-      )}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Flex style={{ marginBottom: 16 }}>
         <FlexItem align={{ default: "alignRight" }}>
@@ -215,7 +213,7 @@ const CreateGroupModal: React.FC<{
     >
       <ModalHeader title="Create User Group" />
       <ModalBody>
-        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <LiveAlert id="err-create-group" message={error} isInline style={{ marginBottom: 16 }} />
         <Form>
           <FormGroup label="Name" isRequired fieldId="cg-name">
             <TextInput
@@ -223,6 +221,8 @@ const CreateGroupModal: React.FC<{
               value={name}
               onChange={(_ev, v) => setName(v)}
               isRequired
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "err-create-group" : undefined}
             />
           </FormGroup>
           <FormGroup label="Description" fieldId="cg-desc">
@@ -320,7 +320,7 @@ const DetailsTab: React.FC<{
 
   return (
     <>
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+      <LiveAlert id="err-edit-group" message={error} isInline style={{ marginBottom: 16 }} />
       <Form>
         <FormGroup label="Name" isRequired fieldId="eg-name">
           <TextInput
@@ -328,6 +328,8 @@ const DetailsTab: React.FC<{
             value={name}
             onChange={(_ev, v) => setName(v)}
             isRequired
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "err-edit-group" : undefined}
           />
         </FormGroup>
         <FormGroup label="Description" fieldId="eg-desc">
@@ -413,7 +415,7 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
   const memberUserIds = new Set(members.map((m) => m.user_id));
   const availableUsers = users.filter((u) => !memberUserIds.has(u.id));
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
@@ -580,7 +582,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
     }
   };
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
