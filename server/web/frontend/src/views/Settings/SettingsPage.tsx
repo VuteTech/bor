@@ -71,7 +71,7 @@ export const SettingsPage: React.FC = () => {
           </Tab>
         )}
         {canSettings && (
-          <Tab eventKey="mfa-settings" title={<TabTitleText>MFA Settings</TabTitleText>}>
+          <Tab eventKey="mfa-settings" title={<TabTitleText><abbr title="Multi-Factor Authentication">MFA</abbr> Settings</TabTitleText>}>
             <div style={{ paddingTop: 16 }}>
               <MFASettingsTab />
             </div>

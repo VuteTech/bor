@@ -98,6 +98,40 @@
   --pf-v6-c-button--m-primary--BackgroundColor: #52b788 !important;
 }
 
+/* ── WCAG 2.4.11 Focus Appearance (≥2 CSS px, ≥3:1 contrast) ─────────────── */
+/* Satisfies the new WCAG 2.2 AA criterion across all three themes.           */
+/* !important is required because PF6 injects component CSS after this file.  */
+
+/* Light mode: brand-200 (#2d6a4f = 6.5:1 on white ✓) */
+:focus-visible {
+  outline: 2px solid #2d6a4f !important;
+  outline-offset: 2px !important;
+}
+/* Masthead + sidebar always have a dark background — use white ring */
+.pf-v6-c-masthead :focus-visible,
+.pf-v6-c-page__sidebar :focus-visible {
+  outline: 2px solid #ffffff !important;
+  outline-offset: 2px !important;
+}
+/* Dark mode body: light sage (#95d5b2 ≈ 10:1 on PF dark bg ✓) */
+:root:where(.pf-v6-theme-dark) :focus-visible {
+  outline: 2px solid #95d5b2 !important;
+  outline-offset: 2px !important;
+}
+/* Dark mode masthead/sidebar remain dark — keep white ring */
+:root:where(.pf-v6-theme-dark) .pf-v6-c-masthead :focus-visible,
+:root:where(.pf-v6-theme-dark) .pf-v6-c-page__sidebar :focus-visible {
+  outline: 2px solid #ffffff !important;
+  outline-offset: 2px !important;
+}
+
+/* ── WCAG 2.5.8 Target Size Minimum (≥24×24 CSS px) ─────────────────────── */
+/* Plain icon buttons must not fall below 24×24 regardless of content size.  */
+.pf-v6-c-button.pf-m-plain {
+  min-width: 24px;
+  min-height: 24px;
+}
+
 /* ── High Contrast mode ───────────────────────────────────────────────────── */
 /* Activated by .bor-theme-hc on <html> (manual toggle) or OS media queries.  */
 /* Targets WCAG 2.1 AAA (≥7:1) for text; AA+ (≥4.5:1) for all UI controls.  */

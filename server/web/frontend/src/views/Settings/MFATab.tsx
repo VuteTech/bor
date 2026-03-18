@@ -277,7 +277,7 @@ export const MFATab: React.FC = () => {
           <div style={methodBody}>
             <p style={methodTitle}>Authenticator app</p>
             <p style={methodDesc}>
-              Use FreeOTP, Aegis, Google Authenticator, or any TOTP-compatible app.
+              Use FreeOTP, Aegis, Google Authenticator, or any <abbr title="Time-based One-Time Password">TOTP</abbr>-compatible app.
             </p>
           </div>
           <div style={methodActions}>
@@ -365,7 +365,7 @@ export const MFATab: React.FC = () => {
           <div style={methodBody}>
             <p style={methodTitle}>Security keys</p>
             <p style={methodDesc}>
-              Hardware tokens (YubiKey, FIDO2 USB/NFC) or software keys (Bitwarden, 1Password).
+              Hardware tokens (YubiKey, <abbr title="Fast Identity Online 2">FIDO2</abbr> USB/<abbr title="Near-Field Communication">NFC</abbr>) or software keys (Bitwarden, 1Password).
             </p>
           </div>
           <div style={methodActions}>
