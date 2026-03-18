@@ -5,6 +5,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   ModalVariant,
   Button,
   TextInput,
@@ -13,11 +16,11 @@ import {
   Form,
   FormGroup,
   Spinner,
-  Text,
-  TextContent,
-  TextList,
-  TextListItem,
+  Content,
+  List,
+  ListItem,
 } from "@patternfly/react-core";
+import { LiveAlert } from "../../components/LiveAlert";
 import { mfaSetupBegin, mfaSetupFinish } from "../../apiClient/authApi";
 
 interface MFASetupModalProps {
@@ -115,31 +118,28 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
   return (
     <Modal
       variant={ModalVariant.medium}
-      title={step === "qr" ? "Set up two-factor authentication" : "Save your backup codes"}
       isOpen={isOpen}
       onClose={onClose}
-      actions={step === "qr" ? qrActions : backupActions}
     >
+      <ModalHeader title={step === "qr" ? "Set up two-factor authentication" : "Save your backup codes"} />
+      <ModalBody>
       {step === "qr" && (
         <>
-          {error && (
-            <Alert
-              variant="danger"
-              title={error}
-              isInline
-              style={{ marginBottom: 16 }}
-            />
-          )}
+          <LiveAlert
+            message={error}
+            isInline
+            style={{ marginBottom: 16 }}
+          />
           {loading ? (
-            <Spinner size="lg" />
+            <Spinner size="lg" aria-label="Loading" />
           ) : (
             <>
-              <TextContent style={{ marginBottom: 16 }}>
-                <Text>
+              <Content style={{ marginBottom: 16 }}>
+                <Content>
                   Scan the QR code below with your authenticator app (e.g. Google
                   Authenticator, FreeOTP, Aegis). Algorithm: <strong>{algorithm}</strong>
-                </Text>
-              </TextContent>
+                </Content>
+              </Content>
               {qrImageUrl && (
                 <div style={{ textAlign: "center", marginBottom: 16 }}>
                   <img
@@ -189,17 +189,21 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
             Each code can only be used once. If you lose access to your authenticator
             app, you can use a backup code to sign in.
           </Alert>
-          <TextContent style={{ marginBottom: 16 }}>
-            <TextList>
+          <Content style={{ marginBottom: 16 }}>
+            <List>
               {backupCodes.map((code) => (
-                <TextListItem key={code} style={{ fontFamily: "monospace" }}>
+                <ListItem key={code} style={{ fontFamily: "monospace" }}>
                   {code}
-                </TextListItem>
+                </ListItem>
               ))}
-            </TextList>
-          </TextContent>
+            </List>
+          </Content>
         </>
       )}
+      </ModalBody>
+      <ModalFooter>
+        {step === "qr" ? qrActions : backupActions}
+      </ModalFooter>
     </Modal>
   );
 };

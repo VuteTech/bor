@@ -1,42 +1,273 @@
-/* Bor brand color overrides for PatternFly v5 */
-/* Primary palette derived from logo color #0F2F24 (dark forest green) */
+/* Bor brand color overrides for PatternFly v6 */
+/* Muted sage-forest green palette — all key colors meet WCAG AA (≥4.5:1 normal text) */
+
+/* ── Light mode brand scale ──────────────────────────────────────────────── */
 :root {
-  --pf-v5-global--primary-color--100: #2E7D32;
-  --pf-v5-global--primary-color--200: #1B5E20;
-  --pf-v5-global--primary-color--light-100: #4CAF50;
-  --pf-v5-global--primary-color--dark-100: #1B5E20;
-  --pf-v5-global--link--Color: #2E7D32;
-  --pf-v5-global--link--Color--hover: #1B5E20;
-  --pf-v5-global--link--Color--visited: #1B5E20;
-  --pf-v5-global--active-color--100: #2E7D32;
-  --pf-v5-global--Color--status--custom--default: #2E7D32;
+  /* 100 → #52b788  sage-mint    ~3.1:1 on white  (large text / UI components) */
+  --pf-t--global--color--brand--100: #52b788;
+  /* 200 → #2d6a4f  deep sage    ~6.5:1 on white  ✓ WCAG AA */
+  --pf-t--global--color--brand--200: #2d6a4f;
+  /* 300 → #1b4332  dark forest  ~12:1  on white  ✓ WCAG AAA */
+  --pf-t--global--color--brand--300: #1b4332;
+  --pf-t--global--color--brand--400: #122b21;
+  --pf-t--global--color--brand--500: #0a1a14;
 }
 
-/* Masthead */
-.pf-v5-c-masthead {
-  --pf-v5-c-masthead--BackgroundColor: #0F2F24;
+/* ── Skip navigation link ─────────────────────────────────────────────────── */
+/* Visually hidden until focused — lets keyboard users jump past navigation   */
+.bor-skip-nav {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 10000;
+  padding: 0.6rem 1.25rem;
+  background: #000000;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  border-bottom-right-radius: 4px;
+  transition: top 0.1s;
+}
+.bor-skip-nav:focus {
+  top: 0;
 }
 
-/* Sidebar nav */
-.pf-v5-c-page__sidebar {
-  --pf-v5-c-page__sidebar--BackgroundColor: #0F2F24;
+/* ── Masthead ─────────────────────────────────────────────────────────────── */
+/* !important because @patternfly/react-styles injects component CSS after    */
+/* this file in the bundle, overriding same-specificity custom properties.    */
+.pf-v6-c-masthead {
+  --pf-v6-c-masthead--BackgroundColor: #1b4332 !important;
 }
 
-.pf-v5-c-nav__link.pf-m-current,
-.pf-v5-c-nav__link:hover {
-  --pf-v5-c-nav__link--m-current--BackgroundColor: rgba(46, 125, 50, 0.2);
+/* Nav toggle button (hamburger) — always white on the dark green masthead */
+.pf-v6-c-masthead .pf-v6-c-button.pf-m-plain {
+  color: #ffffff !important;
 }
 
-/* Button overrides */
-.pf-v5-c-button.pf-m-primary {
-  --pf-v5-c-button--m-primary--BackgroundColor: #2E7D32;
-  --pf-v5-c-button--m-primary--hover--BackgroundColor: #1B5E20;
-  --pf-v5-c-button--m-primary--active--BackgroundColor: #0F2F24;
-  --pf-v5-c-button--m-primary--focus--BackgroundColor: #1B5E20;
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.pf-v6-c-page__sidebar {
+  --pf-v6-c-page__sidebar--BackgroundColor: #1b4332 !important;
 }
 
-/* Login page button */
-.pf-v5-c-login .pf-v5-c-button.pf-m-primary {
-  --pf-v5-c-button--m-primary--BackgroundColor: #2E7D32;
-  --pf-v5-c-button--m-primary--hover--BackgroundColor: #1B5E20;
+/* Nav links — light text on dark forest sidebar, ~9:1 contrast */
+.pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+  --pf-v6-c-nav__link--Color: #d8f3dc;
+  --pf-v6-c-nav__link--hover--Color: #ffffff;
+  --pf-v6-c-nav__link--hover--BackgroundColor: rgba(82, 183, 136, 0.18);
+  --pf-v6-c-nav__link--m-current--BackgroundColor: rgba(82, 183, 136, 0.22);
+}
+
+/* ── Primary buttons ──────────────────────────────────────────────────────── */
+.pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #2d6a4f !important;
+}
+.pf-v6-c-login .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #2d6a4f !important;
+}
+
+/* ── Login page: logo watermark (PF6 native BackgroundImage — bottom-right) ─ */
+.pf-v6-c-background-image {
+  opacity: 0.07;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+/* PF6 dark mode is activated by adding `pf-v6-theme-dark` to <html>.         */
+/* Brand tokens in dark mode need lighter values to contrast against dark bg.  */
+
+:root:where(.pf-v6-theme-dark) {
+  /* Lighter sage tones for dark backgrounds */
+  --pf-t--global--color--brand--100: #95d5b2;  /* light sage   ~10:1 on pf dark bg */
+  --pf-t--global--color--brand--200: #74c69d;  /* medium sage  ~8:1 */
+  --pf-t--global--color--brand--300: #52b788;  /* sage         ~6:1 */
+  --pf-t--global--color--brand--400: #2d6a4f;
+  --pf-t--global--color--brand--500: #1b4332;
+  /* PF6 dark-mode brand alias tokens */
+  --pf-t--global--dark--color--brand--100: #95d5b2;
+  --pf-t--global--dark--color--brand--200: #74c69d;
+}
+
+/* Dark mode: masthead stays dark forest for consistent branding */
+:root:where(.pf-v6-theme-dark) .pf-v6-c-masthead {
+  --pf-v6-c-masthead--BackgroundColor: #122b21 !important;
+}
+:root:where(.pf-v6-theme-dark) .pf-v6-c-page__sidebar {
+  --pf-v6-c-page__sidebar--BackgroundColor: #122b21 !important;
+}
+:root:where(.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #52b788 !important;
+}
+
+/* ── WCAG 2.4.11 Focus Appearance (≥2 CSS px, ≥3:1 contrast) ─────────────── */
+/* Satisfies the new WCAG 2.2 AA criterion across all three themes.           */
+/* !important is required because PF6 injects component CSS after this file.  */
+
+/* Light mode: brand-200 (#2d6a4f = 6.5:1 on white ✓) */
+:focus-visible {
+  outline: 2px solid #2d6a4f !important;
+  outline-offset: 2px !important;
+}
+/* Masthead + sidebar always have a dark background — use white ring */
+.pf-v6-c-masthead :focus-visible,
+.pf-v6-c-page__sidebar :focus-visible {
+  outline: 2px solid #ffffff !important;
+  outline-offset: 2px !important;
+}
+/* Dark mode body: light sage (#95d5b2 ≈ 10:1 on PF dark bg ✓) */
+:root:where(.pf-v6-theme-dark) :focus-visible {
+  outline: 2px solid #95d5b2 !important;
+  outline-offset: 2px !important;
+}
+/* Dark mode masthead/sidebar remain dark — keep white ring */
+:root:where(.pf-v6-theme-dark) .pf-v6-c-masthead :focus-visible,
+:root:where(.pf-v6-theme-dark) .pf-v6-c-page__sidebar :focus-visible {
+  outline: 2px solid #ffffff !important;
+  outline-offset: 2px !important;
+}
+
+/* ── WCAG 2.5.8 Target Size Minimum (≥24×24 CSS px) ─────────────────────── */
+/* Plain icon buttons must not fall below 24×24 regardless of content size.  */
+.pf-v6-c-button.pf-m-plain {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+/* ── High Contrast mode ───────────────────────────────────────────────────── */
+/* Activated by .bor-theme-hc on <html> (manual toggle) or OS media queries.  */
+/* Targets WCAG 2.1 AAA (≥7:1) for text; AA+ (≥4.5:1) for all UI controls.  */
+
+:root:where(.bor-theme-hc) {
+  /* Brand escalated to AAA-level contrast on white bg */
+  --pf-t--global--color--brand--100: #005500;  /* 8.6:1 on #fff ✓ AAA */
+  --pf-t--global--color--brand--200: #004400;  /* 11:1  on #fff ✓ AAA */
+  --pf-t--global--color--brand--300: #003300;  /* 14:1  on #fff ✓ AAA */
+  --pf-t--global--color--brand--400: #002200;
+  --pf-t--global--color--brand--500: #001100;
+  /* All borders become opaque black for maximum visibility */
+  --pf-t--global--border--color--default: #000000;
+  --pf-t--global--border--color--strong: #000000;
+}
+
+/* HC masthead: pure black — maximum contrast */
+:root:where(.bor-theme-hc) .pf-v6-c-masthead {
+  --pf-v6-c-masthead--BackgroundColor: #000000 !important;
+}
+:root:where(.bor-theme-hc) .pf-v6-c-masthead .pf-v6-c-button.pf-m-plain {
+  color: #ffffff !important;
+}
+
+/* HC sidebar: black bg, white text, yellow active/hover */
+:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar {
+  --pf-v6-c-page__sidebar--BackgroundColor: #000000 !important;
+}
+:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+  --pf-v6-c-nav__link--Color: #ffffff;
+  --pf-v6-c-nav__link--hover--Color: #000000;
+  --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--Color: #000000;
+}
+
+/* HC primary button: black bg, white text, explicit border */
+:root:where(.bor-theme-hc) .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #000000 !important;
+  outline: 2px solid #000000;
+}
+
+/* HC focus ring: thick, always-visible, no reliance on color alone */
+:root:where(.bor-theme-hc) :focus-visible {
+  outline: 3px solid #000000 !important;
+  outline-offset: 3px !important;
+}
+/* Focus inside dark masthead/sidebar: white outline on dark bg */
+:root:where(.bor-theme-hc) .pf-v6-c-masthead :focus-visible,
+:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar :focus-visible {
+  outline: 3px solid #ffffff !important;
+  outline-offset: 3px !important;
+}
+
+/* HC + dark mode: yellow interactive elements (Windows HC Dark pattern) */
+:root:where(.bor-theme-hc.pf-v6-theme-dark) {
+  --pf-t--global--color--brand--100: #b3ffb3;  /* ~16:1 on #000 */
+  --pf-t--global--color--brand--200: #99ff99;
+  --pf-t--global--color--brand--300: #7fff7f;
+  --pf-t--global--color--brand--400: #5fff5f;
+  --pf-t--global--color--brand--500: #3fff3f;
+  --pf-t--global--border--color--default: #ffffff;
+  --pf-t--global--border--color--strong: #ffffff;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
+  --pf-v6-c-button--m-primary--BackgroundColor: #ffff00 !important;
+  color: #000000 !important;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+  --pf-v6-c-nav__link--Color: #ffffff;
+  --pf-v6-c-nav__link--hover--Color: #000000;
+  --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
+  --pf-v6-c-nav__link--m-current--Color: #000000;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) :focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 3px !important;
+}
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-masthead :focus-visible,
+:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-page__sidebar :focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 3px !important;
+}
+
+/* ── OS: prefers-contrast: more (auto-apply HC without toggle) ─────────────── */
+@media (prefers-contrast: more) {
+  :root {
+    --pf-t--global--color--brand--100: #005500;
+    --pf-t--global--color--brand--200: #004400;
+    --pf-t--global--color--brand--300: #003300;
+    --pf-t--global--border--color--default: #000000;
+    --pf-t--global--border--color--strong: #000000;
+  }
+  .pf-v6-c-masthead {
+    --pf-v6-c-masthead--BackgroundColor: #000000 !important;
+  }
+  .pf-v6-c-page__sidebar {
+    --pf-v6-c-page__sidebar--BackgroundColor: #000000 !important;
+  }
+  .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
+    --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
+    --pf-v6-c-nav__link--hover--Color: #000000;
+    --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
+    --pf-v6-c-nav__link--m-current--Color: #000000;
+  }
+  .pf-v6-c-button.pf-m-primary {
+    --pf-v6-c-button--m-primary--BackgroundColor: #000000 !important;
+  }
+  :focus-visible {
+    outline: 3px solid currentColor !important;
+    outline-offset: 3px !important;
+  }
+}
+
+/* ── OS: forced-colors (Windows High Contrast / browser-controlled) ─────────── */
+/* Let the browser override colors freely; only fix focus rings and icons.     */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 3px !important;
+  }
+  /* SVG icons may lose their fill in forced-colors mode */
+  svg {
+    forced-color-adjust: auto;
+  }
+}
+
+/* ── prefers-reduced-motion ───────────────────────────────────────────────── */
+/* Disable CSS transitions for users who prefer reduced motion (WCAG 2.3.3)   */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

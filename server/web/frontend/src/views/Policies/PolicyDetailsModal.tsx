@@ -5,6 +5,9 @@
 import React, { useState, useEffect } from "react";
 import {
   Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   ModalVariant,
   Button,
   Tabs,
@@ -2000,7 +2003,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <div style={{
           width: "260px",
           minWidth: "260px",
-          borderRight: "1px solid #d2d2d2",
+          borderRight: "1px solid var(--pf-t--global--border--color--default)",
           overflowY: "auto",
           paddingRight: "0",
         }}>
@@ -2019,9 +2022,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   fontSize: "0.8rem",
                   textTransform: "uppercase",
                   letterSpacing: "0.03em",
-                  color: "#151515",
-                  backgroundColor: "#f0f0f0",
-                  borderBottom: "1px solid #d2d2d2",
+                  color: "var(--pf-t--global--text--color--regular)",
+                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
+                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                   userSelect: "none",
                   display: "flex",
                   alignItems: "center",
@@ -2034,8 +2037,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   height: 0,
                   borderStyle: "solid",
                   ...(firefoxExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "#151515 transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent #151515" }),
+                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
+                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
                 }} />
                 {group}
               </div>
@@ -2054,21 +2057,21 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                       padding: "0.35rem 0.75rem 0.35rem 1.5rem",
                       cursor: "pointer",
                       fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#0066cc" : isConfigured ? "#e7f1fa" : "transparent",
-                      color: isSelected ? "#fff" : "#151515",
+                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
+                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
                       fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid #e8e8e8",
+                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                       userSelect: "none",
                       transition: "background-color 0.1s ease",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
                     }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "#d2e4f5" : "#e7f1fa"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "#e7f1fa" : "transparent"; }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
                   >
                     <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "#0066cc", fontSize: "0.7rem" }}>●</span>}
+                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
                       {p.label}
                     </span>
                     {isConfigured && (
@@ -2078,7 +2081,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                         onClick={(e) => { e.stopPropagation(); handleFirefoxRemovePolicy(p.key); }}
                         style={{
                           fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "#6a6e73",
+                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
                           padding: "0 0.25rem",
                           minWidth: "auto",
                         }}
@@ -2440,7 +2443,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <div style={{
           width: "260px",
           minWidth: "260px",
-          borderRight: "1px solid #d2d2d2",
+          borderRight: "1px solid var(--pf-t--global--border--color--default)",
           overflowY: "auto",
           paddingRight: "0",
         }}>
@@ -2459,9 +2462,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   fontSize: "0.8rem",
                   textTransform: "uppercase",
                   letterSpacing: "0.03em",
-                  color: "#151515",
-                  backgroundColor: "#f0f0f0",
-                  borderBottom: "1px solid #d2d2d2",
+                  color: "var(--pf-t--global--text--color--regular)",
+                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
+                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                   userSelect: "none",
                   display: "flex",
                   alignItems: "center",
@@ -2474,8 +2477,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   height: 0,
                   borderStyle: "solid",
                   ...(kconfigExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "#151515 transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent #151515" }),
+                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
+                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
                 }} />
                 {group}
               </div>
@@ -2494,21 +2497,21 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                       padding: "0.35rem 0.75rem 0.35rem 1.5rem",
                       cursor: "pointer",
                       fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#0066cc" : isConfigured ? "#e7f1fa" : "transparent",
-                      color: isSelected ? "#fff" : "#151515",
+                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
+                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
                       fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid #e8e8e8",
+                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                       userSelect: "none",
                       transition: "background-color 0.1s ease",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
                     }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "#d2e4f5" : "#e7f1fa"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "#e7f1fa" : "transparent"; }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
                   >
                     <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "#0066cc", fontSize: "0.7rem" }}>●</span>}
+                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
                       {p.label}
                     </span>
                     {isConfigured && (
@@ -2518,7 +2521,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                         onClick={(e) => { e.stopPropagation(); handleKconfigRemovePolicy(p.key); }}
                         style={{
                           fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "#6a6e73",
+                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
                           padding: "0 0.25rem",
                           minWidth: "auto",
                         }}
@@ -2671,7 +2674,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <div style={{
           width: "260px",
           minWidth: "260px",
-          borderRight: "1px solid #d2d2d2",
+          borderRight: "1px solid var(--pf-t--global--border--color--default)",
           overflowY: "auto",
           paddingRight: "0",
         }}>
@@ -2690,9 +2693,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   fontSize: "0.8rem",
                   textTransform: "uppercase",
                   letterSpacing: "0.03em",
-                  color: "#151515",
-                  backgroundColor: "#f0f0f0",
-                  borderBottom: "1px solid #d2d2d2",
+                  color: "var(--pf-t--global--text--color--regular)",
+                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
+                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                   userSelect: "none",
                   display: "flex",
                   alignItems: "center",
@@ -2705,8 +2708,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   height: 0,
                   borderStyle: "solid",
                   ...(chromeExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "#151515 transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent #151515" }),
+                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
+                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
                 }} />
                 {group}
               </div>
@@ -2725,25 +2728,25 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                       padding: "0.35rem 0.75rem 0.35rem 1.5rem",
                       cursor: "pointer",
                       fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#0066cc" : isConfigured ? "#e7f1fa" : "transparent",
-                      color: isSelected ? "#fff" : "#151515",
+                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
+                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
                       fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid #e8e8e8",
+                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                       userSelect: "none",
                       transition: "background-color 0.1s ease",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
                     }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "#d2e4f5" : "#e7f1fa"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "#e7f1fa" : "transparent"; }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
                   >
                     <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden" }}>
                       <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "#0066cc", fontSize: "0.7rem" }}>●</span>}
+                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
                         {p.label}
                       </span>
-                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "#6a6e73", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {p.description}
                       </span>
                     </span>
@@ -2869,11 +2872,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         style={{ fontFamily: "monospace", fontSize: "0.85rem" }}
         aria-label="Policy content JSON editor"
       />
-      {validationError && (
-        <Alert variant="danger" isInline title="Validation Error" style={{ marginTop: "0.5rem" }}>
-          {validationError}
-        </Alert>
-      )}
+      <div aria-live="assertive" aria-atomic="true">
+        {validationError && (
+          <Alert variant="danger" isInline title="Validation Error" style={{ marginTop: "0.5rem" }}>
+            {validationError}
+          </Alert>
+        )}
+      </div>
     </div>
   );
 
@@ -3125,9 +3130,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   style={{
                     padding: "0.5rem 0.75rem",
                     cursor: t.isDisabled ? "not-allowed" : "pointer",
-                    backgroundColor: isActive ? "#0066cc" : isHovered ? "#e7f1fa" : "transparent",
-                    color: isActive ? "#fff" : t.isDisabled ? "#aaa" : "inherit",
-                    borderBottom: "1px solid #d2d2d2",
+                    backgroundColor: isActive ? "#2d6a4f" : isHovered ? "rgba(45, 106, 79, 0.1)" : "transparent",
+                    color: isActive ? "#fff" : t.isDisabled ? "var(--pf-t--global--text--color--disabled)" : "var(--pf-t--global--text--color--regular)",
+                    borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                     fontSize: "0.875rem",
                     fontWeight: isActive ? 600 : 400,
                     userSelect: "none",
@@ -3178,41 +3183,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     <>
     <Modal
       variant={ModalVariant.large}
-      title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"}
       isOpen={isOpen}
       onClose={handleClose}
-      actions={[
-        ...(isEditable ? [
-        <Button
-          key="save"
-          variant="primary"
-          onClick={handleSave}
-          isLoading={saving}
-          isDisabled={saving || !name.trim()}
-        >
-          {isEditMode ? "Save Changes" : "Create Policy"}
-        </Button>,
-        ] : []),
-        ...(isEditMode ? [
-        <Button
-          key="delete"
-          variant="danger"
-          onClick={() => setShowDeleteConfirm(true)}
-          isDisabled={saving}
-        >
-          Delete
-        </Button>,
-        ] : []),
-        <Button key="cancel" variant="link" onClick={handleClose}>
-          Cancel
-        </Button>,
-      ]}
     >
-      {error && (
-        <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
-          {error}
-        </Alert>
-      )}
+      <ModalHeader title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"} />
+      <ModalBody>
+      <div aria-live="assertive" aria-atomic="true">
+        {error && (
+          <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
+            {error}
+          </Alert>
+        )}
+      </div>
 
       <Tabs
         activeKey={activeTab}
@@ -3231,15 +3213,47 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           {renderConfigurationTab()}
         </Tab>
       </Tabs>
+      </ModalBody>
+      <ModalFooter>
+        {isEditable && (
+        <Button
+          key="save"
+          variant="primary"
+          onClick={handleSave}
+          isLoading={saving}
+          isDisabled={saving || !name.trim()}
+        >
+          {isEditMode ? "Save Changes" : "Create Policy"}
+        </Button>
+        )}
+        {isEditMode && (
+        <Button
+          key="delete"
+          variant="danger"
+          onClick={() => setShowDeleteConfirm(true)}
+          isDisabled={saving}
+        >
+          Delete
+        </Button>
+        )}
+        <Button key="cancel" variant="link" onClick={handleClose}>
+          Cancel
+        </Button>
+      </ModalFooter>
     </Modal>
 
     {/* Delete confirmation dialog */}
     <Modal
       variant={ModalVariant.small}
-      title="Delete Policy"
       isOpen={showDeleteConfirm}
       onClose={() => setShowDeleteConfirm(false)}
-      actions={[
+    >
+      <ModalHeader title="Delete Policy" />
+      <ModalBody>
+      Are you sure you want to delete the policy <strong>{name}</strong>?
+      This action cannot be undone. All associated bindings will also be removed.
+      </ModalBody>
+      <ModalFooter>
         <Button
           key="confirm-delete"
           variant="danger"
@@ -3248,14 +3262,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           isDisabled={saving}
         >
           Delete
-        </Button>,
+        </Button>
         <Button key="cancel-delete" variant="link" onClick={() => setShowDeleteConfirm(false)}>
           Cancel
-        </Button>,
-      ]}
-    >
-      Are you sure you want to delete the policy <strong>{name}</strong>?
-      This action cannot be undone. All associated bindings will also be removed.
+        </Button>
+      </ModalFooter>
     </Modal>
     </>
   );

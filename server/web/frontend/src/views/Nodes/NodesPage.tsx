@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   PageSection,
   Title,
@@ -40,9 +41,9 @@ import {
   DescriptionListDescription,
   EmptyState,
   EmptyStateBody,
-  EmptyStateHeader,
-  EmptyStateIcon,
   Modal,
+  ModalHeader,
+  ModalBody,
   ModalVariant,
   TextInput,
   Form,
@@ -573,11 +574,13 @@ export const NodesPage: React.FC = () => {
 
           <Flex direction={{ default: "column" }} spaceItems={{ default: "spaceItemsSm" }}>
             <FlexItem>
-              {refreshError && (
-                <Alert variant="danger" title="Metadata refresh failed" isInline style={{ marginBottom: "0.5rem" }}>
-                  {refreshError}
-                </Alert>
-              )}
+              <div aria-live="assertive" aria-atomic="true">
+                {refreshError && (
+                  <Alert variant="danger" title="Metadata refresh failed" isInline style={{ marginBottom: "0.5rem" }}>
+                    {refreshError}
+                  </Alert>
+                )}
+              </div>
               <Button
                 variant="secondary"
                 isLoading={refreshing}
@@ -615,16 +618,20 @@ export const NodesPage: React.FC = () => {
             </FlexItem>
             {selectedNode.cert_serial && (
               <FlexItem>
-                {revokeError && (
-                  <Alert variant="danger" title="Revocation failed" isInline style={{ marginBottom: "0.5rem" }}>
-                    {revokeError}
-                  </Alert>
-                )}
-                {revokeSuccess && (
-                  <Alert variant="success" title="Certificate revoked" isInline style={{ marginBottom: "0.5rem" }}>
-                    The agent will be denied on its next reconnect attempt.
-                  </Alert>
-                )}
+                <div aria-live="assertive" aria-atomic="true">
+                  {revokeError && (
+                    <Alert variant="danger" title="Revocation failed" isInline style={{ marginBottom: "0.5rem" }}>
+                      {revokeError}
+                    </Alert>
+                  )}
+                </div>
+                <div aria-live="polite" aria-atomic="true">
+                  {revokeSuccess && (
+                    <Alert variant="success" title="Certificate revoked" isInline style={{ marginBottom: "0.5rem" }}>
+                      The agent will be denied on its next reconnect attempt.
+                    </Alert>
+                  )}
+                </div>
                 <Button
                   variant="secondary"
                   isDanger
@@ -647,7 +654,7 @@ export const NodesPage: React.FC = () => {
     return (
       <PageSection>
         <Flex justifyContent={{ default: "justifyContentCenter" }}>
-          <FlexItem><Spinner size="xl" /></FlexItem>
+          <FlexItem><Spinner size="xl" aria-label="Loading" /></FlexItem>
         </Flex>
       </PageSection>
     );
@@ -656,7 +663,9 @@ export const NodesPage: React.FC = () => {
   if (error) {
     return (
       <PageSection>
-        <Alert variant="danger" title="Error loading nodes">{error}</Alert>
+        <div aria-live="assertive" aria-atomic="true">
+          <Alert variant="danger" title="Error loading nodes">{error}</Alert>
+        </div>
       </PageSection>
     );
   }
@@ -672,17 +681,19 @@ export const NodesPage: React.FC = () => {
   return (
     <>
       <PageSection>
-        {actionError && (
-          <Alert
-            variant="danger"
-            title="Action failed"
-            isInline
-            actionClose={<Button variant="plain" onClick={() => setActionError(null)}>×</Button>}
-            style={{ marginBottom: "1rem" }}
-          >
-            {actionError}
-          </Alert>
-        )}
+        <div aria-live="assertive" aria-atomic="true">
+          {actionError && (
+            <Alert
+              variant="danger"
+              title="Action failed"
+              isInline
+              actionClose={<Button variant="plain" onClick={() => setActionError(null)}>×</Button>}
+              style={{ marginBottom: "1rem" }}
+            >
+              {actionError}
+            </Alert>
+          )}
+        </div>
 
         <Drawer isExpanded={drawerExpanded} isInline>
           <DrawerContent panelContent={drawerPanel}>
@@ -866,12 +877,7 @@ export const NodesPage: React.FC = () => {
 
               {/* ── Table ── */}
               {sortedNodes.length === 0 ? (
-                <EmptyState>
-                  <EmptyStateHeader
-                    titleText="No nodes found"
-                    headingLevel="h2"
-                    icon={<EmptyStateIcon icon={CubesIcon} />}
-                  />
+                <EmptyState titleText="No nodes found" headingLevel="h2" icon={CubesIcon}>
                   <EmptyStateBody>
                     {appliedSearch || activeFilters.length > 0
                       ? "No nodes match the current filters. Try adjusting your search or filters."
@@ -947,14 +953,17 @@ export const NodesPage: React.FC = () => {
       {/* ── Add to group modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={`Add to group (${groupModalTargetIds.length} node${groupModalTargetIds.length !== 1 ? "s" : ""})`}
         isOpen={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
       >
+        <ModalHeader title={`Add to group (${groupModalTargetIds.length} node${groupModalTargetIds.length !== 1 ? "s" : ""})`} />
+        <ModalBody>
         <Form>
-          {groupActionError && (
-            <Alert variant="danger" title="Error" isInline>{groupActionError}</Alert>
-          )}
+          <div aria-live="assertive" aria-atomic="true">
+            {groupActionError && (
+              <Alert variant="danger" title="Error" isInline>{groupActionError}</Alert>
+            )}
+          </div>
           <FormGroup label="Node group" isRequired fieldId="group-picker">
             <Select
               isOpen={groupPickerOpen}
@@ -998,15 +1007,17 @@ export const NodesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
 
       {/* ── Remove from group modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title="Remove from group"
         isOpen={removeGroupModalOpen}
         onClose={() => setRemoveGroupModalOpen(false)}
       >
+        <ModalHeader title="Remove from group" />
+        <ModalBody>
         <Form>
           {removeGroupOptions.length === 0 ? (
             <p>The selected node(s) are not in any groups.</p>
@@ -1030,9 +1041,11 @@ export const NodesPage: React.FC = () => {
               ))}
             </>
           )}
-          {removeGroupError && (
-            <Alert variant="danger" title="Error" isInline>{removeGroupError}</Alert>
-          )}
+          <div aria-live="assertive" aria-atomic="true">
+            {removeGroupError && (
+              <Alert variant="danger" title="Error" isInline>{removeGroupError}</Alert>
+            )}
+          </div>
           <ActionGroup>
             <Button
               variant="primary"
@@ -1047,16 +1060,17 @@ export const NodesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
 
       {/* ── Decommission confirmation modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title="Decommission node"
-        titleIconVariant="warning"
         isOpen={decommModalOpen}
         onClose={() => setDecommModalOpen(false)}
       >
+        <ModalHeader title="Decommission node" titleIconVariant="warning" />
+        <ModalBody>
         <Form>
           <p>
             {decommTargetIds.length === 1 ? (
@@ -1071,9 +1085,11 @@ export const NodesPage: React.FC = () => {
               </>
             )}
           </p>
-          {decommError && (
-            <Alert variant="danger" title="Error" isInline>{decommError}</Alert>
-          )}
+          <div aria-live="assertive" aria-atomic="true">
+            {decommError && (
+              <Alert variant="danger" title="Error" isInline>{decommError}</Alert>
+            )}
+          </div>
           <FormGroup label={decommConfirmLabel} isRequired fieldId="decommission-confirm">
             <TextInput
               id="decommission-confirm"
@@ -1097,6 +1113,7 @@ export const NodesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
       </Modal>
     </>
   );

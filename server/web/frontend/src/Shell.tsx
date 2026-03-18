@@ -8,6 +8,7 @@ import {
   Masthead,
   MastheadMain,
   MastheadBrand,
+  MastheadLogo,
   MastheadContent,
   MastheadToggle,
   PageSidebar,
@@ -25,9 +26,15 @@ import {
   DropdownItem,
   DropdownList,
   PageToggleButton,
+  Button,
+  Tooltip,
 } from "@patternfly/react-core";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
+import SunIcon from "@patternfly/react-icons/dist/esm/icons/sun-icon";
+import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
+import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
+import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
 import { checkSession, logout, getStoredToken, getMFAStatus, UserInfo } from "./apiClient/authApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
@@ -44,16 +51,78 @@ import { AuditLogsPage } from "./views/AuditLogs";
 import logoWhite from "./assets/logo-white.svg";
 
 type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "audit-logs" | "settings";
+type ThemeMode = "light" | "dark" | "system";
+
+const PAGE_NAMES: Record<ScreenKey, string> = {
+  dashboard:         "Dashboard",
+  policies:          "Policies",
+  nodes:             "Nodes",
+  "node-groups":     "Node Groups",
+  "policy-bindings": "Policy Bindings",
+  compliance:        "Compliance",
+  "audit-logs":      "Audit Logs",
+  settings:          "Settings",
+};
 
 export const Shell: React.FC = () => {
+  /* ── Theme state ── */
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    return (localStorage.getItem("bor-theme") as ThemeMode) || "system";
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const applyDark = (dark: boolean) => root.classList.toggle("pf-v6-theme-dark", dark);
+
+    if (themeMode === "dark") {
+      applyDark(true);
+      return;
+    }
+    if (themeMode === "light") {
+      applyDark(false);
+      return;
+    }
+    // system: follow prefers-color-scheme
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    applyDark(mq.matches);
+    const handler = (e: MediaQueryListEvent) => applyDark(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [themeMode]);
+
+  const cycleTheme = () => {
+    const next: ThemeMode =
+      themeMode === "light" ? "dark" : themeMode === "dark" ? "system" : "light";
+    localStorage.setItem("bor-theme", next);
+    setThemeMode(next);
+  };
+
+  /* ── High contrast state ── */
+  const [isHighContrast, setIsHighContrast] = useState(
+    () => localStorage.getItem("bor-hc") === "true"
+  );
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("bor-theme-hc", isHighContrast);
+    localStorage.setItem("bor-hc", String(isHighContrast));
+  }, [isHighContrast]);
+
   /* ── Auth state ── */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
   const [authChecked, setAuthChecked] = useState(false);
 
   const [activeScreen, setActiveScreen] = useState<ScreenKey>("dashboard");
+
+  /* ── Update document title on screen change (WCAG 2.4.2) ── */
+  useEffect(() => {
+    document.title = `${PAGE_NAMES[activeScreen]} | Bor`;
+  }, [activeScreen]);
+
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  // Tracks the element that opened AccountModal so focus returns on close (WCAG 2.1.1)
+  const accountModalTriggerRef = React.useRef<HTMLElement | null>(null);
   const [mfaGateActive, setMfaGateActive] = useState(false);
 
   /* ── After session is established, check if MFA setup is required ── */
@@ -138,6 +207,7 @@ export const Shell: React.FC = () => {
       <DropdownItem
         key="security"
         onClick={() => {
+          accountModalTriggerRef.current = document.activeElement as HTMLElement;
           setIsUserMenuOpen(false);
           setIsAccountModalOpen(true);
         }}
@@ -156,41 +226,32 @@ export const Shell: React.FC = () => {
     </>
   );
 
-  const PAGE_NAMES: Record<ScreenKey, string> = {
-    dashboard:        "Dashboard",
-    policies:         "Policies",
-    nodes:            "Nodes",
-    "node-groups":    "Node Groups",
-    "policy-bindings":"Policy Bindings",
-    compliance:       "Compliance",
-    "audit-logs":     "Audit Logs",
-    settings:         "Settings",
-  };
-
   /* ── Header / Masthead ── */
   const mastheadBlock = (
     <Masthead>
-      <MastheadToggle>
-        <PageToggleButton variant="plain" aria-label="Global navigation">
-          <BarsIcon />
-        </PageToggleButton>
-      </MastheadToggle>
       <MastheadMain>
+        <MastheadToggle>
+          <PageToggleButton variant="plain" aria-label="Global navigation">
+            <BarsIcon />
+          </PageToggleButton>
+        </MastheadToggle>
         <MastheadBrand>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <img src={logoWhite} alt="Bor" style={{ height: "36px" }} />
-            <span
-              style={{
-                fontFamily: "RedHatDisplay, Overpass, Arial, sans-serif",
-                fontSize: "1.125rem",
-                fontWeight: 600,
-                color: "#fff",
-                letterSpacing: "0.02em",
-              }}
-            >
-              Bor
-            </span>
-          </div>
+          <MastheadLogo>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <img src={logoWhite} alt="Bor" style={{ height: "36px" }} />
+              <span
+                style={{
+                  fontFamily: "RedHatDisplay, Overpass, Arial, sans-serif",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  color: "#fff",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Bor
+              </span>
+            </div>
+          </MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
@@ -203,7 +264,60 @@ export const Shell: React.FC = () => {
                 {PAGE_NAMES[activeScreen]}
               </span>
             </ToolbarItem>
-            <ToolbarItem align={{ default: "alignRight" }}>
+            <ToolbarItem align={{ default: "alignEnd" }} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <Tooltip
+                content={isHighContrast ? "High contrast on (click to disable)" : "High contrast off (click to enable)"}
+                position="bottom"
+              >
+                <Button
+                  variant="plain"
+                  aria-label={isHighContrast ? "Disable high contrast" : "Enable high contrast"}
+                  aria-pressed={isHighContrast}
+                  onClick={() => setIsHighContrast(v => !v)}
+                  style={{
+                    color: "#fff",
+                    padding: "0.375rem",
+                    ...(isHighContrast && {
+                      backgroundColor: "rgba(255,255,255,0.2)",
+                      borderRadius: "3px",
+                      outline: "2px solid #fff",
+                    }),
+                  }}
+                >
+                  <AdjustIcon />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                content={
+                  themeMode === "light"
+                    ? "Light theme (click for dark)"
+                    : themeMode === "dark"
+                    ? "Dark theme (click for system)"
+                    : "System theme (click for light)"
+                }
+                position="bottom"
+              >
+                <Button
+                  variant="plain"
+                  aria-label={
+                    themeMode === "light"
+                      ? "Switch to dark theme"
+                      : themeMode === "dark"
+                      ? "Switch to system theme"
+                      : "Switch to light theme"
+                  }
+                  onClick={cycleTheme}
+                  style={{ color: "#fff", padding: "0.375rem" }}
+                >
+                  {themeMode === "light" ? (
+                    <SunIcon />
+                  ) : themeMode === "dark" ? (
+                    <MoonIcon />
+                  ) : (
+                    <DesktopIcon />
+                  )}
+                </Button>
+              </Tooltip>
               <Dropdown
                 isOpen={isUserMenuOpen}
                 onSelect={() => setIsUserMenuOpen(false)}
@@ -318,7 +432,7 @@ export const Shell: React.FC = () => {
     <PageSection
       variant="light"
       padding={{ default: "paddingSm" }}
-      style={{ borderBottom: "1px solid var(--pf-v5-global--BorderColor--100)" }}
+      style={{ borderBottom: "1px solid var(--pf-t--global--border--color--default)" }}
     >
       <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>
         {PAGE_SUBTITLES[activeScreen]}
@@ -342,7 +456,7 @@ export const Shell: React.FC = () => {
       case "compliance":
         return (
           <PageSection>
-            <div className="pf-v5-c-content">
+            <div className="pf-v6-c-content">
               <h1>Compliance</h1>
               <p>View compliance reports and status.</p>
             </div>
@@ -359,18 +473,26 @@ export const Shell: React.FC = () => {
 
   return (
     <>
+      {/* Skip navigation — first focusable element, visible on focus (WCAG 2.4.1) */}
+      <a href="#bor-main-content" className="bor-skip-nav">
+        Skip to main content
+      </a>
       <Page
-        header={mastheadBlock}
+        masthead={mastheadBlock}
         sidebar={sideNavBlock}
         isManagedSidebar
         defaultManagedSidebarIsOpen={true}
+        mainContainerId="bor-main-content"
       >
         {subtitleStrip}
         {renderActiveScreen()}
       </Page>
       <AccountModal
         isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
+        onClose={() => {
+          setIsAccountModalOpen(false);
+          setTimeout(() => accountModalTriggerRef.current?.focus(), 0);
+        }}
       />
     </>
   );

@@ -209,7 +209,7 @@ export const PoliciesPage: React.FC = () => {
     return (
       <PageSection>
         <Flex justifyContent={{ default: "justifyContentCenter" }}>
-          <FlexItem><Spinner size="xl" /></FlexItem>
+          <FlexItem><Spinner size="xl" aria-label="Loading" /></FlexItem>
         </Flex>
       </PageSection>
     );
@@ -231,11 +231,13 @@ export const PoliciesPage: React.FC = () => {
       </PageSection>
 
       <PageSection>
-        {error && (
-          <Alert variant="danger" title="Error loading policies" style={{ marginBottom: "1rem" }}>
-            {error}
-          </Alert>
-        )}
+        <div aria-live="assertive" aria-atomic="true">
+          {error && (
+            <Alert variant="danger" title="Error loading policies" style={{ marginBottom: "1rem" }}>
+              {error}
+            </Alert>
+          )}
+        </div>
 
         {/* Toolbar with filters + bulk Actions */}
         <Toolbar clearAllFilters={() => {
@@ -522,9 +524,11 @@ export const PoliciesPage: React.FC = () => {
               </>
             )}
           </p>
-          {deleteError && (
-            <Alert variant="danger" title="Error" isInline>{deleteError}</Alert>
-          )}
+          <div aria-live="assertive" aria-atomic="true">
+            {deleteError && (
+              <Alert variant="danger" title="Error" isInline>{deleteError}</Alert>
+            )}
+          </div>
           <FormGroup label={deleteConfirmLabel} isRequired fieldId="policy-delete-confirm">
             <TextInput
               id="policy-delete-confirm"

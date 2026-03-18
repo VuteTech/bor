@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Alert,
   Button,
   DescriptionList,
   DescriptionListDescription,
@@ -14,9 +13,12 @@ import {
   FlexItem,
   Modal,
   ModalVariant,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   Pagination,
   Spinner,
-  TextContent,
+  Content,
   TextInput,
   Toolbar,
   ToolbarContent,
@@ -26,6 +28,7 @@ import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
 import DownloadIcon from "@patternfly/react-icons/dist/esm/icons/download-icon";
 import ExpandIcon from "@patternfly/react-icons/dist/esm/icons/expand-icon";
 
+import { LiveAlert } from "../../components/LiveAlert";
 import { hasPermission } from "../../apiClient/permissions";
 import {
   fetchAuditLogs,
@@ -256,9 +259,7 @@ export const AuditLogsTab: React.FC = () => {
 
   return (
     <>
-      {error && (
-        <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />
-      )}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Toolbar>
         <ToolbarContent>
@@ -304,7 +305,7 @@ export const AuditLogsTab: React.FC = () => {
       </Toolbar>
 
       {loading ? (
-        <Spinner size="lg" />
+        <Spinner size="lg" aria-label="Loading" />
       ) : (
         <>
           <Table aria-label="Audit logs table" variant="compact">
@@ -408,24 +409,26 @@ export const AuditLogsTab: React.FC = () => {
 
       <Modal
         variant={ModalVariant.small}
-        title={expandedField?.label ?? ""}
         isOpen={expandedField !== null}
         onClose={() => setExpandedField(null)}
-        actions={[
+      >
+        <ModalHeader title={expandedField?.label ?? ""} />
+        <ModalBody>
+          {expandedField?.tamperData ? (
+            <TamperDetailsView data={expandedField.tamperData} />
+          ) : (
+            <Content>
+              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
+                {expandedField?.content}
+              </pre>
+            </Content>
+          )}
+        </ModalBody>
+        <ModalFooter>
           <Button key="close" variant="primary" onClick={() => setExpandedField(null)}>
             Close
-          </Button>,
-        ]}
-      >
-        {expandedField?.tamperData ? (
-          <TamperDetailsView data={expandedField.tamperData} />
-        ) : (
-          <TextContent>
-            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0 }}>
-              {expandedField?.content}
-            </pre>
-          </TextContent>
-        )}
+          </Button>
+        </ModalFooter>
       </Modal>
     </>
   );

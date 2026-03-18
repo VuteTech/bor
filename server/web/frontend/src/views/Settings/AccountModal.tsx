@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React from "react";
-import { Modal, ModalVariant } from "@patternfly/react-core";
+import { Modal, ModalVariant, ModalHeader, ModalBody } from "@patternfly/react-core";
 import { MFATab } from "./MFATab";
 
 interface AccountModalProps {
@@ -15,11 +15,13 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
   return (
     <Modal
       variant={ModalVariant.medium}
-      title="Account Security"
       isOpen={isOpen}
       onClose={onClose}
     >
-      <MFATab />
+      <ModalHeader title="Account Security" />
+      <ModalBody>
+        <MFATab />
+      </ModalBody>
     </Modal>
   );
 };
