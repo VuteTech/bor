@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -18,40 +19,6 @@ import (
 // file is under Bor management. Firefox ignores unknown root-level keys,
 // so this is safe to include and serves as a human-visible marker.
 const FirefoxManagedComment = "This file is managed by Bor. Do not edit manually. Changes will be overwritten by policy enforcement."
-
-// FirefoxPoliciesJSON is the top-level wrapper for policies.json.
-type FirefoxPoliciesJSON struct {
-	Policies map[string]interface{} `json:"policies"`
-}
-
-// MergeFirefoxPolicies takes a list of policy content JSON strings (each
-// representing a partial Firefox policy), deep-merges them into one combined
-// policies.json structure, and returns the merged JSON bytes.
-//
-// This is the core requirement: multiple policies delegated from the server
-// are parsed and merged into a single policies.json file on the workstation.
-func MergeFirefoxPolicies(contents []string) ([]byte, error) {
-	merged := make(map[string]interface{})
-
-	for _, content := range contents {
-		if content == "" || content == "{}" {
-			continue
-		}
-		var partial map[string]interface{}
-		if err := json.Unmarshal([]byte(content), &partial); err != nil {
-			return nil, fmt.Errorf("failed to parse Firefox policy content: %w", err)
-		}
-		deepMerge(merged, partial)
-	}
-
-	wrapper := FirefoxPoliciesJSON{Policies: merged}
-	data, err := json.MarshalIndent(wrapper, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal merged Firefox policies: %w", err)
-	}
-	data = append(data, '\n')
-	return data, nil
-}
 
 // deepMerge merges src into dst recursively. For map values, it recurses.
 // For slice values in src, they are appended to existing slices in dst.
@@ -82,80 +49,65 @@ func deepMerge(dst, src map[string]interface{}) {
 	}
 }
 
-// SyncFirefoxPolicies writes a merged policies.json from the given policy
-// content strings. Before the first write it backs up the original
-// policies.json (creating an empty sentinel if no original exists).
-// When contents is empty, the original file is restored from its backup.
-func SyncFirefoxPolicies(targetPath string, contents []string) error {
-	if len(contents) == 0 {
-		// No active Firefox policies — restore original.
+// MergeFirefoxProtos merges multiple FirefoxPolicy proto messages into one.
+// Uses proto.Merge semantics: singular optional fields from later policies
+// overwrite earlier ones; repeated fields are appended.
+func MergeFirefoxProtos(policies []*pb.FirefoxPolicy) *pb.FirefoxPolicy {
+	merged := &pb.FirefoxPolicy{}
+	for _, p := range policies {
+		if p != nil {
+			proto.Merge(merged, p)
+		}
+	}
+	return merged
+}
+
+// SyncFirefoxPoliciesFromProto merges the given proto policies and writes
+// policies.json to targetPath. When policies is empty, restores the original.
+func SyncFirefoxPoliciesFromProto(targetPath string, policies []*pb.FirefoxPolicy) error {
+	if len(policies) == 0 {
 		return RestoreOriginal(targetPath)
 	}
-
-	// Backup original before first write (idempotent).
 	if err := BackupOriginal(targetPath); err != nil {
 		return fmt.Errorf("failed to backup Firefox policies: %w", err)
 	}
-
-	// Merge all policy contents, then re-marshal with the managed-by comment
-	// as the first key so humans opening the file see it immediately.
-	merged := make(map[string]interface{})
-	for _, content := range contents {
-		if content == "" || content == "{}" {
-			continue
-		}
-		var partial map[string]interface{}
-		if err := json.Unmarshal([]byte(content), &partial); err != nil {
-			return fmt.Errorf("failed to parse Firefox policy content: %w", err)
-		}
-		deepMerge(merged, partial)
-	}
-
-	managed := struct {
-		Comment  string                 `json:"_comment"`
-		Policies map[string]interface{} `json:"policies"`
-	}{
-		Comment:  FirefoxManagedComment,
-		Policies: merged,
-	}
-
-	data, err := json.MarshalIndent(managed, "", "  ")
+	data, err := marshalFirefoxPolicies(policies)
 	if err != nil {
-		return fmt.Errorf("failed to marshal Firefox policies: %w", err)
+		return err
 	}
-	data = append(data, '\n')
-
-	if err := WriteFileAtomically(targetPath, data); err != nil {
-		return fmt.Errorf("failed to write Firefox policies: %w", err)
-	}
-
-	return nil
+	return WriteFileAtomically(targetPath, data)
 }
 
-// SyncFirefoxFlatpakPolicies writes a merged policies.json to the Flatpak
-// Firefox extension directory so that the sandboxed browser can read it.
-// Unlike SyncFirefoxPolicies, there is no backup/restore: the extension
-// directory is fully managed by Bor, so the file is simply removed when
-// no policies are active.
-func SyncFirefoxFlatpakPolicies(targetPath string, contents []string) error {
-	if len(contents) == 0 {
-		// No active Firefox policies — remove the managed file if present.
+// SyncFirefoxFlatpakPoliciesFromProto writes merged Firefox policies to the
+// Flatpak extension directory. No backup/restore — Bor owns this file.
+func SyncFirefoxFlatpakPoliciesFromProto(targetPath string, policies []*pb.FirefoxPolicy) error {
+	if len(policies) == 0 {
 		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove Flatpak Firefox policies: %w", err)
 		}
 		return nil
 	}
+	data, err := marshalFirefoxPolicies(policies)
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomically(targetPath, data)
+}
 
-	merged := make(map[string]interface{})
-	for _, content := range contents {
-		if content == "" || content == "{}" {
-			continue
-		}
-		var partial map[string]interface{}
-		if err := json.Unmarshal([]byte(content), &partial); err != nil {
-			return fmt.Errorf("failed to parse Firefox policy content: %w", err)
-		}
-		deepMerge(merged, partial)
+// marshalFirefoxPolicies merges the given policies and marshals them into
+// the policies.json format Firefox expects: {"_comment": "...", "policies": {...}}.
+func marshalFirefoxPolicies(policies []*pb.FirefoxPolicy) ([]byte, error) {
+	merged := MergeFirefoxProtos(policies)
+
+	opts := protojson.MarshalOptions{EmitUnpopulated: false}
+	jsonBytes, err := opts.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Firefox policy proto: %w", err)
+	}
+
+	var policiesMap map[string]interface{}
+	if err := json.Unmarshal(jsonBytes, &policiesMap); err != nil {
+		return nil, fmt.Errorf("failed to parse marshalled Firefox policy: %w", err)
 	}
 
 	managed := struct {
@@ -163,19 +115,14 @@ func SyncFirefoxFlatpakPolicies(targetPath string, contents []string) error {
 		Policies map[string]interface{} `json:"policies"`
 	}{
 		Comment:  FirefoxManagedComment,
-		Policies: merged,
+		Policies: policiesMap,
 	}
 
 	data, err := json.MarshalIndent(managed, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal Flatpak Firefox policies: %w", err)
+		return nil, fmt.Errorf("failed to marshal Firefox policies: %w", err)
 	}
-	data = append(data, '\n')
-
-	if err := WriteFileAtomically(targetPath, data); err != nil {
-		return fmt.Errorf("failed to write Flatpak Firefox policies: %w", err)
-	}
-	return nil
+	return append(data, '\n'), nil
 }
 
 // WriteFileAtomically writes data to a temporary file and then renames it
@@ -214,67 +161,4 @@ func WriteFileAtomically(targetPath string, data []byte) error {
 	}
 
 	return nil
-}
-
-// MergeFirefoxProtos merges multiple FirefoxPolicy proto messages into one.
-// Uses proto.Merge semantics: singular optional fields from later policies
-// overwrite earlier ones; repeated fields are appended.
-func MergeFirefoxProtos(policies []*pb.FirefoxPolicy) *pb.FirefoxPolicy {
-	merged := &pb.FirefoxPolicy{}
-	for _, p := range policies {
-		if p != nil {
-			proto.Merge(merged, p)
-		}
-	}
-	return merged
-}
-
-// SyncFirefoxPoliciesFromProto merges the given proto policies and writes
-// policies.json to targetPath. When policies is empty, restores the original.
-func SyncFirefoxPoliciesFromProto(targetPath string, policies []*pb.FirefoxPolicy) error {
-	if len(policies) == 0 {
-		return RestoreOriginal(targetPath)
-	}
-	if err := BackupOriginal(targetPath); err != nil {
-		return fmt.Errorf("failed to backup Firefox policies: %w", err)
-	}
-	merged := MergeFirefoxProtos(policies)
-	managed := struct {
-		Comment  string            `json:"_comment"`
-		Policies *pb.FirefoxPolicy `json:"policies"`
-	}{
-		Comment:  FirefoxManagedComment,
-		Policies: merged,
-	}
-	data, err := json.MarshalIndent(managed, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal Firefox policies: %w", err)
-	}
-	data = append(data, '\n')
-	return WriteFileAtomically(targetPath, data)
-}
-
-// SyncFirefoxFlatpakPoliciesFromProto writes merged Firefox policies to the
-// Flatpak extension directory. No backup/restore — Bor owns this file.
-func SyncFirefoxFlatpakPoliciesFromProto(targetPath string, policies []*pb.FirefoxPolicy) error {
-	if len(policies) == 0 {
-		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove Flatpak Firefox policies: %w", err)
-		}
-		return nil
-	}
-	merged := MergeFirefoxProtos(policies)
-	managed := struct {
-		Comment  string            `json:"_comment"`
-		Policies *pb.FirefoxPolicy `json:"policies"`
-	}{
-		Comment:  FirefoxManagedComment,
-		Policies: merged,
-	}
-	data, err := json.MarshalIndent(managed, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal Flatpak Firefox policies: %w", err)
-	}
-	data = append(data, '\n')
-	return WriteFileAtomically(targetPath, data)
 }

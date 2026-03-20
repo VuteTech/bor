@@ -691,12 +691,9 @@ function removeChromeContentKey(key: string, existingContent: string): string {
 /* ── KDE Kiosk (KConfig) policy model ── */
 
 interface KConfigPolicyDef {
-  key: string;
+  key: string;  // camelCase JSON field name (matches protojson output)
   label: string;
   group: string;
-  file: string;
-  iniGroup: string;
-  iniKey: string;
   type: "boolean" | "string" | "select" | "int" | "color" | "url-restrictions" | "kcm-restrictions";
   selectOptions?: string[];
   defaultValue?: string;
@@ -716,38 +713,38 @@ interface UrlRestrictionRule {
 }
 
 const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
-  // Action Restrictions (kdeglobals)
-  { key: "shell_access", label: "Shell Access", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "shell_access", type: "boolean" },
-  { key: "run_command", label: "Run Command (KRunner)", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "run_command", type: "boolean" },
-  { key: "action/logout", label: "Logout Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/logout", type: "boolean" },
-  { key: "action/file_new", label: "File New Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/file_new", type: "boolean" },
-  { key: "action/file_open", label: "File Open Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/file_open", type: "boolean" },
-  { key: "action/file_save", label: "File Save Action", group: "Action Restrictions", file: "kdeglobals", iniGroup: "KDE Action Restrictions", iniKey: "action/file_save", type: "boolean" },
-  // System Settings Restrictions (kdeglobals)
-  { key: "kcm_restrictions", label: "System Settings Modules", group: "System Settings Restrictions", file: "kde5rc", iniGroup: "KDE Control Module Restrictions", iniKey: "__kcm_restrictions__", type: "kcm-restrictions" },
-  // Resource Restrictions (kdeglobals)
-  { key: "wallpaper", label: "Wallpaper Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "wallpaper", type: "boolean" },
-  { key: "icons", label: "Icon Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "icons", type: "boolean" },
-  { key: "autostart", label: "Autostart Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "autostart", type: "boolean" },
-  { key: "colors", label: "Color Scheme Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "colors", type: "boolean" },
-  { key: "cursors", label: "Cursor Theme Changes", group: "Resource Restrictions", file: "kdeglobals", iniGroup: "KDE Resource Restrictions", iniKey: "cursors", type: "boolean" },
-  // Window Manager (kwinrc)
-  { key: "BorderlessMaximizedWindows", label: "Borderless Maximized Windows", group: "Window Manager", file: "kwinrc", iniGroup: "Windows", iniKey: "BorderlessMaximizedWindows", type: "boolean" },
-  // Desktop (plasmarc)
-  { key: "plasmoidUnlockedDesktop", label: "Unlock Desktop Widgets", group: "Desktop", file: "plasmarc", iniGroup: "General", iniKey: "plasmoidUnlockedDesktop", type: "boolean" },
-  { key: "allow_configure_when_locked", label: "Configure When Locked", group: "Desktop", file: "plasmarc", iniGroup: "General", iniKey: "allow_configure_when_locked", type: "boolean" },
-  // Screen Lock (kscreenlockerrc)
-  { key: "AutoLock", label: "Auto Lock", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "AutoLock", type: "boolean" },
-  { key: "LockOnResume", label: "Lock on Resume", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "LockOnResume", type: "boolean" },
-  { key: "Timeout", label: "Lock Timeout (seconds)", group: "Screen Lock", file: "kscreenlockerrc", iniGroup: "Daemon", iniKey: "Timeout", type: "int" },
+  // Action Restrictions
+  { key: "shellAccess", label: "Shell Access", group: "Action Restrictions", type: "boolean" },
+  { key: "runCommand", label: "Run Command (KRunner)", group: "Action Restrictions", type: "boolean" },
+  { key: "actionLogout", label: "Logout Action", group: "Action Restrictions", type: "boolean" },
+  { key: "actionFileNew", label: "File New Action", group: "Action Restrictions", type: "boolean" },
+  { key: "actionFileOpen", label: "File Open Action", group: "Action Restrictions", type: "boolean" },
+  { key: "actionFileSave", label: "File Save Action", group: "Action Restrictions", type: "boolean" },
+  // System Settings Restrictions
+  { key: "kcmRestrictions", label: "System Settings Modules", group: "System Settings Restrictions", type: "kcm-restrictions" },
+  // Resource Restrictions
+  { key: "restrictWallpaper", label: "Wallpaper Changes", group: "Resource Restrictions", type: "boolean" },
+  { key: "restrictIcons", label: "Icon Changes", group: "Resource Restrictions", type: "boolean" },
+  { key: "restrictAutostart", label: "Autostart Changes", group: "Resource Restrictions", type: "boolean" },
+  { key: "restrictColors", label: "Color Scheme Changes", group: "Resource Restrictions", type: "boolean" },
+  { key: "restrictCursors", label: "Cursor Theme Changes", group: "Resource Restrictions", type: "boolean" },
+  // Window Manager
+  { key: "borderlessMaximizedWindows", label: "Borderless Maximized Windows", group: "Window Manager", type: "boolean" },
+  // Desktop
+  { key: "plasmoidUnlockedDesktop", label: "Unlock Desktop Widgets", group: "Desktop", type: "boolean" },
+  { key: "allowConfigureWhenLocked", label: "Configure When Locked", group: "Desktop", type: "boolean" },
+  // Screen Lock
+  { key: "autoLock", label: "Auto Lock", group: "Screen Lock", type: "boolean" },
+  { key: "lockOnResume", label: "Lock on Resume", group: "Screen Lock", type: "boolean" },
+  { key: "lockTimeout", label: "Lock Timeout (seconds)", group: "Screen Lock", type: "int" },
   // Appearance
-  { key: "icon_theme", label: "Icon Theme", group: "Appearance", file: "kdeglobals", iniGroup: "Icons", iniKey: "Theme", type: "string" },
-  { key: "wallpaperplugin", label: "Wallpaper Plugin", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1", iniKey: "wallpaperplugin", type: "string", defaultValue: "org.kde.image" },
-  { key: "wp_Image", label: "Wallpaper Image Path", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Image", type: "string" },
-  { key: "wp_FillMode", label: "Wallpaper Fill Mode", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "FillMode", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2" },
-  { key: "wp_Color", label: "Wallpaper Background Color", group: "Appearance", file: "plasma-org.kde.plasma.desktop-appletsrc", iniGroup: "Containments][1][Wallpaper][org.kde.image][General", iniKey: "Color", type: "color" },
+  { key: "iconTheme", label: "Icon Theme", group: "Appearance", type: "string" },
+  { key: "wallpaperPlugin", label: "Wallpaper Plugin", group: "Appearance", type: "string", defaultValue: "org.kde.image" },
+  { key: "wallpaperImage", label: "Wallpaper Image Path", group: "Appearance", type: "string" },
+  { key: "wallpaperFillMode", label: "Wallpaper Fill Mode", group: "Appearance", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2" },
+  { key: "wallpaperColor", label: "Wallpaper Background Color", group: "Appearance", type: "color" },
   // Security
-  { key: "url_restrictions", label: "URL Restrictions", group: "Security", file: "kdeglobals", iniGroup: "KDE URL Restrictions", iniKey: "__url_restrictions__", type: "url-restrictions" },
+  { key: "urlRestrictions", label: "URL Restrictions", group: "Security", type: "url-restrictions" },
 ];
 
 // KIO protocols available for URL restriction rules.
@@ -904,189 +901,150 @@ function buildKConfigTree(): Map<string, KConfigPolicyDef[]> {
   return groups;
 }
 
-// Detect configured KConfig policy def keys from content JSON.
-// Returns the policyDef.key (not the iniKey) for each configured entry.
+// Detect which KConfig policy def keys are configured in the content JSON.
+// Returns the camelCase JSON key for each present field.
 function detectKConfigConfiguredKeys(content: string): string[] {
   try {
-    const parsed = JSON.parse(content || "{}");
-    const entries: { key?: string; group?: string }[] = parsed.entries || [];
+    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
     const result: string[] = [];
-    let hasUrlRestrictions = false;
-    let hasKcmRestrictions = false;
-    for (const e of entries) {
-      if (e.group === "KDE URL Restrictions") {
-        hasUrlRestrictions = true;
+    for (const def of KCONFIG_ALL_POLICIES) {
+      if (def.type === "url-restrictions") {
+        if (Array.isArray(parsed.urlRestrictions) && (parsed.urlRestrictions as unknown[]).length > 0) {
+          result.push("urlRestrictions");
+        }
         continue;
       }
-      if (e.group === "KDE Control Module Restrictions") {
-        hasKcmRestrictions = true;
+      if (def.type === "kcm-restrictions") {
+        if (Array.isArray(parsed.kcmRestrictions) && (parsed.kcmRestrictions as unknown[]).length > 0) {
+          result.push("kcmRestrictions");
+        }
         continue;
       }
-      // Find the policy def whose iniKey matches the stored key
-      const def = KCONFIG_ALL_POLICIES.find(p => p.iniKey === e.key);
-      if (def) result.push(def.key);
+      if (def.key in parsed && parsed[def.key] !== null && parsed[def.key] !== undefined) {
+        result.push(def.key);
+      }
     }
-    if (hasUrlRestrictions) result.push("url_restrictions");
-    if (hasKcmRestrictions) result.push("kcm_restrictions");
     return result;
   } catch { return []; }
 }
 
-// Extract the value + enforced state for a KConfig policy by def key
+// Extract the value + enforced state for a KConfig policy by its camelCase key.
+// Returns the value as a string (booleans → "true"/"false", numbers → string).
 function extractKConfigEntry(content: string, defKey: string): { value: string; enforced: boolean } | undefined {
   try {
-    const def = KCONFIG_ALL_POLICIES.find(p => p.key === defKey);
-    if (!def) return undefined;
-    const parsed = JSON.parse(content || "{}");
-    const entries: { key?: string; value?: string; enforced?: boolean }[] = parsed.entries || [];
-    const entry = entries.find(e => e.key === def.iniKey);
-    if (!entry) return undefined;
-    return { value: entry.value ?? "", enforced: entry.enforced ?? false };
+    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
+    if (!(defKey in parsed) || parsed[defKey] === null || parsed[defKey] === undefined) return undefined;
+    const rawVal = parsed[defKey];
+    const value = typeof rawVal === "boolean" ? (rawVal ? "true" : "false") : String(rawVal);
+    const enforced = Array.isArray(parsed.enforcedFields) && (parsed.enforcedFields as string[]).includes(defKey);
+    return { value, enforced };
   } catch { return undefined; }
 }
 
-// Build KConfig content JSON by adding/updating an entry
+// Build KConfig content JSON by setting/updating a single field.
+// Booleans and ints are stored as their native JSON types; strings as strings.
 function buildKConfigContent(policyDef: KConfigPolicyDef, value: string, enforced: boolean, existingContent?: string): string {
-  let parsed: { entries: { file: string; group: string; key: string; value: string; type: string; enforced: boolean }[] } = { entries: [] };
-  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
-  if (!parsed.entries) parsed.entries = [];
+  const parsed: Record<string, unknown> = {};
+  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
 
-  const idx = parsed.entries.findIndex(e => e.key === policyDef.iniKey);
-  const entry = {
-    file: policyDef.file,
-    group: policyDef.iniGroup,
-    key: policyDef.iniKey,
-    value,
-    type: policyDef.type === "boolean" ? "bool" : policyDef.type === "int" ? "int" : "string", // color and select also map to "string"
-    enforced,
-  };
-
-  if (idx >= 0) {
-    parsed.entries[idx] = entry;
+  if (policyDef.type === "boolean") {
+    parsed[policyDef.key] = value === "true";
+  } else if (policyDef.type === "int") {
+    const n = parseInt(value, 10);
+    parsed[policyDef.key] = isNaN(n) ? 0 : n;
   } else {
-    parsed.entries.push(entry);
+    parsed[policyDef.key] = value;
   }
+
+  let enforcedFields: string[] = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as string[]) : [];
+  if (enforced) {
+    if (!enforcedFields.includes(policyDef.key)) enforcedFields = [...enforcedFields, policyDef.key];
+  } else {
+    enforcedFields = enforcedFields.filter(f => f !== policyDef.key);
+  }
+  if (enforcedFields.length > 0) {
+    parsed.enforcedFields = enforcedFields;
+  } else {
+    delete parsed.enforcedFields;
+  }
+
   return JSON.stringify(parsed, null, 2);
 }
 
-// Remove a KConfig entry from content JSON by policy def key
+// Remove a KConfig field from the content JSON by its camelCase key.
 function removeKConfigContentKey(defKey: string, existingContent: string): string {
-  let parsed: { entries: { key?: string; group?: string }[] } = { entries: [] };
-  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
-  if (!parsed.entries) parsed.entries = [];
+  const parsed: Record<string, unknown> = {};
+  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
 
-  if (defKey === "url_restrictions") {
-    parsed.entries = parsed.entries.filter(e => e.group !== "KDE URL Restrictions");
-  } else if (defKey === "kcm_restrictions") {
-    parsed.entries = parsed.entries.filter(e => e.group !== "KDE Control Module Restrictions");
-  } else {
-    const policyDef = KCONFIG_ALL_POLICIES.find(p => p.key === defKey);
-    if (policyDef) {
-      parsed.entries = parsed.entries.filter(e => e.key !== policyDef.iniKey);
-    }
+  delete parsed[defKey];
+
+  if (Array.isArray(parsed.enforcedFields)) {
+    const filtered = (parsed.enforcedFields as string[]).filter(f => f !== defKey);
+    if (filtered.length > 0) { parsed.enforcedFields = filtered; } else { delete parsed.enforcedFields; }
   }
+
   return JSON.stringify(parsed, null, 2);
 }
 
-// Parse URL restriction rules from KConfig content JSON.
+// Parse URL restriction rules from the KConfig content JSON.
 function parseUrlRestrictionRules(content: string): UrlRestrictionRule[] {
   try {
-    const parsed = JSON.parse(content || "{}");
-    const entries: { group?: string; key?: string; value?: string }[] = parsed.entries || [];
-    const rules: UrlRestrictionRule[] = [];
-    for (const e of entries) {
-      if (e.group !== "KDE URL Restrictions") continue;
-      if (!e.key || !e.key.match(/^rule_\d+$/)) continue;
-      const fields = (e.value || "").split(",");
-      if (fields.length !== 8) continue;
-      rules.push({
-        action: (fields[0] as UrlRestrictionRule["action"]) || "open",
-        referrerProtocol: fields[1],
-        referrerHost: fields[2],
-        referrerPath: fields[3],
-        protocol: fields[4],
-        host: fields[5],
-        path: fields[6],
-        enabled: fields[7] === "true",
-      });
-    }
-    return rules;
+    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
+    if (!Array.isArray(parsed.urlRestrictions)) return [];
+    return (parsed.urlRestrictions as Record<string, unknown>[]).map(r => ({
+      action: (r.action as UrlRestrictionRule["action"]) || "open",
+      referrerProtocol: (r.referrerProtocol as string) || "",
+      referrerHost: (r.referrerHost as string) || "",
+      referrerPath: (r.referrerPath as string) || "",
+      protocol: (r.protocol as string) || "",
+      host: (r.host as string) || "",
+      path: (r.path as string) || "",
+      enabled: r.enabled === true,
+    }));
   } catch { return []; }
 }
 
-// Build URL restriction entries into KConfig content JSON.
-// Removes all existing KDE URL Restrictions entries and adds fresh rule_count + rule_N entries.
+// Build URL restriction content into the KConfig JSON (replaces urlRestrictions array).
 function buildUrlRestrictionContent(rules: UrlRestrictionRule[], existingContent: string): string {
-  let parsed: { entries: { file: string; group: string; key: string; value: string; type: string; enforced: boolean }[] } = { entries: [] };
-  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
-  if (!parsed.entries) parsed.entries = [];
+  const parsed: Record<string, unknown> = {};
+  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
 
-  // Remove all existing KDE URL Restrictions entries.
-  parsed.entries = parsed.entries.filter(e => e.group !== "KDE URL Restrictions");
-
-  // Add fresh entries.
   if (rules.length > 0) {
-    parsed.entries.push({
-      file: "kdeglobals",
-      group: "KDE URL Restrictions",
-      key: "rule_count",
-      value: String(rules.length),
-      type: "string",
-      enforced: true,
-    });
-    for (let i = 0; i < rules.length; i++) {
-      const r = rules[i];
-      const value = [r.action, r.referrerProtocol, r.referrerHost, r.referrerPath, r.protocol, r.host, r.path, r.enabled ? "true" : "false"].join(",");
-      parsed.entries.push({
-        file: "kdeglobals",
-        group: "KDE URL Restrictions",
-        key: `rule_${i + 1}`,
-        value,
-        type: "string",
-        enforced: true,
-      });
-    }
+    parsed.urlRestrictions = rules.map(r => ({
+      action: r.action,
+      referrerProtocol: r.referrerProtocol,
+      referrerHost: r.referrerHost,
+      referrerPath: r.referrerPath,
+      protocol: r.protocol,
+      host: r.host,
+      path: r.path,
+      enabled: r.enabled,
+    }));
+  } else {
+    delete parsed.urlRestrictions;
   }
 
   return JSON.stringify(parsed, null, 2);
 }
 
-// Parse KCM restriction modules from KConfig content JSON.
-// Returns an array of module IDs that are restricted (value=false).
+// Parse KCM restriction module IDs from the KConfig content JSON.
 function parseKcmRestrictions(content: string): string[] {
   try {
-    const parsed = JSON.parse(content || "{}");
-    const entries: { group?: string; key?: string; value?: string }[] = parsed.entries || [];
-    const modules: string[] = [];
-    for (const e of entries) {
-      if (e.group === "KDE Control Module Restrictions" && e.key) {
-        modules.push(e.key);
-      }
-    }
-    return modules;
+    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
+    if (Array.isArray(parsed.kcmRestrictions)) return parsed.kcmRestrictions as string[];
+    return [];
   } catch { return []; }
 }
 
-// Build KCM restriction entries into KConfig content JSON.
-// Removes all existing KDE Control Module Restrictions entries and adds fresh ones.
+// Build KCM restriction content into the KConfig JSON (replaces kcmRestrictions array).
 function buildKcmRestrictionContent(modules: string[], existingContent: string): string {
-  let parsed: { entries: { file: string; group: string; key: string; value: string; type: string; enforced: boolean }[] } = { entries: [] };
-  try { parsed = JSON.parse(existingContent || '{"entries":[]}'); } catch { /* ignore */ }
-  if (!parsed.entries) parsed.entries = [];
+  const parsed: Record<string, unknown> = {};
+  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
 
-  // Remove all existing KDE Control Module Restrictions entries.
-  parsed.entries = parsed.entries.filter(e => e.group !== "KDE Control Module Restrictions");
-
-  // Add fresh entries — each module set to false (restricted) and enforced.
-  for (const mod of modules) {
-    parsed.entries.push({
-      file: "kde5rc",
-      group: "KDE Control Module Restrictions",
-      key: mod,
-      value: "false",
-      type: "bool",
-      enforced: true,
-    });
+  if (modules.length > 0) {
+    parsed.kcmRestrictions = modules;
+  } else {
+    delete parsed.kcmRestrictions;
   }
 
   return JSON.stringify(parsed, null, 2);
@@ -1177,43 +1135,43 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
   }
 
   if (policyType === "Kconfig") {
-    const parsed = raw as { entries?: { key?: string; value?: string; enforced?: boolean; file?: string; group?: string }[] };
-    const entries = parsed.entries || [];
-    for (const entry of entries) {
-      // Show URL restriction rules with human-readable summary
-      if (entry.group === "KDE URL Restrictions" && entry.key && entry.key.match(/^rule_\d+$/)) {
-        const fields = (entry.value || "").split(",");
-        if (fields.length === 8) {
-          const summary = `${fields[0]} ${fields[4] || "*"}://${fields[5] || "*"}${fields[6] ? "/" + fields[6] : ""} → ${fields[7] === "true" ? "allow" : "deny"}`;
-          rows.push({
-            setting: `Security › URL Restrictions › ${entry.key}`,
-            value: summary,
-            locked: entry.enforced !== undefined ? (entry.enforced ? "Yes" : "No") : null,
-          });
-        }
-        continue;
-      }
-      // Skip rule_count in overview display
-      if (entry.group === "KDE URL Restrictions" && entry.key === "rule_count") continue;
+    const parsed = raw as Record<string, unknown>;
+    const enforcedFields = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as string[]) : [];
 
-      // Show KCM restrictions with human-readable labels
-      if (entry.group === "KDE Control Module Restrictions" && entry.key) {
-        const mod = KCM_MODULES.find(m => m.id === entry.key);
-        rows.push({
-          setting: `System Settings Restrictions › ${mod ? mod.label : entry.key}`,
-          value: "Restricted",
-          locked: entry.enforced !== undefined ? (entry.enforced ? "Yes" : "No") : null,
-        });
-        continue;
-      }
-
-      const def = KCONFIG_ALL_POLICIES.find(p => p.iniKey === entry.key);
-      rows.push({
-        setting: def ? `${def.group} › ${def.label}` : (entry.key || "Unknown"),
-        value: formatDisplayValue(entry.value),
-        locked: entry.enforced !== undefined ? (entry.enforced ? "Yes" : "No") : null,
+    // URL restrictions
+    if (Array.isArray(parsed.urlRestrictions)) {
+      (parsed.urlRestrictions as Record<string, unknown>[]).forEach((r, i) => {
+        const proto = (r.protocol as string) || "*";
+        const host = (r.host as string) || "*";
+        const path = (r.path as string) ? `/${r.path}` : "";
+        const summary = `${r.action} ${proto}://${host}${path} → ${r.enabled ? "allow" : "deny"}`;
+        rows.push({ setting: `Security › URL Restrictions › rule_${i + 1}`, value: summary, locked: "Yes" });
       });
     }
+
+    // KCM restrictions
+    if (Array.isArray(parsed.kcmRestrictions)) {
+      for (const modId of parsed.kcmRestrictions as string[]) {
+        const mod = KCM_MODULES.find(m => m.id === modId);
+        rows.push({
+          setting: `System Settings Restrictions › ${mod ? mod.label : modId}`,
+          value: "Restricted",
+          locked: "Yes",
+        });
+      }
+    }
+
+    // All other typed fields
+    for (const def of KCONFIG_ALL_POLICIES) {
+      if (def.type === "url-restrictions" || def.type === "kcm-restrictions") continue;
+      if (!(def.key in parsed) || parsed[def.key] === null || parsed[def.key] === undefined) continue;
+      rows.push({
+        setting: `${def.group} › ${def.label}`,
+        value: formatDisplayValue(parsed[def.key]),
+        locked: enforcedFields.includes(def.key) ? "Yes" : "No",
+      });
+    }
+
     return rows;
   }
 
@@ -1406,14 +1364,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           }
           setKconfigExpandedGroups(groups);
           // If url_restrictions is configured, load the rules
-          if (configuredKeys.includes("url_restrictions")) {
+          if (configuredKeys.includes("urlRestrictions")) {
             const rules = parseUrlRestrictionRules(policy.content);
             setUrlRestrictionRules(rules);
             const customIdxs = new Set<number>();
             rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
             setCustomProtocolIndices(customIdxs);
           }
-          if (configuredKeys.includes("kcm_restrictions")) {
+          if (configuredKeys.includes("kcmRestrictions")) {
             setKcmRestrictedModules(parseKcmRestrictions(policy.content));
           }
         } else {
@@ -1496,7 +1454,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigSelectedKey(null);
       setKconfigValue("");
       setKconfigEnforced(false);
-      setContentRaw('{"entries":[]}');
+      setContentRaw("{}");
       setKconfigExpandedGroups(new Set());
       setUrlRestrictionRules([]);
       setCustomProtocolIndices(new Set());
@@ -1770,9 +1728,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         }
       } else if (policyType === "Kconfig") {
         // Save the current selection into content before validating
-        if (kconfigSelectedKey === "url_restrictions") {
+        if (kconfigSelectedKey === "urlRestrictions") {
           finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
-        } else if (kconfigSelectedKey === "kcm_restrictions") {
+        } else if (kconfigSelectedKey === "kcmRestrictions") {
           finalContent = buildKcmRestrictionContent(kcmRestrictedModules, contentRaw);
         } else if (kconfigSelectedKey) {
           const def = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);
@@ -1782,7 +1740,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         }
         try {
           const parsed = JSON.parse(finalContent);
-          if (!parsed.entries || parsed.entries.length === 0) {
+          if (detectKConfigConfiguredKeys(finalContent).length === 0) {
             setError("At least one KDE Kiosk policy setting must be selected and configured before saving");
             setSaving(false);
             return;
@@ -2336,11 +2294,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       );
     }
 
-    if (kconfigSelectedKey === "url_restrictions") {
+    if (kconfigSelectedKey === "urlRestrictions") {
       return renderUrlRestrictionsEditor();
     }
 
-    if (kconfigSelectedKey === "kcm_restrictions") {
+    if (kconfigSelectedKey === "kcmRestrictions") {
       return renderKcmRestrictionsEditor();
     }
 
@@ -2351,7 +2309,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
         <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
-          File: <code>{policyDef.file}</code> &nbsp; Group: <code>[{policyDef.iniGroup}]</code>
+          {policyDef.group}
         </p>
         <Form>
           {policyDef.type === "boolean" && (

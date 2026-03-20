@@ -90,14 +90,14 @@ func (c *Client) Close() error {
 
 // PolicyInfo holds the policy data returned from the server.
 type PolicyInfo struct {
-	ID             string
-	Name           string
-	Type           string
-	Content        string // kept for compatibility / fallback
-	Version        int32
-	KConfigEntries []*pb.KConfigEntry // populated from typed_content for Kconfig type
-	FirefoxPolicy  *pb.FirefoxPolicy  // populated from typed_content for Firefox type
-	ChromePolicy   *pb.ChromePolicy   // populated from typed_content for Chrome type
+	ID            string
+	Name          string
+	Type          string
+	Content       string // kept for compatibility / fallback
+	Version       int32
+	KConfigPolicy *pb.KConfigPolicy // populated from typed_content for Kconfig type
+	FirefoxPolicy *pb.FirefoxPolicy // populated from typed_content for Firefox type
+	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -271,7 +271,7 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 				Version: p.GetVersion(),
 			}
 			if kcp := p.GetKconfigPolicy(); kcp != nil {
-				pi.KConfigEntries = kcp.GetEntries()
+				pi.KConfigPolicy = kcp
 			}
 			if ffp := p.GetFirefoxPolicy(); ffp != nil {
 				pi.FirefoxPolicy = ffp

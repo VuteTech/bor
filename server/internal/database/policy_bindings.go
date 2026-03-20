@@ -140,6 +140,27 @@ func (r *PolicyBindingRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// GetEnabledGroupIDsByPolicyID returns the group IDs that have an enabled binding for
+// the given policy, regardless of the policy's current state.
+func (r *PolicyBindingRepository) GetEnabledGroupIDsByPolicyID(ctx context.Context, policyID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT group_id FROM policy_bindings WHERE policy_id = $1 AND state = 'enabled'", policyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get enabled group IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan group ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // CountEnabledByPolicyID returns the count of enabled bindings for a given policy
 func (r *PolicyBindingRepository) CountEnabledByPolicyID(ctx context.Context, policyID string) (int, error) {
 	var count int

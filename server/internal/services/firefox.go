@@ -5,12 +5,12 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 var validSSLVersions = map[string]bool{
@@ -41,7 +41,7 @@ func ValidateFirefoxContent(content string) error {
 		return nil
 	}
 	var fp pb.FirefoxPolicy
-	if err := json.Unmarshal([]byte(content), &fp); err != nil {
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(content), &fp); err != nil {
 		return fmt.Errorf("invalid firefox policy JSON: %w", err)
 	}
 	return validateFirefoxProto(&fp)

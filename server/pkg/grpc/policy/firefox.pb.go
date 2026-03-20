@@ -22,6 +22,8 @@ const (
 
 // FirefoxPolicy is the canonical schema for a Firefox enterprise policy
 // on Linux. It maps directly to the "policies" key in policies.json.
+// Field json_name annotations preserve PascalCase so protojson round-trips
+// with the key names Firefox expects.
 type FirefoxPolicy struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Simple boolean policies

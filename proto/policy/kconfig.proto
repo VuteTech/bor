@@ -4,7 +4,9 @@ package bor.policy.v1;
 
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
-// KConfigEntry represents a single KDE Kiosk configuration entry.
+// KConfigEntry represents a resolved KDE Kiosk INI entry.
+// Used internally by the agent after expanding a KConfigPolicy; not stored
+// in the database directly.
 message KConfigEntry {
   string file = 1;
   string group = 2;
@@ -14,7 +16,66 @@ message KConfigEntry {
   bool enforced = 6;
 }
 
-// KConfigPolicy holds all KConfig entries for a single policy.
+// KConfigUrlRestriction describes one KDE URL restriction rule.
+message KConfigUrlRestriction {
+  string action = 1;           // "open", "list", or "redirect"
+  string referrer_protocol = 2;
+  string referrer_host = 3;
+  string referrer_path = 4;
+  string protocol = 5;
+  string host = 6;
+  string path = 7;
+  bool enabled = 8;
+}
+
+// KConfigPolicy holds typed KDE Kiosk policy settings.  Fields are optional so
+// that absent settings are omitted from the JSON serialisation.
+// enforced_fields lists the camelCase JSON field names that should be written
+// with the KDE Kiosk [$i] immutability marker; url_restrictions and
+// kcm_restrictions are always enforced and therefore not listed here.
 message KConfigPolicy {
-  repeated KConfigEntry entries = 1;
+  reserved 1;
+  reserved "entries";
+
+  repeated string enforced_fields = 2;
+
+  // Action Restrictions  (kdeglobals, [KDE Action Restrictions])
+  optional bool shell_access = 3;
+  optional bool run_command = 4;
+  optional bool action_logout = 5;
+  optional bool action_file_new = 6;
+  optional bool action_file_open = 7;
+  optional bool action_file_save = 8;
+
+  // Resource Restrictions  (kdeglobals, [KDE Resource Restrictions])
+  optional bool restrict_wallpaper = 9;
+  optional bool restrict_icons = 10;
+  optional bool restrict_autostart = 11;
+  optional bool restrict_colors = 12;
+  optional bool restrict_cursors = 13;
+
+  // Window Manager  (kwinrc, [Windows])
+  optional bool borderless_maximized_windows = 14;
+
+  // Desktop  (plasmarc, [General])
+  optional bool plasmoid_unlocked_desktop = 15;
+  optional bool allow_configure_when_locked = 16;
+
+  // Screen Lock  (kscreenlockerrc, [Daemon])
+  optional bool auto_lock = 17;
+  optional bool lock_on_resume = 18;
+  optional int32 lock_timeout = 19;
+
+  // Appearance
+  optional string icon_theme = 20;
+  optional string wallpaper_plugin = 21;
+  optional string wallpaper_image = 22;
+  optional string wallpaper_fill_mode = 23;
+  optional string wallpaper_color = 24;
+
+  // Security  (kdeglobals, [KDE URL Restrictions])
+  repeated KConfigUrlRestriction url_restrictions = 25;
+
+  // System Settings  (kde5rc, [KDE Control Module Restrictions])
+  repeated string kcm_restrictions = 26;
 }

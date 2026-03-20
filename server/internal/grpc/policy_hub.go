@@ -17,6 +17,14 @@ import (
 // (dropped), forcing reconnecting clients to do a full snapshot.
 const defaultEventLogSize = 1000
 
+// hubEvent is an internal event that carries a pb.PolicyUpdate along with
+// routing metadata used by the streaming handler to decide whether to
+// forward the event to a specific connected agent.
+type hubEvent struct {
+	update           *pb.PolicyUpdate
+	affectedGroupIDs []string // nil/empty = broadcast to all agents
+}
+
 // PolicyHub is an in-process publish/subscribe hub that tracks policy
 // change events and fans them out to connected gRPC streaming clients.
 //
@@ -30,16 +38,16 @@ type PolicyHub struct {
 	revision    int64
 	eventLog    []*pb.PolicyUpdate
 	maxLogSize  int
-	subscribers map[chan *pb.PolicyUpdate]struct{}
-	clients     map[string]chan *pb.PolicyUpdate // clientID → channel
+	subscribers map[chan *hubEvent]struct{}
+	clients     map[string]chan *hubEvent // clientID → channel
 }
 
 // NewPolicyHub creates a ready-to-use PolicyHub.
 func NewPolicyHub() *PolicyHub {
 	return &PolicyHub{
 		maxLogSize:  defaultEventLogSize,
-		subscribers: make(map[chan *pb.PolicyUpdate]struct{}),
-		clients:     make(map[string]chan *pb.PolicyUpdate),
+		subscribers: make(map[chan *hubEvent]struct{}),
+		clients:     make(map[string]chan *hubEvent),
 	}
 }
 
@@ -50,43 +58,52 @@ func (h *PolicyHub) Revision() int64 {
 	return h.revision
 }
 
-// Publish records a policy change event, bumps the revision, and
-// broadcasts it to all connected subscribers.
-func (h *PolicyHub) Publish(updateType pb.PolicyUpdate_UpdateType, policy *pb.Policy) {
+// publish is the internal broadcast method. It bumps the revision,
+// appends to the event log, and fans out to all subscribers.
+// affectedGroupIDs is forwarded to subscribers for per-agent filtering;
+// it is NOT stored in the event log (log is used for delta catch-up only).
+func (h *PolicyHub) publish(updateType pb.PolicyUpdate_UpdateType, policy *pb.Policy, affectedGroupIDs []string) {
 	h.mu.Lock()
 
 	h.revision++
-	event := &pb.PolicyUpdate{
+	protoUpdate := &pb.PolicyUpdate{
 		Type:     updateType,
 		Policy:   policy,
 		Revision: h.revision,
 	}
 
 	// Append to event log, evicting oldest entries when full.
-	h.eventLog = append(h.eventLog, event)
+	h.eventLog = append(h.eventLog, protoUpdate)
 	if len(h.eventLog) > h.maxLogSize {
-		// Drop the oldest half to amortise slice copying.
 		drop := len(h.eventLog) / 2
 		copy(h.eventLog, h.eventLog[drop:])
 		h.eventLog = h.eventLog[:len(h.eventLog)-drop]
 	}
 
 	// Snapshot subscriber list while holding the lock.
-	subs := make([]chan *pb.PolicyUpdate, 0, len(h.subscribers))
+	subs := make([]chan *hubEvent, 0, len(h.subscribers))
 	for ch := range h.subscribers {
 		subs = append(subs, ch)
 	}
 	h.mu.Unlock()
 
+	ev := &hubEvent{update: protoUpdate, affectedGroupIDs: affectedGroupIDs}
+
 	// Fan-out without holding the lock. Non-blocking send so a slow
 	// subscriber does not stall the publisher.
 	for _, ch := range subs {
 		select {
-		case ch <- event:
+		case ch <- ev:
 		default:
 			log.Printf("policy_hub: dropping event for slow subscriber")
 		}
 	}
+}
+
+// Publish records a policy change event and broadcasts it to all agents.
+// Use this for CREATED/UPDATED/DELETED events that affect all connected clients.
+func (h *PolicyHub) Publish(updateType pb.PolicyUpdate_UpdateType, policy *pb.Policy) {
+	h.publish(updateType, policy, nil)
 }
 
 // EventsSince returns all events with revision > sinceRevision.
@@ -97,16 +114,13 @@ func (h *PolicyHub) EventsSince(sinceRevision int64) []*pb.PolicyUpdate {
 
 	if len(h.eventLog) == 0 {
 		if sinceRevision >= h.revision {
-			// Client is up-to-date; no events to send.
 			return []*pb.PolicyUpdate{}
 		}
-		// Events have been compacted away.
 		return nil
 	}
 
 	oldestAvailable := h.eventLog[0].Revision
 	if sinceRevision < oldestAvailable-1 {
-		// Gap detected — delta unavailable.
 		return nil
 	}
 
@@ -119,12 +133,12 @@ func (h *PolicyHub) EventsSince(sinceRevision int64) []*pb.PolicyUpdate {
 	return result
 }
 
-// PublishResync bumps the revision and broadcasts a resync signal to
-// all subscribers. Watch loops should respond by sending a full
-// snapshot to their connected client. The signal is a SNAPSHOT event
-// with a nil policy, which distinguishes it from regular events.
-func (h *PolicyHub) PublishResync() {
-	h.Publish(pb.PolicyUpdate_SNAPSHOT, nil)
+// PublishResync bumps the revision and broadcasts a resync signal.
+// affectedGroupIDs scopes the signal: only agents whose node groups overlap
+// with affectedGroupIDs will trigger a fresh snapshot. When affectedGroupIDs
+// is empty (or nil), all connected agents are signalled.
+func (h *PolicyHub) PublishResync(affectedGroupIDs ...string) {
+	h.publish(pb.PolicyUpdate_SNAPSHOT, nil, affectedGroupIDs)
 }
 
 // IsResyncSignal returns true if the event is a resync signal
@@ -137,10 +151,8 @@ func IsResyncSignal(ev *pb.PolicyUpdate) bool {
 // cancel function. The caller MUST call cancel when done (e.g. when
 // the gRPC stream ends) to avoid resource leaks. clientID is used
 // for targeted dispatch via SendMetadataRefreshRequest.
-func (h *PolicyHub) Subscribe(_ context.Context, clientID string) (<-chan *pb.PolicyUpdate, func()) { //nolint:gocritic // named returns conflict with internal channel variables
-	// Buffer provides headroom so the publisher doesn't drop events
-	// during short bursts.
-	ch := make(chan *pb.PolicyUpdate, 64)
+func (h *PolicyHub) Subscribe(_ context.Context, clientID string) (<-chan *hubEvent, func()) { //nolint:gocritic // named returns conflict with internal channel variables
+	ch := make(chan *hubEvent, 64)
 
 	h.mu.Lock()
 	h.subscribers[ch] = struct{}{}
@@ -153,7 +165,6 @@ func (h *PolicyHub) Subscribe(_ context.Context, clientID string) (<-chan *pb.Po
 		h.mu.Lock()
 		delete(h.subscribers, ch)
 		if clientID != "" {
-			// Only remove if this is still the current channel for this client.
 			if h.clients[clientID] == ch {
 				delete(h.clients, clientID)
 			}
@@ -176,13 +187,15 @@ func (h *PolicyHub) SendMetadataRefreshRequest(clientID string) bool {
 		return false
 	}
 
-	event := &pb.PolicyUpdate{
-		Type:     pb.PolicyUpdate_METADATA_REQUEST,
-		Revision: rev,
+	ev := &hubEvent{
+		update: &pb.PolicyUpdate{
+			Type:     pb.PolicyUpdate_METADATA_REQUEST,
+			Revision: rev,
+		},
 	}
 
 	select {
-	case ch <- event:
+	case ch <- ev:
 		return true
 	default:
 		log.Printf("policy_hub: dropping METADATA_REQUEST for slow subscriber %s", clientID)

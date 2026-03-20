@@ -23,179 +23,11 @@ func TestValidateKConfigPolicy_EmptyString(t *testing.T) {
 	}
 }
 
-func TestValidateKConfigPolicy_NoEntries(t *testing.T) {
-	err := ValidateKConfigPolicy(`{"entries": []}`)
+func TestValidateKConfigPolicy_NoSettings(t *testing.T) {
+	// enforcedFields alone does not count as a setting.
+	err := ValidateKConfigPolicy(`{"enforcedFields": ["shellAccess"]}`)
 	if err == nil {
-		t.Fatal("expected error for empty entries array")
-	}
-}
-
-func TestValidateKConfigPolicy_Valid(t *testing.T) {
-	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE Action Restrictions", "key": "shell_access", "value": "false", "type": "bool", "enforced": true}
-		]
-	}`
-	err := ValidateKConfigPolicy(content)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_MultipleEntries(t *testing.T) {
-	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE Action Restrictions", "key": "shell_access", "value": "false", "type": "bool", "enforced": true},
-			{"file": "kwinrc", "group": "Windows", "key": "BorderlessMaximizedWindows", "value": "true", "type": "bool", "enforced": false},
-			{"file": "kscreenlockerrc", "group": "Daemon", "key": "Timeout", "value": "300", "type": "int", "enforced": true}
-		]
-	}`
-	err := ValidateKConfigPolicy(content)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_MissingFile(t *testing.T) {
-	content := `{"entries": [{"file": "", "group": "G", "key": "K", "value": "V", "type": "bool"}]}`
-	err := ValidateKConfigPolicy(content)
-	if err == nil {
-		t.Fatal("expected error for missing file")
-	}
-	if !strings.Contains(err.Error(), "file is required") {
-		t.Errorf("expected 'file is required' error, got: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_MissingGroup(t *testing.T) {
-	content := `{"entries": [{"file": "kdeglobals", "group": "", "key": "K", "value": "V", "type": "bool"}]}`
-	err := ValidateKConfigPolicy(content)
-	if err == nil {
-		t.Fatal("expected error for missing group")
-	}
-	if !strings.Contains(err.Error(), "group is required") {
-		t.Errorf("expected 'group is required' error, got: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_MissingKey(t *testing.T) {
-	content := `{"entries": [{"file": "kdeglobals", "group": "G", "key": "", "value": "V", "type": "bool"}]}`
-	err := ValidateKConfigPolicy(content)
-	if err == nil {
-		t.Fatal("expected error for missing key")
-	}
-	if !strings.Contains(err.Error(), "key is required") {
-		t.Errorf("expected 'key is required' error, got: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_InvalidFile(t *testing.T) {
-	content := `{"entries": [{"file": "badfile", "group": "G", "key": "K", "value": "V", "type": "bool"}]}`
-	err := ValidateKConfigPolicy(content)
-	if err == nil {
-		t.Fatal("expected error for invalid file name")
-	}
-	if !strings.Contains(err.Error(), "not in the allowed set") {
-		t.Errorf("expected 'not in the allowed set' error, got: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_PathTraversal(t *testing.T) {
-	tests := []struct {
-		name string
-		file string
-	}{
-		{"dot-dot", "../etc/passwd"},
-		{"slash", "subdir/kdeglobals"},
-		{"backslash", "subdir\\kdeglobals"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := `{"entries": [{"file": "` + tt.file + `", "group": "G", "key": "K", "value": "V", "type": "bool"}]}`
-			err := ValidateKConfigPolicy(content)
-			if err == nil {
-				t.Fatalf("expected error for path traversal in file %q", tt.file)
-			}
-		})
-	}
-}
-
-func TestValidateKConfigPolicy_InvalidType(t *testing.T) {
-	content := `{"entries": [{"file": "kdeglobals", "group": "G", "key": "K", "value": "V", "type": "float"}]}`
-	err := ValidateKConfigPolicy(content)
-	if err == nil {
-		t.Fatal("expected error for invalid type")
-	}
-	if !strings.Contains(err.Error(), "not valid") {
-		t.Errorf("expected 'not valid' error, got: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_EmptyTypeAllowed(t *testing.T) {
-	content := `{"entries": [{"file": "kdeglobals", "group": "G", "key": "K", "value": "V"}]}`
-	err := ValidateKConfigPolicy(content)
-	if err != nil {
-		t.Fatalf("empty type should be allowed, got: %v", err)
-	}
-}
-
-func TestValidateKConfigPolicy_AllowedFiles(t *testing.T) {
-	allowedFiles := []string{"kdeglobals", "kde5rc", "kde6rc", "kwinrc", "plasmarc", "kscreenlockerrc", "dolphinrc", "konsolerc"}
-	for _, f := range allowedFiles {
-		content := `{"entries": [{"file": "` + f + `", "group": "G", "key": "K", "value": "V", "type": "string"}]}`
-		err := ValidateKConfigPolicy(content)
-		if err != nil {
-			t.Errorf("file %q should be allowed, got: %v", f, err)
-		}
-	}
-}
-
-func TestValidateKConfigPolicy_WallpaperValid(t *testing.T) {
-	tests := []struct {
-		name  string
-		group string
-	}{
-		{"containment-level", "Containments][1"},
-		{"containment-99", "Containments][99"},
-		{"wallpaper-plugin-general", "Containments][1][Wallpaper][org.kde.image][General"},
-		{"wallpaper-plugin-other", "Containments][2][Wallpaper][org.kde.potd][General"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := `{"entries": [{"file": "plasma-org.kde.plasma.desktop-appletsrc", "group": "` + tt.group + `", "key": "K", "value": "V", "type": "string"}]}`
-			err := ValidateKConfigPolicy(content)
-			if err != nil {
-				t.Errorf("group %q should be allowed, got: %v", tt.group, err)
-			}
-		})
-	}
-}
-
-func TestValidateKConfigPolicy_WallpaperInvalidGroup(t *testing.T) {
-	tests := []struct {
-		name  string
-		group string
-	}{
-		{"arbitrary-group", "General"},
-		{"no-containment-prefix", "Wallpaper][org.kde.image][General"},
-		{"missing-plugin-section", "Containments][1][General"},
-		{"empty-containment-id", "Containments]["},
-		{"non-numeric-containment", "Containments][abc"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := `{"entries": [{"file": "plasma-org.kde.plasma.desktop-appletsrc", "group": "` + tt.group + `", "key": "K", "value": "V", "type": "string"}]}`
-			err := ValidateKConfigPolicy(content)
-			if err == nil {
-				t.Errorf("group %q should be rejected for appletsrc file", tt.group)
-			}
-			if err != nil && !strings.Contains(err.Error(), "not allowed") {
-				t.Errorf("expected 'not allowed' error, got: %v", err)
-			}
-		})
+		t.Fatal("expected error when no actual settings are configured")
 	}
 }
 
@@ -206,26 +38,118 @@ func TestValidateKConfigPolicy_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestValidateKConfigPolicy_SingleBoolFalse(t *testing.T) {
+	// shellAccess: false is a valid, meaningful setting (restrict shell access).
+	err := ValidateKConfigPolicy(`{"shellAccess": false}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_SingleBoolTrue(t *testing.T) {
+	err := ValidateKConfigPolicy(`{"shellAccess": true}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_MultipleSettings(t *testing.T) {
+	content := `{
+		"shellAccess": false,
+		"runCommand": false,
+		"lockTimeout": 300,
+		"iconTheme": "breeze",
+		"enforcedFields": ["shellAccess", "runCommand", "lockTimeout"]
+	}`
+	err := ValidateKConfigPolicy(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_AllBoolFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"shellAccess", `{"shellAccess": false}`},
+		{"runCommand", `{"runCommand": false}`},
+		{"actionLogout", `{"actionLogout": false}`},
+		{"actionFileNew", `{"actionFileNew": false}`},
+		{"actionFileOpen", `{"actionFileOpen": false}`},
+		{"actionFileSave", `{"actionFileSave": false}`},
+		{"restrictWallpaper", `{"restrictWallpaper": false}`},
+		{"restrictIcons", `{"restrictIcons": false}`},
+		{"restrictAutostart", `{"restrictAutostart": false}`},
+		{"restrictColors", `{"restrictColors": false}`},
+		{"restrictCursors", `{"restrictCursors": false}`},
+		{"borderlessMaximizedWindows", `{"borderlessMaximizedWindows": true}`},
+		{"plasmoidUnlockedDesktop", `{"plasmoidUnlockedDesktop": false}`},
+		{"allowConfigureWhenLocked", `{"allowConfigureWhenLocked": false}`},
+		{"autoLock", `{"autoLock": true}`},
+		{"lockOnResume", `{"lockOnResume": true}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateKConfigPolicy(tt.content)
+			if err != nil {
+				t.Errorf("field %q should be valid, got: %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestValidateKConfigPolicy_IntField(t *testing.T) {
+	err := ValidateKConfigPolicy(`{"lockTimeout": 300}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_StringFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"iconTheme", `{"iconTheme": "breeze"}`},
+		{"wallpaperPlugin", `{"wallpaperPlugin": "org.kde.image"}`},
+		{"wallpaperImage", `{"wallpaperImage": "/usr/share/wallpapers/Flow.jpg"}`},
+		{"wallpaperFillMode", `{"wallpaperFillMode": "2"}`},
+		{"wallpaperColor", `{"wallpaperColor": "0,0,0"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateKConfigPolicy(tt.content)
+			if err != nil {
+				t.Errorf("field %q should be valid, got: %v", tt.name, err)
+			}
+		})
+	}
+}
+
+func TestValidateKConfigPolicy_KcmRestrictions(t *testing.T) {
+	err := ValidateKConfigPolicy(`{"kcmRestrictions": ["kcm_bluetooth", "kcm_wifi"]}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateKConfigPolicy_URLRestrictionValid(t *testing.T) {
 	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_count", "value": "2", "type": "string", "enforced": true},
-			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "open,,,,http,example.com,,true", "type": "string", "enforced": true},
-			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_2", "value": "list,,,,file,,,false", "type": "string", "enforced": true}
+		"urlRestrictions": [
+			{"action": "open", "protocol": "http", "host": "example.com", "enabled": true},
+			{"action": "list", "protocol": "file", "enabled": false}
 		]
 	}`
 	err := ValidateKConfigPolicy(content)
 	if err != nil {
-		t.Fatalf("expected valid URL restriction rules to pass, got: %v", err)
+		t.Fatalf("expected valid URL restrictions to pass, got: %v", err)
 	}
 }
 
 func TestValidateKConfigPolicy_URLRestrictionInvalidAction(t *testing.T) {
-	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "block,,,,http,example.com,,true", "type": "string", "enforced": true}
-		]
-	}`
+	content := `{"urlRestrictions": [{"action": "block", "protocol": "http", "host": "example.com", "enabled": true}]}`
 	err := ValidateKConfigPolicy(content)
 	if err == nil {
 		t.Fatal("expected error for invalid action 'block'")
@@ -235,60 +159,57 @@ func TestValidateKConfigPolicy_URLRestrictionInvalidAction(t *testing.T) {
 	}
 }
 
-func TestValidateKConfigPolicy_URLRestrictionWrongFieldCount(t *testing.T) {
-	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "open,,,,http,example.com", "type": "string", "enforced": true}
-		]
-	}`
+func TestValidateKConfigPolicy_URLRestrictionEmptyAction(t *testing.T) {
+	// Missing action defaults to empty string which is also invalid.
+	content := `{"urlRestrictions": [{"protocol": "http", "host": "example.com", "enabled": true}]}`
 	err := ValidateKConfigPolicy(content)
 	if err == nil {
-		t.Fatal("expected error for wrong field count")
-	}
-	if !strings.Contains(err.Error(), "8 comma-separated fields") {
-		t.Errorf("expected '8 comma-separated fields' error, got: %v", err)
+		t.Fatal("expected error for missing action")
 	}
 }
 
-func TestValidateKConfigPolicy_URLRestrictionInvalidEnabled(t *testing.T) {
-	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE URL Restrictions", "key": "rule_1", "value": "open,,,,http,example.com,,yes", "type": "string", "enforced": true}
-		]
-	}`
-	err := ValidateKConfigPolicy(content)
-	if err == nil {
-		t.Fatal("expected error for invalid enabled value")
+func TestValidateKConfigPolicy_AllURLRestrictionActions(t *testing.T) {
+	for _, action := range []string{"open", "list", "redirect"} {
+		content := `{"urlRestrictions": [{"action": "` + action + `", "protocol": "http", "enabled": true}]}`
+		err := ValidateKConfigPolicy(content)
+		if err != nil {
+			t.Errorf("action %q should be valid, got: %v", action, err)
+		}
 	}
-	if !strings.Contains(err.Error(), "invalid enabled") {
-		t.Errorf("expected 'invalid enabled' error, got: %v", err)
+}
+
+func TestValidateKConfigPolicy_EnforcedFieldsOnly(t *testing.T) {
+	// enforcedFields without a real setting is invalid.
+	err := ValidateKConfigPolicy(`{"enforcedFields": ["lockTimeout"]}`)
+	if err == nil {
+		t.Fatal("expected error when only enforcedFields is present")
 	}
 }
 
 func TestParseKConfigPolicyContent_Valid(t *testing.T) {
 	content := `{
-		"entries": [
-			{"file": "kdeglobals", "group": "KDE Action Restrictions", "key": "shell_access", "value": "false", "type": "bool", "enforced": true}
-		]
+		"shellAccess": false,
+		"lockTimeout": 300,
+		"enforcedFields": ["shellAccess", "lockTimeout"]
 	}`
-	c, err := ParseKConfigPolicyContent(content)
+	kcp, err := ParseKConfigPolicyContent(content)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(c.Entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(c.Entries))
+	if kcp.ShellAccess == nil || *kcp.ShellAccess != false {
+		t.Error("expected ShellAccess to be false")
 	}
-	if c.Entries[0].GetFile() != "kdeglobals" {
-		t.Errorf("expected file 'kdeglobals', got %q", c.Entries[0].GetFile())
+	if kcp.LockTimeout == nil || *kcp.LockTimeout != 300 {
+		t.Errorf("expected LockTimeout 300, got %v", kcp.LockTimeout)
 	}
-	if !c.Entries[0].GetEnforced() {
-		t.Error("expected entry to be enforced")
+	if len(kcp.EnforcedFields) != 2 {
+		t.Errorf("expected 2 enforced fields, got %d", len(kcp.EnforcedFields))
 	}
 }
 
 func TestParseKConfigPolicyContent_Invalid(t *testing.T) {
-	_, err := ParseKConfigPolicyContent(`{"entries": [{"file": "", "group": "G", "key": "K"}]}`)
+	_, err := ParseKConfigPolicyContent(`{}`)
 	if err == nil {
-		t.Fatal("expected validation error")
+		t.Fatal("expected validation error for empty content")
 	}
 }

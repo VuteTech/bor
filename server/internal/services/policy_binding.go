@@ -119,6 +119,12 @@ func (s *PolicyBindingService) DeleteBinding(ctx context.Context, id string) err
 	return s.repo.Delete(ctx, id)
 }
 
+// GetEnabledGroupIDsForPolicy returns the group IDs that have an enabled binding
+// for the given policy. Used to scope agent notifications to only affected groups.
+func (s *PolicyBindingService) GetEnabledGroupIDsForPolicy(ctx context.Context, policyID string) ([]string, error) {
+	return s.repo.GetEnabledGroupIDsByPolicyID(ctx, policyID)
+}
+
 // HasEnabledBinding returns true if the policy has at least one enabled binding
 func (s *PolicyBindingService) HasEnabledBinding(ctx context.Context, policyID string) (bool, error) {
 	count, err := s.repo.CountEnabledByPolicyID(ctx, policyID)

@@ -26,6 +26,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
 	grpcserver "github.com/VuteTech/Bor/server/internal/grpc"
+	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
 	enrollpb "github.com/VuteTech/Bor/server/pkg/grpc/enrollment"
@@ -239,12 +240,22 @@ func main() {
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
 
-	// Wire policy and binding change notifications to the hub so that
-	// connected streaming agents receive a fresh snapshot when the
-	// policy set changes.
-	notifyAgents := func() { policyHub.PublishResync() }
-	policyHandler.OnPolicyChange = notifyAgents
-	policyBindingHandler.OnBindingChange = notifyAgents
+	// Wire policy and binding change notifications to the hub.
+	// Only agents whose node groups are affected by the change are signalled.
+	policyHandler.OnPolicyChange = func(policyID string) {
+		groupIDs, err := policyBindingSvc.GetEnabledGroupIDsForPolicy(context.Background(), policyID)
+		if err != nil {
+			log.Printf("Warning: failed to get enabled group IDs for policy %s: %v", policyID, err)
+			return
+		}
+		if len(groupIDs) == 0 {
+			return // no active bindings, no agents to notify
+		}
+		policyHub.PublishResync(groupIDs...)
+	}
+	policyBindingHandler.OnBindingChange = func(b *models.PolicyBinding) {
+		policyHub.PublishResync(b.GroupID)
+	}
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()

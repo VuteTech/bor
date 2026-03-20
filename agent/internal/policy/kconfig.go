@@ -27,6 +27,135 @@ type kconfigGroup struct {
 	entries []*pb.KConfigEntry
 }
 
+// enforcedSet builds a fast-lookup set from the KConfigPolicy.EnforcedFields list.
+func enforcedSet(pol *pb.KConfigPolicy) map[string]bool {
+	s := make(map[string]bool, len(pol.EnforcedFields))
+	for _, f := range pol.EnforcedFields {
+		s[f] = true
+	}
+	return s
+}
+
+// boolVal converts an optional bool proto pointer to an INI "true"/"false" string.
+func boolVal(v *bool) string {
+	if v != nil && *v {
+		return "true"
+	}
+	return "false"
+}
+
+// KConfigPolicyToEntries converts a typed KConfigPolicy to the flat
+// []*KConfigEntry slice expected by MergeKConfigEntries and SplitKCMRestrictions.
+// Absent optional fields (nil pointers, empty repeated) are skipped.
+func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
+	if pol == nil {
+		return nil
+	}
+
+	enforced := enforcedSet(pol)
+
+	var entries []*pb.KConfigEntry
+	add := func(e *pb.KConfigEntry) {
+		if e != nil {
+			entries = append(entries, e)
+		}
+	}
+
+	boolE := func(file, group, key, jsonKey string, val *bool) *pb.KConfigEntry {
+		if val == nil {
+			return nil
+		}
+		return &pb.KConfigEntry{File: file, Group: group, Key: key, Value: boolVal(val), Type: "bool", Enforced: enforced[jsonKey]}
+	}
+
+	strE := func(file, group, key, jsonKey string, val *string) *pb.KConfigEntry {
+		if val == nil {
+			return nil
+		}
+		return &pb.KConfigEntry{File: file, Group: group, Key: key, Value: *val, Type: "string", Enforced: enforced[jsonKey]}
+	}
+
+	intE := func(file, group, key, jsonKey string, val *int32) *pb.KConfigEntry {
+		if val == nil {
+			return nil
+		}
+		return &pb.KConfigEntry{File: file, Group: group, Key: key, Value: strconv.Itoa(int(*val)), Type: "int", Enforced: enforced[jsonKey]}
+	}
+
+	// Action Restrictions (kdeglobals, [KDE Action Restrictions])
+	add(boolE("kdeglobals", "KDE Action Restrictions", "shell_access", "shellAccess", pol.ShellAccess))
+	add(boolE("kdeglobals", "KDE Action Restrictions", "run_command", "runCommand", pol.RunCommand))
+	add(boolE("kdeglobals", "KDE Action Restrictions", "action/logout", "actionLogout", pol.ActionLogout))
+	add(boolE("kdeglobals", "KDE Action Restrictions", "action/file_new", "actionFileNew", pol.ActionFileNew))
+	add(boolE("kdeglobals", "KDE Action Restrictions", "action/file_open", "actionFileOpen", pol.ActionFileOpen))
+	add(boolE("kdeglobals", "KDE Action Restrictions", "action/file_save", "actionFileSave", pol.ActionFileSave))
+
+	// Resource Restrictions (kdeglobals, [KDE Resource Restrictions])
+	add(boolE("kdeglobals", "KDE Resource Restrictions", "wallpaper", "restrictWallpaper", pol.RestrictWallpaper))
+	add(boolE("kdeglobals", "KDE Resource Restrictions", "icons", "restrictIcons", pol.RestrictIcons))
+	add(boolE("kdeglobals", "KDE Resource Restrictions", "autostart", "restrictAutostart", pol.RestrictAutostart))
+	add(boolE("kdeglobals", "KDE Resource Restrictions", "colors", "restrictColors", pol.RestrictColors))
+	add(boolE("kdeglobals", "KDE Resource Restrictions", "cursors", "restrictCursors", pol.RestrictCursors))
+
+	// Window Manager (kwinrc, [Windows])
+	add(boolE("kwinrc", "Windows", "BorderlessMaximizedWindows", "borderlessMaximizedWindows", pol.BorderlessMaximizedWindows))
+
+	// Desktop (plasmarc, [General])
+	add(boolE("plasmarc", "General", "plasmoidUnlockedDesktop", "plasmoidUnlockedDesktop", pol.PlasmoidUnlockedDesktop))
+	add(boolE("plasmarc", "General", "allow_configure_when_locked", "allowConfigureWhenLocked", pol.AllowConfigureWhenLocked))
+
+	// Screen Lock (kscreenlockerrc, [Daemon])
+	add(boolE("kscreenlockerrc", "Daemon", "AutoLock", "autoLock", pol.AutoLock))
+	add(boolE("kscreenlockerrc", "Daemon", "LockOnResume", "lockOnResume", pol.LockOnResume))
+	add(intE("kscreenlockerrc", "Daemon", "Timeout", "lockTimeout", pol.LockTimeout))
+
+	// Appearance
+	add(strE("kdeglobals", "Icons", "Theme", "iconTheme", pol.IconTheme))
+	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1", "wallpaperplugin", "wallpaperPlugin", pol.WallpaperPlugin))
+	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1][Wallpaper][org.kde.image][General", "Image", "wallpaperImage", pol.WallpaperImage))
+	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1][Wallpaper][org.kde.image][General", "FillMode", "wallpaperFillMode", pol.WallpaperFillMode))
+	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1][Wallpaper][org.kde.image][General", "Color", "wallpaperColor", pol.WallpaperColor))
+
+	// URL Restrictions (kdeglobals, [KDE URL Restrictions]) — always enforced
+	for i, r := range pol.UrlRestrictions {
+		val := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%v",
+			r.GetAction(), r.GetReferrerProtocol(), r.GetReferrerHost(), r.GetReferrerPath(),
+			r.GetProtocol(), r.GetHost(), r.GetPath(), r.GetEnabled())
+		entries = append(entries, &pb.KConfigEntry{
+			File:     "kdeglobals",
+			Group:    "KDE URL Restrictions",
+			Key:      fmt.Sprintf("rule_%d", i+1),
+			Value:    val,
+			Type:     "string",
+			Enforced: true,
+		})
+	}
+	if len(pol.UrlRestrictions) > 0 {
+		entries = append(entries, &pb.KConfigEntry{
+			File:     "kdeglobals",
+			Group:    "KDE URL Restrictions",
+			Key:      "rule_count",
+			Value:    strconv.Itoa(len(pol.UrlRestrictions)),
+			Type:     "string",
+			Enforced: true,
+		})
+	}
+
+	// KCM Restrictions (kde5rc, [KDE Control Module Restrictions]) — always enforced
+	for _, mod := range pol.KcmRestrictions {
+		entries = append(entries, &pb.KConfigEntry{
+			File:     "kde5rc",
+			Group:    "KDE Control Module Restrictions",
+			Key:      mod,
+			Value:    "false",
+			Type:     "bool",
+			Enforced: true,
+		})
+	}
+
+	return entries
+}
+
 // MergeKConfigEntries takes already-parsed proto entries (flattened from
 // all policies), groups them by target file and INI group, renders INI
 // content with [$i] enforcement suffixes, and returns a map of file→INI bytes.

@@ -6,169 +6,171 @@ option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
 // FirefoxPolicy is the canonical schema for a Firefox enterprise policy
 // on Linux. It maps directly to the "policies" key in policies.json.
+// Field json_name annotations preserve PascalCase so protojson round-trips
+// with the key names Firefox expects.
 message FirefoxPolicy {
   // Simple boolean policies
-  optional bool DisableAppUpdate = 1;
-  optional bool AppAutoUpdate = 2;
-  optional bool DisableFirefoxStudies = 3;
-  optional bool DisablePocket = 4;
-  optional bool DisableTelemetry = 5;
-  optional bool DisableFirefoxAccounts = 6;
-  optional bool DisableFormHistory = 7;
-  optional bool DisablePasswordReveal = 8;
-  optional bool DisableMasterPasswordCreation = 9;
-  optional bool BlockAboutAddons = 10;
-  optional bool BlockAboutConfig = 11;
-  optional bool BlockAboutProfiles = 12;
-  optional bool BlockAboutSupport = 13;
-  optional bool DontCheckDefaultBrowser = 14;
-  optional bool OfferToSaveLogins = 15;
-  optional bool PasswordManagerEnabled = 16;
-  optional bool PromptForDownloadLocation = 17;
-  optional bool HardwareAcceleration = 18;
-  optional bool NetworkPrediction = 19;
-  optional bool CaptivePortal = 20;
-  optional bool DisableSetDesktopBackground = 21;
-  optional bool NoDefaultBookmarks = 22;
-  optional bool OverrideFirstRunPage = 23;
-  optional bool OverridePostUpdatePage = 24;
-  optional bool DisableProfileImport = 25;
-  optional bool DisableFeedbackCommands = 26;
-  optional bool DisableSafeMode = 27;
-  optional bool DisableSecurityBypass = 28;
-  optional bool SearchSuggestEnabled = 29;
-  optional bool DisplayBookmarksToolbar = 30;
-  optional bool DisplayMenuBar = 31;
+  optional bool DisableAppUpdate              = 1  [json_name = "DisableAppUpdate"];
+  optional bool AppAutoUpdate                 = 2  [json_name = "AppAutoUpdate"];
+  optional bool DisableFirefoxStudies         = 3  [json_name = "DisableFirefoxStudies"];
+  optional bool DisablePocket                 = 4  [json_name = "DisablePocket"];
+  optional bool DisableTelemetry              = 5  [json_name = "DisableTelemetry"];
+  optional bool DisableFirefoxAccounts        = 6  [json_name = "DisableFirefoxAccounts"];
+  optional bool DisableFormHistory            = 7  [json_name = "DisableFormHistory"];
+  optional bool DisablePasswordReveal         = 8  [json_name = "DisablePasswordReveal"];
+  optional bool DisableMasterPasswordCreation = 9  [json_name = "DisableMasterPasswordCreation"];
+  optional bool BlockAboutAddons              = 10 [json_name = "BlockAboutAddons"];
+  optional bool BlockAboutConfig              = 11 [json_name = "BlockAboutConfig"];
+  optional bool BlockAboutProfiles            = 12 [json_name = "BlockAboutProfiles"];
+  optional bool BlockAboutSupport             = 13 [json_name = "BlockAboutSupport"];
+  optional bool DontCheckDefaultBrowser       = 14 [json_name = "DontCheckDefaultBrowser"];
+  optional bool OfferToSaveLogins             = 15 [json_name = "OfferToSaveLogins"];
+  optional bool PasswordManagerEnabled        = 16 [json_name = "PasswordManagerEnabled"];
+  optional bool PromptForDownloadLocation     = 17 [json_name = "PromptForDownloadLocation"];
+  optional bool HardwareAcceleration          = 18 [json_name = "HardwareAcceleration"];
+  optional bool NetworkPrediction             = 19 [json_name = "NetworkPrediction"];
+  optional bool CaptivePortal                 = 20 [json_name = "CaptivePortal"];
+  optional bool DisableSetDesktopBackground   = 21 [json_name = "DisableSetDesktopBackground"];
+  optional bool NoDefaultBookmarks            = 22 [json_name = "NoDefaultBookmarks"];
+  optional bool OverrideFirstRunPage          = 23 [json_name = "OverrideFirstRunPage"];
+  optional bool OverridePostUpdatePage        = 24 [json_name = "OverridePostUpdatePage"];
+  optional bool DisableProfileImport          = 25 [json_name = "DisableProfileImport"];
+  optional bool DisableFeedbackCommands       = 26 [json_name = "DisableFeedbackCommands"];
+  optional bool DisableSafeMode               = 27 [json_name = "DisableSafeMode"];
+  optional bool DisableSecurityBypass         = 28 [json_name = "DisableSecurityBypass"];
+  optional bool SearchSuggestEnabled          = 29 [json_name = "SearchSuggestEnabled"];
+  optional bool DisplayBookmarksToolbar       = 30 [json_name = "DisplayBookmarksToolbar"];
+  optional bool DisplayMenuBar                = 31 [json_name = "DisplayMenuBar"];
 
   // String policies
-  optional string DefaultDownloadDirectory = 32;
-  optional string SSLVersionMin = 33;
-  optional string SSLVersionMax = 34;
-  optional string AppUpdatePin = 35;
+  optional string DefaultDownloadDirectory = 32 [json_name = "DefaultDownloadDirectory"];
+  optional string SSLVersionMin            = 33 [json_name = "SSLVersionMin"];
+  optional string SSLVersionMax            = 34 [json_name = "SSLVersionMax"];
+  optional string AppUpdatePin             = 35 [json_name = "AppUpdatePin"];
 
   // Integer policies
-  optional int32 NewTabPage = 36;
+  optional int32 NewTabPage = 36 [json_name = "NewTabPage"];
 
   // Object/composite policies
-  optional FirefoxHomepage Homepage = 37;
-  optional FirefoxTrackingProtection EnableTrackingProtection = 38;
-  optional FirefoxDNSOverHTTPS DNSOverHTTPS = 39;
-  optional FirefoxFirefoxHome FirefoxHome = 40;
-  optional FirefoxCookies Cookies = 41;
-  optional FirefoxExtensions Extensions = 42;
-  repeated FirefoxBookmark Bookmarks = 43;
-  optional FirefoxProxy Proxy = 44;
-  optional FirefoxPopupBlocking PopupBlocking = 45;
-  optional FirefoxPermissions Permissions = 46;
+  optional FirefoxHomepage           Homepage                 = 37 [json_name = "Homepage"];
+  optional FirefoxTrackingProtection EnableTrackingProtection = 38 [json_name = "EnableTrackingProtection"];
+  optional FirefoxDNSOverHTTPS       DNSOverHTTPS             = 39 [json_name = "DNSOverHTTPS"];
+  optional FirefoxFirefoxHome        FirefoxHome              = 40 [json_name = "FirefoxHome"];
+  optional FirefoxCookies            Cookies                  = 41 [json_name = "Cookies"];
+  optional FirefoxExtensions         Extensions               = 42 [json_name = "Extensions"];
+  repeated FirefoxBookmark           Bookmarks                = 43 [json_name = "Bookmarks"];
+  optional FirefoxProxy              Proxy                    = 44 [json_name = "Proxy"];
+  optional FirefoxPopupBlocking      PopupBlocking            = 45 [json_name = "PopupBlocking"];
+  optional FirefoxPermissions        Permissions              = 46 [json_name = "Permissions"];
 }
 
 // FirefoxHomepage configures the browser homepage
 message FirefoxHomepage {
-  string URL = 1;
-  bool Locked = 2;
-  repeated string Additional = 3;
+  string          URL        = 1 [json_name = "URL"];
+  bool            Locked     = 2 [json_name = "Locked"];
+  repeated string Additional = 3 [json_name = "Additional"];
   // "none", "homepage", "previous-session", "homepage-locked"
-  string StartPage = 4;
+  string StartPage = 4 [json_name = "StartPage"];
 }
 
 // FirefoxTrackingProtection configures Enhanced Tracking Protection
 message FirefoxTrackingProtection {
-  bool Value = 1;
-  bool Locked = 2;
-  bool Cryptomining = 3;
-  bool Fingerprinting = 4;
-  bool EmailTracking = 5;
-  repeated string Exceptions = 6;
+  bool            Value          = 1 [json_name = "Value"];
+  bool            Locked         = 2 [json_name = "Locked"];
+  bool            Cryptomining   = 3 [json_name = "Cryptomining"];
+  bool            Fingerprinting = 4 [json_name = "Fingerprinting"];
+  bool            EmailTracking  = 5 [json_name = "EmailTracking"];
+  repeated string Exceptions     = 6 [json_name = "Exceptions"];
 }
 
 // FirefoxDNSOverHTTPS configures DNS-over-HTTPS settings
 message FirefoxDNSOverHTTPS {
-  bool Enabled = 1;
-  string ProviderURL = 2;
-  bool Locked = 3;
-  repeated string ExcludedDomains = 4;
-  bool Fallback = 5;
+  bool            Enabled         = 1 [json_name = "Enabled"];
+  string          ProviderURL     = 2 [json_name = "ProviderURL"];
+  bool            Locked          = 3 [json_name = "Locked"];
+  repeated string ExcludedDomains = 4 [json_name = "ExcludedDomains"];
+  bool            Fallback        = 5 [json_name = "Fallback"];
 }
 
 // FirefoxFirefoxHome configures the Firefox Home (new tab) page
 message FirefoxFirefoxHome {
-  bool Search = 1;
-  bool TopSites = 2;
-  bool SponsoredTopSites = 3;
-  bool Highlights = 4;
-  bool Pocket = 5;
-  bool SponsoredPocket = 6;
-  bool Snippets = 7;
-  bool Locked = 8;
+  bool Search           = 1 [json_name = "Search"];
+  bool TopSites         = 2 [json_name = "TopSites"];
+  bool SponsoredTopSites = 3 [json_name = "SponsoredTopSites"];
+  bool Highlights       = 4 [json_name = "Highlights"];
+  bool Pocket           = 5 [json_name = "Pocket"];
+  bool SponsoredPocket  = 6 [json_name = "SponsoredPocket"];
+  bool Snippets         = 7 [json_name = "Snippets"];
+  bool Locked           = 8 [json_name = "Locked"];
 }
 
 // FirefoxCookies configures cookie behaviour
 message FirefoxCookies {
-  repeated string Allow = 1;
-  repeated string Block = 2;
-  repeated string AllowSession = 3;
+  repeated string Allow                  = 1 [json_name = "Allow"];
+  repeated string Block                  = 2 [json_name = "Block"];
+  repeated string AllowSession           = 3 [json_name = "AllowSession"];
   // "accept", "reject-foreign", "reject-all", etc.
-  string Behavior = 4;
-  string BehaviorPrivateBrowsing = 5;
-  bool Locked = 6;
+  string          Behavior               = 4 [json_name = "Behavior"];
+  string          BehaviorPrivateBrowsing = 5 [json_name = "BehaviorPrivateBrowsing"];
+  bool            Locked                 = 6 [json_name = "Locked"];
 }
 
 // FirefoxExtensions manages extension install/uninstall/lock lists
 message FirefoxExtensions {
-  repeated string Install = 1;
-  repeated string Uninstall = 2;
-  repeated string Locked = 3;
+  repeated string Install   = 1 [json_name = "Install"];
+  repeated string Uninstall = 2 [json_name = "Uninstall"];
+  repeated string Locked    = 3 [json_name = "Locked"];
 }
 
 // FirefoxBookmark represents a single managed bookmark
 message FirefoxBookmark {
-  string Title = 1;
-  string URL = 2;
-  string Favicon = 3;
-  string Placement = 4;
-  string Folder = 5;
+  string Title     = 1 [json_name = "Title"];
+  string URL       = 2 [json_name = "URL"];
+  string Favicon   = 3 [json_name = "Favicon"];
+  string Placement = 4 [json_name = "Placement"];
+  string Folder    = 5 [json_name = "Folder"];
 }
 
 // FirefoxProxy configures proxy settings
 message FirefoxProxy {
-  string Mode = 1;
-  bool Locked = 2;
-  string HTTPProxy = 3;
-  int32 HTTPPort = 4;
-  bool UseHTTPProxyForAllProtocols = 5;
-  string SSLProxy = 6;
-  int32 SSLPort = 7;
-  string FTPProxy = 8;
-  int32 FTPPort = 9;
-  string SOCKSProxy = 10;
-  int32 SOCKSPort = 11;
-  int32 SOCKSVersion = 12;
-  string Passthrough = 13;
-  string AutoConfigURL = 14;
-  bool AutoLogin = 15;
-  bool UseProxyForDNS = 16;
+  string Mode                        = 1  [json_name = "Mode"];
+  bool   Locked                      = 2  [json_name = "Locked"];
+  string HTTPProxy                   = 3  [json_name = "HTTPProxy"];
+  int32  HTTPPort                    = 4  [json_name = "HTTPPort"];
+  bool   UseHTTPProxyForAllProtocols = 5  [json_name = "UseHTTPProxyForAllProtocols"];
+  string SSLProxy                    = 6  [json_name = "SSLProxy"];
+  int32  SSLPort                     = 7  [json_name = "SSLPort"];
+  string FTPProxy                    = 8  [json_name = "FTPProxy"];
+  int32  FTPPort                     = 9  [json_name = "FTPPort"];
+  string SOCKSProxy                  = 10 [json_name = "SOCKSProxy"];
+  int32  SOCKSPort                   = 11 [json_name = "SOCKSPort"];
+  int32  SOCKSVersion                = 12 [json_name = "SOCKSVersion"];
+  string Passthrough                 = 13 [json_name = "Passthrough"];
+  string AutoConfigURL               = 14 [json_name = "AutoConfigURL"];
+  bool   AutoLogin                   = 15 [json_name = "AutoLogin"];
+  bool   UseProxyForDNS              = 16 [json_name = "UseProxyForDNS"];
 }
 
 // FirefoxPopupBlocking configures popup blocker exceptions
 message FirefoxPopupBlocking {
-  repeated string Allow = 1;
-  bool Default = 2;
-  bool Locked = 3;
+  repeated string Allow   = 1 [json_name = "Allow"];
+  bool            Default = 2 [json_name = "Default"];
+  bool            Locked  = 3 [json_name = "Locked"];
 }
 
 // FirefoxPermissions configures site permission defaults and exceptions
 message FirefoxPermissions {
-  optional FirefoxPermissionPolicy Camera = 1;
-  optional FirefoxPermissionPolicy Microphone = 2;
-  optional FirefoxPermissionPolicy Location = 3;
-  optional FirefoxPermissionPolicy Notifications = 4;
-  optional FirefoxPermissionPolicy Autoplay = 5;
+  optional FirefoxPermissionPolicy Camera        = 1 [json_name = "Camera"];
+  optional FirefoxPermissionPolicy Microphone    = 2 [json_name = "Microphone"];
+  optional FirefoxPermissionPolicy Location      = 3 [json_name = "Location"];
+  optional FirefoxPermissionPolicy Notifications = 4 [json_name = "Notifications"];
+  optional FirefoxPermissionPolicy Autoplay      = 5 [json_name = "Autoplay"];
 }
 
 // FirefoxPermissionPolicy configures a single permission type
 message FirefoxPermissionPolicy {
-  repeated string Allow = 1;
-  repeated string Block = 2;
-  bool BlockNewRequests = 3;
-  bool Locked = 4;
+  repeated string Allow            = 1 [json_name = "Allow"];
+  repeated string Block            = 2 [json_name = "Block"];
+  bool            BlockNewRequests = 3 [json_name = "BlockNewRequests"];
+  bool            Locked           = 4 [json_name = "Locked"];
 }

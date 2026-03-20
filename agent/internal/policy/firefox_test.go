@@ -10,175 +10,194 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"google.golang.org/protobuf/proto"
 )
 
-func TestMergeFirefoxPolicies_SinglePolicy(t *testing.T) {
-	contents := []string{
-		`{"DisableTelemetry": true, "DisablePocket": true}`,
-	}
+func boolPtr(b bool) *bool { return &b }
 
-	data, err := MergeFirefoxPolicies(contents)
-	if err != nil {
-		t.Fatal(err)
+func TestMergeFirefoxProtos_SinglePolicy(t *testing.T) {
+	policies := []*pb.FirefoxPolicy{
+		{DisableTelemetry: boolPtr(true), DisablePocket: boolPtr(true)},
 	}
-
-	var result FirefoxPoliciesJSON
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-
-	if result.Policies["DisableTelemetry"] != true {
+	merged := MergeFirefoxProtos(policies)
+	if !merged.GetDisableTelemetry() {
 		t.Error("expected DisableTelemetry to be true")
 	}
-	if result.Policies["DisablePocket"] != true {
+	if !merged.GetDisablePocket() {
 		t.Error("expected DisablePocket to be true")
 	}
 }
 
-func TestMergeFirefoxPolicies_MultiplePolicies(t *testing.T) {
-	contents := []string{
-		`{"DisableTelemetry": true}`,
-		`{"DisablePocket": true, "DontCheckDefaultBrowser": true}`,
-		`{"Homepage": {"URL": "https://example.com", "Locked": true}}`,
+func TestMergeFirefoxProtos_LaterOverwritesEarlier(t *testing.T) {
+	policies := []*pb.FirefoxPolicy{
+		{DisableTelemetry: boolPtr(false)},
+		{DisableTelemetry: boolPtr(true)},
+	}
+	merged := MergeFirefoxProtos(policies)
+	if !merged.GetDisableTelemetry() {
+		t.Error("expected later policy to overwrite earlier")
+	}
+}
+
+func TestMergeFirefoxProtos_RepeatedFieldsAppended(t *testing.T) {
+	policies := []*pb.FirefoxPolicy{
+		{Extensions: &pb.FirefoxExtensions{Install: []string{"ext1@example.com"}}},
+		{Extensions: &pb.FirefoxExtensions{Install: []string{"ext2@example.com"}}},
+	}
+	merged := MergeFirefoxProtos(policies)
+	if len(merged.GetExtensions().GetInstall()) != 2 {
+		t.Errorf("expected 2 extensions, got %d", len(merged.GetExtensions().GetInstall()))
+	}
+}
+
+func TestMergeFirefoxProtos_NilSkipped(t *testing.T) {
+	policies := []*pb.FirefoxPolicy{nil, {DisableTelemetry: boolPtr(true)}, nil}
+	merged := MergeFirefoxProtos(policies)
+	if !merged.GetDisableTelemetry() {
+		t.Error("expected DisableTelemetry to be true")
+	}
+}
+
+func TestMergeFirefoxProtos_Empty(t *testing.T) {
+	merged := MergeFirefoxProtos(nil)
+	if !proto.Equal(merged, &pb.FirefoxPolicy{}) {
+		t.Error("expected empty merged policy")
+	}
+}
+
+func TestSyncFirefoxPoliciesFromProto_WritesPoliciesJSON(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "policies.json")
+
+	policies := []*pb.FirefoxPolicy{
+		{DisableTelemetry: boolPtr(true), DisablePocket: boolPtr(false)},
+	}
+	if err := SyncFirefoxPoliciesFromProto(target, policies); err != nil {
+		t.Fatal(err)
 	}
 
-	data, err := MergeFirefoxPolicies(contents)
+	raw, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var result FirefoxPoliciesJSON
-	if err := json.Unmarshal(data, &result); err != nil {
+	var result struct {
+		Comment  string                 `json:"_comment"`
+		Policies map[string]interface{} `json:"policies"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	if result.Comment != FirefoxManagedComment {
+		t.Error("expected managed comment")
+	}
+	if result.Policies["DisableTelemetry"] != true {
+		t.Errorf("expected DisableTelemetry=true, got %v", result.Policies["DisableTelemetry"])
+	}
+	if result.Policies["DisablePocket"] != false {
+		t.Errorf("expected DisablePocket=false, got %v", result.Policies["DisablePocket"])
+	}
+}
+
+func TestSyncFirefoxPoliciesFromProto_PascalCaseKeys(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "policies.json")
+
+	policies := []*pb.FirefoxPolicy{
+		{
+			Homepage: &pb.FirefoxHomepage{
+				URL:    "https://example.com",
+				Locked: true,
+			},
+		},
+	}
+	if err := SyncFirefoxPoliciesFromProto(target, policies); err != nil {
 		t.Fatal(err)
 	}
 
-	if result.Policies["DisableTelemetry"] != true {
-		t.Error("expected DisableTelemetry")
-	}
-	if result.Policies["DisablePocket"] != true {
-		t.Error("expected DisablePocket")
-	}
-	if result.Policies["DontCheckDefaultBrowser"] != true {
-		t.Error("expected DontCheckDefaultBrowser")
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	homepage, ok := result.Policies["Homepage"].(map[string]interface{})
+	var result struct {
+		Policies map[string]interface{} `json:"policies"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	// Firefox requires PascalCase keys — must not be "homepage" (camelCase)
+	if _, ok := result.Policies["Homepage"]; !ok {
+		t.Error("expected PascalCase 'Homepage' key in policies.json")
+	}
+	if _, ok := result.Policies["homepage"]; ok {
+		t.Error("unexpected camelCase 'homepage' key — Firefox would not recognise it")
+	}
+
+	hp, ok := result.Policies["Homepage"].(map[string]interface{})
 	if !ok {
 		t.Fatal("expected Homepage to be a map")
 	}
-	if homepage["URL"] != "https://example.com" {
-		t.Errorf("expected Homepage.URL to be https://example.com, got %v", homepage["URL"])
+	if hp["URL"] != "https://example.com" {
+		t.Errorf("expected Homepage.URL = https://example.com, got %v", hp["URL"])
 	}
 }
 
-func TestMergeFirefoxPolicies_DeepMerge(t *testing.T) {
-	contents := []string{
-		`{"EnableTrackingProtection": {"Value": true, "Cryptomining": true}}`,
-		`{"EnableTrackingProtection": {"Fingerprinting": true, "Locked": true}}`,
+func TestSyncFirefoxPoliciesFromProto_RestoresOnEmpty(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "policies.json")
+
+	// Pre-write an "original" policies.json
+	original := []byte(`{"policies":{},"_comment":"original"}`)
+	if err := os.WriteFile(target, original, 0o644); err != nil {
+		t.Fatal(err)
 	}
 
-	data, err := MergeFirefoxPolicies(contents)
+	// Write managed policies first so a backup is created
+	if err := SyncFirefoxPoliciesFromProto(target, []*pb.FirefoxPolicy{
+		{DisableTelemetry: boolPtr(true)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now sync with empty list — should restore original
+	if err := SyncFirefoxPoliciesFromProto(target, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	var result FirefoxPoliciesJSON
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-
-	tp, ok := result.Policies["EnableTrackingProtection"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected EnableTrackingProtection to be a map")
-	}
-	if tp["Value"] != true {
-		t.Error("expected Value")
-	}
-	if tp["Cryptomining"] != true {
-		t.Error("expected Cryptomining")
-	}
-	if tp["Fingerprinting"] != true {
-		t.Error("expected Fingerprinting")
-	}
-	if tp["Locked"] != true {
-		t.Error("expected Locked")
+	if !bytes.Equal(restored, original) {
+		t.Errorf("expected original to be restored, got %q", restored)
 	}
 }
 
-func TestMergeFirefoxPolicies_SliceAppend(t *testing.T) {
-	contents := []string{
-		`{"Extensions": {"Install": ["ext1@example.com"]}}`,
-		`{"Extensions": {"Install": ["ext2@example.com"], "Uninstall": ["bad@example.com"]}}`,
-	}
+func TestSyncFirefoxFlatpakPoliciesFromProto_RemovesOnEmpty(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "policies.json")
 
-	data, err := MergeFirefoxPolicies(contents)
-	if err != nil {
+	// Write a managed file first
+	if err := SyncFirefoxFlatpakPoliciesFromProto(target, []*pb.FirefoxPolicy{
+		{DisableTelemetry: boolPtr(true)},
+	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("expected file to exist: %v", err)
+	}
 
-	var result FirefoxPoliciesJSON
-	if err := json.Unmarshal(data, &result); err != nil {
+	// Empty policies — should remove the file
+	if err := SyncFirefoxFlatpakPoliciesFromProto(target, nil); err != nil {
 		t.Fatal(err)
 	}
-
-	ext, ok := result.Policies["Extensions"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected Extensions to be a map")
-	}
-	install, ok := ext["Install"].([]interface{})
-	if !ok {
-		t.Fatal("expected Install to be a slice")
-	}
-	if len(install) != 2 {
-		t.Errorf("expected 2 Install entries, got %d", len(install))
-	}
-	uninstall, ok := ext["Uninstall"].([]interface{})
-	if !ok {
-		t.Fatal("expected Uninstall to be a slice")
-	}
-	if len(uninstall) != 1 {
-		t.Errorf("expected 1 Uninstall entry, got %d", len(uninstall))
-	}
-}
-
-func TestMergeFirefoxPolicies_EmptyInput(t *testing.T) {
-	data, err := MergeFirefoxPolicies(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var result FirefoxPoliciesJSON
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(result.Policies) != 0 {
-		t.Errorf("expected empty policies, got %d keys", len(result.Policies))
-	}
-}
-
-func TestMergeFirefoxPolicies_SkipsEmptyContent(t *testing.T) {
-	contents := []string{"", "{}", `{"DisableTelemetry": true}`}
-	data, err := MergeFirefoxPolicies(contents)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var result FirefoxPoliciesJSON
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatal(err)
-	}
-
-	if result.Policies["DisableTelemetry"] != true {
-		t.Error("expected DisableTelemetry")
-	}
-}
-
-func TestMergeFirefoxPolicies_InvalidJSON(t *testing.T) {
-	contents := []string{`not json`}
-	_, err := MergeFirefoxPolicies(contents)
-	if err == nil {
-		t.Error("expected error for invalid JSON")
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Error("expected file to be removed")
 	}
 }
 
@@ -207,3 +226,4 @@ func TestWriteFileAtomically(t *testing.T) {
 		t.Errorf("expected permissions 0o644, got %o", info.Mode().Perm())
 	}
 }
+
