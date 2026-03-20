@@ -33,14 +33,14 @@ const defaultConfigPath = "/etc/bor/config.yaml"
 // Version is set at build time via -ldflags "-X main.Version=x.y.z".
 var Version = "dev"
 
-// kconfigCache maps policy ID → proto entries for all active KConfig policies.
+// kconfigCache maps policy ID → typed KConfig policy for all active Kconfig policies.
 // It is maintained across streaming events so that a full re-merge and
 // sync can be performed whenever any single policy changes or is deleted.
-var kconfigCache = make(map[string][]*pb.KConfigEntry)
+var kconfigCache = make(map[string]*pb.KConfigPolicy)
 
-// kconfigSnapshotStaging accumulates KConfig entries during a SNAPSHOT.
+// kconfigSnapshotStaging accumulates KConfig policies during a SNAPSHOT.
 // It is nil when not inside a snapshot sequence.
-var kconfigSnapshotStaging map[string][]*pb.KConfigEntry
+var kconfigSnapshotStaging map[string]*pb.KConfigPolicy
 
 // kdeNotifier handles desktop notifications and app reconfigure via D-Bus.
 var kdeNotifier = notify.New()
@@ -307,7 +307,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firefoxChanged := len(firefoxCache) > 0
 				hadKconfigPolicies := len(kconfigCache) > 0
 				chromeChanged := len(chromeCache) > 0
-				kconfigCache = make(map[string][]*pb.KConfigEntry)
+				kconfigCache = make(map[string]*pb.KConfigPolicy)
 				kconfigSnapshotStaging = nil
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
 				firefoxSnapshotStaging = nil
@@ -348,9 +348,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			chromeSnapshotStaging[pi.ID] = pi.ChromePolicy
 		case "Kconfig":
 			if kconfigSnapshotStaging == nil {
-				kconfigSnapshotStaging = make(map[string][]*pb.KConfigEntry)
+				kconfigSnapshotStaging = make(map[string]*pb.KConfigPolicy)
 			}
-			kconfigSnapshotStaging[pi.ID] = pi.KConfigEntries
+			kconfigSnapshotStaging[pi.ID] = pi.KConfigPolicy
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -366,7 +366,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if kconfigSnapshotStaging != nil {
 				kconfigCache = kconfigSnapshotStaging
 			} else {
-				kconfigCache = make(map[string][]*pb.KConfigEntry)
+				kconfigCache = make(map[string]*pb.KConfigPolicy)
 			}
 			kconfigSnapshotStaging = nil
 
@@ -424,7 +424,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
 		case "Kconfig":
-			kconfigCache[pi.ID] = pi.KConfigEntries
+			kconfigCache[pi.ID] = pi.KConfigPolicy
 			if changed := syncAllKConfig(ctx, client, cfg); len(changed) > 0 {
 				kdeNotifier.ScheduleNotification(notifyConfig, changed)
 			}
@@ -511,8 +511,8 @@ func chromeCachesEqual(a, b map[string]*pb.ChromePolicy) bool {
 func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *config.Config) map[string]bool {
 	var allEntries []*pb.KConfigEntry
 	var ids []string
-	for id, entries := range kconfigCache {
-		allEntries = append(allEntries, entries...)
+	for id, pol := range kconfigCache {
+		allEntries = append(allEntries, policy.KConfigPolicyToEntries(pol)...)
 		ids = append(ids, id)
 	}
 
@@ -758,14 +758,10 @@ func getManagedPaths(cfg *config.Config) []string {
 		}
 	}
 	// KCM restriction files in /etc.
-	if len(kconfigCache) > 0 {
-		for _, id := range kconfigCache {
-			for _, e := range id {
-				if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
-					paths = append(paths, "/etc/kde5rc", "/etc/kde6rc")
-					break
-				}
-			}
+	for _, pol := range kconfigCache {
+		if len(pol.GetKcmRestrictions()) > 0 {
+			paths = append(paths, "/etc/kde5rc", "/etc/kde6rc")
+			break
 		}
 	}
 
