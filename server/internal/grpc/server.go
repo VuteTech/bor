@@ -404,7 +404,7 @@ func modelToProto(p *models.Policy) *pb.Policy {
 	switch p.Type {
 	case "Firefox":
 		var fxPol pb.FirefoxPolicy
-		if err := json.Unmarshal([]byte(p.Content), &fxPol); err != nil {
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &fxPol); err != nil {
 			log.Printf("WARNING: failed to unmarshal Firefox typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_FirefoxPolicy{FirefoxPolicy: &fxPol}

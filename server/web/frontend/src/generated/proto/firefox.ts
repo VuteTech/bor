@@ -11,6 +11,8 @@ export const protobufPackage = "bor.policy.v1";
 /**
  * FirefoxPolicy is the canonical schema for a Firefox enterprise policy
  * on Linux. It maps directly to the "policies" key in policies.json.
+ * Field json_name annotations preserve PascalCase so protojson round-trips
+ * with the key names Firefox expects.
  */
 export interface FirefoxPolicy {
   /** Simple boolean policies */
