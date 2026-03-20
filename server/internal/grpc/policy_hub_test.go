@@ -138,14 +138,14 @@ func TestPolicyHub_Subscribe_ReceivesPublishedEvents(t *testing.T) {
 
 	select {
 	case ev := <-ch:
-		if ev.Revision != 1 {
-			t.Errorf("received event revision = %d, want 1", ev.Revision)
+		if ev.update.Revision != 1 {
+			t.Errorf("received event revision = %d, want 1", ev.update.Revision)
 		}
-		if ev.Type != pb.PolicyUpdate_CREATED {
-			t.Errorf("received event type = %v, want CREATED", ev.Type)
+		if ev.update.Type != pb.PolicyUpdate_CREATED {
+			t.Errorf("received event type = %v, want CREATED", ev.update.Type)
 		}
-		if ev.Policy.GetId() != "p1" {
-			t.Errorf("received policy id = %q, want p1", ev.Policy.GetId())
+		if ev.update.Policy.GetId() != "p1" {
+			t.Errorf("received policy id = %q, want p1", ev.update.Policy.GetId())
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
@@ -184,11 +184,11 @@ func TestPolicyHub_MultipleSubscribers(t *testing.T) {
 
 	hub.Publish(pb.PolicyUpdate_CREATED, makeTestPolicy("p1", "Policy 1"))
 
-	for _, ch := range []<-chan *pb.PolicyUpdate{ch1, ch2} {
+	for _, ch := range []<-chan *hubEvent{ch1, ch2} {
 		select {
 		case ev := <-ch:
-			if ev.Revision != 1 {
-				t.Errorf("subscriber got revision %d, want 1", ev.Revision)
+			if ev.update.Revision != 1 {
+				t.Errorf("subscriber got revision %d, want 1", ev.update.Revision)
 			}
 		case <-time.After(time.Second):
 			t.Fatal("subscriber timed out")
@@ -286,14 +286,14 @@ func TestPolicyHub_PublishResync_IsResyncSignal(t *testing.T) {
 
 	select {
 	case ev := <-ch:
-		if !IsResyncSignal(ev) {
+		if !IsResyncSignal(ev.update) {
 			t.Error("PublishResync event should be identified as resync signal")
 		}
-		if ev.Policy != nil {
+		if ev.update.Policy != nil {
 			t.Error("resync signal should have nil policy")
 		}
-		if ev.Type != pb.PolicyUpdate_SNAPSHOT {
-			t.Errorf("resync signal type = %v, want SNAPSHOT", ev.Type)
+		if ev.update.Type != pb.PolicyUpdate_SNAPSHOT {
+			t.Errorf("resync signal type = %v, want SNAPSHOT", ev.update.Type)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for resync event")
@@ -365,11 +365,11 @@ func TestPolicyHub_PublishResync_SubscriberReceivesSignal(t *testing.T) {
 
 	select {
 	case ev := <-ch:
-		if !IsResyncSignal(ev) {
+		if !IsResyncSignal(ev.update) {
 			t.Error("expected resync signal, got regular event")
 		}
-		if ev.Revision != 3 {
-			t.Errorf("resync revision = %d, want 3", ev.Revision)
+		if ev.update.Revision != 3 {
+			t.Errorf("resync revision = %d, want 3", ev.update.Revision)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for resync event")

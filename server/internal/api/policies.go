@@ -17,10 +17,11 @@ import (
 // PolicyHandler handles policy endpoints
 type PolicyHandler struct {
 	policySvc *services.PolicyService
-	// OnPolicyChange is called after any policy mutation (create,
-	// update, state-change, deprecate, delete) so that streaming
-	// agents can be notified.
-	OnPolicyChange func()
+	// OnPolicyChange is called after a mutation that may affect agents:
+	// Update, SetState, Deprecate. It receives the policy ID so the
+	// caller can scope notifications to the affected node groups.
+	// Not called for Create (draft) or Delete (blocked when enabled bindings exist).
+	OnPolicyChange func(policyID string)
 }
 
 // NewPolicyHandler creates a new PolicyHandler
@@ -113,9 +114,7 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to encode policy response: %v", err)
 	}
 
-	if h.OnPolicyChange != nil {
-		h.OnPolicyChange()
-	}
+	// New policies start as DRAFT — no agents need to know yet.
 }
 
 // Get handles GET /api/v1/policies/{id}
@@ -180,7 +179,7 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.OnPolicyChange != nil {
-		h.OnPolicyChange()
+		h.OnPolicyChange(policy.ID)
 	}
 }
 
@@ -253,7 +252,7 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 	}
 
 	if h.OnPolicyChange != nil {
-		h.OnPolicyChange()
+		h.OnPolicyChange(policy.ID)
 	}
 }
 
@@ -288,7 +287,7 @@ func (h *PolicyHandler) Deprecate(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	if h.OnPolicyChange != nil {
-		h.OnPolicyChange()
+		h.OnPolicyChange(policy.ID)
 	}
 }
 
@@ -319,10 +318,8 @@ func (h *PolicyHandler) Delete(w http.ResponseWriter, r *http.Request, id string
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-
-	if h.OnPolicyChange != nil {
-		h.OnPolicyChange()
-	}
+	// Deletion is blocked when enabled bindings exist, so no active agents
+	// hold this policy and no notification is needed.
 }
 
 // extractPolicyIDAndSubpath extracts a policy ID and optional sub-path from URL

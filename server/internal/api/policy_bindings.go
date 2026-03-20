@@ -17,9 +17,11 @@ import (
 // PolicyBindingHandler handles policy binding API endpoints
 type PolicyBindingHandler struct {
 	bindingSvc *services.PolicyBindingService
-	// OnBindingChange is called after any binding mutation (create,
-	// update, delete) so that streaming agents can be notified.
-	OnBindingChange func()
+	// OnBindingChange is called after a binding mutation that may affect
+	// agents: Update and Delete. It receives the affected binding so the
+	// caller can scope notifications to the right node group.
+	// Not called for Create (new bindings start disabled).
+	OnBindingChange func(b *models.PolicyBinding)
 }
 
 // NewPolicyBindingHandler creates a new PolicyBindingHandler
@@ -81,10 +83,7 @@ func (h *PolicyBindingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(binding); err != nil {
 		log.Printf("Failed to encode policy binding response: %v", err)
 	}
-
-	if h.OnBindingChange != nil {
-		h.OnBindingChange()
-	}
+	// New bindings start as DISABLED — no agents need to know yet.
 }
 
 // ServeHTTP routes /api/v1/policy-bindings and /api/v1/policy-bindings/{id}
@@ -154,13 +153,18 @@ func (h *PolicyBindingHandler) Update(w http.ResponseWriter, r *http.Request, id
 		log.Printf("Failed to encode policy binding response: %v", err)
 	}
 
-	if h.OnBindingChange != nil {
-		h.OnBindingChange()
+	// Only notify agents when the binding state changes (enabled/disabled).
+	// Priority-only updates don't require an immediate agent resync.
+	if h.OnBindingChange != nil && req.State != nil {
+		h.OnBindingChange(binding)
 	}
 }
 
 // Delete handles DELETE /api/v1/policy-bindings/{id}
 func (h *PolicyBindingHandler) Delete(w http.ResponseWriter, r *http.Request, id string) {
+	// Read before deletion so we can notify if the binding was enabled.
+	binding, _ := h.bindingSvc.GetBinding(r.Context(), id)
+
 	if err := h.bindingSvc.DeleteBinding(r.Context(), id); err != nil {
 		log.Printf("Failed to delete policy binding: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -175,8 +179,8 @@ func (h *PolicyBindingHandler) Delete(w http.ResponseWriter, r *http.Request, id
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNoContent)
 
-	if h.OnBindingChange != nil {
-		h.OnBindingChange()
+	if h.OnBindingChange != nil && binding != nil && binding.State == models.BindingStateEnabled {
+		h.OnBindingChange(binding)
 	}
 }
 

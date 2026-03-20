@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -138,10 +139,21 @@ func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequ
 				return err
 			}
 		} else {
-			// Send delta events.
-			for _, ev := range events {
-				if err := stream.Send(ev); err != nil {
+			// If any delta event is a resync signal, the event log does not
+			// carry group-membership info, so the agent cannot filter it.
+			// The agent would silently ignore such signals and enter watch
+			// mode with a stale cache. Fall back to a full snapshot instead.
+			if slices.ContainsFunc(events, IsResyncSignal) {
+				log.Printf("Delta contains resync signal for client %s (rev %d → %d), sending full snapshot", clientID, lastKnown, currentRev)
+				if err := s.sendSnapshot(ctx, stream, node); err != nil {
 					return err
+				}
+			} else {
+				// Pure CREATED/UPDATED/DELETED delta — send as-is.
+				for _, ev := range events {
+					if err := stream.Send(ev); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -170,20 +182,40 @@ func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequ
 			log.Printf("Client %s stream ended: %v", clientID, ctx.Err())
 			return nil
 		case ev := <-updates:
-			if IsResyncSignal(ev) {
-				// A binding or policy changed — send a fresh
-				// full snapshot so the client has the correct
-				// set of policies for its node group.
+			if IsResyncSignal(ev.update) {
+				// Only resync if this agent's groups are in the affected set.
+				// An empty affectedGroupIDs means "all agents".
+				if !groupsOverlap(node.NodeGroupIDs, ev.affectedGroupIDs) {
+					continue
+				}
 				if err := s.sendSnapshot(ctx, stream, node); err != nil {
 					return err
 				}
 			} else {
-				if err := stream.Send(ev); err != nil {
+				if err := stream.Send(ev.update); err != nil {
 					return err
 				}
 			}
 		}
 	}
+}
+
+// groupsOverlap returns true if nodeGroups and eventGroups share at least one
+// element, or if eventGroups is empty (meaning the event targets all agents).
+func groupsOverlap(nodeGroups, eventGroups []string) bool {
+	if len(eventGroups) == 0 {
+		return true
+	}
+	set := make(map[string]struct{}, len(nodeGroups))
+	for _, g := range nodeGroups {
+		set[g] = struct{}{}
+	}
+	for _, g := range eventGroups {
+		if _, ok := set[g]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // sendSnapshot sends a full policy snapshot to the stream.
@@ -332,7 +364,7 @@ func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamp
 		Processes: procs,
 	})
 	if err != nil {
-		detailsBytes = []byte(fmt.Sprintf(`{"file":%q,"node":%q}`, req.GetFilePath(), clientID))
+		detailsBytes = fmt.Appendf(nil, `{"file":%q,"node":%q}`, req.GetFilePath(), clientID)
 	}
 
 	s.auditSvc.LogEvent(ctx, &models.AuditLog{
