@@ -6,10 +6,26 @@
 
 /* eslint-disable */
 import type { ChromePolicy } from "./chrome";
+import type { DConfPolicy } from "./dconf";
 import type { FirefoxPolicy } from "./firefox";
 import type { KConfigPolicy } from "./kconfig";
 
 export const protobufPackage = "bor.policy.v1";
+
+/**
+ * ComplianceStatus is the four-state compliance result.
+ * Preferred over the deprecated bool compliant field in ReportComplianceRequest.
+ */
+export enum ComplianceStatus {
+  COMPLIANCE_STATUS_UNKNOWN = 0,
+  COMPLIANCE_STATUS_COMPLIANT = 1,
+  COMPLIANCE_STATUS_NON_COMPLIANT = 2,
+  /** COMPLIANCE_STATUS_INAPPLICABLE - INAPPLICABLE: schema / feature not installed on this node; excluded from score. */
+  COMPLIANCE_STATUS_INAPPLICABLE = 3,
+  /** COMPLIANCE_STATUS_ERROR - ERROR: feature is installed but enforcement or check failed. */
+  COMPLIANCE_STATUS_ERROR = 4,
+  UNRECOGNIZED = -1,
+}
 
 /** Policy represents a desktop policy configuration */
 export interface Policy {
@@ -38,6 +54,7 @@ export interface Policy {
   firefox_policy?: FirefoxPolicy | undefined;
   kconfig_policy?: KConfigPolicy | undefined;
   chrome_policy?: ChromePolicy | undefined;
+  dconf_policy?: DConfPolicy | undefined;
 }
 
 /** GetPolicyRequest requests a specific policy */
@@ -125,12 +142,19 @@ export interface ReportComplianceRequest {
   client_id: string;
   /** Policy ID */
   policy_id: string;
-  /** Compliance status */
+  /**
+   * Deprecated: use status instead.  Kept for backward compatibility with
+   * agents that have not yet been updated.
+   */
   compliant: boolean;
   /** Status message or error details */
   message: string;
   /** Timestamp of the report */
-  reported_at: Date | undefined;
+  reported_at:
+    | Date
+    | undefined;
+  /** Preferred over the bool compliant field. */
+  status: ComplianceStatus;
 }
 
 /** ReportComplianceResponse acknowledges compliance report */

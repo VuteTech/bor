@@ -176,6 +176,9 @@ func (s *PolicyService) SetPolicyState(ctx context.Context, id, newState string)
 		if policy.Content == "" {
 			return nil, fmt.Errorf("policy content is required for release")
 		}
+		if err := validatePolicyContent(policy.Type, policy.Content); err != nil {
+			return nil, fmt.Errorf("policy content validation failed: %w", err)
+		}
 
 	case models.PolicyStateArchived:
 		if policy.State != models.PolicyStateReleased {
@@ -230,6 +233,22 @@ func (s *PolicyService) DeletePolicy(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to delete policy: %w", err)
 	}
 
+	return nil
+}
+
+// validatePolicyContent dispatches to the type-specific validator.
+// Unknown types are accepted (no validator) to remain forward-compatible.
+func validatePolicyContent(policyType, content string) error {
+	switch policyType {
+	case "Firefox":
+		return ValidateFirefoxContent(content)
+	case "Kconfig":
+		return ValidateKConfigPolicy(content)
+	case "Chrome":
+		return ValidateChromeContent(content)
+	case "Dconf":
+		return ValidateDConfPolicy(content)
+	}
 	return nil
 }
 

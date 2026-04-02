@@ -42,12 +42,13 @@ import { Table, Thead, Tbody, Tr, Th, Td } from "@patternfly/react-table";
 import type { Policy, CreatePolicyRequest, UpdatePolicyRequest } from "../../apiClient/policiesApi";
 import { createPolicy, updatePolicy, setPolicyState, deletePolicy } from "../../apiClient/policiesApi";
 import type { FirefoxPolicy } from "../../generated/proto/firefox";
+import { DConfPolicyEditor } from "./DConfPolicyEditor";
 
 /* ── Known policy types and their config schemas ── */
 
 const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Kconfig", label: "Kconfig" },
-  { value: "Dconf", label: "Dconf (not yet implemented)", isDisabled: true },
+  { value: "Dconf", label: "Dconf" },
   { value: "Firefox", label: "Firefox" },
   { value: "Polkit", label: "Polkit (not yet implemented)", isDisabled: true },
   { value: "Chrome", label: "Chrome" },
@@ -1181,20 +1182,21 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
     : [raw as Record<string, unknown>];
 
   if (policyType === "Dconf") {
-    const config = TYPE_CONFIGS["Dconf"];
-    for (const [idx, parsed] of items.entries()) {
-      const prefix = items.length > 1 ? `Setting ${idx + 1} › ` : "";
-      const lockedVal = parsed["lock"] !== undefined
-        ? (parsed["lock"] === "true" || parsed["lock"] === true ? "Yes" : "No")
+    // DConf content shape: { entries: [{schema_id, key, value, lock, path?},...], db_name }
+    const dconfContent = raw as { entries?: Record<string, unknown>[]; db_name?: string };
+    const entries = Array.isArray(dconfContent?.entries) ? dconfContent.entries : [];
+    for (const [idx, entry] of entries.entries()) {
+      const schemaId = String(entry["schema_id"] ?? "");
+      const keyName  = String(entry["key"]       ?? "");
+      const label    = schemaId ? `${schemaId} › ${keyName}` : (keyName || `Entry ${idx + 1}`);
+      const lockedVal = entry["lock"] !== undefined
+        ? (entry["lock"] === "true" || entry["lock"] === true ? "Yes" : "No")
         : null;
-      for (const field of config.fields) {
-        if (field.key === "lock") continue;
-        rows.push({
-          setting: prefix + field.label,
-          value: formatDisplayValue(parsed[field.key]),
-          locked: lockedVal,
-        });
-      }
+      rows.push({
+        setting: label,
+        value: formatDisplayValue(entry["value"]),
+        locked: lockedVal,
+      });
     }
     return rows;
   }
@@ -1323,6 +1325,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const [chromeValue, setChromeValue] = useState<unknown>(undefined);
   const [chromeExpandedGroups, setChromeExpandedGroups] = useState<Set<string>>(new Set());
 
+  // Dconf-specific state: contentRaw is shared with the raw editor;
+  // the DConfPolicyEditor reads/writes via contentRaw directly.
+  // (No extra state needed — DConfPolicyEditor is driven by contentRaw.)
+
   // Reset form when modal opens or policy changes
   useEffect(() => {
     if (!isOpen) return;
@@ -1400,6 +1406,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           setChromeValue(undefined);
           setChromeExpandedGroups(new Set());
         }
+      } else if (policy.type === "Dconf") {
+        // Dconf editor reads contentRaw directly — nothing extra to initialise.
       } else {
         try {
           const parsed = JSON.parse(policy.content || "{}");
@@ -1465,6 +1473,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setChromeValue(undefined);
       setContentRaw("{}");
       setChromeExpandedGroups(new Set());
+    } else if (newType === "Dconf") {
+      setContentRaw(JSON.stringify({ entries: [], db_name: "local" }, null, 2));
     } else {
       setStructuredFieldsList([{}]);
       setContentRaw(JSON.stringify([{}], null, 2));
@@ -1764,6 +1774,19 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           }
         } catch {
           setError("Chrome policy content is not valid JSON");
+          setSaving(false);
+          return;
+        }
+      } else if (policyType === "Dconf") {
+        try {
+          const parsed = JSON.parse(finalContent) as { entries?: unknown[] };
+          if (!Array.isArray(parsed.entries) || parsed.entries.length === 0) {
+            setError("At least one dconf entry must be configured before saving");
+            setSaving(false);
+            return;
+          }
+        } catch {
+          setError("Dconf policy content is not valid JSON");
           setSaving(false);
           return;
         }
@@ -3054,6 +3077,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       return (
         <div style={{ padding: "1rem 0" }}>
           {renderChromeForm()}
+        </div>
+      );
+    }
+    if (policyType === "Dconf") {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          <DConfPolicyEditor
+            contentRaw={contentRaw}
+            onChange={(newRaw) => { setContentRaw(newRaw); }}
+            isDisabled={!isEditable}
+          />
         </div>
       );
     }

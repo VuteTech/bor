@@ -64,6 +64,16 @@ agent:
 	@echo "Building agent (FIPS 140-3)..."
 	cd agent && GOFIPS140=v1.0.0 go build -o bor-agent ./cmd/agent
 
+# Regenerate dconf built-in schema catalogue from the local system's GSettings schemas.
+# Run this on a reference GNOME installation to refresh server/assets/dconf_builtin_schemas.json.
+# Use SCHEMAS_DIR to point at a directory with copied .gschema.xml files from another system.
+update-dconf-schemas:
+	@echo "Generating dconf built-in schema catalogue..."
+	cd agent && go run ./cmd/gen-dconf-schemas \
+		--schemas-dir $${SCHEMAS_DIR:-/usr/share/glib-2.0/schemas} \
+		--out ../server/assets/dconf_builtin_schemas.json
+	@echo "Done. Commit server/assets/dconf_builtin_schemas.json."
+
 # Generate Protocol Buffers (Go + TypeScript)
 proto: proto-go proto-ts
 

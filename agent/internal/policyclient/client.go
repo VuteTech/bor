@@ -98,6 +98,7 @@ type PolicyInfo struct {
 	KConfigPolicy *pb.KConfigPolicy // populated from typed_content for Kconfig type
 	FirefoxPolicy *pb.FirefoxPolicy // populated from typed_content for Firefox type
 	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
+	DConfPolicy   *pb.DConfPolicy   // populated from typed_content for Dconf type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -279,8 +280,50 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if chrp := p.GetChromePolicy(); chrp != nil {
 				pi.ChromePolicy = chrp
 			}
+			if dp := p.GetDconfPolicy(); dp != nil {
+				pi.DConfPolicy = dp
+			}
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
 	}
+}
+
+// ReportComplianceWithStatus sends a four-state compliance report to the server.
+func (c *Client) ReportComplianceWithStatus(ctx context.Context, policyID string, status pb.ComplianceStatus, message string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	compliant := status == pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT
+	resp, err := c.client.ReportCompliance(ctx, &pb.ReportComplianceRequest{
+		ClientId:   c.clientID,
+		PolicyId:   policyID,
+		Compliant:  compliant,
+		Message:    message,
+		ReportedAt: timestamppb.Now(),
+		Status:     status,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportCompliance RPC failed: %w", err)
+	}
+	if !resp.GetSuccess() {
+		return fmt.Errorf("server rejected compliance report for policy %s", policyID)
+	}
+	return nil
+}
+
+// ReportSchemaCatalogue sends the GSettings schema catalogue to the server.
+func (c *Client) ReportSchemaCatalogue(ctx context.Context, schemas []*pb.GSettingsSchema, gnomeVersion string) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	_, err := c.client.ReportSchemaCatalogue(ctx, &pb.ReportSchemaCatalogueRequest{
+		ClientId:     c.clientID,
+		Schemas:      schemas,
+		GnomeVersion: gnomeVersion,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportSchemaCatalogue RPC failed: %w", err)
+	}
+	return nil
 }

@@ -30,12 +30,20 @@ type PolicyServer struct {
 	settingsSvc *services.SettingsService
 	auditSvc    *services.AuditService
 	enrollSvc   *services.EnrollmentService
+	dconfRepo   dconfRepository
 	hub         *PolicyHub
 }
 
+// dconfRepository is the subset of database.DConfRepository used by PolicyServer.
+type dconfRepository interface {
+	UpsertSchema(ctx context.Context, schema *pb.GSettingsSchema, source string) error
+	ReplaceNodeSchemas(ctx context.Context, nodeID string, schemaIDs []string) error
+	UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string) error
+}
+
 // NewPolicyServer creates a new PolicyServer.
-func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, enrollSvc *services.EnrollmentService, hub *PolicyHub) *PolicyServer {
-	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, enrollSvc: enrollSvc, hub: hub}
+func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, enrollSvc *services.EnrollmentService, dconfRepo dconfRepository, hub *PolicyHub) *PolicyServer {
+	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, enrollSvc: enrollSvc, dconfRepo: dconfRepo, hub: hub}
 }
 
 // GetPolicy returns a single policy by ID.
@@ -260,7 +268,7 @@ func (s *PolicyServer) sendSnapshot(ctx context.Context, stream pb.PolicyService
 }
 
 // ReportCompliance accepts a compliance report from a client.
-func (s *PolicyServer) ReportCompliance(_ context.Context, req *pb.ReportComplianceRequest) (*pb.ReportComplianceResponse, error) {
+func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportComplianceRequest) (*pb.ReportComplianceResponse, error) {
 	if req.GetClientId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
 	}
@@ -268,10 +276,49 @@ func (s *PolicyServer) ReportCompliance(_ context.Context, req *pb.ReportComplia
 		return nil, status.Errorf(codes.InvalidArgument, "policy_id is required")
 	}
 
-	log.Printf("Compliance report: client=%s policy=%s compliant=%v message=%q",
-		req.GetClientId(), req.GetPolicyId(), req.GetCompliant(), req.GetMessage())
+	log.Printf("Compliance report: client=%s policy=%s compliant=%v status=%s message=%q",
+		req.GetClientId(), req.GetPolicyId(), req.GetCompliant(), req.GetStatus(), req.GetMessage())
+
+	// Resolve the node ID from client_id (node name).
+	node, err := s.nodeSvc.GetNodeByName(ctx, req.GetClientId())
+	if err != nil {
+		log.Printf("WARNING: ReportCompliance: failed to look up node %s: %v", req.GetClientId(), err)
+		return &pb.ReportComplianceResponse{Success: true}, nil
+	}
+	if node == nil {
+		log.Printf("WARNING: ReportCompliance: unknown node %s", req.GetClientId())
+		return &pb.ReportComplianceResponse{Success: true}, nil
+	}
+
+	// Map protobuf ComplianceStatus to VARCHAR string.
+	statusStr := complianceStatusToString(req.GetStatus(), req.GetCompliant())
+
+	if err := s.dconfRepo.UpsertComplianceResult(ctx, node.ID, req.GetPolicyId(), statusStr, req.GetMessage()); err != nil {
+		log.Printf("WARNING: ReportCompliance: failed to persist result for node %s policy %s: %v", node.ID, req.GetPolicyId(), err)
+	}
 
 	return &pb.ReportComplianceResponse{Success: true}, nil
+}
+
+// complianceStatusToString converts a pb.ComplianceStatus to its VARCHAR representation.
+// Falls back to the legacy compliant bool when status is UNKNOWN (old agents).
+func complianceStatusToString(s pb.ComplianceStatus, legacyCompliant bool) string {
+	switch s {
+	case pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT:
+		return "compliant"
+	case pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT:
+		return "non_compliant"
+	case pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE:
+		return "inapplicable"
+	case pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR:
+		return "error"
+	default:
+		// UNKNOWN or proto zero value — honour the legacy bool field.
+		if legacyCompliant {
+			return "compliant"
+		}
+		return "non_compliant"
+	}
 }
 
 // GetAgentConfig returns the agent configuration (notification settings, etc.).
@@ -454,6 +501,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal Chrome typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_ChromePolicy{ChromePolicy: &chrPol}
+		}
+	case "Dconf":
+		var dp pb.DConfPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &dp); err != nil {
+			log.Printf("WARNING: failed to unmarshal DConf typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_DconfPolicy{DconfPolicy: &dp}
 		}
 	}
 

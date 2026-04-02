@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,16 @@ var chromeNotifyConfig = notify.Config{
 	Cooldown: 5 * time.Minute,
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
+
+// dconfCache maps policy ID → typed DConf policy for all active Dconf policies.
+var dconfCache = make(map[string]*pb.DConfPolicy)
+
+// dconfSnapshotStaging accumulates DConf policies during a SNAPSHOT.
+var dconfSnapshotStaging map[string]*pb.DConfPolicy
+
+// dconfSchemaIndex caches the set of schema IDs available on this node.
+// Built once at startup by ScanGSettingsSchemas and used for compliance checks.
+var dconfSchemaIndex map[string]struct{}
 
 // fileWatcher monitors Bor-managed files and restores them when modified externally.
 var fileWatcher *filewatcher.FileWatcher
@@ -258,6 +269,31 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		// Send heartbeat on connect to report current metadata.
 		go sendHeartbeat(ctx, client)
 
+		// Scan GSettings schemas and report the catalogue on first connect.
+		// This is best-effort; errors are logged but do not block policy streaming.
+		if dconfSchemaIndex == nil {
+			go func() {
+				schemas, err := policy.ScanGSettingsSchemas()
+				if err != nil {
+					log.Printf("dconf: schema scan failed (non-fatal): %v", err)
+					return
+				}
+				// Build local schema index for compliance checks.
+				idx := make(map[string]struct{}, len(schemas))
+				for _, s := range schemas {
+					idx[s.GetSchemaId()] = struct{}{}
+				}
+				dconfSchemaIndex = idx
+
+				gnomeVer := detectGNOMEVersion()
+				if err := client.ReportSchemaCatalogue(ctx, schemas, gnomeVer); err != nil {
+					log.Printf("dconf: ReportSchemaCatalogue failed (non-fatal): %v", err)
+				} else {
+					log.Printf("dconf: reported %d schemas to server", len(schemas))
+				}
+			}()
+		}
+
 		var postInitialSync bool
 		err := client.SubscribePolicyUpdates(ctx, lastRevision,
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
@@ -313,9 +349,12 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firefoxSnapshotStaging = nil
 				chromeCache = make(map[string]*pb.ChromePolicy)
 				chromeSnapshotStaging = nil
+				dconfCache = make(map[string]*pb.DConfPolicy)
+				dconfSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
 				syncAllChrome(ctx, client, cfg)
+				syncAllDConf(ctx, client)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -351,6 +390,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				kconfigSnapshotStaging = make(map[string]*pb.KConfigPolicy)
 			}
 			kconfigSnapshotStaging[pi.ID] = pi.KConfigPolicy
+		case "Dconf":
+			if dconfSnapshotStaging == nil {
+				dconfSnapshotStaging = make(map[string]*pb.DConfPolicy)
+			}
+			dconfSnapshotStaging[pi.ID] = pi.DConfPolicy
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -386,9 +430,18 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			chromeSnapshotStaging = nil
 
+			// Swap DConf staging into cache.
+			if dconfSnapshotStaging != nil {
+				dconfCache = dconfSnapshotStaging
+			} else {
+				dconfCache = make(map[string]*pb.DConfPolicy)
+			}
+			dconfSnapshotStaging = nil
+
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
 			syncAllChrome(ctx, client, cfg)
+			syncAllDConf(ctx, client)
 
 			if *postInitialSync {
 				// Resync from a live admin change — notify if content changed.
@@ -428,6 +481,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if changed := syncAllKConfig(ctx, client, cfg); len(changed) > 0 {
 				kdeNotifier.ScheduleNotification(notifyConfig, changed)
 			}
+		case "Dconf":
+			dconfCache[pi.ID] = pi.DConfPolicy
+			syncAllDConf(ctx, client)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -456,6 +512,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if syncAllChrome(ctx, client, cfg) {
 				chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
+		} else if _, ok := dconfCache[pi.ID]; ok {
+			delete(dconfCache, pi.ID)
+			syncAllDConf(ctx, client)
 		} else {
 			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
 		}
@@ -719,6 +778,88 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
 	return true
+}
+
+// syncAllDConf re-merges all cached DConf policies, writes the keyfile and
+// locks file under /etc/dconf/db/local.d/, and runs dconf update.
+// Reports compliance back to the server for each affected policy ID.
+func syncAllDConf(ctx context.Context, client *policyclient.Client) {
+	var policies []*pb.DConfPolicy
+	var ids []string
+	for id, pol := range dconfCache {
+		policies = append(policies, pol)
+		ids = append(ids, id)
+	}
+
+	merged := policy.MergeDConfPolicies(policies)
+	keyfile, locksfile := policy.DConfPolicyToFiles(merged)
+
+	dbName := merged.GetDbName()
+	if dbName == "" {
+		dbName = "local"
+	}
+
+	if err := policy.SyncDConfFiles(dbName, keyfile, locksfile); err != nil {
+		log.Printf("Error syncing dconf files: %v", err)
+		for _, id := range ids {
+			_ = client.ReportComplianceWithStatus(ctx, id,
+				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				"failed to sync dconf files: "+err.Error())
+		}
+		return
+	}
+
+	log.Printf("dconf policies synced (db=%s, %d policies)", dbName, len(ids))
+
+	// Compliance check uses the locally cached schema index.
+	idx := dconfSchemaIndex
+	if idx == nil {
+		idx = make(map[string]struct{})
+	}
+	results := policy.CheckDConfCompliance(merged, idx)
+	overallStatus, msg := policy.RollupDConfCompliance(results)
+	for _, id := range ids {
+		_ = client.ReportComplianceWithStatus(ctx, id, overallStatus, msg)
+	}
+}
+
+// detectGNOMEVersion tries to determine the installed GNOME version.
+// Returns an empty string if not detectable.
+func detectGNOMEVersion() string {
+	data, err := os.ReadFile("/usr/share/gnome/gnome-version.xml")
+	if err == nil {
+		// Very rough extraction: look for the platform/minor/micro tags.
+		// Good enough for informational reporting.
+		content := string(data)
+		start := len("<platform>")
+		si := len(content)
+		if idx := lastIndex(content, "<platform>"); idx >= 0 {
+			si = idx + start
+			ei := si
+			for ei < len(content) && content[ei] != '<' {
+				ei++
+			}
+			return content[si:ei]
+		}
+	}
+	// Fall back to gnome-shell --version
+	if out, err := exec.Command("gnome-shell", "--version").Output(); err == nil {
+		ver := strings.TrimPrefix(strings.TrimSpace(string(out)), "GNOME Shell ")
+		if ver != "" {
+			return ver
+		}
+	}
+	return ""
+}
+
+func lastIndex(s, substr string) int {
+	idx := -1
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			idx = i
+		}
+	}
+	return idx
 }
 
 // getManagedPaths returns the absolute paths of all files currently managed

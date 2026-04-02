@@ -147,6 +147,8 @@ func main() {
 	userGroupMemberRepo := database.NewUserGroupMemberRepository(db)
 	userGroupRoleBindingRepo := database.NewUserGroupRoleBindingRepository(db)
 	auditLogRepo := database.NewAuditLogRepository(db)
+	dconfRepo := database.NewDConfRepository(db)
+	go seedDConfBuiltinSchemas(context.Background(), dconfRepo)
 	settingsRepo := database.NewSettingsRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
 	mfaRepo := database.NewMFARepository(db)
@@ -239,6 +241,8 @@ func main() {
 	policyBindingHandler := api.NewPolicyBindingHandler(policyBindingSvc)
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
+	dconfHandler := api.NewDConfHandler(dconfRepo)
+	complianceHandler := api.NewComplianceHandler(dconfRepo)
 
 	// Wire policy and binding change notifications to the hub.
 	// Only agents whose node groups are affected by the change are signalled.
@@ -365,6 +369,12 @@ func main() {
 	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(api.RequirePermission(az, "settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
 	mux.Handle("/api/v1/settings/mfa", authMiddleware(api.RequirePermission(az, "settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
 
+	// DConf schema catalogue — readable by anyone with policy:view
+	mux.Handle("/api/v1/dconf/schemas", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(dconfHandler.ListSchemas))))
+
+	// Compliance results — readable by anyone with compliance:view
+	mux.Handle("/api/v1/compliance", authMiddleware(api.RequirePermission(az, "compliance", "view")(http.HandlerFunc(complianceHandler.List))))
+
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
 
@@ -392,7 +402,7 @@ func main() {
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(map[string]bool{}, revocationRepo)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(map[string]bool{}, revocationRepo)),
 	)
-	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, policyHub))
+	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, policyHub))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
