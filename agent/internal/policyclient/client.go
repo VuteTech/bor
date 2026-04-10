@@ -290,7 +290,8 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 }
 
 // ReportComplianceWithStatus sends a four-state compliance report to the server.
-func (c *Client) ReportComplianceWithStatus(ctx context.Context, policyID string, status pb.ComplianceStatus, message string) error {
+// items may be nil for policy types that do not produce per-entry results.
+func (c *Client) ReportComplianceWithStatus(ctx context.Context, policyID string, status pb.ComplianceStatus, message string, items []*pb.ComplianceItemResult) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -302,6 +303,7 @@ func (c *Client) ReportComplianceWithStatus(ctx context.Context, policyID string
 		Message:    message,
 		ReportedAt: timestamppb.Now(),
 		Status:     status,
+		Items:      items,
 	})
 	if err != nil {
 		return fmt.Errorf("ReportCompliance RPC failed: %w", err)

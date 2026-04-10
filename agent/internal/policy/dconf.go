@@ -201,6 +201,27 @@ func ensureDConfProfile(dbName string) error {
 	return err
 }
 
+// gvariantIntPrefixes is the set of type-prefix words that GVariant text format
+// uses for non-default integer types. int32 ('i') has no prefix and is omitted.
+var gvariantIntPrefixes = map[string]struct{}{
+	"uint16": {}, "uint32": {}, "uint64": {},
+	"int16": {}, "int32": {}, "int64": {},
+	"byte": {}, "handle": {},
+}
+
+// normalizeGVariant strips the type prefix from a GVariant integer text value
+// so that "uint16 5042" and "5042" compare equal.
+// Non-integer values (booleans, strings, arrays) are returned unchanged.
+func normalizeGVariant(v string) string {
+	word, rest, found := strings.Cut(v, " ")
+	if found {
+		if _, ok := gvariantIntPrefixes[word]; ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return v
+}
+
 // CheckDConfCompliance checks whether the current system state matches
 // the given policy. It uses gsettings(1) to read current values.
 //
@@ -236,7 +257,11 @@ func CheckDConfCompliance(pol *pb.DConfPolicy, knownSchemas map[string]struct{})
 		}
 
 		current := strings.TrimSpace(string(out))
-		if current == e.GetValue() {
+		want := e.GetValue()
+
+		// Compare normalised forms so that "uint16 5042" and "5042" are equal.
+		// This tolerates policies saved before the typed-value UI fix was deployed.
+		if normalizeGVariant(current) == normalizeGVariant(want) {
 			results = append(results, DConfItemResult{
 				SchemaID: sid,
 				Key:      key,
@@ -247,7 +272,7 @@ func CheckDConfCompliance(pol *pb.DConfPolicy, knownSchemas map[string]struct{})
 				SchemaID: sid,
 				Key:      key,
 				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT,
-				Message:  fmt.Sprintf("expected %q, got %q", e.GetValue(), current),
+				Message:  fmt.Sprintf("expected %q, got %q", want, current),
 			})
 		}
 	}

@@ -21,14 +21,17 @@ import {
   SelectOption,
   SelectList,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
+import { Table, Thead, Tr, Th, Tbody, Td, ExpandableRowContent } from "@patternfly/react-table";
 import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
 import {
   fetchComplianceResults,
+  fetchDConfSchemas,
   ComplianceResult,
   ComplianceStatus,
+  ComplianceItem,
+  DConfSchema,
 } from "../../apiClient/dconfApi";
 
 /* ── helpers ── */
@@ -41,12 +44,12 @@ const STATUS_LABELS: Record<ComplianceStatus, string> = {
   error:          "Error",
 };
 
-const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "gold" | "orange"> = {
+const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {
   unknown:        "grey",
   compliant:      "green",
   non_compliant:  "red",
   inapplicable:   "grey",
-  error:          "gold",
+  error:          "yellow",
 };
 
 const ALL_STATUSES: ComplianceStatus[] = ["unknown", "compliant", "non_compliant", "inapplicable", "error"];
@@ -60,13 +63,74 @@ function formatDate(raw: string): string {
   }
 }
 
+/** Build a lookup: "${schema_id}/${key}" → summary string. */
+function buildSummaryIndex(schemas: DConfSchema[]): Map<string, string> {
+  const idx = new Map<string, string>();
+  for (const schema of schemas) {
+    for (const key of schema.keys ?? []) {
+      if (key.summary) {
+        idx.set(`${schema.schema_id}/${key.name}`, key.summary);
+      }
+    }
+  }
+  return idx;
+}
+
+/* ── per-item breakdown sub-table ── */
+
+interface ItemsTableProps {
+  items: ComplianceItem[];
+  summaryIndex: Map<string, string>;
+}
+
+const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
+  <Table aria-label="Per-key compliance breakdown" variant="compact" borders={false}
+    style={{ marginLeft: "2rem", marginTop: "0.5rem", marginBottom: "0.5rem" }}
+  >
+    <Thead>
+      <Tr>
+        <Th>Key</Th>
+        <Th>Status</Th>
+        <Th>Details</Th>
+      </Tr>
+    </Thead>
+    <Tbody>
+      {items.map((item, i) => {
+        const label = summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key;
+        const subtitle = summaryIndex.has(`${item.schema_id}/${item.key}`)
+          ? `${item.schema_id} / ${item.key}`
+          : item.schema_id;
+        return (
+          <Tr key={i}>
+            <Td dataLabel="Key">
+              <span>{label}</span>
+              <br />
+              <small style={{ color: "var(--pf-t--global--text--color--subtle)", fontFamily: "monospace" }}>
+                {subtitle}
+              </small>
+            </Td>
+            <Td dataLabel="Status">
+              <Label color={STATUS_COLORS[item.status] ?? "grey"} isCompact>
+                {STATUS_LABELS[item.status] ?? item.status}
+              </Label>
+            </Td>
+            <Td dataLabel="Details">{item.message ?? "—"}</Td>
+          </Tr>
+        );
+      })}
+    </Tbody>
+  </Table>
+);
+
 /* ── component ── */
 
 export const CompliancePage: React.FC = () => {
   const [results, setResults] = useState<ComplianceResult[]>([]);
+  const [schemas, setSchemas] = useState<DConfSchema[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   // Filters
   const [searchText, setSearchText] = useState("");
@@ -78,8 +142,12 @@ export const CompliancePage: React.FC = () => {
       if (!silent) setLoading(true);
       else setRefreshing(true);
       setError(null);
-      const data = await fetchComplianceResults();
+      const [data, schemaData] = await Promise.all([
+        fetchComplianceResults(),
+        fetchDConfSchemas().catch(() => [] as DConfSchema[]),
+      ]);
       setResults(data);
+      setSchemas(schemaData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load compliance results");
     } finally {
@@ -89,6 +157,8 @@ export const CompliancePage: React.FC = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const summaryIndex = useMemo(() => buildSummaryIndex(schemas), [schemas]);
 
   const filtered = useMemo(() => {
     const search = searchText.toLowerCase();
@@ -107,6 +177,17 @@ export const CompliancePage: React.FC = () => {
     }
     return c;
   }, [results]);
+
+  const rowKey = (r: ComplianceResult) => `${r.node_id}-${r.policy_id}`;
+
+  const toggleRow = (key: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   if (loading) {
     return (
@@ -147,10 +228,7 @@ export const CompliancePage: React.FC = () => {
           counts[s] !== undefined
             ? (
               <FlexItem key={s}>
-                <Label
-                  color={STATUS_COLORS[s]}
-                  isCompact
-                >
+                <Label color={STATUS_COLORS[s]} isCompact>
                   {STATUS_LABELS[s]}: {counts[s]}
                 </Label>
               </FlexItem>
@@ -209,6 +287,8 @@ export const CompliancePage: React.FC = () => {
         <Table aria-label="Compliance results" variant="compact">
           <Thead>
             <Tr>
+              {/* expand-toggle column — always present so column counts stay consistent */}
+              <Th screenReaderText="Row expand" />
               <Th>Node</Th>
               <Th>Policy</Th>
               <Th>Status</Th>
@@ -216,21 +296,44 @@ export const CompliancePage: React.FC = () => {
               <Th>Reported</Th>
             </Tr>
           </Thead>
-          <Tbody>
-            {filtered.map((r, idx) => (
-              <Tr key={`${r.node_id}-${r.policy_id}-${idx}`}>
-                <Td dataLabel="Node">{r.node_name}</Td>
-                <Td dataLabel="Policy">{r.policy_name}</Td>
-                <Td dataLabel="Status">
-                  <Label color={STATUS_COLORS[r.status]} isCompact>
-                    {STATUS_LABELS[r.status] ?? r.status}
-                  </Label>
-                </Td>
-                <Td dataLabel="Message">{r.message ?? "—"}</Td>
-                <Td dataLabel="Reported">{formatDate(r.reported_at)}</Td>
-              </Tr>
-            ))}
-          </Tbody>
+          {filtered.map((r, idx) => {
+            const key = rowKey(r);
+            const isExpanded = expandedRows.has(key);
+            const hasItems = (r.items?.length ?? 0) > 0;
+
+            return (
+              <Tbody key={`${key}-${idx}`} isExpanded={isExpanded}>
+                <Tr>
+                  <Td
+                    expand={hasItems ? {
+                      rowIndex: idx,
+                      isExpanded,
+                      onToggle: () => toggleRow(key),
+                      expandId: `expand-toggle-${key}`,
+                    } : undefined}
+                  />
+                  <Td dataLabel="Node">{r.node_name}</Td>
+                  <Td dataLabel="Policy">{r.policy_name}</Td>
+                  <Td dataLabel="Status">
+                    <Label color={STATUS_COLORS[r.status]} isCompact>
+                      {STATUS_LABELS[r.status] ?? r.status}
+                    </Label>
+                  </Td>
+                  <Td dataLabel="Message">{r.message ?? "—"}</Td>
+                  <Td dataLabel="Reported">{formatDate(r.reported_at)}</Td>
+                </Tr>
+                {hasItems && (
+                  <Tr isExpanded={isExpanded}>
+                    <Td colSpan={6} noPadding>
+                      <ExpandableRowContent>
+                        <ItemsTable items={r.items!} summaryIndex={summaryIndex} />
+                      </ExpandableRowContent>
+                    </Td>
+                  </Tr>
+                )}
+              </Tbody>
+            );
+          })}
         </Table>
       )}
     </PageSection>

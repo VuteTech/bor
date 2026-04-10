@@ -49,6 +49,43 @@ import {
   DConfPolicyContent,
 } from "../../apiClient/dconfApi";
 
+/* ── GVariant helpers ── */
+
+/**
+ * GVariant type codes that require an explicit type prefix in text format.
+ * int32 ('i') is the default integer type and needs no prefix.
+ * All other integer types need one, e.g. "uint32 300", "uint16 5042".
+ */
+const GVARIANT_INT_PREFIX: Record<string, string> = {
+  u: "uint32",
+  q: "uint16",
+  n: "int16",
+  t: "uint64",
+  x: "int64",
+  y: "byte",
+};
+
+/** Returns the integer type codes handled as NumberInput widgets. */
+function isIntType(type: string): boolean {
+  return type === "i" || type in GVARIANT_INT_PREFIX;
+}
+
+/** Format a number as the correct GVariant text for the given type code. */
+function formatIntGVariant(type: string, n: number): string {
+  const prefix = GVARIANT_INT_PREFIX[type];
+  return prefix ? `${prefix} ${n}` : String(n);
+}
+
+/**
+ * Parse a GVariant integer text to its numeric value.
+ * Handles both bare integers ("5042") and prefixed ones ("uint16 5042").
+ */
+function parseIntGVariant(value: string): number {
+  const parts = value.trim().split(/\s+/);
+  const numStr = parts.length > 1 ? parts[1] : parts[0];
+  return parseInt(numStr, 10);
+}
+
 /* ── helpers ── */
 
 function parseDConfContent(raw: string): DConfPolicyContent {
@@ -69,6 +106,7 @@ function serializeDConfContent(content: DConfPolicyContent): string {
 
 /**
  * Determine the default GVariant string value for a key based on its type.
+ * Always returns a correctly-typed GVariant text value.
  */
 function defaultValueForKey(key: DConfKey): string {
   if (key.default_value) return key.default_value;
@@ -76,11 +114,12 @@ function defaultValueForKey(key: DConfKey): string {
   if (key.choices && key.choices.length > 0) return `'${key.choices[0]}'`;
   switch (key.type) {
     case "b":  return "true";
-    case "u":
     case "i":  return "0";
     case "d":  return "0.0";
     case "as": return "[]";
-    default:   return "";
+    default:
+      if (isIntType(key.type)) return formatIntGVariant(key.type, 0);
+      return "";
   }
 }
 
@@ -165,16 +204,20 @@ const ValueWidget: React.FC<ValueWidgetProps> = ({ keyDef, value, onChange, rowI
     );
   }
 
-  // Numeric types → NumberInput
-  if (type === "u" || type === "i") {
-    const num = parseInt(value, 10);
+  // Integer types → NumberInput (all GVariant integer codes)
+  if (isIntType(type)) {
+    const num = parseIntGVariant(value);
+    const safe = isNaN(num) ? 0 : num;
     return (
       <NumberInput
         id={`${rowId}-value-int`}
-        value={isNaN(num) ? 0 : num}
-        onMinus={() => onChange(String((isNaN(num) ? 0 : num) - 1))}
-        onPlus={() => onChange(String((isNaN(num) ? 0 : num) + 1))}
-        onChange={(ev) => onChange(ev.currentTarget.value)}
+        value={safe}
+        onMinus={() => onChange(formatIntGVariant(type, safe - 1))}
+        onPlus={() => onChange(formatIntGVariant(type, safe + 1))}
+        onChange={(ev) => {
+          const n = parseInt(ev.currentTarget.value, 10);
+          onChange(formatIntGVariant(type, isNaN(n) ? 0 : n));
+        }}
         isDisabled={disabled}
         aria-label="Numeric value"
       />

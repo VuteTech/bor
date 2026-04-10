@@ -76,3 +76,4 @@ message ReportSchemaCatalogueRequest {
 }
 
 message ReportSchemaCatalogueResponse {}
+

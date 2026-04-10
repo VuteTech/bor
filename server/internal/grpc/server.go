@@ -38,7 +38,7 @@ type PolicyServer struct {
 type dconfRepository interface {
 	UpsertSchema(ctx context.Context, schema *pb.GSettingsSchema, source string) error
 	ReplaceNodeSchemas(ctx context.Context, nodeID string, schemaIDs []string) error
-	UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string) error
+	UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) error
 }
 
 // NewPolicyServer creates a new PolicyServer.
@@ -293,7 +293,30 @@ func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportCompl
 	// Map protobuf ComplianceStatus to VARCHAR string.
 	statusStr := complianceStatusToString(req.GetStatus(), req.GetCompliant())
 
-	if err := s.dconfRepo.UpsertComplianceResult(ctx, node.ID, req.GetPolicyId(), statusStr, req.GetMessage()); err != nil {
+	// Marshal per-item results to JSON (nil when no items reported, e.g. non-dconf policies).
+	var itemsJSON []byte
+	if items := req.GetItems(); len(items) > 0 {
+		type itemJSON struct {
+			SchemaID string `json:"schema_id"`
+			Key      string `json:"key"`
+			Status   string `json:"status"`
+			Message  string `json:"message,omitempty"`
+		}
+		arr := make([]itemJSON, 0, len(items))
+		for _, it := range items {
+			arr = append(arr, itemJSON{
+				SchemaID: it.GetSchemaId(),
+				Key:      it.GetKey(),
+				Status:   complianceStatusToString(it.GetStatus(), false),
+				Message:  it.GetMessage(),
+			})
+		}
+		if b, err := json.Marshal(arr); err == nil {
+			itemsJSON = b
+		}
+	}
+
+	if err := s.dconfRepo.UpsertComplianceResult(ctx, node.ID, req.GetPolicyId(), statusStr, req.GetMessage(), itemsJSON); err != nil {
 		log.Printf("WARNING: ReportCompliance: failed to persist result for node %s policy %s: %v", node.ID, req.GetPolicyId(), err)
 	}
 

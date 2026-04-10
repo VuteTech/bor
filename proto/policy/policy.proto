@@ -157,6 +157,15 @@ message PolicyUpdate {
   bool snapshot_complete = 4;
 }
 
+// ComplianceItemResult is the compliance result for a single DConf key.
+// Sent by the agent alongside the per-policy rollup in ReportComplianceRequest.
+message ComplianceItemResult {
+  string           schema_id = 1;
+  string           key       = 2;
+  ComplianceStatus status    = 3;
+  string           message   = 4;
+}
+
 // ComplianceStatus is the four-state compliance result.
 // Preferred over the deprecated bool compliant field in ReportComplianceRequest.
 enum ComplianceStatus {
@@ -189,6 +198,9 @@ message ReportComplianceRequest {
 
   // Preferred over the bool compliant field.
   ComplianceStatus status = 6;
+
+  // Per-item results for dconf policies.  Empty for other policy types.
+  repeated ComplianceItemResult items = 7;
 }
 
 // ReportComplianceResponse acknowledges compliance report

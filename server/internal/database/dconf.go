@@ -120,15 +120,21 @@ func (r *DConfRepository) ListSchemasByNode(ctx context.Context, nodeID string) 
 }
 
 // UpsertComplianceResult inserts or updates a compliance result for a (node, policy) pair.
-func (r *DConfRepository) UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string) error {
+// itemsJSON is a JSON array of per-item results (may be nil/empty for non-dconf policies).
+func (r *DConfRepository) UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) error {
+	var items interface{}
+	if len(itemsJSON) > 0 {
+		items = itemsJSON
+	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO compliance_results (node_id, policy_id, status, message, reported_at)
-		VALUES ($1, $2, $3, $4, NOW())
+		INSERT INTO compliance_results (node_id, policy_id, status, message, items_json, reported_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
 		ON CONFLICT (node_id, policy_id) DO UPDATE
 		  SET status      = EXCLUDED.status,
 		      message     = EXCLUDED.message,
+		      items_json  = EXCLUDED.items_json,
 		      reported_at = EXCLUDED.reported_at`,
-		nodeID, policyID, statusStr, nullableString(message),
+		nodeID, policyID, statusStr, nullableString(message), items,
 	)
 	if err != nil {
 		return fmt.Errorf("dconf: upsert compliance result: %w", err)
@@ -138,19 +144,20 @@ func (r *DConfRepository) UpsertComplianceResult(ctx context.Context, nodeID, po
 
 // ComplianceRow is a single compliance result row with joined names.
 type ComplianceRow struct {
-	NodeID      string  `json:"node_id"`
-	NodeName    string  `json:"node_name"`
-	PolicyID    string  `json:"policy_id"`
-	PolicyName  string  `json:"policy_name"`
-	Status      string  `json:"status"`
-	Message     *string `json:"message,omitempty"`
-	ReportedAt  string  `json:"reported_at"`
+	NodeID     string          `json:"node_id"`
+	NodeName   string          `json:"node_name"`
+	PolicyID   string          `json:"policy_id"`
+	PolicyName string          `json:"policy_name"`
+	Status     string          `json:"status"`
+	Message    *string         `json:"message,omitempty"`
+	Items      json.RawMessage `json:"items,omitempty"`
+	ReportedAt string          `json:"reported_at"`
 }
 
 // ListComplianceResults returns all compliance results joined with node and policy names.
 func (r *DConfRepository) ListComplianceResults(ctx context.Context) ([]*ComplianceRow, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT cr.node_id, n.name, cr.policy_id, p.name, cr.status, cr.message, cr.reported_at
+		SELECT cr.node_id, n.name, cr.policy_id, p.name, cr.status, cr.message, cr.items_json, cr.reported_at
 		FROM compliance_results cr
 		JOIN nodes    n ON n.id    = cr.node_id
 		JOIN policies p ON p.id    = cr.policy_id
@@ -163,9 +170,13 @@ func (r *DConfRepository) ListComplianceResults(ctx context.Context) ([]*Complia
 	var results []*ComplianceRow
 	for rows.Next() {
 		var cr ComplianceRow
+		var itemsJSON []byte
 		var reportedAt interface{}
-		if err := rows.Scan(&cr.NodeID, &cr.NodeName, &cr.PolicyID, &cr.PolicyName, &cr.Status, &cr.Message, &reportedAt); err != nil {
+		if err := rows.Scan(&cr.NodeID, &cr.NodeName, &cr.PolicyID, &cr.PolicyName, &cr.Status, &cr.Message, &itemsJSON, &reportedAt); err != nil {
 			return nil, fmt.Errorf("dconf: scan compliance row: %w", err)
+		}
+		if len(itemsJSON) > 0 {
+			cr.Items = json.RawMessage(itemsJSON)
 		}
 		switch v := reportedAt.(type) {
 		case []byte:

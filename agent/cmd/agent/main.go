@@ -804,7 +804,7 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 		for _, id := range ids {
 			_ = client.ReportComplianceWithStatus(ctx, id,
 				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
-				"failed to sync dconf files: "+err.Error())
+				"failed to sync dconf files: "+err.Error(), nil)
 		}
 		return
 	}
@@ -818,8 +818,20 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 	}
 	results := policy.CheckDConfCompliance(merged, idx)
 	overallStatus, msg := policy.RollupDConfCompliance(results)
+
+	// Convert per-item results to proto for structured reporting.
+	protoItems := make([]*pb.ComplianceItemResult, 0, len(results))
+	for _, r := range results {
+		protoItems = append(protoItems, &pb.ComplianceItemResult{
+			SchemaId: r.SchemaID,
+			Key:      r.Key,
+			Status:   r.Status,
+			Message:  r.Message,
+		})
+	}
+
 	for _, id := range ids {
-		_ = client.ReportComplianceWithStatus(ctx, id, overallStatus, msg)
+		_ = client.ReportComplianceWithStatus(ctx, id, overallStatus, msg, protoItems)
 	}
 }
 

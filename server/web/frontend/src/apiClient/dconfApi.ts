@@ -55,6 +55,13 @@ export interface DConfSchema {
 
 export type ComplianceStatus = "unknown" | "compliant" | "non_compliant" | "inapplicable" | "error";
 
+export interface ComplianceItem {
+  schema_id: string;
+  key: string;
+  status: ComplianceStatus;
+  message?: string;
+}
+
 export interface ComplianceResult {
   node_id: string;
   node_name: string;
@@ -62,6 +69,7 @@ export interface ComplianceResult {
   policy_name: string;
   status: ComplianceStatus;
   message?: string;
+  items?: ComplianceItem[];
   reported_at: string;
 }
 
