@@ -154,13 +154,24 @@ type ComplianceRow struct {
 	ReportedAt string          `json:"reported_at"`
 }
 
-// ListComplianceResults returns all compliance results joined with node and policy names.
+// ListComplianceResults returns compliance results joined with node and policy names.
+// Only results where there is still an enabled binding connecting the policy to a
+// node group that contains the node are returned — stale results from removed or
+// disabled bindings are silently excluded.
 func (r *DConfRepository) ListComplianceResults(ctx context.Context) ([]*ComplianceRow, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT cr.node_id, n.name, cr.policy_id, p.name, cr.status, cr.message, cr.items_json, cr.reported_at
 		FROM compliance_results cr
 		JOIN nodes    n ON n.id    = cr.node_id
 		JOIN policies p ON p.id    = cr.policy_id
+		WHERE EXISTS (
+			SELECT 1
+			FROM policy_bindings pb
+			JOIN node_group_members ngm ON ngm.node_group_id = pb.group_id
+			WHERE pb.policy_id = cr.policy_id
+			  AND ngm.node_id  = cr.node_id
+			  AND pb.state     = 'enabled'
+		)
 		ORDER BY cr.reported_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("dconf: list compliance results: %w", err)
