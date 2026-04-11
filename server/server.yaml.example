@@ -120,3 +120,27 @@ ldap:
 #metrics:
 #  listen_addr: "127.0.0.1:9090"
 #  bearer_token: ""
+
+# Audit event forwarding via syslog (CEF or OCSF format).
+#
+# When enabled, every audit event (REST API changes, tamper detections) is
+# forwarded to a remote syslog receiver using RFC 5424 framing. This enables
+# real-time ingestion by SIEMs such as Splunk, IBM QRadar, or Microsoft Sentinel.
+#
+# network: transport protocol — "udp" (default), "tcp", or "tcp+tls"
+# addr:    syslog receiver host:port (default: "localhost:514")
+# format:  message body format — "cef" (ArcSight CEF, default) or "ocsf" (JSON)
+# facility: RFC 5424 facility code, 0-23 (default: 16 = local0)
+# tls_ca:  path to a PEM CA certificate file for tcp+tls server verification;
+#          leave empty to use the system cert pool
+#
+# Corresponds to the BOR_AUDIT_SYSLOG_* environment variables.
+#
+#audit:
+#  syslog:
+#    enabled: false
+#    network: "udp"
+#    addr: "siem.example.com:514"
+#    format: "cef"
+#    facility: 16
+#    tls_ca: ""

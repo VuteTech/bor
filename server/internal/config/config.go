@@ -24,6 +24,22 @@ type Config struct {
 	CA       CAConfig
 	WebAuthn WebAuthnConfig
 	Metrics  MetricsConfig
+	Audit    AuditConfig
+}
+
+// AuditConfig holds configuration for audit event forwarding.
+type AuditConfig struct {
+	Syslog SyslogConfig
+}
+
+// SyslogConfig holds configuration for the syslog audit sink.
+type SyslogConfig struct {
+	Enabled   bool   // BOR_AUDIT_SYSLOG_ENABLED
+	Network   string // BOR_AUDIT_SYSLOG_NETWORK  "udp" | "tcp" | "tcp+tls" (default: "udp")
+	Addr      string // BOR_AUDIT_SYSLOG_ADDR      host:port (default: "localhost:514")
+	Format    string // BOR_AUDIT_SYSLOG_FORMAT    "cef" | "ocsf" (default: "cef")
+	Facility  int    // BOR_AUDIT_SYSLOG_FACILITY  0-23 (default: 16 = local0)
+	TLSCAFile string // BOR_AUDIT_SYSLOG_TLS_CA    path to PEM CA cert for tcp+tls
 }
 
 // MetricsConfig holds Prometheus metrics endpoint configuration.
@@ -189,6 +205,16 @@ type fileConfig struct {
 		ListenAddr  string `yaml:"listen_addr"`
 		BearerToken string `yaml:"bearer_token"`
 	} `yaml:"metrics"`
+	Audit struct {
+		Syslog struct {
+			Enabled   bool   `yaml:"enabled"`
+			Network   string `yaml:"network"`
+			Addr      string `yaml:"addr"`
+			Format    string `yaml:"format"`
+			Facility  int    `yaml:"facility"`
+			TLSCAFile string `yaml:"tls_ca"`
+		} `yaml:"syslog"`
+	} `yaml:"audit"`
 }
 
 // Load loads configuration from a YAML file (optional) and environment
@@ -276,6 +302,18 @@ func Load() (*Config, error) {
 	metricsAddr := getEnv("BOR_METRICS_ADDR", fc.Metrics.ListenAddr)
 	metricsToken := getEnv("BOR_METRICS_TOKEN", fc.Metrics.BearerToken)
 
+	// ─── Audit syslog ──────────────────────────────────────────────────────
+	syslogEnabled := getEnvBool("BOR_AUDIT_SYSLOG_ENABLED", fc.Audit.Syslog.Enabled)
+	syslogNetwork := getEnv("BOR_AUDIT_SYSLOG_NETWORK", fc.Audit.Syslog.Network)
+	syslogAddr := getEnv("BOR_AUDIT_SYSLOG_ADDR", fc.Audit.Syslog.Addr)
+	syslogFormat := getEnv("BOR_AUDIT_SYSLOG_FORMAT", fc.Audit.Syslog.Format)
+	syslogFacilityStr := getEnv("BOR_AUDIT_SYSLOG_FACILITY", strconv.Itoa(fc.Audit.Syslog.Facility))
+	syslogFacility, err := strconv.Atoi(syslogFacilityStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_AUDIT_SYSLOG_FACILITY: %w", err)
+	}
+	syslogTLSCA := getEnv("BOR_AUDIT_SYSLOG_TLS_CA", fc.Audit.Syslog.TLSCAFile)
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -336,6 +374,16 @@ func Load() (*Config, error) {
 			ListenAddr:  metricsAddr,
 			BearerToken: metricsToken,
 		},
+		Audit: AuditConfig{
+			Syslog: SyslogConfig{
+				Enabled:   syslogEnabled,
+				Network:   syslogNetwork,
+				Addr:      syslogAddr,
+				Format:    syslogFormat,
+				Facility:  syslogFacility,
+				TLSCAFile: syslogTLSCA,
+			},
+		},
 	}, nil
 }
 
@@ -361,6 +409,10 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrEmail = "mail"
 	fc.LDAP.AttrFullName = "cn"
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
+	fc.Audit.Syslog.Network = "udp"
+	fc.Audit.Syslog.Addr = "localhost:514"
+	fc.Audit.Syslog.Format = "cef"
+	fc.Audit.Syslog.Facility = 16 // local0
 	return fc
 }
 

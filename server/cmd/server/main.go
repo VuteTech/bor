@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/api"
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/config"
@@ -217,6 +218,35 @@ func main() {
 
 	// Initialize audit service
 	auditSvc := services.NewAuditService(auditLogRepo)
+
+	// Register DatabaseSink so all Emit() calls persist to the DB.
+	dbSink := auditsink.NewDatabaseSink(func(ctx context.Context, entry *auditsink.DBEntry) error {
+		return auditLogRepo.Create(ctx, &models.AuditLog{
+			UserID:       entry.UserID,
+			Username:     entry.Username,
+			Action:       entry.Action,
+			ResourceType: entry.ResourceType,
+			ResourceID:   entry.ResourceID,
+			Details:      entry.Details,
+			IPAddress:    entry.IPAddress,
+		})
+	})
+	auditSvc.AddSink(dbSink)
+
+	// Register SyslogSink if configured.
+	var syslogSink *auditsink.SyslogSink
+	if cfg.Audit.Syslog.Enabled {
+		syslogSink = auditsink.NewSyslogSink(auditsink.SyslogConfig{
+			Enabled:   cfg.Audit.Syslog.Enabled,
+			Network:   cfg.Audit.Syslog.Network,
+			Addr:      cfg.Audit.Syslog.Addr,
+			Format:    auditsink.SyslogFormat(cfg.Audit.Syslog.Format),
+			Facility:  cfg.Audit.Syslog.Facility,
+			TLSCAFile: cfg.Audit.Syslog.TLSCAFile,
+		})
+		auditSvc.AddSink(syslogSink)
+		log.Printf("Audit syslog sink enabled: %s → %s (format=%s)", cfg.Audit.Syslog.Network, cfg.Audit.Syslog.Addr, cfg.Audit.Syslog.Format)
+	}
 
 	// Initialize settings service
 	settingsSvc := services.NewSettingsService(settingsRepo)
@@ -521,6 +551,9 @@ func main() {
 	}
 	if err := metricsServer.Shutdown(ctx); err != nil {
 		log.Printf("Metrics server shutdown error: %v", err)
+	}
+	if syslogSink != nil {
+		syslogSink.Close()
 	}
 
 	log.Println("Server stopped")

@@ -11,8 +11,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // sensitiveKeys contains lowercase substrings that identify sensitive fields.
@@ -118,17 +119,31 @@ func AuditMiddleware(auditSvc *services.AuditService) func(http.Handler) http.Ha
 			// Determine resource type from path
 			resourceType, resourceID := parseResourceFromPath(r.URL.Path)
 
-			entry := &models.AuditLog{
-				UserID:       userID,
-				Username:     username,
-				Action:       action,
-				ResourceType: resourceType,
-				ResourceID:   resourceID,
-				Details:      details,
-				IPAddress:    extractIP(r),
+			actor := &auditpb.Actor{Username: username}
+			if userID != nil {
+				actor.UserId = *userID
 			}
 
-			auditSvc.LogEvent(r.Context(), entry)
+			event := &auditpb.AuditEvent{
+				OccurredAt: timestamppb.Now(),
+				Actor:      actor,
+				Action:     action,
+				Resource: &auditpb.Resource{
+					Type: resourceType,
+					Id:   resourceID,
+				},
+				Outcome: auditpb.Outcome_OUTCOME_SUCCESS,
+				SrcIp:   extractIP(r),
+				Payload: &auditpb.AuditEvent_HttpChange{
+					HttpChange: &auditpb.HttpPayload{
+						Method:   r.Method,
+						Path:     r.URL.Path,
+						BodyJson: details,
+					},
+				},
+			}
+
+			auditSvc.Emit(r.Context(), event)
 		})
 	}
 }

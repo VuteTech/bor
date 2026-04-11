@@ -12,13 +12,16 @@ import (
 	"io"
 	"log"
 
+	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
+	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
 )
 
 // AuditService provides audit logging functionality
 type AuditService struct {
-	repo *database.AuditLogRepository
+	repo  *database.AuditLogRepository
+	sinks []auditsink.Sink
 }
 
 const exportBatchSize = 100
@@ -28,7 +31,19 @@ func NewAuditService(repo *database.AuditLogRepository) *AuditService {
 	return &AuditService{repo: repo}
 }
 
-// LogEvent records an audit log entry
+// AddSink registers an additional Sink that receives every emitted event.
+func (s *AuditService) AddSink(sink auditsink.Sink) {
+	s.sinks = append(s.sinks, sink)
+}
+
+// Emit fans an AuditEvent out to all registered sinks.
+func (s *AuditService) Emit(ctx context.Context, event *auditpb.AuditEvent) {
+	for _, sink := range s.sinks {
+		sink.Emit(ctx, event)
+	}
+}
+
+// LogEvent records an audit log entry (legacy path — use Emit for new code).
 func (s *AuditService) LogEvent(ctx context.Context, entry *models.AuditLog) {
 	if err := s.repo.Create(ctx, entry); err != nil {
 		log.Printf("Failed to write audit log: %v", err)
