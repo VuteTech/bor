@@ -74,6 +74,15 @@ update-dconf-schemas:
 		--out ../server/assets/dconf_builtin_schemas.json
 	@echo "Done. Commit server/assets/dconf_builtin_schemas.json."
 
+# Regenerate polkit built-in action catalogue from the local system's polkit actions.
+# Run this on a reference Linux installation with polkit installed to refresh
+# server/assets/polkit_builtin_actions.json.
+update-polkit-actions:
+	@echo "Generating polkit built-in action catalogue..."
+	cd agent && go run ./cmd/gen-polkit-actions \
+		--out ../server/assets/polkit_builtin_actions.json
+	@echo "Done. Commit server/assets/polkit_builtin_actions.json."
+
 # Generate Protocol Buffers (Go + TypeScript)
 proto: proto-go proto-ts
 

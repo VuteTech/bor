@@ -95,11 +95,12 @@ type PolicyInfo struct {
 	Type          string
 	Content       string // kept for compatibility / fallback
 	Version       int32
-	Priority      int32             // max binding priority across enabled bindings for this node
-	KConfigPolicy *pb.KConfigPolicy // populated from typed_content for Kconfig type
-	FirefoxPolicy *pb.FirefoxPolicy // populated from typed_content for Firefox type
-	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
-	DConfPolicy   *pb.DConfPolicy   // populated from typed_content for Dconf type
+	Priority      int32              // max binding priority across enabled bindings for this node
+	KConfigPolicy *pb.KConfigPolicy  // populated from typed_content for Kconfig type
+	FirefoxPolicy *pb.FirefoxPolicy  // populated from typed_content for Firefox type
+	ChromePolicy  *pb.ChromePolicy   // populated from typed_content for Chrome type
+	DConfPolicy   *pb.DConfPolicy    // populated from typed_content for Dconf type
+	PolkitPolicy  *pb.PolkitPolicy   // populated from typed_content for Polkit type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -285,6 +286,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if dp := p.GetDconfPolicy(); dp != nil {
 				pi.DConfPolicy = dp
 			}
+			if pkp := p.GetPolkitPolicy(); pkp != nil {
+				pi.PolkitPolicy = pkp
+			}
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
@@ -328,6 +332,21 @@ func (c *Client) ReportSchemaCatalogue(ctx context.Context, schemas []*pb.GSetti
 	})
 	if err != nil {
 		return fmt.Errorf("ReportSchemaCatalogue RPC failed: %w", err)
+	}
+	return nil
+}
+
+// ReportPolkitCatalogue sends the polkit action catalogue to the server.
+func (c *Client) ReportPolkitCatalogue(ctx context.Context, actions []*pb.PolkitActionDescription) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	_, err := c.client.ReportPolkitCatalogue(ctx, &pb.ReportPolkitCatalogueRequest{
+		ClientId: c.clientID,
+		Actions:  actions,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportPolkitCatalogue RPC failed: %w", err)
 	}
 	return nil
 }

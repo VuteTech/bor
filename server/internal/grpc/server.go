@@ -31,6 +31,7 @@ type PolicyServer struct {
 	auditSvc    *services.AuditService
 	enrollSvc   *services.EnrollmentService
 	dconfRepo   dconfRepository
+	polkitRepo  polkitRepository
 	hub         *PolicyHub
 }
 
@@ -41,9 +42,15 @@ type dconfRepository interface {
 	UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) error
 }
 
+// polkitRepository is the subset of database.PolkitRepository used by PolicyServer.
+type polkitRepository interface {
+	UpsertAction(ctx context.Context, action *pb.PolkitActionDescription, source string) error
+	ReplaceNodeActions(ctx context.Context, nodeID string, actionIDs []string) error
+}
+
 // NewPolicyServer creates a new PolicyServer.
-func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, enrollSvc *services.EnrollmentService, dconfRepo dconfRepository, hub *PolicyHub) *PolicyServer {
-	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, enrollSvc: enrollSvc, dconfRepo: dconfRepo, hub: hub}
+func NewPolicyServer(policySvc *services.PolicyService, nodeSvc *services.NodeService, settingsSvc *services.SettingsService, auditSvc *services.AuditService, enrollSvc *services.EnrollmentService, dconfRepo dconfRepository, polkitRepo polkitRepository, hub *PolicyHub) *PolicyServer {
+	return &PolicyServer{policySvc: policySvc, nodeSvc: nodeSvc, settingsSvc: settingsSvc, auditSvc: auditSvc, enrollSvc: enrollSvc, dconfRepo: dconfRepo, polkitRepo: polkitRepo, hub: hub}
 }
 
 // GetPolicy returns a single policy by ID.
@@ -532,6 +539,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal DConf typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_DconfPolicy{DconfPolicy: &dp}
+		}
+	case "Polkit":
+		var pkPol pb.PolkitPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &pkPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Polkit typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_PolkitPolicy{PolkitPolicy: &pkPol}
 		}
 	}
 

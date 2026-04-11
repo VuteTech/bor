@@ -9,6 +9,7 @@ import type { ChromePolicy } from "./chrome";
 import type { DConfPolicy } from "./dconf";
 import type { FirefoxPolicy } from "./firefox";
 import type { KConfigPolicy } from "./kconfig";
+import type { PolkitPolicy } from "./polkit";
 
 export const protobufPackage = "bor.policy.v1";
 
@@ -54,8 +55,9 @@ export interface Policy {
   firefox_policy?: FirefoxPolicy | undefined;
   kconfig_policy?: KConfigPolicy | undefined;
   chrome_policy?: ChromePolicy | undefined;
-  dconf_policy?:
-    | DConfPolicy
+  dconf_policy?: DConfPolicy | undefined;
+  polkit_policy?:
+    | PolkitPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority

@@ -43,6 +43,7 @@ import type { Policy, CreatePolicyRequest, UpdatePolicyRequest } from "../../api
 import { createPolicy, updatePolicy, setPolicyState, deletePolicy } from "../../apiClient/policiesApi";
 import type { FirefoxPolicy } from "../../generated/proto/firefox";
 import { DConfPolicyEditor } from "./DConfPolicyEditor";
+import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
 
 /* ── Known policy types and their config schemas ── */
 
@@ -50,7 +51,7 @@ const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Kconfig", label: "Kconfig" },
   { value: "Dconf", label: "Dconf" },
   { value: "Firefox", label: "Firefox" },
-  { value: "Polkit", label: "Polkit (not yet implemented)", isDisabled: true },
+  { value: "Polkit", label: "Polkit" },
   { value: "Chrome", label: "Chrome" },
 ];
 
@@ -1408,6 +1409,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         }
       } else if (policy.type === "Dconf") {
         // Dconf editor reads contentRaw directly — nothing extra to initialise.
+      } else if (policy.type === "Polkit") {
+        // Polkit editor reads contentRaw directly — nothing extra to initialise.
       } else {
         try {
           const parsed = JSON.parse(policy.content || "{}");
@@ -1787,6 +1790,19 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           }
         } catch {
           setError("Dconf policy content is not valid JSON");
+          setSaving(false);
+          return;
+        }
+      } else if (policyType === "Polkit") {
+        try {
+          const parsed = JSON.parse(finalContent) as { rules?: unknown[] };
+          if (!Array.isArray(parsed.rules) || parsed.rules.length === 0) {
+            setError("At least one polkit rule must be configured before saving");
+            setSaving(false);
+            return;
+          }
+        } catch {
+          setError("Polkit policy content is not valid JSON");
           setSaving(false);
           return;
         }
@@ -3084,6 +3100,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       return (
         <div style={{ padding: "1rem 0" }}>
           <DConfPolicyEditor
+            contentRaw={contentRaw}
+            onChange={(newRaw) => { setContentRaw(newRaw); }}
+            isDisabled={!isEditable}
+          />
+        </div>
+      );
+    }
+    if (policyType === "Polkit") {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          <PolkitPolicyEditor
             contentRaw={contentRaw}
             onChange={(newRaw) => { setContentRaw(newRaw); }}
             isDisabled={!isEditable}

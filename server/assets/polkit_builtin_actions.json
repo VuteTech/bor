@@ -1,0 +1,4341 @@
+[
+  {
+    "action_id": "com.anydesk.anydesk",
+    "message": "Authentication is required to run the AnyDesk Global Settings",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "com.mesonbuild.install.run",
+    "description": "Install the given project via Meson",
+    "message": "Authentication is required to install this project",
+    "vendor": "The Meson Build System",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "com.teamviewer.TeamViewer.options",
+    "description": "Change TeamViewer options",
+    "message": "Authentication is required to change TeamViewer options",
+    "vendor": "TeamViewer",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "com.teamviewer.TeamViewer.pkexec.scripts",
+    "description": "Execute script as administrator",
+    "message": "TeamViewer attempts to run a script as administrator.",
+    "vendor": "TeamViewer",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "in.teejeetech.pkexec.timeshift",
+    "description": "Run Timeshift as Administrator",
+    "message": "Authentication is required to run Timeshift as Administrator",
+    "vendor": "Tony George",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "in.teejeetech.pkexec.timeshift-gtk",
+    "description": "Run Timeshift as Administrator",
+    "message": "Timeshift",
+    "vendor": "Tony George",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "io.snapcraft.snapd.login",
+    "description": "Authenticate on snap daemon",
+    "message": "Authorization is required to authenticate on the snap daemon",
+    "vendor": "Snapcraft",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.snapcraft.snapd.manage",
+    "description": "Install, update, or remove packages",
+    "message": "Authentication is required to install, update, or remove packages",
+    "vendor": "Snapcraft",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.snapcraft.snapd.manage-configuration",
+    "description": "Access or modify snap configuration",
+    "message": "Authentication is required to access or modify snap configuration",
+    "vendor": "Snapcraft",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.snapcraft.snapd.manage-fde",
+    "description": "Manage disk encryption",
+    "message": "Authentication is required to manage disk encryption setup",
+    "vendor": "Snapcraft",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.snapcraft.snapd.manage-interfaces",
+    "description": "Connect, disconnect interfaces",
+    "message": "Authentication is required to connect or disconnect interfaces",
+    "vendor": "Snapcraft",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.systemd.ask-password.ask",
+    "description": "Allow to query the user interactively for a password",
+    "message": "Authentication is required for an application to ask the user interactively for a password.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.confext.manage",
+    "description": "Allow managing (merging, unmerging, ...) of configuration extension images.",
+    "message": "Authentication is required for an application to manage a configuration extension image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.systemd.confext.read",
+    "description": "Allow reading (listing, ...) of configuration extension images.",
+    "message": "Authentication is required for an application to list configuration extension images.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.credentials.decrypt",
+    "description": "Allow decryption of system credentials.",
+    "message": "Authentication is required for an application to decrypt a system credential.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.systemd.credentials.encrypt",
+    "description": "Allow encryption and signing of system credentials.",
+    "message": "Authentication is required for an application to encrypt and sign a system credential.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.make-directory",
+    "description": "Allow creating directory owned by the foreign UID range",
+    "message": "Authentication is required for an application to create $(directory) owned by the foreign UID range.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.make-directory-untrusted",
+    "description": "Allow creating directory owned by the foreign UID range below directory not owned by the user",
+    "message": "Authentication is required for an application to create $(directory) owned by the foreign UID range, below a directory not owned by the user.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-directory",
+    "description": "Allow mounting of directory",
+    "message": "Authentication is required for an application to mount directory $(directory).",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-directory-privately",
+    "description": "Allow private mounting of directory",
+    "message": "Authentication is required for an application to privately mount directory $(directory).",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-image",
+    "description": "Allow mounting of file system image",
+    "message": "Authentication is required for an application to mount a file system image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-image-privately",
+    "description": "Allow private mounting of trusted file system image",
+    "message": "Authentication is required for an application to privately mount a file system image or an image whose cryptographic signature is recognized.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-untrusted-directory",
+    "description": "Allow mounting of untrusted directory",
+    "message": "Authentication is required for an application to mount directory $(directory) which is not owned by the user.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-untrusted-directory-privately",
+    "description": "Allow private mounting of untrusted directory",
+    "message": "Authentication is required for an application to privately mount directory $(directory) which is not owned by the user.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-untrusted-image",
+    "description": "Allow mounting of untrusted file system image",
+    "message": "Authentication is required for an application to mount a cryptographically unsigned file system image or an image whose cryptographic signature is not recognized.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "io.systemd.mount-file-system.mount-untrusted-image-privately",
+    "description": "Allow private mounting of untrusted file system image",
+    "message": "Authentication is required for an application to privately mount a cryptographically unsigned file system image or an image whose cryptographic signature is not recognized.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "io.systemd.namespace-resource.allocate-user-namespace",
+    "description": "Allow user namespace allocation",
+    "message": "Authentication is required for an application to allocate a user namespace '$(name)' with an automatically assigned transient UID range.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.namespace-resource.delegate-cgroup",
+    "description": "Allow adding a control group to a user namespace",
+    "message": "Authentication is required for an application to add a control group to a user namespace.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.namespace-resource.delegate-mount",
+    "description": "Allow adding a mount to a user namespace",
+    "message": "Authentication is required for an application to add a mount to a user namespace.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.namespace-resource.delegate-network-interface",
+    "description": "Allow adding a network interface to a user namespace",
+    "message": "Authentication is required for an application to add a network interface of type $(type) to a user namespace.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.namespace-resource.register-user-namespace",
+    "description": "Allow user namespace registration",
+    "message": "Authentication is required for an application to register a user namespace '$(name)'.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "io.systemd.sysext.manage",
+    "description": "Allow managing (merging, unmerging, ...) of system extension images.",
+    "message": "Authentication is required for an application to manage a system extension image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "io.systemd.sysext.read",
+    "description": "Allow reading (listing, ...) of system extension images.",
+    "message": "Authentication is required for an application to list system extension images.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "local.kcron.crontab.save",
+    "description": "Write Crontab",
+    "message": "Write into the system crontab file",
+    "vendor": "Crontab Actions",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "net.apparmor.pkexec.aa-notify.create_userns",
+    "description": "AppArmor: adding userns profile",
+    "message": "To allow a program to use unprivileged user namespaces, you need to authenticate.",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "net.apparmor.pkexec.aa-notify.modify_profile",
+    "description": "AppArmor: modifying security profile",
+    "message": "To modify an AppArmor security profile, you need to authenticate.",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "net.hadess.SensorProxy.claim-sensor",
+    "description": "Claim Access to a Sensor",
+    "message": "Privileges are required to claim a sensor.",
+    "vendor": "iio-sensor-proxy",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.debian.pcsc-lite.access_card",
+    "description": "Access to the smart card",
+    "message": "Authentication is required to access the smart card",
+    "vendor": "The PCSC-lite Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.debian.pcsc-lite.access_pcsc",
+    "description": "Access to the PC/SC daemon",
+    "message": "Authentication is required to access the PC/SC daemon",
+    "vendor": "The PCSC-lite Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.app-install",
+    "description": "Install signed application",
+    "message": "Authentication is required to install software",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.app-uninstall",
+    "description": "Uninstall app",
+    "message": "Authentication is required to uninstall $(ref)",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.app-update",
+    "description": "Update signed application",
+    "message": "Authentication is required to update software",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.appstream-update",
+    "description": "Update appstream",
+    "message": "Authentication is required to update information about software",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.configure",
+    "description": "Configure",
+    "message": "Authentication is required to configure software installation",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.configure-remote",
+    "description": "Configure Remote",
+    "message": "Authentication is required to configure software repositories",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.install-bundle",
+    "description": "Install bundle",
+    "message": "Authentication is required to install software from $(path)",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.metadata-update",
+    "description": "Update metadata",
+    "message": "Authentication is required to update metadata",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.modify-repo",
+    "description": "Update system repository",
+    "message": "Authentication is required to modify a system repository",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.override-parental-controls",
+    "description": "Override parental controls for installs",
+    "message": "Authentication is required to install software which is restricted by your parental controls policy",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.override-parental-controls-update",
+    "description": "Override parental controls for updates",
+    "message": "Authentication is required to update software which is restricted by your parental controls policy",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.runtime-install",
+    "description": "Install signed runtime",
+    "message": "Authentication is required to install software",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.runtime-uninstall",
+    "description": "Uninstall runtime",
+    "message": "Authentication is required to uninstall software",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.runtime-update",
+    "description": "Update signed runtime",
+    "message": "Authentication is required to update software",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.Flatpak.update-remote",
+    "description": "Update remote metadata",
+    "message": "Authentication is required to update remote info",
+    "vendor": "The Flatpak Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.CellBroadcast",
+    "description": "Enable and view Cell Broadcast messages",
+    "message": "System policy prevents enabling or viewing this device's text messages.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Contacts",
+    "description": "Add, modify, and delete mobile broadband contacts",
+    "message": "System policy prevents adding, modifying, or deleting this device's contacts.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Control",
+    "description": "Control the Modem Manager daemon",
+    "message": "System policy prevents controlling the Modem Manager.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Device.Control",
+    "description": "Unlock and control a mobile broadband device",
+    "message": "System policy prevents unlocking or controlling the mobile broadband device.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Firmware",
+    "description": "Query and manage firmware on a mobile broadband device",
+    "message": "System policy prevents querying or managing this device's firmware.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Location",
+    "description": "Enable and view geographic location and positioning information",
+    "message": "System policy prevents enabling or viewing geographic location information.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Messaging",
+    "description": "Send, save, modify, and delete text messages",
+    "message": "System policy prevents sending or manipulating this device's text messages.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Time",
+    "description": "Query network time and timezone information",
+    "message": "System policy prevents querying network time information.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.USSD",
+    "description": "Query and utilize network information and services",
+    "message": "System policy prevents querying or utilizing network information and services.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.ModemManager1.Voice",
+    "description": "Accept incoming voice calls or start outgoing voice calls.",
+    "message": "System policy prevents voice calls.",
+    "vendor": "ModemManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.checkpoint-rollback",
+    "description": "Perform a checkpoint or rollback of interfaces configuration",
+    "message": "System policy prevents the creation of a checkpoint or its rollback",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.enable-disable-connectivity-check",
+    "description": "Enable or disable connectivity checking",
+    "message": "System policy prevents enabling or disabling connectivity checking",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.enable-disable-network",
+    "description": "Enable or disable system networking",
+    "message": "System policy prevents enabling or disabling system networking",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.enable-disable-statistics",
+    "description": "Enable or disable device statistics",
+    "message": "System policy prevents enabling or disabling device statistics",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.enable-disable-wifi",
+    "description": "Enable or disable Wi-Fi devices",
+    "message": "System policy prevents enabling or disabling Wi-Fi devices",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.enable-disable-wimax",
+    "description": "Enable or disable WiMAX mobile broadband devices",
+    "message": "System policy prevents enabling or disabling WiMAX mobile broadband devices",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.enable-disable-wwan",
+    "description": "Enable or disable mobile broadband devices",
+    "message": "System policy prevents enabling or disabling mobile broadband devices",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.network-control",
+    "description": "Allow control of network connections",
+    "message": "System policy prevents control of network connections",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.reload",
+    "description": "Reload NetworkManager configuration",
+    "message": "System policy prevents reloading NetworkManager",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.settings.modify.global-dns",
+    "description": "Modify persistent global DNS configuration",
+    "message": "System policy prevents modification of the persistent global DNS configuration",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.settings.modify.hostname",
+    "description": "Modify persistent system hostname",
+    "message": "System policy prevents modification of the persistent system hostname",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.settings.modify.own",
+    "description": "Modify personal network connections",
+    "message": "System policy prevents modification of personal network settings",
+    "vendor": "NetworkManager",
+    "default_any": "auth_self_keep",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.settings.modify.system",
+    "description": "Modify network connections for all users",
+    "message": "System policy prevents modification of network settings for all users",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.sleep-wake",
+    "description": "Put NetworkManager to sleep or wake it up (should only be used by system power management)",
+    "message": "System policy prevents putting NetworkManager to sleep or waking it up",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.wifi.scan",
+    "description": "Allow control of Wi-Fi scans",
+    "message": "System policy prevents Wi-Fi scans",
+    "vendor": "NetworkManager",
+    "default_any": "auth_admin",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.wifi.share.open",
+    "description": "Connection sharing via an open Wi-Fi network",
+    "message": "System policy prevents sharing connections via an open Wi-Fi network",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.NetworkManager.wifi.share.protected",
+    "description": "Connection sharing via a protected Wi-Fi network",
+    "message": "System policy prevents sharing connections via a protected Wi-Fi network",
+    "vendor": "NetworkManager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.RealtimeKit1.acquire-high-priority",
+    "description": "Grant high priority scheduling to a user process",
+    "message": "Authentication is required to grant an application high priority scheduling",
+    "vendor": "Lennart Poettering",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.RealtimeKit1.acquire-real-time",
+    "description": "Grant realtime scheduling to a user process",
+    "message": "Authentication is required to grant an application realtime scheduling",
+    "vendor": "Lennart Poettering",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.UPower.PowerProfiles.configure-action",
+    "description": "Configure action",
+    "message": "Privileges are required to configure actions.",
+    "vendor": "power-profiles-daemon",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.UPower.PowerProfiles.configure-battery-aware",
+    "description": "Configure action",
+    "message": "Privileges are required to configure battery-awareness.",
+    "vendor": "power-profiles-daemon",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.UPower.PowerProfiles.hold-profile",
+    "description": "Hold Power Profile",
+    "message": "Privileges are required to hold power profiles.",
+    "vendor": "power-profiles-daemon",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.UPower.PowerProfiles.switch-profile",
+    "description": "Switch Power Profile",
+    "message": "Privileges are required to switch power profiles.",
+    "vendor": "power-profiles-daemon",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.UPower.enable-charging-limit",
+    "description": "Enable battery charging limit",
+    "message": "Authentication is required to set battery charging start and end limit.",
+    "vendor": "The UPower Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.accounts.change-own-password",
+    "description": "Change your own user password",
+    "message": "Authentication is required to change your own user password",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.accounts.change-own-user-data",
+    "description": "Change your own user data",
+    "message": "Authentication is required to change your own user data",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.accounts.set-login-option",
+    "description": "Change the login screen configuration",
+    "message": "Authentication is required to change the login screen configuration",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.accounts.user-administration",
+    "description": "Manage user accounts",
+    "message": "Authentication is required to change user data",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.clean-remote",
+    "description": "Clean a configured remote",
+    "message": "Authentication is required to delete metadata from a remote",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.device-activate",
+    "description": "Activate the new firmware on the device",
+    "message": "Authentication is required to switch to the new firmware version",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.device-unlock",
+    "description": "Unlock the device to allow access",
+    "message": "Authentication is required to unlock a device",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.downgrade-hotplug",
+    "description": "Install unsigned device firmware",
+    "message": "Authentication is required to downgrade the firmware on a removable device",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.downgrade-hotplug-trusted",
+    "description": "Install signed device firmware",
+    "message": "Authentication is required to downgrade the firmware on a removable device",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.downgrade-internal",
+    "description": "Install old version of unsigned system firmware",
+    "message": "Authentication is required to downgrade the firmware on this machine",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.downgrade-internal-trusted",
+    "description": "Install old version of signed system firmware",
+    "message": "Authentication is required to downgrade the firmware on this machine",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.emulation-load",
+    "description": "Load device emulation data",
+    "message": "Authentication is required to load hardware emulation data",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.emulation-save",
+    "description": "Save device emulation data",
+    "message": "Authentication is required to save hardware emulation data",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.emulation-tag",
+    "description": "Enable emulation data collection",
+    "message": "Authentication is required to enable emulation data collection",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.fix-host-security-attr",
+    "description": "Security hardening for HSI",
+    "message": "Authentication is required to fix a host security issue",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.get-bios-settings",
+    "description": "Get BIOS settings",
+    "message": "Authentication is required to read BIOS settings",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.modify-config",
+    "description": "Modify daemon configuration",
+    "message": "Authentication is required to modify daemon configuration",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.modify-remote",
+    "description": "Modify a configured remote",
+    "message": "Authentication is required to modify a configured remote used for firmware updates",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.quit",
+    "description": "Stop the fwupd service",
+    "message": "Authentication is required to stop the firmware update service",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.reset-config",
+    "description": "Reset daemon configuration",
+    "message": "Authentication is required to reset daemon configuration to defaults",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.self-sign",
+    "description": "Sign data using the client certificate",
+    "message": "Authentication is required to sign data using the client certificate",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.set-approved-firmware",
+    "description": "Sets the list of approved firmware",
+    "message": "Authentication is required to set the list of approved firmware",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.set-bios-settings",
+    "description": "Set one or more BIOS settings",
+    "message": "Authentication is required to modify BIOS settings",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.undo-host-security-attr",
+    "description": "Security hardening for HSI",
+    "message": "Authentication is required to undo the fix for a host security issue",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.update-hotplug",
+    "description": "Install unsigned device firmware",
+    "message": "Authentication is required to update the firmware on a removable device",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.update-hotplug-trusted",
+    "description": "Install signed device firmware",
+    "message": "Authentication is required to update the firmware on a removable device",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.update-internal",
+    "description": "Install unsigned system firmware",
+    "message": "Authentication is required to update the firmware on this machine",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.update-internal-trusted",
+    "description": "Install signed system firmware",
+    "message": "Authentication is required to update the firmware on this machine",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.fwupd.verify-update",
+    "description": "Update the stored device verification information",
+    "message": "Authentication is required to update the stored checksums for the device",
+    "vendor": "System firmware update",
+    "default_any": "auth_admin",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.activate-home",
+    "description": "Activate a home area",
+    "message": "Authentication is required to activate a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.authenticate-home",
+    "description": "Check credentials of a home area",
+    "message": "Authentication is required to check credentials against a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.create-home",
+    "description": "Create a home area",
+    "message": "Authentication is required to create a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.manage-signing-keys",
+    "description": "Manage Home Directory Signing Keys",
+    "message": "Authentication is required to manage signing keys for home directories.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.passwd-home",
+    "description": "Change password of a home area",
+    "message": "Authentication is required to change the password of a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.remove-home",
+    "description": "Remove a home area",
+    "message": "Authentication is required to remove a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.resize-home",
+    "description": "Resize a home area",
+    "message": "Authentication is required to resize a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.update-home",
+    "description": "Update a home area",
+    "message": "Authentication is required to update a user's home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.home1.update-home-by-owner",
+    "description": "Update your home area",
+    "message": "Authentication is required to update your home area.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.hostname1.get-description",
+    "description": "Get system description",
+    "message": "Authentication is required to get system description.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.hostname1.get-hardware-serial",
+    "description": "Get hardware serial number",
+    "message": "Authentication is required to get hardware serial number.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.hostname1.get-product-uuid",
+    "description": "Get product UUID",
+    "message": "Authentication is required to get product UUID.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.hostname1.set-hostname",
+    "description": "Set hostname",
+    "message": "Authentication is required to set the local hostname.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.hostname1.set-machine-info",
+    "description": "Set machine information",
+    "message": "Authentication is required to set local machine information.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.hostname1.set-static-hostname",
+    "description": "Set static hostname",
+    "message": "Authentication is required to set the statically configured local hostname, as well as the pretty hostname.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.import1.cancel",
+    "description": "Cancel transfer of a disk image",
+    "message": "Authentication is required to cancel the ongoing transfer of a disk image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.import1.export",
+    "description": "Export a disk image",
+    "message": "Authentication is required to export disk image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.import1.import",
+    "description": "Import a disk image",
+    "message": "Authentication is required to import an image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.import1.pull",
+    "description": "Download a disk image",
+    "message": "Authentication is required to download a disk image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.locale1.set-keyboard",
+    "description": "Set system keyboard settings",
+    "message": "Authentication is required to set the system keyboard settings.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.locale1.set-locale",
+    "description": "Set system locale",
+    "message": "Authentication is required to set the system locale.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.attach-device",
+    "description": "Allow attaching devices to seats",
+    "message": "Authentication is required to attach a device to a seat.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.chvt",
+    "description": "Change Session",
+    "message": "Authentication is required to change the virtual terminal.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.flush-devices",
+    "description": "Flush device to seat attachments",
+    "message": "Authentication is required to reset how devices are attached to seats.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.halt",
+    "description": "Halt the system",
+    "message": "Authentication is required to halt the system.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.halt-ignore-inhibit",
+    "description": "Halt the system while an application is inhibiting this",
+    "message": "Authentication is required to halt the system while an application is inhibiting this.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.halt-multiple-sessions",
+    "description": "Halt the system while other users are logged in",
+    "message": "Authentication is required to halt the system while other users are logged in.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.hibernate",
+    "description": "Hibernate the system",
+    "message": "Authentication is required to hibernate the system.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.hibernate-ignore-inhibit",
+    "description": "Hibernate the system while an application is inhibiting this",
+    "message": "Authentication is required to hibernate the system while an application is inhibiting this.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.hibernate-multiple-sessions",
+    "description": "Hibernate the system while other users are logged in",
+    "message": "Authentication is required to hibernate the system while other users are logged in.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-block-idle",
+    "description": "Allow applications to inhibit automatic system suspend",
+    "message": "Authentication is required for an application to inhibit automatic system suspend.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-block-shutdown",
+    "description": "Allow applications to inhibit system shutdown",
+    "message": "Authentication is required for an application to inhibit system shutdown.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-block-sleep",
+    "description": "Allow applications to inhibit system sleep",
+    "message": "Authentication is required for an application to inhibit system sleep.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-delay-shutdown",
+    "description": "Allow applications to delay system shutdown",
+    "message": "Authentication is required for an application to delay system shutdown.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-delay-sleep",
+    "description": "Allow applications to delay system sleep",
+    "message": "Authentication is required for an application to delay system sleep.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-handle-hibernate-key",
+    "description": "Allow applications to inhibit system handling of the hibernate key",
+    "message": "Authentication is required for an application to inhibit system handling of the hibernate key.",
+    "vendor": "The systemd Project",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-handle-lid-switch",
+    "description": "Allow applications to inhibit system handling of the lid switch",
+    "message": "Authentication is required for an application to inhibit system handling of the lid switch.",
+    "vendor": "The systemd Project",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-handle-power-key",
+    "description": "Allow applications to inhibit system handling of the power key",
+    "message": "Authentication is required for an application to inhibit system handling of the power key.",
+    "vendor": "The systemd Project",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-handle-reboot-key",
+    "description": "Allow applications to inhibit system handling of the reboot key",
+    "message": "Authentication is required for an application to inhibit system handling of the reboot key.",
+    "vendor": "The systemd Project",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.inhibit-handle-suspend-key",
+    "description": "Allow applications to inhibit system handling of the suspend key",
+    "message": "Authentication is required for an application to inhibit system handling of the suspend key.",
+    "vendor": "The systemd Project",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.lock-sessions",
+    "description": "Lock or unlock active sessions",
+    "message": "Authentication is required to lock or unlock active sessions.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.manage",
+    "description": "Manage active sessions, users and seats",
+    "message": "Authentication is required to manage active sessions, users and seats.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.power-off",
+    "description": "Power off the system",
+    "message": "Authentication is required to power off the system.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.power-off-ignore-inhibit",
+    "description": "Power off the system while an application is inhibiting this",
+    "message": "Authentication is required to power off the system while an application is inhibiting this.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.power-off-multiple-sessions",
+    "description": "Power off the system while other users are logged in",
+    "message": "Authentication is required to power off the system while other users are logged in.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.reboot",
+    "description": "Reboot the system",
+    "message": "Authentication is required to reboot the system.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.reboot-ignore-inhibit",
+    "description": "Reboot the system while an application is inhibiting this",
+    "message": "Authentication is required to reboot the system while an application is inhibiting this.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.reboot-multiple-sessions",
+    "description": "Reboot the system while other users are logged in",
+    "message": "Authentication is required to reboot the system while other users are logged in.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-reboot-parameter",
+    "description": "Set the reboot \"reason\" in the kernel",
+    "message": "Authentication is required to set the reboot \"reason\" in the kernel.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-reboot-to-boot-loader-entry",
+    "description": "Indicate to the boot loader to boot a specific entry",
+    "message": "Authentication is required to indicate to the boot loader to boot into a specific boot loader entry.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-reboot-to-boot-loader-menu",
+    "description": "Indicate to the boot loader to boot to the boot loader menu",
+    "message": "Authentication is required to indicate to the boot loader to boot to the boot loader menu.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-reboot-to-firmware-setup",
+    "description": "Indicate to the firmware to boot to setup interface",
+    "message": "Authentication is required to indicate to the firmware to boot to setup interface.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-self-linger",
+    "description": "Allow non-logged-in user to run programs",
+    "message": "Explicit request is required to run programs as a non-logged-in user.",
+    "vendor": "The systemd Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-user-linger",
+    "description": "Allow non-logged-in users to run programs",
+    "message": "Authentication is required to run programs as a non-logged-in user.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.set-wall-message",
+    "description": "Set a wall message",
+    "message": "Authentication is required to set a wall message.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.suspend",
+    "description": "Suspend the system",
+    "message": "Authentication is required to suspend the system.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.login1.suspend-ignore-inhibit",
+    "description": "Suspend the system while an application is inhibiting this",
+    "message": "Authentication is required to suspend the system while an application is inhibiting this.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.login1.suspend-multiple-sessions",
+    "description": "Suspend the system while other users are logged in",
+    "message": "Authentication is required to suspend the system while other users are logged in.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.create-machine",
+    "description": "Create a local virtual machine or container",
+    "message": "Authentication is required to create a local virtual machine or container.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.host-login",
+    "description": "Log into the local host",
+    "message": "Authentication is required to log into the local host.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.host-open-pty",
+    "description": "Acquire a pseudo TTY on the local host",
+    "message": "Authentication is required to acquire a pseudo TTY on the local host.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.host-shell",
+    "description": "Acquire a shell on the local host",
+    "message": "Authentication is required to acquire a shell on the local host.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.login",
+    "description": "Log into a local container",
+    "message": "Authentication is required to log into a local container.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.manage-images",
+    "description": "Manage local virtual machine and container images",
+    "message": "Authentication is required to manage local virtual machine and container images.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.manage-machines",
+    "description": "Manage local virtual machines and containers",
+    "message": "Authentication is required to manage local virtual machines and containers.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.open-pty",
+    "description": "Acquire a pseudo TTY in a local container",
+    "message": "Authentication is required to acquire a pseudo TTY in a local container.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.register-machine",
+    "description": "Register a local virtual machine or container",
+    "message": "Authentication is required to register a local virtual machine or container.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.machine1.shell",
+    "description": "Acquire a shell in a local container",
+    "message": "Authentication is required to acquire a shell in a local container.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.forcerenew",
+    "description": "DHCP server sends force renew message",
+    "message": "Authentication is required to send a force renew message from the DHCP server.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.manage-links",
+    "description": "Manage network links",
+    "message": "Authentication is required to manage network links.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.reconfigure",
+    "description": "Reconfigure network interface",
+    "message": "Authentication is required to reconfigure network interface.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.reload",
+    "description": "Reload network settings",
+    "message": "Authentication is required to reload network settings.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.renew",
+    "description": "Renew dynamic addresses",
+    "message": "Authentication is required to renew dynamic addresses.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.revert-dns",
+    "description": "Revert DNS settings",
+    "message": "Authentication is required to reset DNS settings.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.revert-ntp",
+    "description": "Revert NTP settings",
+    "message": "Authentication is required to reset NTP settings.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-default-route",
+    "description": "Set default route",
+    "message": "Authentication is required to set default route.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-dns-over-tls",
+    "description": "Enable/disable DNS over TLS",
+    "message": "Authentication is required to enable or disable DNS over TLS.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-dns-servers",
+    "description": "Set DNS servers",
+    "message": "Authentication is required to set DNS servers.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-dnssec",
+    "description": "Enable/disable DNSSEC",
+    "message": "Authentication is required to enable or disable DNSSEC.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-dnssec-negative-trust-anchors",
+    "description": "Set DNSSEC Negative Trust Anchors",
+    "message": "Authentication is required to set DNSSEC Negative Trust Anchors.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-domains",
+    "description": "Set domains",
+    "message": "Authentication is required to set domains.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-llmnr",
+    "description": "Enable/disable LLMNR",
+    "message": "Authentication is required to enable or disable LLMNR.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-mdns",
+    "description": "Enable/disable multicast DNS",
+    "message": "Authentication is required to enable or disable multicast DNS.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-ntp-servers",
+    "description": "Set NTP servers",
+    "message": "Authentication is required to set NTP servers.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.network1.set-persistent-storage",
+    "description": "Specify whether persistent storage for systemd-networkd is available",
+    "message": "Authentication is required to specify whether persistent storage for systemd-networkd is available.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.cancel-foreign",
+    "description": "Cancel foreign task",
+    "message": "Authentication is required to cancel a task that was not started by yourself",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.clear-offline-update",
+    "description": "Clear offline update message",
+    "message": "Authentication is required to clear the offline updates message",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.package-downgrade",
+    "description": "Install older version of installed package",
+    "message": "Authentication is required to downgrade software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.package-eula-accept",
+    "description": "Accept EULA",
+    "message": "Authentication is required to accept a EULA",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.package-install",
+    "description": "Install signed package",
+    "message": "Authentication is required to install software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.package-install-untrusted",
+    "description": "Install untrusted local file",
+    "message": "Authentication is required to install untrusted software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.package-reinstall",
+    "description": "Install already installed package again",
+    "message": "Authentication is required to reinstall software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.package-remove",
+    "description": "Remove package",
+    "message": "Authentication is required to remove software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.repair-system",
+    "description": "Repair System",
+    "message": "Authentication is required to repair the installed software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.system-network-proxy-configure",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.system-sources-configure",
+    "description": "Change software repository parameters",
+    "message": "Authentication is required to change software repository parameters",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.system-sources-refresh",
+    "description": "Refresh system repositories",
+    "message": "Authentication is required to refresh the system repositories",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.system-trust-signing-key",
+    "description": "Trust a key used for signing software",
+    "message": "Authentication is required to consider a key used for signing software as trusted",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.system-update",
+    "description": "Update software",
+    "message": "Authentication is required to update software",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.trigger-offline-update",
+    "description": "Trigger offline updates",
+    "message": "Authentication is required to trigger offline updates",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.trigger-offline-upgrade",
+    "description": "Trigger offline updates",
+    "message": "Authentication is required to trigger offline updates",
+    "vendor": "The PackageKit Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.packagekit.upgrade-system",
+    "description": "Upgrade System",
+    "message": "Authentication is required to upgrade the operating system",
+    "vendor": "The PackageKit Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.policykit.example.pkexec.run-frobnicate",
+    "description": "Run the polkit example program Frobnicate",
+    "message": "Authentication is required to run the polkit example program Frobnicate (user=$(user), user.gecos=$(user.gecos), user.display=$(user.display), program=$(program), command_line=$(command_line))",
+    "vendor": "Examples for the polkit project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.policykit.exec",
+    "description": "Run a program as another user",
+    "message": "Authentication is required to run a program as another user",
+    "vendor": "The polkit project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.policykit.pkexec.nomachine",
+    "message": "Authentication is required to run the NoMachine",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.portable1.attach-images",
+    "description": "Attach or detach a portable service image",
+    "message": "Authentication is required to attach or detach a portable service image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.portable1.inspect-images",
+    "description": "Inspect a portable service image",
+    "message": "Authentication is required to inspect a portable service image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.portable1.manage-images",
+    "description": "Delete or modify portable service image",
+    "message": "Authentication is required to delete or modify a portable service image.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.dump-cache",
+    "description": "Dump cache",
+    "message": "Authentication is required to dump cache.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.dump-server-state",
+    "description": "Dump server state",
+    "message": "Authentication is required to dump server state.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.dump-statistics",
+    "description": "Dump statistics",
+    "message": "Authentication is required to dump statistics.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.register-service",
+    "description": "Register a DNS-SD service",
+    "message": "Authentication is required to register a DNS-SD service.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.reset-statistics",
+    "description": "Reset statistics",
+    "message": "Authentication is required to reset statistics.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.revert",
+    "description": "Revert name resolution settings",
+    "message": "Authentication is required to reset name resolution settings.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-default-route",
+    "description": "Set default route",
+    "message": "Authentication is required to set default route.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-dns-over-tls",
+    "description": "Enable/disable DNS over TLS",
+    "message": "Authentication is required to enable or disable DNS over TLS.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-dns-servers",
+    "description": "Set DNS servers",
+    "message": "Authentication is required to set DNS servers.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-dnssec",
+    "description": "Enable/disable DNSSEC",
+    "message": "Authentication is required to enable or disable DNSSEC.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-dnssec-negative-trust-anchors",
+    "description": "Set DNSSEC Negative Trust Anchors",
+    "message": "Authentication is required to set DNSSEC Negative Trust Anchors.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-domains",
+    "description": "Set domains",
+    "message": "Authentication is required to set domains.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-llmnr",
+    "description": "Enable/disable LLMNR",
+    "message": "Authentication is required to enable or disable LLMNR.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.set-mdns",
+    "description": "Enable/disable multicast DNS",
+    "message": "Authentication is required to enable or disable multicast DNS.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.subscribe-dns-configuration",
+    "description": "Subscribe to DNS configuration",
+    "message": "Authentication is required to subscribe to DNS configuration.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.subscribe-query-results",
+    "description": "Subscribe query results",
+    "message": "Authentication is required to subscribe query results.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.resolve1.unregister-service",
+    "description": "Unregister a DNS-SD service",
+    "message": "Authentication is required to unregister a DNS-SD service.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.systemd1.bypass-dump-ratelimit",
+    "description": "Dump the systemd state without rate limits",
+    "message": "Authentication is required to dump the systemd state without rate limits.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.systemd1.manage-unit-files",
+    "description": "Manage system service or unit files",
+    "message": "Authentication is required to manage system service or unit files.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.systemd1.manage-units",
+    "description": "Manage system services or other units",
+    "message": "Authentication is required to manage system services or other units.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.systemd1.reload-daemon",
+    "description": "Reload the systemd state",
+    "message": "Authentication is required to reload the systemd state.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.systemd1.reply-password",
+    "description": "Send passphrase back to system",
+    "message": "Authentication is required to send the entered passphrase back to the system.",
+    "vendor": "The systemd Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.systemd1.set-environment",
+    "description": "Set or unset system and service manager environment variables",
+    "message": "Authentication is required to set or unset system and service manager environment variables.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.sysupdate1.check",
+    "description": "Check for system updates",
+    "message": "Authentication is required to check for system updates.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.sysupdate1.manage-features",
+    "description": "Manage optional features",
+    "message": "Authentication is required to manage optional features.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.sysupdate1.update",
+    "description": "Install system updates",
+    "message": "Authentication is required to install system updates.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.sysupdate1.update-to-version",
+    "description": "Install specific system version",
+    "message": "Authentication is required to update the system to a specific (possibly old) version.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.sysupdate1.vacuum",
+    "description": "Cleanup old system updates",
+    "message": "Authentication is required to cleanup old system updates.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.timedate1.set-local-rtc",
+    "description": "Set RTC to local timezone or UTC",
+    "message": "Authentication is required to control whether the RTC stores the local or UTC time.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.timedate1.set-ntp",
+    "description": "Turn network time synchronization on or off",
+    "message": "Authentication is required to control whether network time synchronization shall be enabled.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.timedate1.set-time",
+    "description": "Set system time",
+    "message": "Authentication is required to set the system time.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.timedate1.set-timezone",
+    "description": "Set system timezone",
+    "message": "Authentication is required to set the system timezone.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.timesync1.set-runtime-servers",
+    "description": "Set runtime NTP servers",
+    "message": "Authentication is required to set runtime NTP servers.",
+    "vendor": "The systemd Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-check-power",
+    "description": "Check power state",
+    "message": "Authentication is required to check the power state",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-secure-erase",
+    "description": "Securely erase a hard disk",
+    "message": "Authentication is required to securely erase a hard disk",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-smart-enable-disable",
+    "description": "Enable/Disable SMART",
+    "message": "Authentication is required to enable/disable SMART",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-smart-selftest",
+    "description": "Run SMART self-test",
+    "message": "Authentication is required to run a SMART self-test",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-smart-simulate",
+    "description": "Set SMART data from blob",
+    "message": "Authentication is required to set SMART data from blob",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-smart-update",
+    "description": "Update SMART data",
+    "message": "Authentication is required to update SMART data",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-standby",
+    "description": "Send standby command",
+    "message": "Authentication is required to put a drive into standby mode",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-standby-other-seat",
+    "description": "Send standby command to drive on other seat",
+    "message": "Authentication is required to put a drive into standby mode",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.ata-standby-system",
+    "description": "Send standby command to a system drive",
+    "message": "Authentication is required to put a drive into standby mode",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.cancel-job",
+    "description": "Cancel job",
+    "message": "Authentication is required to cancel a job",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.cancel-job-other-user",
+    "description": "Cancel job started by another user",
+    "message": "Authentication is required to cancel a job started by another user",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.eject-media",
+    "description": "Eject media",
+    "message": "Authentication is required to eject media",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.eject-media-other-seat",
+    "description": "Eject media from a drive attached to another seat",
+    "message": "Authentication is required to eject media from a drive plugged into another seat",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.eject-media-system",
+    "description": "Eject media from a system drive",
+    "message": "Authentication is required to eject media",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-change-passphrase",
+    "description": "Change passphrase for an encrypted device",
+    "message": "Authentication is required to change the passphrase for an encrypted device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-change-passphrase-system",
+    "description": "Change passphrase for an encrypted device",
+    "message": "Authentication is required to change the passphrase for an encrypted device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-lock-others",
+    "description": "Lock an encrypted device unlocked by another user",
+    "message": "Authentication is required to lock an encrypted device unlocked by another user",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-unlock",
+    "description": "Unlock an encrypted device",
+    "message": "Authentication is required to unlock an encrypted device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-unlock-crypttab",
+    "description": "Unlock an encrypted device specified in the crypttab file with the x-udisks-auth option",
+    "message": "Authentication is required to unlock an encrypted device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-unlock-other-seat",
+    "description": "Unlock an encrypted device plugged into another seat",
+    "message": "Authentication is required to unlock an encrypted device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.encrypted-unlock-system",
+    "description": "Unlock an encrypted system device",
+    "message": "Authentication is required to unlock an encrypted device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-fstab",
+    "description": "Mount/unmount filesystems defined in the fstab file with the x-udisks-auth option",
+    "message": "Authentication is required to mount/unmount the filesystem",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-mount",
+    "description": "Mount a filesystem",
+    "message": "Authentication is required to mount the filesystem",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-mount-other-seat",
+    "description": "Mount a filesystem from a device plugged into another seat",
+    "message": "Authentication is required to mount the filesystem",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-mount-other-user",
+    "description": "Mount a filesystem on behalf of another user",
+    "message": "Authentication is required to mount the filesystem",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-mount-system",
+    "description": "Mount a filesystem on a system device",
+    "message": "Authentication is required to mount the filesystem",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-take-ownership",
+    "description": "Take ownership of a filesystem",
+    "message": "Authentication is required to take ownership of a filesystem.",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.filesystem-unmount-others",
+    "description": "Unmount a device mounted by another user",
+    "message": "Authentication is required to unmount a filesystem mounted by another user",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.loop-delete-others",
+    "description": "Delete loop devices",
+    "message": "Authentication is required to delete a loop device set up by another user",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.loop-modify-others",
+    "description": "Modify loop devices",
+    "message": "Authentication is required to modify a loop device set up by another user",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.loop-setup",
+    "description": "Manage loop devices",
+    "message": "Authentication is required to set up a loop device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.manage-md-raid",
+    "description": "Manage RAID arrays",
+    "message": "Authentication is required to manage RAID arrays",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.manage-swapspace",
+    "description": "Manage swapspace",
+    "message": "Authentication is required to manage swapspace",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.modify-device",
+    "description": "Modify a device",
+    "message": "Authentication is required to modify a device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.modify-device-other-seat",
+    "description": "Modify a device",
+    "message": "Authentication is required to modify a device plugged into another seat",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.modify-device-system",
+    "description": "Modify a system device",
+    "message": "Authentication is required to modify a device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.modify-drive-settings",
+    "description": "Modify drive settings",
+    "message": "Authentication is required to modify drive settings",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.modify-system-configuration",
+    "description": "Modify system-wide configuration",
+    "message": "Authentication is required to modify system-wide configuration",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-connect",
+    "description": "NVMeoF connection",
+    "message": "Authentication is required to connect to an NVMe over Fabrics controller",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-disconnect",
+    "description": "Disconnect a NVMeoF controller",
+    "message": "Authentication is required to disconnect a NVMe over Fabrics controller",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-format-namespace",
+    "description": "Format a namespace",
+    "message": "Authentication is required to format a namespace",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-sanitize",
+    "description": "Start the sanitize operation",
+    "message": "Authentication is required to perform a sanitize operation",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-set-hostnqn-id",
+    "description": "Set a NVMe Host NQN/ID",
+    "message": "Authentication is required to set NVMe Host NQN or Host ID",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-smart-selftest",
+    "description": "Run device self-test",
+    "message": "Authentication is required to run a device self-test",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.nvme-smart-update",
+    "description": "Update SMART data",
+    "message": "Authentication is required to update SMART data",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.open-device",
+    "description": "Open a device",
+    "message": "Authentication is required to open a device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.open-device-system",
+    "description": "Open a system device",
+    "message": "Authentication is required to open a device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.power-off-drive",
+    "description": "Power off drive",
+    "message": "Authentication is required to power off a drive",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.power-off-drive-other-seat",
+    "description": "Power off a drive attached to another seat",
+    "message": "Authentication is required to power off a drive plugged into another seat",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.power-off-drive-system",
+    "description": "Power off a system drive",
+    "message": "Authentication is required to power off a drive",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.read-system-configuration-secrets",
+    "description": "Modify system-wide configuration",
+    "message": "Authentication is required to retrieve secrets from system-wide configuration",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.freedesktop.udisks2.rescan",
+    "description": "Rescan a device",
+    "message": "Authentication is required to rescan a device",
+    "vendor": "The Udisks Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.gnome.gparted",
+    "description": "Run GParted as root",
+    "message": "Authentication is required to run the GParted Partition Editor as root",
+    "vendor": "The GParted Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.gtk.vfs.file-operations",
+    "description": "Perform file operations",
+    "message": "Authentication is required to perform file operations",
+    "vendor": "GVfs",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.gtk.vfs.file-operations-helper",
+    "description": "Perform file operations",
+    "message": "Authentication is required to run gvfsd-admin daemon",
+    "vendor": "GVfs",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.filesharing.samba.addtogroup",
+    "description": "Add User to Samba's Usershare Group",
+    "message": "Adding user to Samba's usershare group to edit Samba usershares",
+    "vendor": "KIO Samba Sharing",
+    "default_any": "no",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.filesharing.samba.createuser",
+    "description": "Setting Password For Samba User",
+    "message": "Setting password for Samba user",
+    "vendor": "KIO Samba Sharing",
+    "default_any": "no",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.filesharing.samba.isuserknown",
+    "description": "Is Samba User Known",
+    "message": "Checking if Samba user exists",
+    "vendor": "KIO Samba Sharing",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.fontinst.manage",
+    "description": "Manage system-wide fonts.",
+    "message": "Modifying the system-wide font configuration requires privileges.",
+    "vendor": "Font Installer",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.kalarm.rtcwake.settimer",
+    "description": "Set RTC wakeup time",
+    "message": "Set RTC wake-from-suspend time",
+    "vendor": "KAlarm",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.kameleonhelper.writecolor",
+    "description": "Write color",
+    "message": "Allow writing accent color to device LEDs",
+    "vendor": "Kameleon",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmclock.save",
+    "description": "Save the date/time settings",
+    "message": "Authenticate to change the date or time settings.",
+    "vendor": "Date and Time Control Module",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmkwallet5.save",
+    "description": "Save wallet configuration",
+    "message": "Allow saving wallet configuration settings",
+    "vendor": "KDE Wallet system",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_self_keep"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsddm.installtheme",
+    "description": "Install an SDDM theme",
+    "message": "Extract a zip file containing an SDDM theme to the SDDM theme location",
+    "vendor": "SDDM",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsddm.reset",
+    "description": "Reset Settings",
+    "message": "Reset SDDM settings to factory default state",
+    "vendor": "SDDM",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsddm.save",
+    "description": "Save Settings",
+    "message": "Save Settings in SDDM",
+    "vendor": "SDDM",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsddm.sync",
+    "description": "Synchronize Settings",
+    "message": "Synchronize user settings with SDDM settings",
+    "vendor": "SDDM",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsddm.uninstalltheme",
+    "description": "Uninstall an SDDM theme",
+    "message": "Remove a previously installed SDDM theme",
+    "vendor": "SDDM",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsystemd.dbusaction",
+    "description": "Manipulate systemd over D-Bus",
+    "message": "Administrator authorization is required to manipulate systemd",
+    "vendor": "Systemd KDE control module",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsystemd.save",
+    "description": "Save the systemd configuration files",
+    "message": "Administrator authorization is required to save the systemd configuration files",
+    "vendor": "Systemd KDE control module",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.kcontrol.kcmsystemd.saveunitfile",
+    "description": "Save a systemd unit file",
+    "message": "Administrator authorization is required to save the systemd unit file",
+    "vendor": "Systemd KDE control module",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.kinfocenter.dmidecode.memoryinformation",
+    "description": "Memory Information",
+    "message": "Read memory information from system's Desktop Management Interface (DMI)",
+    "vendor": "Desktop Management Interface",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.kinfocenter.dmidecode.systeminformation",
+    "description": "System Information",
+    "message": "Read system information from system's Desktop Management Interface (DMI)",
+    "vendor": "Desktop Management Interface",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.kio.admin.commands",
+    "description": "Manage files as administrator",
+    "message": "Manage files as administrator",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.kpmcore.externalcommand.init",
+    "description": "Run privileged partition manager helper",
+    "message": "Authenticate to manage disks.",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.ksysguard.processlisthelper.changecpuscheduler",
+    "description": "Change CPU Scheduler and priority",
+    "message": "Change which CPU scheduler is to schedule the running of a given process",
+    "vendor": "KSysGuard",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.ksysguard.processlisthelper.changeioscheduler",
+    "description": "Change IO Scheduler and priority",
+    "message": "Change how the read and writes of a given process are prioritized",
+    "vendor": "KSysGuard",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.ksysguard.processlisthelper.renice",
+    "description": "Change the priority of a process",
+    "message": "Change the niceness of a given process",
+    "vendor": "KSysGuard",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.ksysguard.processlisthelper.sendsignal",
+    "description": "Kill or stop etc a process",
+    "message": "Sends a given signal to a given process",
+    "vendor": "KSysGuard",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.ktexteditor.katetextbuffer.savefile",
+    "description": "Save Document",
+    "message": "Root privileges are needed to save this document",
+    "vendor": "Document Actions",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.ktexteditor6.katetextbuffer.savefile",
+    "description": "Save Document",
+    "message": "Root privileges are needed to save this document",
+    "vendor": "Document Actions",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin"
+  },
+  {
+    "action_id": "org.kde.powerdevil.backlighthelper.brightness",
+    "description": "Get brightness",
+    "message": "Authenticate to see the brightness level.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.backlighthelper.brightnessmax",
+    "description": "Get maximum brightness value",
+    "message": "Authenticate to see the maximum brightness level.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.backlighthelper.setbrightness",
+    "description": "Set brightness",
+    "message": "Authenticate to set the brightness level.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.backlighthelper.syspath",
+    "description": "Get syspath",
+    "message": "Authenticate to see the syspath.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.chargethresholdhelper.getconservationmode",
+    "description": "Check battery conservation mode",
+    "message": "Authenticate to check the current state of battery conservation mode.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.chargethresholdhelper.getthreshold",
+    "description": "Get current battery charge limit",
+    "message": "Authenticate to see the current battery charge limit.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.chargethresholdhelper.setconservationmode",
+    "description": "Set battery conservation mode",
+    "message": "Authenticate to set the battery conservation mode.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.powerdevil.chargethresholdhelper.setthreshold",
+    "description": "Set battery charge limit",
+    "message": "Authenticate to set the battery charge limit.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.kde.powerdevil.discretegpuhelper.hasdualgpu",
+    "description": "Check for existence of discrete GPU",
+    "message": "Authenticate to check for the existence of a discrete GPU.",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.powerdevil.wakeupsourcehelper.setwakeupcount",
+    "description": "Set the wakeup count",
+    "message": "This allows to read wakeup count on next wakeup to identify wakeup source",
+    "vendor": "KDE",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.detect-storage-pools",
+    "description": "Detect storage pools",
+    "message": "Detecting storage pools requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.getattr",
+    "description": "Access connection",
+    "message": "Accessing the connection requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.interface-transaction",
+    "description": "Interface transactions",
+    "message": "Using interface transactions requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.pm-control",
+    "description": "Use host power management",
+    "message": "Using host power management requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.read",
+    "description": "Read host",
+    "message": "Reading the host configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-domains",
+    "description": "List domains",
+    "message": "Listing domains or using domain events requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-interfaces",
+    "description": "List interfaces",
+    "message": "Listing interfaces requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-networks",
+    "description": "List networks",
+    "message": "Listing networks or using network events requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-node-devices",
+    "description": "List node devices",
+    "message": "Listing node devices requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-nwfilter-bindings",
+    "description": "List network filter bindings",
+    "message": "Listing network filter bindings requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-nwfilters",
+    "description": "List network filters",
+    "message": "Listing network filters requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-secrets",
+    "description": "List secrets",
+    "message": "Listing secrets requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.search-storage-pools",
+    "description": "List storage pools",
+    "message": "Listing storage pools requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.connect.write",
+    "description": "Write host",
+    "message": "Writing the host configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.block-read",
+    "description": "Read domain block",
+    "message": "Reading domain block devices requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.block-write",
+    "description": "Write domain block",
+    "message": "Writing domain block devices requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.checkpoint",
+    "description": "Checkpoint domain",
+    "message": "Checkpointing domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.core-dump",
+    "description": "Dump domain",
+    "message": "Dumping domain corefile requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.delete",
+    "description": "Delete domain",
+    "message": "Deleting domain configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.fs-freeze",
+    "description": "Freeze and thaw domain filesystems",
+    "message": "Freezing and thawing domain filesystems requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.fs-trim",
+    "description": "Trim domain filesystems",
+    "message": "Trimming domain filesystems requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.getattr",
+    "description": "Access domain",
+    "message": "Accessing the domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.hibernate",
+    "description": "Hibernate domain",
+    "message": "Saving domain state requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.init-control",
+    "description": "Domain init control",
+    "message": "Controlling domain init process requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.inject-nmi",
+    "description": "Inject domain NMI",
+    "message": "Injecting interrupt requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.mem-read",
+    "description": "Read domain memory",
+    "message": "Reading domain memory requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.migrate",
+    "description": "Migrate domain",
+    "message": "Migrating domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.open-device",
+    "description": "Open domain device",
+    "message": "Opening domain devices requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.open-graphics",
+    "description": "Open domain graphics",
+    "message": "Opening domain graphics console requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.open-namespace",
+    "description": "Open domain namespace",
+    "message": "Opening domain namespaces requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.pm-control",
+    "description": "Use domain power management",
+    "message": "Using domain power management requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.read",
+    "description": "Read domain",
+    "message": "Reading domain configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.read-secure",
+    "description": "Read secure domain",
+    "message": "Reading secure domain configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.reset",
+    "description": "Reset domain",
+    "message": "Resetting the domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.save",
+    "description": "Save domain",
+    "message": "Saving domain configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.screenshot",
+    "description": "Take domain screenshot",
+    "message": "Taking domain screenshots requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.send-input",
+    "description": "Send domain input",
+    "message": "Sending input events to domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.send-signal",
+    "description": "Send domain signal",
+    "message": "Sending signals to processes in domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.set-password",
+    "description": "Set password of the domain's account",
+    "message": "Setting the domain accounts' password requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.set-time",
+    "description": "Write domain time",
+    "message": "Setting the domain time requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.snapshot",
+    "description": "Snapshot domain",
+    "message": "Snapshotting domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.start",
+    "description": "Start domain",
+    "message": "Starting the domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.stop",
+    "description": "Stop domain",
+    "message": "Stopping the domain requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.suspend",
+    "description": "Suspend domain",
+    "message": "Suspending domain CPUs requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.domain.write",
+    "description": "Write domain",
+    "message": "Writing domain configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.delete",
+    "description": "Delete interface",
+    "message": "Deleting interface configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.getattr",
+    "description": "Access interface",
+    "message": "Accessing interface requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.read",
+    "description": "Read interface",
+    "message": "Reading interface configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.save",
+    "description": "Save interface",
+    "message": "Saving interface configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.start",
+    "description": "Start interface",
+    "message": "Starting interface requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.stop",
+    "description": "Stop interface",
+    "message": "Stopping interface requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.interface.write",
+    "description": "Write interface",
+    "message": "Writing interface configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network-port.create",
+    "description": "Create network port",
+    "message": "Creating network port configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network-port.delete",
+    "description": "Delete network port",
+    "message": "Deleting network port configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network-port.getattr",
+    "description": "Access network port",
+    "message": "Accessing network port requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.network-port.read",
+    "description": "Read network port",
+    "message": "Reading network port configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.network-port.write",
+    "description": "Read network port",
+    "message": "Writing network port configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network.delete",
+    "description": "Delete network",
+    "message": "Deleting network configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network.getattr",
+    "description": "Access network",
+    "message": "Accessing network requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.network.read",
+    "description": "Read network",
+    "message": "Reading network configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.network.save",
+    "description": "Save network",
+    "message": "Saving network configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network.search-ports",
+    "description": "List network ports",
+    "message": "Listing network ports requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network.start",
+    "description": "Start network",
+    "message": "Starting network requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network.stop",
+    "description": "Stop network",
+    "message": "Stopping network requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.network.write",
+    "description": "Write network",
+    "message": "Writing network configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.delete",
+    "description": "Delete node device",
+    "message": "Deleting node device driver requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.detach",
+    "description": "Detach node device",
+    "message": "Detaching node device driver requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.getattr",
+    "description": "Access node device",
+    "message": "Accessing node device requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.read",
+    "description": "Read node device",
+    "message": "Reading node device configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.save",
+    "description": "Save node device",
+    "message": "Saving node device driver requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.start",
+    "description": "Start node device",
+    "message": "Starting node device requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.stop",
+    "description": "Stop node device",
+    "message": "Stopping node device requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.node-device.write",
+    "description": "Write node device",
+    "message": "Writing node device configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter-binding.create",
+    "description": "Create network filter binding",
+    "message": "Creating network filter binding requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter-binding.delete",
+    "description": "Delete network filter binding",
+    "message": "Deleting network filter binding requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter-binding.getattr",
+    "description": "Access network filter",
+    "message": "Accessing network filter requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter-binding.read",
+    "description": "Read network filter binding",
+    "message": "Reading network filter configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter.delete",
+    "description": "Delete network filter",
+    "message": "Deleting network filter configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter.getattr",
+    "description": "Access network filter",
+    "message": "Accessing network filter requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter.read",
+    "description": "Read network filter",
+    "message": "Reading network filter configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter.save",
+    "description": "Save network filter",
+    "message": "Saving network filter configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.nwfilter.write",
+    "description": "Write network filter",
+    "message": "Writing network filter configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.secret.delete",
+    "description": "Delete secret",
+    "message": "Deleting secret configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.secret.getattr",
+    "description": "Access secret",
+    "message": "Accessing secret requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.secret.read",
+    "description": "Read secret",
+    "message": "Reading secret configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.secret.read-secure",
+    "description": "Read secure secret",
+    "message": "Reading secure secret configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.secret.save",
+    "description": "Save secret",
+    "message": "Saving secret configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.secret.write",
+    "description": "Write secret",
+    "message": "Writing secret configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.delete",
+    "description": "Delete storage pool",
+    "message": "Deleting storage pool configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.format",
+    "description": "Format storage pool",
+    "message": "Formatting storage pool data requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.getattr",
+    "description": "Access storage pool",
+    "message": "Accessing storage pool requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.read",
+    "description": "Read storage pool",
+    "message": "Reading storage pool configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.refresh",
+    "description": "Refresh storage pool",
+    "message": "Refreshing storage pool volumes requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.save",
+    "description": "Save storage pool",
+    "message": "Saving storage pool configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.search-storage-vols",
+    "description": "List storage pool volumes",
+    "message": "Listing storage pool volumes requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.start",
+    "description": "Start storage pool",
+    "message": "Starting storage pool configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.stop",
+    "description": "Stop storage pool",
+    "message": "Stopping storage pool configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-pool.write",
+    "description": "Write storage pool",
+    "message": "Writing storage pool configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.create",
+    "description": "Create storage volume",
+    "message": "Creating storage volume requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.data-read",
+    "description": "Read storage volume data",
+    "message": "Reading storage volume data requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.data-write",
+    "description": "Write storage volume data",
+    "message": "Writing storage volume data requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.delete",
+    "description": "Delete storage volume",
+    "message": "Deleting storage volume requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.format",
+    "description": "Format storage volume",
+    "message": "Formatting storage volume data requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.getattr",
+    "description": "Access storage volume",
+    "message": "Accessing storage volume requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.read",
+    "description": "Read storage volume",
+    "message": "Reading storage volume configuration requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.libvirt.api.storage-vol.resize",
+    "description": "Resize storage volume",
+    "message": "Resizing  storage volume requires authorization",
+    "vendor": "Libvirt Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "no"
+  },
+  {
+    "action_id": "org.libvirt.unix.manage",
+    "description": "Manage local virtualized systems",
+    "message": "System policy prevents management of local virtualized systems",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.libvirt.unix.monitor",
+    "description": "Monitor local virtualized systems",
+    "message": "System policy prevents monitoring of local virtualized systems",
+    "default_any": "yes",
+    "default_inactive": "yes",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.manjaro.msm.kernel.install",
+    "description": "Install Kernel",
+    "message": "Install Kernel",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.kernel.remove",
+    "description": "Remove Kernel",
+    "message": "Remove Kernel",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.keyboard.save",
+    "description": "Save Keyboard Settings",
+    "message": "Save Keyboard Settings",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.languagepackages.install",
+    "description": "Install Language Packages",
+    "message": "Install Language Packages",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.languagepackages.remove",
+    "description": "Remove Language Packages",
+    "message": "Remove Language Packages",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.locale.save",
+    "description": "Save Locale Settings",
+    "message": "Save Locale Settings",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.mhwd.install",
+    "description": "Install MHWD Configuration",
+    "message": "Install MHWD Configuration",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.mhwd.remove",
+    "description": "Remove MHWD Configuration",
+    "message": "Remove MHWD Configuration",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.users.add",
+    "description": "Add User",
+    "message": "Add User",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.users.changeaccounttype",
+    "description": "Change Account Type",
+    "message": "Change Account Type",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.users.changeimage",
+    "description": "Change Image",
+    "message": "Change Image",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.users.changepassword",
+    "description": "Change Password",
+    "message": "Change Password",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.msm.users.remove",
+    "description": "Remove User",
+    "message": "Remove User",
+    "vendor": "manjaro-settings-manager",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.manjaro.pamac.commit",
+    "description": "Install, update, or remove packages",
+    "message": "Authentication is required to install, update, or remove packages",
+    "vendor": "Manjaro",
+    "default_any": "auth_admin_keep",
+    "default_inactive": "auth_admin_keep",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.all-edit",
+    "description": "Change printer settings",
+    "message": "Privileges are required to change printer settings. This should only be needed from the Printers system settings panel.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.class-edit",
+    "description": "Add/Remove/Edit a class",
+    "message": "Privileges are required to add/remove/edit a class.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.devices-get",
+    "description": "Get list of available devices",
+    "message": "Privileges are required to get list of available devices.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.job-edit",
+    "description": "Restart/Cancel/Edit a job",
+    "message": "Privileges are required to restart/cancel/edit a job.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.job-not-owned-edit",
+    "description": "Restart/Cancel/Edit a job owned by another user",
+    "message": "Privileges are required to restart/cancel/edit a job owned by another user.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.printer-enable",
+    "description": "Enable/Disable a printer",
+    "message": "Privileges are required to enable/disable a printer, or a class.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.printer-local-edit",
+    "description": "Add/Remove/Edit a local printer",
+    "message": "Privileges are required to add/remove/edit a local printer.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.printer-remote-edit",
+    "description": "Add/Remove/Edit a remote printer",
+    "message": "Privileges are required to add/remove/edit a remote printer.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.printer-set-default",
+    "description": "Set a printer as default printer",
+    "message": "Privileges are required to set a printer, or a class, as default printer.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.printeraddremove",
+    "description": "Add/Remove/Edit a printer",
+    "message": "Privileges are required to add/remove/edit a printer.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.opensuse.cupspkhelper.mechanism.server-settings",
+    "description": "Get/Set server settings",
+    "message": "Privileges are required to get/set server settings.",
+    "vendor": "The openSUSE Project",
+    "default_any": "auth_admin",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin_keep"
+  },
+  {
+    "action_id": "org.spice-space.lowlevelusbaccess",
+    "description": "Low level USB device access",
+    "message": "Privileges are required for low level USB device access (for usb device pass through).",
+    "vendor": "The Spice Project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  },
+  {
+    "action_id": "org.x.xf86-video-intel.backlight-helper",
+    "description": "Modify lcd panel brightness",
+    "message": "Authentication is required to modify the lcd panel brightness",
+    "vendor": "The X.Org project",
+    "default_any": "no",
+    "default_inactive": "no",
+    "default_active": "yes"
+  }
+]

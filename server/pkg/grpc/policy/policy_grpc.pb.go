@@ -28,6 +28,7 @@ const (
 	PolicyService_ReportTamperEvent_FullMethodName      = "/bor.policy.v1.PolicyService/ReportTamperEvent"
 	PolicyService_RenewCertificate_FullMethodName       = "/bor.policy.v1.PolicyService/RenewCertificate"
 	PolicyService_ReportSchemaCatalogue_FullMethodName  = "/bor.policy.v1.PolicyService/ReportSchemaCatalogue"
+	PolicyService_ReportPolkitCatalogue_FullMethodName  = "/bor.policy.v1.PolicyService/ReportPolkitCatalogue"
 )
 
 // PolicyServiceClient is the client API for PolicyService service.
@@ -55,6 +56,9 @@ type PolicyServiceClient interface {
 	// ReportSchemaCatalogue is called by agents at startup to publish
 	// the GSettings schemas installed on their node.
 	ReportSchemaCatalogue(ctx context.Context, in *ReportSchemaCatalogueRequest, opts ...grpc.CallOption) (*ReportSchemaCatalogueResponse, error)
+	// ReportPolkitCatalogue is called by agents at startup to publish
+	// the polkit actions installed on their node.
+	ReportPolkitCatalogue(ctx context.Context, in *ReportPolkitCatalogueRequest, opts ...grpc.CallOption) (*ReportPolkitCatalogueResponse, error)
 }
 
 type policyServiceClient struct {
@@ -164,6 +168,16 @@ func (c *policyServiceClient) ReportSchemaCatalogue(ctx context.Context, in *Rep
 	return out, nil
 }
 
+func (c *policyServiceClient) ReportPolkitCatalogue(ctx context.Context, in *ReportPolkitCatalogueRequest, opts ...grpc.CallOption) (*ReportPolkitCatalogueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportPolkitCatalogueResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ReportPolkitCatalogue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PolicyServiceServer is the server API for PolicyService service.
 // All implementations must embed UnimplementedPolicyServiceServer
 // for forward compatibility.
@@ -189,6 +203,9 @@ type PolicyServiceServer interface {
 	// ReportSchemaCatalogue is called by agents at startup to publish
 	// the GSettings schemas installed on their node.
 	ReportSchemaCatalogue(context.Context, *ReportSchemaCatalogueRequest) (*ReportSchemaCatalogueResponse, error)
+	// ReportPolkitCatalogue is called by agents at startup to publish
+	// the polkit actions installed on their node.
+	ReportPolkitCatalogue(context.Context, *ReportPolkitCatalogueRequest) (*ReportPolkitCatalogueResponse, error)
 	mustEmbedUnimplementedPolicyServiceServer()
 }
 
@@ -225,6 +242,9 @@ func (UnimplementedPolicyServiceServer) RenewCertificate(context.Context, *Renew
 }
 func (UnimplementedPolicyServiceServer) ReportSchemaCatalogue(context.Context, *ReportSchemaCatalogueRequest) (*ReportSchemaCatalogueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportSchemaCatalogue not implemented")
+}
+func (UnimplementedPolicyServiceServer) ReportPolkitCatalogue(context.Context, *ReportPolkitCatalogueRequest) (*ReportPolkitCatalogueResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportPolkitCatalogue not implemented")
 }
 func (UnimplementedPolicyServiceServer) mustEmbedUnimplementedPolicyServiceServer() {}
 func (UnimplementedPolicyServiceServer) testEmbeddedByValue()                       {}
@@ -402,6 +422,24 @@ func _PolicyService_ReportSchemaCatalogue_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_ReportPolkitCatalogue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportPolkitCatalogueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ReportPolkitCatalogue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ReportPolkitCatalogue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ReportPolkitCatalogue(ctx, req.(*ReportPolkitCatalogueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PolicyService_ServiceDesc is the grpc.ServiceDesc for PolicyService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -440,6 +478,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportSchemaCatalogue",
 			Handler:    _PolicyService_ReportSchemaCatalogue_Handler,
+		},
+		{
+			MethodName: "ReportPolkitCatalogue",
+			Handler:    _PolicyService_ReportPolkitCatalogue_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

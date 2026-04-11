@@ -9,6 +9,7 @@ import "chrome.proto";
 import "dconf.proto";
 import "firefox.proto";
 import "kconfig.proto";
+import "polkit.proto";
 
 // PolicyService manages desktop policies
 service PolicyService {
@@ -40,6 +41,11 @@ service PolicyService {
   // the GSettings schemas installed on their node.
   rpc ReportSchemaCatalogue(ReportSchemaCatalogueRequest)
       returns (ReportSchemaCatalogueResponse);
+
+  // ReportPolkitCatalogue is called by agents at startup to publish
+  // the polkit actions installed on their node.
+  rpc ReportPolkitCatalogue(ReportPolkitCatalogueRequest)
+      returns (ReportPolkitCatalogueResponse);
 }
 
 // Policy represents a desktop policy configuration
@@ -78,6 +84,7 @@ message Policy {
     KConfigPolicy kconfig_policy = 11;
     ChromePolicy  chrome_policy  = 12;
     DConfPolicy   dconf_policy   = 13;
+    PolkitPolicy  polkit_policy  = 15;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

@@ -149,6 +149,8 @@ func main() {
 	auditLogRepo := database.NewAuditLogRepository(db)
 	dconfRepo := database.NewDConfRepository(db)
 	go seedDConfBuiltinSchemas(context.Background(), dconfRepo)
+	polkitRepo := database.NewPolkitRepository(db)
+	go seedPolkitBuiltinActions(context.Background(), polkitRepo)
 	settingsRepo := database.NewSettingsRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
 	mfaRepo := database.NewMFARepository(db)
@@ -243,6 +245,7 @@ func main() {
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
 	dconfHandler := api.NewDConfHandler(dconfRepo)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
+	polkitHandler := api.NewPolkitHandler(polkitRepo)
 
 	// Wire policy and binding change notifications to the hub.
 	// Only agents whose node groups are affected by the change are signalled.
@@ -375,6 +378,9 @@ func main() {
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(api.RequirePermission(az, "compliance", "view")(http.HandlerFunc(complianceHandler.List))))
 
+	// Polkit action catalogue — readable by anyone with policy:view
+	mux.Handle("/api/v1/polkit/actions", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(polkitHandler.ListActions))))
+
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
 
@@ -402,7 +408,7 @@ func main() {
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(map[string]bool{}, revocationRepo)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(map[string]bool{}, revocationRepo)),
 	)
-	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, policyHub))
+	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, polkitRepo, policyHub))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.

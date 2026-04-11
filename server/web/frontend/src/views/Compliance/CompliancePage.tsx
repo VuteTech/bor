@@ -96,10 +96,15 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
     </Thead>
     <Tbody>
       {items.map((item, i) => {
-        const label = summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key;
-        const subtitle = summaryIndex.has(`${item.schema_id}/${item.key}`)
-          ? `${item.schema_id} / ${item.key}`
-          : item.schema_id;
+        const isPolkit = item.schema_id?.startsWith("polkit:");
+        const label = isPolkit
+          ? (item.schema_id.slice("polkit:".length) || item.key)
+          : (summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key);
+        const subtitle = isPolkit
+          ? item.key
+          : summaryIndex.has(`${item.schema_id}/${item.key}`)
+            ? `${item.schema_id} / ${item.key}`
+            : item.schema_id;
         return (
           <Tr key={i}>
             <Td dataLabel="Key">
