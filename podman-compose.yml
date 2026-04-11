@@ -18,6 +18,30 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── syslog-ng ─────────────────────────────────────────────────────────────
+  # Receives Bor audit events over UDP and TCP 514 (RFC 5424).
+  # All messages are printed to stdout (visible with `podman-compose logs -f syslog-ng`)
+  # and written to /var/log/syslog-ng/ inside the container.
+  #
+  # Bor-specific events land in /var/log/syslog-ng/bor.log.
+  # Use: podman exec bor-syslog-ng tail -f /var/log/syslog-ng/bor.log
+  syslog-ng:
+    image: docker.io/linuxserver/syslog-ng:4.10.2
+    container_name: bor-syslog-ng
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - ./dev/syslog-ng/syslog-ng.conf:/config/syslog-ng.conf
+      - ./dev/syslog-ng/logs:/config/logs
+    ports:
+      # Port 514 is privileged; the container runs as UID 1000 and listens on
+      # 5514 internally. Expose on localhost only — dev receiver, not production.
+      - "127.0.0.1:5514:5514/udp"
+      - "127.0.0.1:5514:5514/tcp"
+    restart: unless-stopped
+
   server:
     build:
       context: .
@@ -26,6 +50,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      syslog-ng:
+        condition: service_started
     env_file:
       - path: .env
         required: false
@@ -43,6 +69,15 @@ services:
       # browsers and agents can verify the cert without warnings.
       # Overrides the 'hostnames' list in /etc/bor/server.yaml when set.
       - BOR_HOSTNAMES=localhost,10.28.7.134
+      - BOR_METRICS_ADDR=0.0.0.0:9090
+
+      # ── Audit syslog forwarding ───────────────────────────────────────────
+      # Forward audit events to the local syslog-ng dev receiver.
+      # Use BOR_AUDIT_SYSLOG_FORMAT=ocsf to switch to OCSF JSON format.
+      - BOR_AUDIT_SYSLOG_ENABLED=true
+      - BOR_AUDIT_SYSLOG_NETWORK=udp
+      - BOR_AUDIT_SYSLOG_ADDR=syslog-ng:5514
+      - BOR_AUDIT_SYSLOG_FORMAT=cef
 
       # ── WebAuthn / FIDO2 (optional) ───────────────────────────────────────
       # Enables hardware security keys (YubiKey, FIDO2 tokens) and software
@@ -56,6 +91,7 @@ services:
     ports:
       - "8443:8443"
       - "8444:8444"
+      - "9090:9090"
     volumes:
       - bor_pki:/var/lib/bor/pki:U
     restart: unless-stopped

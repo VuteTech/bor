@@ -102,6 +102,27 @@ func (r *AuditLogRepository) Count(ctx context.Context, req *models.AuditLogList
 
 // buildAuditLogFilter builds WHERE clause and args for audit log queries.
 // Multiple values for Actions or ResourceTypes are OR'd within the field.
+// CountByAction returns the total number of audit log entries grouped by action.
+func (r *AuditLogRepository) CountByAction(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT action, COUNT(*) FROM audit_logs GROUP BY action`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count audit logs by action: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var action string
+		var count int
+		if err := rows.Scan(&action, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan audit log count: %w", err)
+		}
+		counts[action] = count
+	}
+	return counts, rows.Err()
+}
+
 func buildAuditLogFilter(req *models.AuditLogListRequest) (clause string, args []interface{}) {
 	var conditions []string
 	argIdx := 1

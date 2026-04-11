@@ -255,3 +255,24 @@ func (r *PolicyBindingRepository) DeleteByPolicyID(ctx context.Context, policyID
 	}
 	return nil
 }
+
+// CountByState returns the number of policy bindings grouped by state ("enabled"/"disabled").
+func (r *PolicyBindingRepository) CountByState(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT state, COUNT(*) FROM policy_bindings GROUP BY state`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count bindings by state: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan binding count: %w", err)
+		}
+		counts[state] = count
+	}
+	return counts, rows.Err()
+}

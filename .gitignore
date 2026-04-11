@@ -34,6 +34,7 @@ agent/bor-agent
 *.log
 logs/
 tmp/
+dev/syslog-ng/logs/
 
 #AI Tools
 CLAUDE.md

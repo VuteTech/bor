@@ -508,6 +508,38 @@ func (r *NodeRepository) ListExpiringCerts(ctx context.Context, withinDays int) 
 	return nodes, nil
 }
 
+// NodeMetricRow holds the minimal node fields needed for Prometheus metrics.
+type NodeMetricRow struct {
+	Name         string // inventory name — unique within Bor
+	FQDN         string // hostname reported by the agent (may not be unique)
+	CertNotAfter *time.Time
+	LastSeen     *time.Time
+}
+
+// ListForMetrics returns lightweight rows for every node, used only by the
+// Prometheus collector to emit per-node cert-expiry and last-seen gauges.
+// Each row is identified by the Bor inventory name, which is unique.
+func (r *NodeRepository) ListForMetrics(ctx context.Context) ([]NodeMetricRow, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT name, COALESCE(fqdn, ''), cert_not_after, last_seen
+		FROM   nodes
+		ORDER  BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list nodes for metrics: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []NodeMetricRow
+	for rows.Next() {
+		var row NodeMetricRow
+		if err := rows.Scan(&row.Name, &row.FQDN, &row.CertNotAfter, &row.LastSeen); err != nil {
+			return nil, fmt.Errorf("failed to scan node metric row: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // ListGroupIDs returns all group IDs for a given node.
 func (r *NodeRepository) ListGroupIDs(ctx context.Context, nodeID string) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,

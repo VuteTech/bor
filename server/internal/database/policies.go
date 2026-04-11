@@ -196,6 +196,33 @@ func (r *PolicyRepository) SetDeprecation(ctx context.Context, id string, deprec
 	return nil
 }
 
+// PolicyStateTypeCount holds a (state, type, count) aggregate for metrics.
+type PolicyStateTypeCount struct {
+	State string
+	Type  string
+	Count int
+}
+
+// CountByStateAndType returns the number of policies grouped by state and type.
+func (r *PolicyRepository) CountByStateAndType(ctx context.Context) ([]PolicyStateTypeCount, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT status, type, COUNT(*) FROM policies GROUP BY status, type ORDER BY status, type`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count policies by state and type: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []PolicyStateTypeCount
+	for rows.Next() {
+		var c PolicyStateTypeCount
+		if err := rows.Scan(&c.State, &c.Type, &c.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan policy count: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // Delete removes a policy from the database
 func (r *PolicyRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM policies WHERE id = $1`

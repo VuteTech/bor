@@ -199,3 +199,30 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 
 	return nil
 }
+
+// UserSourceEnabledCount holds a (source, enabled, count) aggregate for metrics.
+type UserSourceEnabledCount struct {
+	Source  string
+	Enabled bool
+	Count   int
+}
+
+// CountBySourceAndEnabled returns user counts grouped by source and enabled flag.
+func (r *UserRepository) CountBySourceAndEnabled(ctx context.Context) ([]UserSourceEnabledCount, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT source, enabled, COUNT(*) FROM users GROUP BY source, enabled ORDER BY source, enabled`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count users by source and enabled: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []UserSourceEnabledCount
+	for rows.Next() {
+		var c UserSourceEnabledCount
+		if err := rows.Scan(&c.Source, &c.Enabled, &c.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan user count: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}

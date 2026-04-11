@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.audit.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/audit;audit";
+
+import "google/protobuf/timestamp.proto";
+
+// AuditEvent is the canonical internal representation of every auditable
+// event in Bor. It is produced by all event sources (HTTP middleware, gRPC
+// handlers) and consumed by all sinks (database, CEF syslog, OCSF syslog).
+message AuditEvent {
+  // Unique identifier (UUID). Set by the DatabaseSink on first persistence.
+  string id = 1;
+
+  // When the event occurred (set at the source, not at sink time).
+  google.protobuf.Timestamp occurred_at = 2;
+
+  // Who or what caused the event.
+  Actor actor = 3;
+
+  // Verb: "create" | "update" | "delete" | "tamper_detected"
+  string action = 4;
+
+  // The resource that was acted upon.
+  Resource resource = 5;
+
+  // Whether the operation succeeded or failed.
+  Outcome outcome = 6;
+
+  // Source IP address of the request.
+  string src_ip = 7;
+
+  // Typed payload — one per event class.
+  oneof payload {
+    // REST API state-changing request (POST / PUT / PATCH / DELETE).
+    HttpPayload http_change = 10;
+
+    // File tamper detected and reported by an agent.
+    TamperPayload tamper = 11;
+  }
+}
+
+// Actor describes the entity that caused the event.
+message Actor {
+  // UUID of the user account; empty for agent-originated events.
+  string user_id = 1;
+
+  // Username (human) or node name (agent) that caused the event.
+  string username = 2;
+
+  // UUID of the enrolled node; set only for agent-originated events.
+  string node_id = 3;
+}
+
+// Resource identifies the object that was acted upon.
+message Resource {
+  // Resource type as used in the REST path: "policies", "nodes", "users", etc.
+  string type = 1;
+
+  // UUID or stable identifier of the specific resource instance.
+  string id = 2;
+
+  // Human-readable name captured at event time (may be empty if unavailable).
+  string name = 3;
+}
+
+// Outcome indicates whether the operation succeeded.
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_SUCCESS     = 1;
+  OUTCOME_FAILURE     = 2;
+}
+
+// HttpPayload carries context from a REST API state-changing request.
+message HttpPayload {
+  // HTTP method: POST, PUT, PATCH, or DELETE.
+  string method = 1;
+
+  // Request path, e.g. "/api/v1/policies/all/abc-123".
+  string path = 2;
+
+  // Redacted JSON body. Values for sensitive keys (password, token, secret,
+  // etc.) are already replaced with "[REDACTED]" by the audit middleware.
+  string body_json = 3;
+}
+
+// TamperPayload carries context from an agent-reported file tamper event.
+message TamperPayload {
+  // Absolute path of the file that was modified or deleted.
+  string file_path = 1;
+
+  // Processes that had the file open at detection time (best-effort).
+  repeated TamperProcess processes = 2;
+}
+
+// TamperProcess describes a single process involved in the tamper event.
+message TamperProcess {
+  int32  pid  = 1;
+  string comm = 2;
+  string user = 3;
+}

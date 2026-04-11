@@ -268,3 +268,24 @@ func nullableString(s string) *string {
 	}
 	return &s
 }
+
+// CountComplianceByStatus returns the number of compliance_results rows grouped by status.
+func (r *DConfRepository) CountComplianceByStatus(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM compliance_results GROUP BY status`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count compliance results by status: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan compliance count: %w", err)
+		}
+		counts[status] = count
+	}
+	return counts, rows.Err()
+}

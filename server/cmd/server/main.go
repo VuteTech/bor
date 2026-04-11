@@ -21,11 +21,13 @@ import (
 	"syscall"
 	"time"
 
+	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/api"
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
 	grpcserver "github.com/VuteTech/Bor/server/internal/grpc"
+	"github.com/VuteTech/Bor/server/internal/metrics"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -216,6 +218,35 @@ func main() {
 
 	// Initialize audit service
 	auditSvc := services.NewAuditService(auditLogRepo)
+
+	// Register DatabaseSink so all Emit() calls persist to the DB.
+	dbSink := auditsink.NewDatabaseSink(func(ctx context.Context, entry *auditsink.DBEntry) error {
+		return auditLogRepo.Create(ctx, &models.AuditLog{
+			UserID:       entry.UserID,
+			Username:     entry.Username,
+			Action:       entry.Action,
+			ResourceType: entry.ResourceType,
+			ResourceID:   entry.ResourceID,
+			Details:      entry.Details,
+			IPAddress:    entry.IPAddress,
+		})
+	})
+	auditSvc.AddSink(dbSink)
+
+	// Register SyslogSink if configured.
+	var syslogSink *auditsink.SyslogSink
+	if cfg.Audit.Syslog.Enabled {
+		syslogSink = auditsink.NewSyslogSink(auditsink.SyslogConfig{
+			Enabled:   cfg.Audit.Syslog.Enabled,
+			Network:   cfg.Audit.Syslog.Network,
+			Addr:      cfg.Audit.Syslog.Addr,
+			Format:    auditsink.SyslogFormat(cfg.Audit.Syslog.Format),
+			Facility:  cfg.Audit.Syslog.Facility,
+			TLSCAFile: cfg.Audit.Syslog.TLSCAFile,
+		})
+		auditSvc.AddSink(syslogSink)
+		log.Printf("Audit syslog sink enabled: %s → %s (format=%s)", cfg.Audit.Syslog.Network, cfg.Audit.Syslog.Addr, cfg.Audit.Syslog.Format)
+	}
 
 	// Initialize settings service
 	settingsSvc := services.NewSettingsService(settingsRepo)
@@ -472,6 +503,13 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// ─── Prometheus metrics server (plain HTTP, separate port) ───────────
+	metricsCollector := metrics.NewBorCollector(
+		nodeRepo, policyRepo, policyBindingRepo,
+		auditLogRepo, userRepo, dconfRepo,
+	)
+	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector)
+
 	// Start both servers.
 	go func() {
 		if err := uiServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
@@ -482,6 +520,13 @@ func main() {
 	go func() {
 		if err := agentServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 			log.Fatalf("Agent server error: %v", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("Metrics (Prometheus) listening on http://%s/metrics", cfg.Metrics.ListenAddr)
+		if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
+			log.Printf("Metrics server error: %v", err)
 		}
 	}()
 
@@ -503,6 +548,12 @@ func main() {
 	}
 	if err := agentServer.Shutdown(ctx); err != nil {
 		log.Printf("Agent server shutdown error: %v", err)
+	}
+	if err := metricsServer.Shutdown(ctx); err != nil {
+		log.Printf("Metrics server shutdown error: %v", err)
+	}
+	if syslogSink != nil {
+		syslogSink.Close()
 	}
 
 	log.Println("Server stopped")

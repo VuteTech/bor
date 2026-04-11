@@ -7,12 +7,12 @@ package grpc
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"slices"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -421,39 +421,37 @@ func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamp
 		ipAddr = p.Addr.String()
 	}
 
-	// Build a compact JSON details string.
-	type procEntry struct {
-		PID  int32  `json:"pid"`
-		Comm string `json:"comm"`
-		User string `json:"user"`
-	}
-	procs := make([]procEntry, 0, len(req.GetProcesses()))
+	// Build typed proto processes for the TamperPayload.
+	tamperProcs := make([]*auditpb.TamperProcess, 0, len(req.GetProcesses()))
 	for _, p := range req.GetProcesses() {
-		procs = append(procs, procEntry{PID: p.GetPid(), Comm: p.GetComm(), User: p.GetUser()})
-	}
-	detailsBytes, err := json.Marshal(struct {
-		File      string      `json:"file"`
-		Node      string      `json:"node"`
-		Processes []procEntry `json:"processes,omitempty"`
-	}{
-		File:      req.GetFilePath(),
-		Node:      clientID,
-		Processes: procs,
-	})
-	if err != nil {
-		detailsBytes = fmt.Appendf(nil, `{"file":%q,"node":%q}`, req.GetFilePath(), clientID)
+		tamperProcs = append(tamperProcs, &auditpb.TamperProcess{
+			Pid:  p.GetPid(),
+			Comm: p.GetComm(),
+			User: p.GetUser(),
+		})
 	}
 
-	s.auditSvc.LogEvent(ctx, &models.AuditLog{
-		Username:     clientID,
-		Action:       "tamper_detected",
-		ResourceType: "managed_file",
-		ResourceID:   req.GetFilePath(),
-		Details:      string(detailsBytes),
-		IPAddress:    ipAddr,
-	})
+	event := &auditpb.AuditEvent{
+		OccurredAt: timestamppb.Now(),
+		Actor:      &auditpb.Actor{Username: clientID},
+		Action:     "tamper_detected",
+		Resource: &auditpb.Resource{
+			Type: "managed_file",
+			Id:   req.GetFilePath(),
+		},
+		Outcome: auditpb.Outcome_OUTCOME_SUCCESS,
+		SrcIp:   ipAddr,
+		Payload: &auditpb.AuditEvent_Tamper{
+			Tamper: &auditpb.TamperPayload{
+				FilePath:  req.GetFilePath(),
+				Processes: tamperProcs,
+			},
+		},
+	}
 
-	log.Printf("Tamper event recorded: node=%s file=%s processes=%d", clientID, req.GetFilePath(), len(procs))
+	s.auditSvc.Emit(ctx, event)
+
+	log.Printf("Tamper event recorded: node=%s file=%s processes=%d", clientID, req.GetFilePath(), len(tamperProcs))
 
 	return &pb.ReportTamperEventResponse{Success: true}, nil
 }

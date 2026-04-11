@@ -92,6 +92,9 @@ proto-go:
 	protoc --go_out=server/pkg/grpc/policy --go_opt=paths=source_relative \
 		--go-grpc_out=server/pkg/grpc/policy --go-grpc_opt=paths=source_relative \
 		-I proto/policy proto/policy/*.proto
+	mkdir -p server/pkg/grpc/audit
+	protoc --go_out=server/pkg/grpc/audit --go_opt=paths=source_relative \
+		-I proto/audit proto/audit/audit.proto
 
 proto-ts:
 	@echo "Generating TypeScript protobuf types..."
