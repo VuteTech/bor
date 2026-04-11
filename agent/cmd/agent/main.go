@@ -107,6 +107,24 @@ var dconfSnapshotStaging map[string]dconfCacheEntry
 // Built once at startup by ScanGSettingsSchemas and used for compliance checks.
 var dconfSchemaIndex map[string]struct{}
 
+// polkitCacheEntry holds a Polkit policy alongside its binding priority and name.
+type polkitCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.PolkitPolicy
+}
+
+// polkitCache maps policy ID → Polkit policy + priority for all active Polkit policies.
+var polkitCache = make(map[string]polkitCacheEntry)
+
+// polkitSnapshotStaging accumulates Polkit policies during a SNAPSHOT.
+var polkitSnapshotStaging map[string]polkitCacheEntry
+
+// polkitActionsReported tracks whether the polkit action catalogue has been
+// reported to the server in this agent session.
+var polkitActionsReported bool
+
 // fileWatcher monitors Bor-managed files and restores them when modified externally.
 var fileWatcher *filewatcher.FileWatcher
 
@@ -304,6 +322,24 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			}()
 		}
 
+		// Discover polkit actions and report the catalogue on first connect.
+		// Best-effort: pkaction may not be installed on all nodes.
+		if !polkitActionsReported {
+			go func() {
+				actions, err := policy.DiscoverPolkitActions()
+				if err != nil {
+					log.Printf("polkit: action discovery failed (non-fatal): %v", err)
+					return
+				}
+				if err := client.ReportPolkitCatalogue(ctx, actions); err != nil {
+					log.Printf("polkit: ReportPolkitCatalogue failed (non-fatal): %v", err)
+				} else {
+					log.Printf("polkit: reported %d actions to server", len(actions))
+					polkitActionsReported = true
+				}
+			}()
+		}
+
 		var postInitialSync bool
 		err := client.SubscribePolicyUpdates(ctx, lastRevision,
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
@@ -361,10 +397,13 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				chromeSnapshotStaging = nil
 				dconfCache = make(map[string]dconfCacheEntry)
 				dconfSnapshotStaging = nil
+				polkitCache = make(map[string]polkitCacheEntry)
+				polkitSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
 				syncAllChrome(ctx, client, cfg)
 				syncAllDConf(ctx, client)
+				syncAllPolkit(ctx, client)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -405,6 +444,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				dconfSnapshotStaging = make(map[string]dconfCacheEntry)
 			}
 			dconfSnapshotStaging[pi.ID] = dconfCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DConfPolicy}
+		case "Polkit":
+			if polkitSnapshotStaging == nil {
+				polkitSnapshotStaging = make(map[string]polkitCacheEntry)
+			}
+			polkitSnapshotStaging[pi.ID] = polkitCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PolkitPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -448,10 +492,19 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			dconfSnapshotStaging = nil
 
+			// Swap Polkit staging into cache.
+			if polkitSnapshotStaging != nil {
+				polkitCache = polkitSnapshotStaging
+			} else {
+				polkitCache = make(map[string]polkitCacheEntry)
+			}
+			polkitSnapshotStaging = nil
+
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
 			syncAllChrome(ctx, client, cfg)
 			syncAllDConf(ctx, client)
+			syncAllPolkit(ctx, client)
 
 			if *postInitialSync {
 				// Resync from a live admin change — notify if content changed.
@@ -494,6 +547,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "Dconf":
 			dconfCache[pi.ID] = dconfCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DConfPolicy}
 			syncAllDConf(ctx, client)
+		case "Polkit":
+			polkitCache[pi.ID] = polkitCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PolkitPolicy}
+			syncAllPolkit(ctx, client)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -525,6 +581,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := dconfCache[pi.ID]; ok {
 			delete(dconfCache, pi.ID)
 			syncAllDConf(ctx, client)
+		} else if _, ok := polkitCache[pi.ID]; ok {
+			delete(polkitCache, pi.ID)
+			syncAllPolkit(ctx, client)
 		} else {
 			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
 		}
@@ -890,6 +949,106 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 		policyStatus, policyMsg := rollupProtoItems(items, overallStatus, msg)
 		_ = client.ReportComplianceWithStatus(ctx, e.id, policyStatus, policyMsg, items)
 	}
+}
+
+// syncAllPolkit re-merges all cached Polkit policies (sorted by priority
+// descending so the highest-priority rules come first in the generated file
+// and win in polkit's first-match-wins evaluation), writes the resulting
+// .rules file to /etc/polkit-1/rules.d/, and reports per-policy compliance.
+func syncAllPolkit(ctx context.Context, client *policyclient.Client) {
+	if len(polkitCache) == 0 {
+		// No polkit policies — nothing to enforce.
+		return
+	}
+
+	// Sort descending by priority (highest priority first → first in file → first match wins).
+	entries := make([]polkitCacheEntry, 0, len(polkitCache))
+	for _, e := range polkitCache {
+		entries = append(entries, e)
+	}
+	slices.SortStableFunc(entries, func(a, b polkitCacheEntry) int {
+		return cmp.Compare(b.priority, a.priority) // descending
+	})
+
+	// Pick filePrefix from the highest-priority policy (default "50").
+	filePrefix := "50"
+	if p := entries[0].policy.GetFilePrefix(); p != "" {
+		filePrefix = p
+	}
+
+	policies := make([]*pb.PolkitPolicy, 0, len(entries))
+	for _, e := range entries {
+		policies = append(policies, e.policy)
+	}
+
+	merged := policy.MergePolkitPolicies(policies)
+	js, err := policy.PolkitPoliciesToJS(merged)
+	if err != nil {
+		log.Printf("Error generating polkit rules JS: %v", err)
+		for _, e := range entries {
+			_ = client.ReportComplianceWithStatus(ctx, e.id,
+				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				"failed to generate rules file: "+err.Error(), nil)
+		}
+		return
+	}
+
+	if err := policy.SyncPolkitRules(filePrefix, js); err != nil {
+		log.Printf("Error syncing polkit rules: %v", err)
+		for _, e := range entries {
+			_ = client.ReportComplianceWithStatus(ctx, e.id,
+				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				"failed to write rules file: "+err.Error(), nil)
+		}
+		return
+	}
+
+	rulesPath := policy.PolkitRulesPath(filePrefix)
+	log.Printf("polkit rules synced to %s (%d policies, %d rules)", rulesPath, len(entries), len(merged.GetRules()))
+
+	// Compliance check.
+	results := policy.CheckPolkitCompliance(merged, rulesPath)
+	overallStatus, overallMsg := policy.RollupPolkitCompliance(results)
+
+	// Build proto items for all rules in the merged policy.
+	allItems := make([]*pb.ComplianceItemResult, 0, len(results))
+	for _, r := range results {
+		allItems = append(allItems, &pb.ComplianceItemResult{
+			SchemaId: "polkit:" + polkitRuleKey(r.Description),
+			Key:      fmt.Sprintf("rule_%d", r.RuleIndex),
+			Status:   r.Status,
+			Message:  r.Message,
+		})
+	}
+
+	// Report per-policy: each policy's rules occupy a contiguous slice of the
+	// merged rule list because MergePolkitPolicies concatenates in priority order.
+	// Track the current offset into allItems as we iterate through policies.
+	ruleOffset := 0
+	for _, e := range entries {
+		ruleCount := len(e.policy.GetRules())
+		end := ruleOffset + ruleCount
+		if end > len(allItems) {
+			end = len(allItems)
+		}
+
+		ownItems := allItems[ruleOffset:end]
+		policyStatus, policyMsg := rollupProtoItems(ownItems, overallStatus, overallMsg)
+		_ = client.ReportComplianceWithStatus(ctx, e.id, policyStatus, policyMsg, ownItems)
+		ruleOffset = end
+	}
+}
+
+// polkitRuleKey returns a short, stable key for a rule description
+// suitable for use in the schema_id field of a ComplianceItemResult.
+func polkitRuleKey(desc string) string {
+	if desc == "" {
+		return "rule"
+	}
+	if len(desc) > 40 {
+		return desc[:40]
+	}
+	return desc
 }
 
 // rollupProtoItems derives an overall ComplianceStatus and message from a

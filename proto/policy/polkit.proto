@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// ── Policy messages ────────────────────────────────────────────────────────
+
+// PolkitPolicy produces a single JavaScript rules file under
+// /etc/polkit-1/rules.d/.  Rules are evaluated top-to-bottom;
+// first match wins (polkit semantics).
+message PolkitPolicy {
+  // Rules to write into the generated .rules file.
+  // Highest-priority policies come first so their rules win.
+  repeated PolkitRule rules = 1;
+
+  // Two-digit filename prefix (default "50").
+  // Produces /etc/polkit-1/rules.d/<file_prefix>-bor.rules.
+  // Higher numbers run later (after other rule files with lower numbers).
+  string file_prefix = 2;
+}
+
+// PolkitRule maps one or more polkit actions to a result for matching subjects.
+// Generates a single polkit.addRule(...) call.
+message PolkitRule {
+  // Human-readable label shown in the UI and emitted as a JS comment.
+  string description = 1;
+
+  // Exact action IDs matched with: action.id == "..."
+  // Combined with OR; at least one of action_ids / action_prefixes must be set.
+  repeated string action_ids = 2;
+
+  // Action ID prefixes matched with: action.id.indexOf("...") === 0
+  // Combined with OR.
+  repeated string action_prefixes = 3;
+
+  // Subject filter — all set fields must match (AND logic).
+  // An empty filter matches every subject.
+  PolkitSubjectFilter subject = 4;
+
+  // Authorization result to return when the rule matches.
+  PolkitResult result = 5;
+}
+
+// PolkitSubjectFilter restricts a rule to subjects that satisfy all set fields.
+message PolkitSubjectFilter {
+  // Subject must be a member of this Unix group (e.g. "wheel", "sudo").
+  string in_group = 1;
+
+  // Negate the group check: apply when the subject is NOT in in_group.
+  // Ignored when in_group is empty.
+  bool negate_group = 2;
+
+  // Subject username must equal this value exactly.
+  string is_user = 3;
+
+  // Subject must be on a local console seat (subject.local === true).
+  bool require_local = 4;
+
+  // Subject must have an active session (subject.active === true).
+  bool require_active = 5;
+
+  // Subject process must belong to this systemd unit.
+  string system_unit = 6;
+}
+
+// PolkitResult is the authorization result returned by a matched rule.
+enum PolkitResult {
+  POLKIT_RESULT_NOT_SET         = 0;  // rule disabled / skipped
+  POLKIT_RESULT_NO              = 1;  // unconditionally deny
+  POLKIT_RESULT_YES             = 2;  // unconditionally allow
+  POLKIT_RESULT_AUTH_SELF       = 3;  // user authenticates as themselves
+  POLKIT_RESULT_AUTH_SELF_KEEP  = 4;  // like AUTH_SELF, result cached ~5 min
+  POLKIT_RESULT_AUTH_ADMIN      = 5;  // an administrator must authenticate
+  POLKIT_RESULT_AUTH_ADMIN_KEEP = 6;  // like AUTH_ADMIN, result cached ~5 min
+}
+
+// ── Action catalogue messages (reported by agents) ─────────────────────────
+
+// PolkitActionDescription describes one polkit action installed on a node,
+// as read from the action XML files under /usr/share/polkit-1/actions/.
+message PolkitActionDescription {
+  string action_id         = 1;
+  string description       = 2;  // human-readable name
+  string message           = 3;  // shown to the user during the auth prompt
+  string vendor            = 4;
+  string default_any       = 5;  // "no" | "yes" | "auth_self" | "auth_admin" | …
+  string default_inactive  = 6;
+  string default_active    = 7;
+}
+
+// ReportPolkitCatalogueRequest is sent by the agent at startup (and after
+// package changes) to inform the server which polkit actions are available
+// on this node.  Mirrors the GSettings schema catalogue pattern.
+message ReportPolkitCatalogueRequest {
+  string client_id                        = 1;
+  repeated PolkitActionDescription actions = 2;
+}
+
+message ReportPolkitCatalogueResponse {
+  bool success = 1;
+}
