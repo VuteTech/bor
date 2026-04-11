@@ -102,3 +102,21 @@ ldap:
 #  origins:
 #    - "https://bor.example.com"
 #  display_name: "Bor Policy Manager"
+
+# Prometheus metrics endpoint (plain HTTP, separate port).
+#
+# listen_addr is the host:port the /metrics endpoint binds to.
+# Defaults to "127.0.0.1:9090" — reachable from localhost only.
+# Change the host part to expose on a specific interface:
+#   "192.168.1.10:9090"  — management VLAN only
+#   ":9090"              — all interfaces (protect with a firewall)
+# Corresponds to the BOR_METRICS_ADDR environment variable.
+#
+# bearer_token, when set, requires every Prometheus scrape request to carry
+# "Authorization: Bearer <token>". Leave empty when the listener is bound to
+# localhost or a trusted management network.
+# Corresponds to the BOR_METRICS_TOKEN environment variable.
+#
+#metrics:
+#  listen_addr: "127.0.0.1:9090"
+#  bearer_token: ""

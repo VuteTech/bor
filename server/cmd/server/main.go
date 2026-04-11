@@ -26,6 +26,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
 	grpcserver "github.com/VuteTech/Bor/server/internal/grpc"
+	"github.com/VuteTech/Bor/server/internal/metrics"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -472,6 +473,13 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// ─── Prometheus metrics server (plain HTTP, separate port) ───────────
+	metricsCollector := metrics.NewBorCollector(
+		nodeRepo, policyRepo, policyBindingRepo,
+		auditLogRepo, userRepo, dconfRepo,
+	)
+	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector)
+
 	// Start both servers.
 	go func() {
 		if err := uiServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
@@ -482,6 +490,13 @@ func main() {
 	go func() {
 		if err := agentServer.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
 			log.Fatalf("Agent server error: %v", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("Metrics (Prometheus) listening on http://%s/metrics", cfg.Metrics.ListenAddr)
+		if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
+			log.Printf("Metrics server error: %v", err)
 		}
 	}()
 
@@ -503,6 +518,9 @@ func main() {
 	}
 	if err := agentServer.Shutdown(ctx); err != nil {
 		log.Printf("Agent server shutdown error: %v", err)
+	}
+	if err := metricsServer.Shutdown(ctx); err != nil {
+		log.Printf("Metrics server shutdown error: %v", err)
 	}
 
 	log.Println("Server stopped")

@@ -23,6 +23,22 @@ type Config struct {
 	TLS      TLSConfig
 	CA       CAConfig
 	WebAuthn WebAuthnConfig
+	Metrics  MetricsConfig
+}
+
+// MetricsConfig holds Prometheus metrics endpoint configuration.
+type MetricsConfig struct {
+	// ListenAddr is the host:port for the Prometheus /metrics endpoint.
+	// Defaults to "127.0.0.1:9090". Set BOR_METRICS_ADDR (or metrics.listen_addr
+	// in server.yaml) to expose on a management network interface instead, e.g.
+	// "192.168.1.10:9090". Leave the host part empty ("":9090) to bind all interfaces.
+	// The endpoint serves plain HTTP — protect it with a firewall when not on localhost.
+	ListenAddr string // BOR_METRICS_ADDR, default "127.0.0.1:9090"
+
+	// BearerToken, when non-empty, requires every scrape request to carry
+	// "Authorization: Bearer <token>". Leave unset for unauthenticated access
+	// (appropriate when the listener is bound to localhost only).
+	BearerToken string // BOR_METRICS_TOKEN, optional
 }
 
 // WebAuthnConfig holds WebAuthn (FIDO2) relying party configuration.
@@ -169,6 +185,10 @@ type fileConfig struct {
 		Origins     []string `yaml:"origins"`
 		DisplayName string   `yaml:"display_name"`
 	} `yaml:"webauthn"`
+	Metrics struct {
+		ListenAddr  string `yaml:"listen_addr"`
+		BearerToken string `yaml:"bearer_token"`
+	} `yaml:"metrics"`
 }
 
 // Load loads configuration from a YAML file (optional) and environment
@@ -252,6 +272,10 @@ func Load() (*Config, error) {
 		webAuthnDisplayName = "Bor Policy Manager"
 	}
 
+	// ─── Metrics ───────────────────────────────────────────────────────────
+	metricsAddr := getEnv("BOR_METRICS_ADDR", fc.Metrics.ListenAddr)
+	metricsToken := getEnv("BOR_METRICS_TOKEN", fc.Metrics.BearerToken)
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -308,6 +332,10 @@ func Load() (*Config, error) {
 			RPOrigins:   webAuthnOrigins,
 			DisplayName: webAuthnDisplayName,
 		},
+		Metrics: MetricsConfig{
+			ListenAddr:  metricsAddr,
+			BearerToken: metricsToken,
+		},
 	}, nil
 }
 
@@ -332,6 +360,7 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrUsername = "uid"
 	fc.LDAP.AttrEmail = "mail"
 	fc.LDAP.AttrFullName = "cn"
+	fc.Metrics.ListenAddr = "127.0.0.1:9090"
 	return fc
 }
 

@@ -43,6 +43,7 @@ services:
       # browsers and agents can verify the cert without warnings.
       # Overrides the 'hostnames' list in /etc/bor/server.yaml when set.
       - BOR_HOSTNAMES=localhost,10.28.7.134
+      - BOR_METRICS_ADDR=0.0.0.0:9090
 
       # ── WebAuthn / FIDO2 (optional) ───────────────────────────────────────
       # Enables hardware security keys (YubiKey, FIDO2 tokens) and software
@@ -56,6 +57,7 @@ services:
     ports:
       - "8443:8443"
       - "8444:8444"
+      - "9090:9090"
     volumes:
       - bor_pki:/var/lib/bor/pki:U
     restart: unless-stopped
