@@ -64,7 +64,6 @@ export interface PolkitRule {
 
 export interface PolkitPolicyContent {
   rules: PolkitRule[];
-  file_prefix: string;
 }
 
 /* ── API calls ── */
@@ -80,13 +79,12 @@ export async function fetchPolkitActions(nodeId?: string): Promise<PolkitAction[
 
 export function parsePolkitContent(raw: string): PolkitPolicyContent {
   try {
-    const parsed = JSON.parse(raw || "{}") as Partial<PolkitPolicyContent>;
+    const parsed = JSON.parse(raw || "{}") as Partial<PolkitPolicyContent> & { file_prefix?: string };
     return {
       rules: Array.isArray(parsed.rules) ? parsed.rules : [],
-      file_prefix: typeof parsed.file_prefix === "string" ? parsed.file_prefix : "50",
     };
   } catch {
-    return { rules: [], file_prefix: "50" };
+    return { rules: [] };
   }
 }
 

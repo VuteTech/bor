@@ -20,7 +20,11 @@ const polkitManagedHeader = `// This file is managed by Bor. Do not edit manuall
 // Generated: %s
 `
 
-const polkitRulesDir = "/etc/polkit-1/rules.d"
+// PolkitRulesDir is the directory polkitd monitors for JavaScript rules files.
+const PolkitRulesDir = "/etc/polkit-1/rules.d"
+
+// polkitManagedPrefix is the byte prefix used to identify Bor-managed rules files.
+var polkitManagedPrefix = []byte("// This file is managed by Bor.")
 
 // PolkitRuleResult is the compliance result for a single polkit rule.
 type PolkitRuleResult struct {
@@ -55,7 +59,7 @@ func MergePolkitPolicies(policies []*pb.PolkitPolicy) *pb.PolkitPolicy {
 	}
 }
 
-// PolkitPoliciesToJS converts a merged PolkitPolicy to the content of a
+// PolkitPoliciesToJS converts a PolkitPolicy to the content of a
 // .rules JavaScript file suitable for /etc/polkit-1/rules.d/.
 func PolkitPoliciesToJS(pol *pb.PolkitPolicy) ([]byte, error) {
 	if pol == nil {
@@ -157,20 +161,24 @@ func polkitResultJS(r pb.PolkitResult) string {
 	}
 }
 
-// PolkitRulesPath returns the path for the managed polkit rules file.
-func PolkitRulesPath(filePrefix string) string {
-	if filePrefix == "" {
-		filePrefix = "50"
+// PolkitRulesPath returns the absolute path for a policy's managed rules file.
+// The filename is <priority>-bor-<shortID>.rules where shortID is the first
+// 8 hex characters of the policy UUID (without dashes). The priority is
+// zero-padded to three digits so that alphabetical filename order matches
+// numeric order: polkitd evaluates files in alphabetical order, so a lower
+// number is evaluated first and wins in first-match-wins evaluation.
+func PolkitRulesPath(priority int32, policyID string) string {
+	shortID := strings.ReplaceAll(policyID, "-", "")
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
 	}
-	return filepath.Join(polkitRulesDir, filePrefix+"-bor.rules")
+	return filepath.Join(PolkitRulesDir, fmt.Sprintf("%03d-bor-%s.rules", priority, shortID))
 }
 
-// SyncPolkitRules atomically writes the polkit rules file under
-// /etc/polkit-1/rules.d/.  polkitd monitors that directory via inotify
-// and hot-reloads automatically — no explicit reload command is needed.
-func SyncPolkitRules(filePrefix string, js []byte) error {
-	rulesPath := PolkitRulesPath(filePrefix)
-
+// SyncPolkitRules atomically writes the polkit rules file at rulesPath.
+// polkitd monitors PolkitRulesDir via inotify and hot-reloads automatically —
+// no explicit reload command is needed.
+func SyncPolkitRules(rulesPath string, js []byte) error {
 	// Ensure the directory exists.
 	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o755); err != nil {
 		return fmt.Errorf("polkit: create rules dir: %w", err)
@@ -205,14 +213,46 @@ func SyncPolkitRules(filePrefix string, js []byte) error {
 	return nil
 }
 
-// RemovePolkitRules removes the managed polkit rules file if it exists.
-// Called when all polkit policies are deleted from the cache.
-func RemovePolkitRules(filePrefix string) error {
-	rulesPath := PolkitRulesPath(filePrefix)
+// RemovePolkitRules removes the polkit rules file at rulesPath if it exists.
+// Called when a policy is deleted or its binding priority changes (leaving
+// behind a stale file at the old priority-derived path).
+func RemovePolkitRules(rulesPath string) error {
 	if err := os.Remove(rulesPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("polkit: remove rules file: %w", err)
 	}
 	return nil
+}
+
+// ListBorManagedPolkitFiles returns the absolute paths of all polkit rules
+// files in PolkitRulesDir that were written by Bor. Bor-managed files are
+// identified by the managed header comment on the first line.
+func ListBorManagedPolkitFiles() ([]string, error) {
+	entries, err := os.ReadDir(PolkitRulesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("polkit: read rules dir: %w", err)
+	}
+
+	var managed []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".rules") {
+			continue
+		}
+		path := filepath.Join(PolkitRulesDir, entry.Name())
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		buf := make([]byte, len(polkitManagedPrefix))
+		n, _ := f.Read(buf)
+		_ = f.Close()
+		if bytes.HasPrefix(buf[:n], polkitManagedPrefix) {
+			managed = append(managed, path)
+		}
+	}
+	return managed, nil
 }
 
 // CheckPolkitCompliance checks whether the managed rules file has the

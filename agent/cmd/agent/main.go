@@ -402,8 +402,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
 				syncAllChrome(ctx, client, cfg)
-				syncAllDConf(ctx, client)
-				syncAllPolkit(ctx, client)
+				syncAllDConf(ctx, client, cfg)
+				syncAllPolkit(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -503,8 +503,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
 			syncAllChrome(ctx, client, cfg)
-			syncAllDConf(ctx, client)
-			syncAllPolkit(ctx, client)
+			syncAllDConf(ctx, client, cfg)
+			syncAllPolkit(ctx, client, cfg)
 
 			if *postInitialSync {
 				// Resync from a live admin change — notify if content changed.
@@ -546,10 +546,10 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 		case "Dconf":
 			dconfCache[pi.ID] = dconfCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DConfPolicy}
-			syncAllDConf(ctx, client)
+			syncAllDConf(ctx, client, cfg)
 		case "Polkit":
 			polkitCache[pi.ID] = polkitCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PolkitPolicy}
-			syncAllPolkit(ctx, client)
+			syncAllPolkit(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -580,10 +580,10 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 		} else if _, ok := dconfCache[pi.ID]; ok {
 			delete(dconfCache, pi.ID)
-			syncAllDConf(ctx, client)
+			syncAllDConf(ctx, client, cfg)
 		} else if _, ok := polkitCache[pi.ID]; ok {
 			delete(polkitCache, pi.ID)
-			syncAllPolkit(ctx, client)
+			syncAllPolkit(ctx, client, cfg)
 		} else {
 			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
 		}
@@ -850,9 +850,9 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 }
 
 // syncAllDConf re-merges all cached DConf policies, writes the keyfile and
-// locks file under /etc/dconf/db/local.d/, and runs dconf update.
+// locks file under /etc/dconf/db/<dbName>.d/, and runs dconf update.
 // Reports compliance back to the server for each affected policy ID.
-func syncAllDConf(ctx context.Context, client *policyclient.Client) {
+func syncAllDConf(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
 	entries := make([]dconfCacheEntry, 0, len(dconfCache))
 	for _, e := range dconfCache {
 		entries = append(entries, e)
@@ -875,6 +875,12 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 	if dbName == "" {
 		dbName = "local"
 	}
+
+	dbDir := filepath.Join("/etc/dconf/db", dbName+".d")
+	keyfilePath := filepath.Join(dbDir, "00-bor")
+	locksPath := filepath.Join(dbDir, "locks", "bor")
+	suppressManagedWrites(cfg, keyfilePath, locksPath)
+	defer updateWatcher(cfg)
 
 	if err := policy.SyncDConfFiles(dbName, keyfile, locksfile); err != nil {
 		log.Printf("Error syncing dconf files: %v", err)
@@ -951,91 +957,93 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 	}
 }
 
-// syncAllPolkit re-merges all cached Polkit policies (sorted by priority
-// descending so the highest-priority rules come first in the generated file
-// and win in polkit's first-match-wins evaluation), writes the resulting
-// .rules file to /etc/polkit-1/rules.d/, and reports per-policy compliance.
-func syncAllPolkit(ctx context.Context, client *policyclient.Client) {
-	if len(polkitCache) == 0 {
-		// No polkit policies — nothing to enforce.
-		return
-	}
-
-	// Sort descending by priority (highest priority first → first in file → first match wins).
+// syncAllPolkit writes one rules file per active Polkit policy under
+// /etc/polkit-1/rules.d/. Each file is named <priority>-bor-<shortID>.rules
+// so that polkitd's alphabetical load order matches the intended evaluation
+// priority (lower number = evaluated first = wins in first-match-wins).
+//
+// Stale bor-managed files left behind by deleted policies or priority changes
+// are removed. The file watcher is suppressed around all writes and refreshed
+// afterwards so that the agent's own writes do not trigger a tamper restore.
+func syncAllPolkit(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
 	entries := make([]polkitCacheEntry, 0, len(polkitCache))
 	for _, e := range polkitCache {
 		entries = append(entries, e)
 	}
-	slices.SortStableFunc(entries, func(a, b polkitCacheEntry) int {
-		return cmp.Compare(b.priority, a.priority) // descending
-	})
 
-	// Pick filePrefix from the highest-priority policy (default "50").
-	filePrefix := "50"
-	if p := entries[0].policy.GetFilePrefix(); p != "" {
-		filePrefix = p
-	}
-
-	policies := make([]*pb.PolkitPolicy, 0, len(entries))
+	// Build the set of desired file paths.
+	desiredPaths := make(map[string]bool, len(entries))
 	for _, e := range entries {
-		policies = append(policies, e.policy)
+		desiredPaths[policy.PolkitRulesPath(e.priority, e.id)] = true
 	}
 
-	merged := policy.MergePolkitPolicies(policies)
-	js, err := policy.PolkitPoliciesToJS(merged)
+	// Discover existing bor-managed polkit files.
+	existingFiles, err := policy.ListBorManagedPolkitFiles()
 	if err != nil {
-		log.Printf("Error generating polkit rules JS: %v", err)
-		for _, e := range entries {
+		log.Printf("polkit: failed to list managed files: %v", err)
+	}
+
+	// Suppress watcher events for all paths involved in this sync.
+	allPaths := make([]string, 0, len(desiredPaths)+len(existingFiles))
+	for p := range desiredPaths {
+		allPaths = append(allPaths, p)
+	}
+	allPaths = append(allPaths, existingFiles...)
+	suppressManagedWrites(cfg, allPaths...)
+	defer updateWatcher(cfg)
+
+	// Remove stale files (deleted policies or priority changes that left old files).
+	for _, path := range existingFiles {
+		if !desiredPaths[path] {
+			if err := policy.RemovePolkitRules(path); err != nil {
+				log.Printf("polkit: failed to remove stale file %s: %v", path, err)
+			} else {
+				log.Printf("polkit: removed stale rules file %s", path)
+			}
+		}
+	}
+
+	if len(entries) == 0 {
+		return
+	}
+
+	// Write one file per policy and report compliance independently.
+	for _, e := range entries {
+		rulesPath := policy.PolkitRulesPath(e.priority, e.id)
+
+		js, err := policy.PolkitPoliciesToJS(e.policy)
+		if err != nil {
+			log.Printf("polkit: failed to generate JS for policy %q: %v", e.name, err)
 			_ = client.ReportComplianceWithStatus(ctx, e.id,
 				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
 				"failed to generate rules file: "+err.Error(), nil)
+			continue
 		}
-		return
-	}
 
-	if err := policy.SyncPolkitRules(filePrefix, js); err != nil {
-		log.Printf("Error syncing polkit rules: %v", err)
-		for _, e := range entries {
+		if err := policy.SyncPolkitRules(rulesPath, js); err != nil {
+			log.Printf("polkit: failed to sync %s: %v", rulesPath, err)
 			_ = client.ReportComplianceWithStatus(ctx, e.id,
 				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
 				"failed to write rules file: "+err.Error(), nil)
-		}
-		return
-	}
-
-	rulesPath := policy.PolkitRulesPath(filePrefix)
-	log.Printf("polkit rules synced to %s (%d policies, %d rules)", rulesPath, len(entries), len(merged.GetRules()))
-
-	// Compliance check.
-	results := policy.CheckPolkitCompliance(merged, rulesPath)
-	overallStatus, overallMsg := policy.RollupPolkitCompliance(results)
-
-	// Build proto items for all rules in the merged policy.
-	allItems := make([]*pb.ComplianceItemResult, 0, len(results))
-	for _, r := range results {
-		allItems = append(allItems, &pb.ComplianceItemResult{
-			SchemaId: "polkit:" + polkitRuleKey(r.Description),
-			Key:      fmt.Sprintf("rule_%d", r.RuleIndex),
-			Status:   r.Status,
-			Message:  r.Message,
-		})
-	}
-
-	// Report per-policy: each policy's rules occupy a contiguous slice of the
-	// merged rule list because MergePolkitPolicies concatenates in priority order.
-	// Track the current offset into allItems as we iterate through policies.
-	ruleOffset := 0
-	for _, e := range entries {
-		ruleCount := len(e.policy.GetRules())
-		end := ruleOffset + ruleCount
-		if end > len(allItems) {
-			end = len(allItems)
+			continue
 		}
 
-		ownItems := allItems[ruleOffset:end]
-		policyStatus, policyMsg := rollupProtoItems(ownItems, overallStatus, overallMsg)
-		_ = client.ReportComplianceWithStatus(ctx, e.id, policyStatus, policyMsg, ownItems)
-		ruleOffset = end
+		log.Printf("polkit: wrote %s for policy %q (%d rules)", rulesPath, e.name, len(e.policy.GetRules()))
+
+		results := policy.CheckPolkitCompliance(e.policy, rulesPath)
+		policyStatus, policyMsg := policy.RollupPolkitCompliance(results)
+
+		items := make([]*pb.ComplianceItemResult, 0, len(results))
+		for _, r := range results {
+			items = append(items, &pb.ComplianceItemResult{
+				SchemaId: "polkit:" + polkitRuleKey(r.Description),
+				Key:      fmt.Sprintf("rule_%d", r.RuleIndex),
+				Status:   r.Status,
+				Message:  r.Message,
+			})
+		}
+
+		_ = client.ReportComplianceWithStatus(ctx, e.id, policyStatus, policyMsg, items)
 	}
 }
 
@@ -1175,6 +1183,29 @@ func getManagedPaths(cfg *config.Config) []string {
 		}
 	}
 
+	// DConf: keyfile and locks file for each active db name.
+	// Multiple policies may target different db names; collect the unique set.
+	dconfDBs := make(map[string]bool)
+	for _, e := range dconfCache {
+		db := e.policy.GetDbName()
+		if db == "" {
+			db = "local"
+		}
+		dconfDBs[db] = true
+	}
+	for db := range dconfDBs {
+		dbDir := filepath.Join("/etc/dconf/db", db+".d")
+		paths = append(paths,
+			filepath.Join(dbDir, "00-bor"),
+			filepath.Join(dbDir, "locks", "bor"),
+		)
+	}
+
+	// Polkit: all bor-managed rules files under /etc/polkit-1/rules.d/.
+	if polkitFiles, err := policy.ListBorManagedPolkitFiles(); err == nil {
+		paths = append(paths, polkitFiles...)
+	}
+
 	return paths
 }
 
@@ -1219,8 +1250,14 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllKConfig(ctx, client, cfg)
 	case path == cfg.Firefox.PoliciesPath || path == cfg.Firefox.FlatpakPoliciesPath:
 		syncAllFirefox(ctx, client, cfg)
-	default:
+	case strings.HasPrefix(path, "/etc/dconf/"):
+		syncAllDConf(ctx, client, cfg)
+	case strings.HasPrefix(path, policy.PolkitRulesDir+string(filepath.Separator)):
+		syncAllPolkit(ctx, client, cfg)
+	case filepath.Base(path) == policy.ChromeManagedFilename:
 		syncAllChrome(ctx, client, cfg)
+	default:
+		log.Printf("Tamper protection: unrecognised managed path %s — no restore action taken", path)
 	}
 
 	if err := client.ReportTamperEvent(ctx, path, procs); err != nil {

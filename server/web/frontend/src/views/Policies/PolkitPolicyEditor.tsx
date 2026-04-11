@@ -78,6 +78,9 @@ const DEFAULT_RULE: PolkitRule = {
   result: "POLKIT_RESULT_NO",
 };
 
+// Note: file naming is driven by the binding priority set in the Node Group
+// page. There is no per-policy file_prefix setting.
+
 /* ── helpers ── */
 
 interface ActionOption {
@@ -433,7 +436,7 @@ export const PolkitPolicyEditor: React.FC<PolkitPolicyEditorProps> = ({
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to parse policy content";
       setParseError(msg);
-      return { rules: [], file_prefix: "50" };
+      return { rules: [] };
     }
   })();
 
@@ -633,22 +636,6 @@ export const PolkitPolicyEditor: React.FC<PolkitPolicyEditorProps> = ({
       >
         Add Rule
       </Button>
-
-      {/* File prefix */}
-      <FormGroup
-        label="File prefix"
-        fieldId={`${idPrefix}-file-prefix`}
-        style={{ maxWidth: "12rem", marginBottom: "1rem" }}
-      >
-        <TextInput
-          id={`${idPrefix}-file-prefix`}
-          value={content.file_prefix}
-          onChange={(_ev, v) => pushChange({ ...content, file_prefix: v })}
-          placeholder="50"
-          isDisabled={isDisabled}
-          aria-label="File prefix (numeric, e.g. 50)"
-        />
-      </FormGroup>
 
       {/* Preview button */}
       <Button
