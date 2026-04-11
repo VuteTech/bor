@@ -5,12 +5,79 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
 )
+
+// sensitiveKeys contains lowercase substrings that identify sensitive fields.
+// Any JSON body field whose lowercased key contains one of these strings will
+// be replaced with "[REDACTED]" before storing in the audit log.
+var sensitiveKeys = []string{
+	"password", "passwd", "secret", "token", "credential",
+	"passphrase", "private_key", "privatekey", "api_key", "apikey",
+	"jwt", "auth_token", "access_token", "refresh_token",
+}
+
+func isSensitiveKey(key string) bool {
+	lower := strings.ToLower(key)
+	for _, s := range sensitiveKeys {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactBody replaces sensitive values in a decoded JSON map with "[REDACTED]".
+// Operates recursively on nested objects.
+func redactBody(m map[string]interface{}) {
+	for k, v := range m {
+		if isSensitiveKey(k) {
+			m[k] = "[REDACTED]"
+			continue
+		}
+		if nested, ok := v.(map[string]interface{}); ok {
+			redactBody(nested)
+		}
+	}
+}
+
+// captureDetails reads the request body (restoring it for the actual handler),
+// parses it as JSON, redacts sensitive fields, and returns the result as a
+// JSON string suitable for storing in the audit log Details field.
+// Returns "" when there is no body or the body is not JSON.
+func captureDetails(r *http.Request) string {
+	if r.Body == nil || r.ContentLength == 0 {
+		return ""
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 512*1024)) // 512 KB cap
+	if err != nil {
+		return ""
+	}
+	// Restore body so the actual handler can read it.
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &m); err != nil {
+		// Body is not JSON (e.g. form data) — store nothing.
+		return ""
+	}
+
+	redactBody(m)
+
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
 
 // AuditMiddleware logs state-changing HTTP requests (POST, PUT, PATCH, DELETE) as audit events
 func AuditMiddleware(auditSvc *services.AuditService) func(http.Handler) http.Handler {
@@ -22,6 +89,9 @@ func AuditMiddleware(auditSvc *services.AuditService) func(http.Handler) http.Ha
 				next.ServeHTTP(w, r)
 				return
 			}
+
+			// Read and redact the request body before passing to the handler.
+			details := captureDetails(r)
 
 			// Capture response status
 			recorder := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
@@ -54,7 +124,7 @@ func AuditMiddleware(auditSvc *services.AuditService) func(http.Handler) http.Ha
 				Action:       action,
 				ResourceType: resourceType,
 				ResourceID:   resourceID,
-				Details:      r.Method + " " + r.URL.Path,
+				Details:      details,
 				IPAddress:    extractIP(r),
 			}
 

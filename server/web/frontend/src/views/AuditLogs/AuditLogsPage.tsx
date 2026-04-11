@@ -108,6 +108,49 @@ function tamperDetailsSummary(d: TamperDetailsData): string {
   return `${parts[0]}, ${parts[1]} +${parts.length - 2} more`;
 }
 
+// ─── Structured body details ──────────────────────────────────────────────────
+
+/** Parses the stored audit details as a JSON object. Returns null for tamper events
+ *  or non-JSON details strings. */
+function parseBodyDetails(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const d = JSON.parse(raw);
+    if (d && typeof d === "object" && !Array.isArray(d)) {
+      // Exclude tamper event payloads (they have file/processes keys).
+      if ("file" in d || "processes" in d) return null;
+      return d as Record<string, unknown>;
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
+/** Returns the resource name from a parsed body details object, if present. */
+function extractResourceName(details: Record<string, unknown> | null): string | null {
+  if (!details) return null;
+  for (const k of ["name", "display_name", "username", "email"]) {
+    if (typeof details[k] === "string" && details[k]) return details[k] as string;
+  }
+  return null;
+}
+
+/** Formats a camelCase/snake_case key for human display. */
+function formatKey(key: string): string {
+  return key
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+/** Renders a single JSON value as a string for display. */
+function renderValue(val: unknown): string {
+  if (val === null || val === undefined) return "—";
+  if (typeof val === "boolean") return val ? "true" : "false";
+  if (typeof val === "string") return val || "—";
+  if (typeof val === "number") return String(val);
+  return JSON.stringify(val);
+}
+
 // ─── Shared small components ──────────────────────────────────────────────────
 
 const ActionBadge: React.FC<{ action: string }> = ({ action }) => {
@@ -207,6 +250,8 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ entry, onClose }) => {
   const { bg: accentBg } = ACTION_COLORS[entry.action] ?? DEFAULT_ACTION_COLOR;
   const tamperData = entry.action === "tamper_detected" ? parseTamperDetails(entry.details) : null;
+  const bodyDetails = tamperData ? null : parseBodyDetails(entry.details);
+  const resourceName = extractResourceName(bodyDetails);
 
   const formattedTimestamp = (() => {
     try {
@@ -220,16 +265,6 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
   const displayUser = entry.action === "tamper_detected"
     ? `node: ${entry.username}`
     : entry.username;
-
-  // Try to pretty-print the details as JSON; fall back to plain text.
-  const formattedDetails = (() => {
-    if (!entry.details) return "";
-    try {
-      return JSON.stringify(JSON.parse(entry.details), null, 2);
-    } catch {
-      return entry.details;
-    }
-  })();
 
   return (
     <DrawerPanelContent style={{ borderLeft: `3px solid ${accentBg}` }}>
@@ -279,6 +314,12 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
             <DescriptionListTerm>Resource Type</DescriptionListTerm>
             <DescriptionListDescription>{entry.resource_type || "—"}</DescriptionListDescription>
           </DescriptionListGroup>
+          {resourceName && (
+            <DescriptionListGroup>
+              <DescriptionListTerm>Resource Name</DescriptionListTerm>
+              <DescriptionListDescription>{resourceName}</DescriptionListDescription>
+            </DescriptionListGroup>
+          )}
           {entry.resource_id && (
             <DescriptionListGroup>
               <DescriptionListTerm>Resource ID</DescriptionListTerm>
@@ -341,8 +382,40 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
           </>
         )}
 
-        {/* ── Raw details (non-tamper or when there's extra JSON) ── */}
-        {!tamperData && entry.details && (
+        {/* ── Structured body details ── */}
+        {bodyDetails && Object.keys(bodyDetails).length > 0 && (
+          <>
+            <SectionLabel>Changed Values</SectionLabel>
+            <DescriptionList isCompact>
+              {Object.entries(bodyDetails).map(([k, v]) => (
+                <DescriptionListGroup key={k}>
+                  <DescriptionListTerm>{formatKey(k)}</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    {v === "[REDACTED]" ? (
+                      <span style={{ color: "#6a6e73", fontStyle: "italic" }}>[redacted]</span>
+                    ) : typeof v === "object" && v !== null ? (
+                      <pre style={{
+                        margin: 0, fontSize: "0.8125rem", fontFamily: "monospace",
+                        whiteSpace: "pre-wrap", wordBreak: "break-all",
+                        background: "var(--pf-v5-global--BackgroundColor--200)",
+                        padding: "4px 8px", borderRadius: 4,
+                      }}>
+                        {JSON.stringify(v, null, 2)}
+                      </pre>
+                    ) : (
+                      <span style={{ fontFamily: "monospace", fontSize: "0.875rem" }}>
+                        {renderValue(v)}
+                      </span>
+                    )}
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
+              ))}
+            </DescriptionList>
+          </>
+        )}
+
+        {/* ── Fallback: plain-text details when body was not JSON ── */}
+        {!tamperData && !bodyDetails && entry.details && (
           <>
             <SectionLabel>Details</SectionLabel>
             <pre style={{
@@ -352,7 +425,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
               padding: "8px 10px", borderRadius: 4,
               maxHeight: 300, overflowY: "auto",
             }}>
-              {formattedDetails}
+              {entry.details}
             </pre>
           </>
         )}
@@ -540,8 +613,14 @@ export const AuditLogsPage: React.FC = () => {
                         const isSelected = selectedEntry?.id === entry.id;
                         const tamperData = entry.action === "tamper_detected"
                           ? parseTamperDetails(entry.details) : null;
+                        const bodyDetails = tamperData ? null : parseBodyDetails(entry.details);
+                        const resourceName = extractResourceName(bodyDetails);
                         const detailsSummary = tamperData
                           ? tamperDetailsSummary(tamperData)
+                          : resourceName
+                          ? resourceName
+                          : bodyDetails
+                          ? `${Object.keys(bodyDetails).length} field(s) changed`
                           : entry.details;
 
                         return (
