@@ -95,6 +95,7 @@ type PolicyInfo struct {
 	Type          string
 	Content       string // kept for compatibility / fallback
 	Version       int32
+	Priority      int32             // max binding priority across enabled bindings for this node
 	KConfigPolicy *pb.KConfigPolicy // populated from typed_content for Kconfig type
 	FirefoxPolicy *pb.FirefoxPolicy // populated from typed_content for Firefox type
 	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
@@ -265,11 +266,12 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 		var pi *PolicyInfo
 		if p := update.GetPolicy(); p != nil {
 			pi = &PolicyInfo{
-				ID:      p.GetId(),
-				Name:    p.GetName(),
-				Type:    p.GetType(),
-				Content: p.GetContent(),
-				Version: p.GetVersion(),
+				ID:       p.GetId(),
+				Name:     p.GetName(),
+				Type:     p.GetType(),
+				Content:  p.GetContent(),
+				Version:  p.GetVersion(),
+				Priority: p.GetPriority(),
 			}
 			if kcp := p.GetKconfigPolicy(); kcp != nil {
 				pi.KConfigPolicy = kcp

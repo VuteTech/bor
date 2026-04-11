@@ -496,7 +496,8 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		Description: p.Description,
 		Type:        p.Type,
 		Content:     p.Content,
-		Version:     int32(p.Version), //nolint:gosec // version fits in int32
+		Version:     int32(p.Version),  //nolint:gosec // version fits in int32
+		Priority:    int32(p.Priority), //nolint:gosec // priority fits in int32
 		CreatedAt:   timestamppb.New(p.CreatedAt),
 		UpdatedAt:   timestamppb.New(p.UpdatedAt),
 		Enabled:     p.State == models.PolicyStateReleased,

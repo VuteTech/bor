@@ -31,6 +31,10 @@ type Policy struct {
 	Content             string     `json:"content" db:"content"` // JSON string
 	Version             int        `json:"version" db:"version"`
 	State               string     `json:"state" db:"state"`
+	// Priority is the maximum binding priority across all enabled bindings for
+	// this policy. Only populated when fetched via node-group queries
+	// (ListPoliciesByGroupIDs). Zero for all other fetches.
+	Priority            int        `json:"priority" db:"priority"`
 	DeprecatedAt        *time.Time `json:"deprecated_at,omitempty" db:"deprecated_at"`
 	DeprecationMessage  *string    `json:"deprecation_message,omitempty" db:"deprecation_message"`
 	ReplacementPolicyID *string    `json:"replacement_policy_id,omitempty" db:"replacement_policy_id"`

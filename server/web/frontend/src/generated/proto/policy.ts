@@ -54,7 +54,16 @@ export interface Policy {
   firefox_policy?: FirefoxPolicy | undefined;
   kconfig_policy?: KConfigPolicy | undefined;
   chrome_policy?: ChromePolicy | undefined;
-  dconf_policy?: DConfPolicy | undefined;
+  dconf_policy?:
+    | DConfPolicy
+    | undefined;
+  /**
+   * Binding priority delivered to the agent. Equals the maximum priority
+   * across all enabled bindings that associate this policy with the node's
+   * groups. Higher value = higher priority. Used by the agent to determine
+   * merge order when multiple policies of the same type define the same key.
+   */
+  priority: number;
 }
 
 /** GetPolicyRequest requests a specific policy */

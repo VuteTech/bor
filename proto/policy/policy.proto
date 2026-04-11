@@ -79,6 +79,12 @@ message Policy {
     ChromePolicy  chrome_policy  = 12;
     DConfPolicy   dconf_policy   = 13;
   }
+
+  // Binding priority delivered to the agent. Equals the maximum priority
+  // across all enabled bindings that associate this policy with the node's
+  // groups. Higher value = higher priority. Used by the agent to determine
+  // merge order when multiple policies of the same type define the same key.
+  int32 priority = 14;
 }
 
 // GetPolicyRequest requests a specific policy

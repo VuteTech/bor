@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -87,11 +89,17 @@ var chromeNotifyConfig = notify.Config{
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
 
-// dconfCache maps policy ID → typed DConf policy for all active Dconf policies.
-var dconfCache = make(map[string]*pb.DConfPolicy)
+// dconfCacheEntry holds a DConf policy alongside its binding priority.
+type dconfCacheEntry struct {
+	priority int32
+	policy   *pb.DConfPolicy
+}
+
+// dconfCache maps policy ID → DConf policy + priority for all active Dconf policies.
+var dconfCache = make(map[string]dconfCacheEntry)
 
 // dconfSnapshotStaging accumulates DConf policies during a SNAPSHOT.
-var dconfSnapshotStaging map[string]*pb.DConfPolicy
+var dconfSnapshotStaging map[string]dconfCacheEntry
 
 // dconfSchemaIndex caches the set of schema IDs available on this node.
 // Built once at startup by ScanGSettingsSchemas and used for compliance checks.
@@ -349,7 +357,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firefoxSnapshotStaging = nil
 				chromeCache = make(map[string]*pb.ChromePolicy)
 				chromeSnapshotStaging = nil
-				dconfCache = make(map[string]*pb.DConfPolicy)
+				dconfCache = make(map[string]dconfCacheEntry)
 				dconfSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
@@ -392,9 +400,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			kconfigSnapshotStaging[pi.ID] = pi.KConfigPolicy
 		case "Dconf":
 			if dconfSnapshotStaging == nil {
-				dconfSnapshotStaging = make(map[string]*pb.DConfPolicy)
+				dconfSnapshotStaging = make(map[string]dconfCacheEntry)
 			}
-			dconfSnapshotStaging[pi.ID] = pi.DConfPolicy
+			dconfSnapshotStaging[pi.ID] = dconfCacheEntry{priority: pi.Priority, policy: pi.DConfPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -434,7 +442,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if dconfSnapshotStaging != nil {
 				dconfCache = dconfSnapshotStaging
 			} else {
-				dconfCache = make(map[string]*pb.DConfPolicy)
+				dconfCache = make(map[string]dconfCacheEntry)
 			}
 			dconfSnapshotStaging = nil
 
@@ -482,7 +490,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				kdeNotifier.ScheduleNotification(notifyConfig, changed)
 			}
 		case "Dconf":
-			dconfCache[pi.ID] = pi.DConfPolicy
+			dconfCache[pi.ID] = dconfCacheEntry{priority: pi.Priority, policy: pi.DConfPolicy}
 			syncAllDConf(ctx, client)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
@@ -784,11 +792,26 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 // locks file under /etc/dconf/db/local.d/, and runs dconf update.
 // Reports compliance back to the server for each affected policy ID.
 func syncAllDConf(ctx context.Context, client *policyclient.Client) {
-	var policies []*pb.DConfPolicy
-	var ids []string
-	for id, pol := range dconfCache {
-		policies = append(policies, pol)
-		ids = append(ids, id)
+	type entry struct {
+		id       string
+		priority int32
+		policy   *pb.DConfPolicy
+	}
+	entries := make([]entry, 0, len(dconfCache))
+	for id, e := range dconfCache {
+		entries = append(entries, entry{id: id, priority: e.priority, policy: e.policy})
+	}
+	// Sort ascending by priority so higher-priority policies are processed last
+	// and win in the last-writer-wins merge.
+	slices.SortStableFunc(entries, func(a, b entry) int {
+		return cmp.Compare(a.priority, b.priority)
+	})
+
+	policies := make([]*pb.DConfPolicy, 0, len(entries))
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		policies = append(policies, e.policy)
+		ids = append(ids, e.id)
 	}
 
 	merged := policy.MergeDConfPolicies(policies)
