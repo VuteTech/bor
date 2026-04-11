@@ -6,6 +6,7 @@ option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
 import "google/protobuf/timestamp.proto";
 import "chrome.proto";
+import "dconf.proto";
 import "firefox.proto";
 import "kconfig.proto";
 
@@ -34,6 +35,11 @@ service PolicyService {
 
   // Renew the calling agent's mTLS certificate (authenticated with the current cert).
   rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
+
+  // ReportSchemaCatalogue is called by agents at startup to publish
+  // the GSettings schemas installed on their node.
+  rpc ReportSchemaCatalogue(ReportSchemaCatalogueRequest)
+      returns (ReportSchemaCatalogueResponse);
 }
 
 // Policy represents a desktop policy configuration
@@ -70,8 +76,15 @@ message Policy {
   oneof typed_content {
     FirefoxPolicy firefox_policy = 10;
     KConfigPolicy kconfig_policy = 11;
-    ChromePolicy chrome_policy = 12;
+    ChromePolicy  chrome_policy  = 12;
+    DConfPolicy   dconf_policy   = 13;
   }
+
+  // Binding priority delivered to the agent. Equals the maximum priority
+  // across all enabled bindings that associate this policy with the node's
+  // groups. Higher value = higher priority. Used by the agent to determine
+  // merge order when multiple policies of the same type define the same key.
+  int32 priority = 14;
 }
 
 // GetPolicyRequest requests a specific policy
@@ -150,6 +163,27 @@ message PolicyUpdate {
   bool snapshot_complete = 4;
 }
 
+// ComplianceItemResult is the compliance result for a single DConf key.
+// Sent by the agent alongside the per-policy rollup in ReportComplianceRequest.
+message ComplianceItemResult {
+  string           schema_id = 1;
+  string           key       = 2;
+  ComplianceStatus status    = 3;
+  string           message   = 4;
+}
+
+// ComplianceStatus is the four-state compliance result.
+// Preferred over the deprecated bool compliant field in ReportComplianceRequest.
+enum ComplianceStatus {
+  COMPLIANCE_STATUS_UNKNOWN       = 0;
+  COMPLIANCE_STATUS_COMPLIANT     = 1;
+  COMPLIANCE_STATUS_NON_COMPLIANT = 2;
+  // INAPPLICABLE: schema / feature not installed on this node; excluded from score.
+  COMPLIANCE_STATUS_INAPPLICABLE  = 3;
+  // ERROR: feature is installed but enforcement or check failed.
+  COMPLIANCE_STATUS_ERROR         = 4;
+}
+
 // ReportComplianceRequest reports policy compliance status
 message ReportComplianceRequest {
   // Client identifier
@@ -158,7 +192,8 @@ message ReportComplianceRequest {
   // Policy ID
   string policy_id = 2;
 
-  // Compliance status
+  // Deprecated: use status instead.  Kept for backward compatibility with
+  // agents that have not yet been updated.
   bool compliant = 3;
 
   // Status message or error details
@@ -166,6 +201,12 @@ message ReportComplianceRequest {
 
   // Timestamp of the report
   google.protobuf.Timestamp reported_at = 5;
+
+  // Preferred over the bool compliant field.
+  ComplianceStatus status = 6;
+
+  // Per-item results for dconf policies.  Empty for other policy types.
+  repeated ComplianceItemResult items = 7;
 }
 
 // ReportComplianceResponse acknowledges compliance report

@@ -217,6 +217,7 @@ func (r *PolicyBindingRepository) ListPoliciesByGroupIDs(ctx context.Context, gr
 		args[i] = id
 	}
 	query := fmt.Sprintf(`SELECT DISTINCT ON (p.id) p.id, p.name, p.description, p.type, p.content, p.version, p.status,
+			pb.priority,
 			p.deprecated_at, p.deprecation_message, p.replacement_policy_id,
 			p.created_by, p.created_at, p.updated_at
 		FROM policies p
@@ -235,6 +236,7 @@ func (r *PolicyBindingRepository) ListPoliciesByGroupIDs(ctx context.Context, gr
 		p := &models.Policy{}
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Description, &p.Type, &p.Content, &p.Version, &p.State,
+			&p.Priority,
 			&p.DeprecatedAt, &p.DeprecationMessage, &p.ReplacementPolicyID,
 			&p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {

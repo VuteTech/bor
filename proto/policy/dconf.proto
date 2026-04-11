@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// ── Policy messages ────────────────────────────────────────────────────────
+
+// DConfEntry represents one GSettings key to enforce.
+message DConfEntry {
+  string schema_id = 1;  // e.g. "org.gnome.desktop.screensaver"
+  string path      = 2;  // dconf path override; empty for non-relocatable schemas
+  string key       = 3;  // e.g. "lock-enabled"
+  string value     = 4;  // GVariant text format: "true", "'Adwaita'", "uint32 300"
+  bool   lock      = 5;  // add this key to the locks file (user cannot override)
+}
+
+// DConfPolicy is a list of GSettings settings to enforce on a node.
+message DConfPolicy {
+  repeated DConfEntry entries = 1;
+
+  // db_name is the dconf system-db name. Defaults to "local" if empty,
+  // writing into /etc/dconf/db/local.d/.
+  string db_name = 2;
+}
+
+// ── Schema catalogue messages ──────────────────────────────────────────────
+
+// GSettingsEnumValue describes one value of a GSettings enum or flags type.
+message GSettingsEnumValue {
+  string nick  = 1;  // short identifier used in GVariant text, e.g. "prefer-dark"
+  int32  value = 2;  // integer value
+}
+
+// GSettingsKey describes one key within a GSettings schema, including all
+// metadata read from the schema XML on the agent node.
+message GSettingsKey {
+  string name          = 1;  // key name, e.g. "lock-enabled"
+  string type          = 2;  // GVariant type code: "b", "s", "u", "i", "d", "as", …
+  string summary       = 3;  // short human-readable label  (from <summary>)
+  string description   = 4;  // long human-readable explanation (from <description>)
+  string default_value = 5;  // GVariant text format default, e.g. "true", "'Adwaita'"
+
+  // For enum / flags types (<enum> or <flags> element in the schema XML).
+  repeated GSettingsEnumValue enum_values = 6;
+
+  // For numeric types with a <range> constraint.
+  string range_min = 7;  // GVariant text, e.g. "0"
+  string range_max = 8;  // GVariant text, e.g. "4294967295"
+
+  // For string keys with a fixed set of <choices>.
+  repeated string choices = 9;
+}
+
+// GSettingsSchema describes one schema available on the reporting node.
+message GSettingsSchema {
+  string schema_id           = 1;  // e.g. "org.gnome.desktop.screensaver"
+  string path                = 2;  // fixed dconf path; empty if relocatable
+  bool   relocatable         = 3;  // true when path is not fixed
+  repeated GSettingsKey keys = 4;
+}
+
+// ReportSchemaCatalogueRequest is sent by the agent at startup (and after
+// package installs) to inform the server which GSettings schemas are
+// available on this node.  The agent reads
+// /usr/share/glib-2.0/schemas/*.gschema.xml to build the list.
+message ReportSchemaCatalogueRequest {
+  string                   client_id     = 1;
+  repeated GSettingsSchema schemas       = 2;
+  // Informational: GNOME version string if detectable, e.g. "46".
+  string                   gnome_version = 3;
+}
+
+message ReportSchemaCatalogueResponse {}
+

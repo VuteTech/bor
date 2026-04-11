@@ -153,9 +153,9 @@ func (h *PolicyBindingHandler) Update(w http.ResponseWriter, r *http.Request, id
 		log.Printf("Failed to encode policy binding response: %v", err)
 	}
 
-	// Only notify agents when the binding state changes (enabled/disabled).
-	// Priority-only updates don't require an immediate agent resync.
-	if h.OnBindingChange != nil && req.State != nil {
+	// Notify agents when state or priority changes — both affect which policy
+	// values are applied on the node.
+	if h.OnBindingChange != nil && (req.State != nil || req.Priority != nil) {
 		h.OnBindingChange(binding)
 	}
 }

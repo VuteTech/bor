@@ -48,6 +48,7 @@ import { NodeGroupsPage } from "./views/NodeGroups";
 import { PolicyBindingsPage } from "./views/PolicyBindings";
 import { SettingsPage } from "./views/Settings";
 import { AuditLogsPage } from "./views/AuditLogs";
+import { CompliancePage } from "./views/Compliance";
 import logoWhite from "./assets/logo-white.svg";
 
 type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "audit-logs" | "settings";
@@ -454,14 +455,7 @@ export const Shell: React.FC = () => {
       case "policy-bindings":
         return <PolicyBindingsPage />;
       case "compliance":
-        return (
-          <PageSection>
-            <div className="pf-v6-c-content">
-              <h1>Compliance</h1>
-              <p>View compliance reports and status.</p>
-            </div>
-          </PageSection>
-        );
+        return <CompliancePage />;
       case "audit-logs":
         return <AuditLogsPage />;
       case "settings":
