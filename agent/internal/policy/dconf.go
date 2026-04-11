@@ -209,10 +209,10 @@ var gvariantIntPrefixes = map[string]struct{}{
 	"byte": {}, "handle": {},
 }
 
-// normalizeGVariant strips the type prefix from a GVariant integer text value
+// NormalizeGVariant strips the type prefix from a GVariant integer text value
 // so that "uint16 5042" and "5042" compare equal.
 // Non-integer values (booleans, strings, arrays) are returned unchanged.
-func normalizeGVariant(v string) string {
+func NormalizeGVariant(v string) string {
 	word, rest, found := strings.Cut(v, " ")
 	if found {
 		if _, ok := gvariantIntPrefixes[word]; ok {
@@ -261,7 +261,7 @@ func CheckDConfCompliance(pol *pb.DConfPolicy, knownSchemas map[string]struct{})
 
 		// Compare normalised forms so that "uint16 5042" and "5042" are equal.
 		// This tolerates policies saved before the typed-value UI fix was deployed.
-		if normalizeGVariant(current) == normalizeGVariant(want) {
+		if NormalizeGVariant(current) == NormalizeGVariant(want) {
 			results = append(results, DConfItemResult{
 				SchemaID: sid,
 				Key:      key,

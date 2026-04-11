@@ -302,16 +302,22 @@ export const CompliancePage: React.FC = () => {
             const hasItems = (r.items?.length ?? 0) > 0;
 
             return (
-              <Tbody key={`${key}-${idx}`} isExpanded={isExpanded}>
+              <Tbody key={`${key}-${idx}`} isExpanded={hasItems ? isExpanded : undefined}>
                 <Tr>
-                  <Td
-                    expand={hasItems ? {
-                      rowIndex: idx,
-                      isExpanded,
-                      onToggle: () => toggleRow(key),
-                      expandId: `expand-toggle-${key}`,
-                    } : undefined}
-                  />
+                  {hasItems ? (
+                    <Td
+                      expand={{
+                        rowIndex: idx,
+                        isExpanded,
+                        onToggle: () => toggleRow(key),
+                        expandId: `expand-toggle-${key}`,
+                      }}
+                    />
+                  ) : (
+                    /* Keep a placeholder cell so the column count stays at 6 for rows
+                       that have no expandable content (non-dconf or pre-items data). */
+                    <Td className="pf-v6-c-table__toggle" />
+                  )}
                   <Td dataLabel="Node">{r.node_name}</Td>
                   <Td dataLabel="Policy">{r.policy_name}</Td>
                   <Td dataLabel="Status">

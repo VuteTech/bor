@@ -89,8 +89,10 @@ var chromeNotifyConfig = notify.Config{
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
 
-// dconfCacheEntry holds a DConf policy alongside its binding priority.
+// dconfCacheEntry holds a DConf policy alongside its binding priority and name.
 type dconfCacheEntry struct {
+	id       string
+	name     string
 	priority int32
 	policy   *pb.DConfPolicy
 }
@@ -402,7 +404,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if dconfSnapshotStaging == nil {
 				dconfSnapshotStaging = make(map[string]dconfCacheEntry)
 			}
-			dconfSnapshotStaging[pi.ID] = dconfCacheEntry{priority: pi.Priority, policy: pi.DConfPolicy}
+			dconfSnapshotStaging[pi.ID] = dconfCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DConfPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -490,7 +492,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				kdeNotifier.ScheduleNotification(notifyConfig, changed)
 			}
 		case "Dconf":
-			dconfCache[pi.ID] = dconfCacheEntry{priority: pi.Priority, policy: pi.DConfPolicy}
+			dconfCache[pi.ID] = dconfCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DConfPolicy}
 			syncAllDConf(ctx, client)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
@@ -792,26 +794,19 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 // locks file under /etc/dconf/db/local.d/, and runs dconf update.
 // Reports compliance back to the server for each affected policy ID.
 func syncAllDConf(ctx context.Context, client *policyclient.Client) {
-	type entry struct {
-		id       string
-		priority int32
-		policy   *pb.DConfPolicy
-	}
-	entries := make([]entry, 0, len(dconfCache))
-	for id, e := range dconfCache {
-		entries = append(entries, entry{id: id, priority: e.priority, policy: e.policy})
+	entries := make([]dconfCacheEntry, 0, len(dconfCache))
+	for _, e := range dconfCache {
+		entries = append(entries, e)
 	}
 	// Sort ascending by priority so higher-priority policies are processed last
 	// and win in the last-writer-wins merge.
-	slices.SortStableFunc(entries, func(a, b entry) int {
+	slices.SortStableFunc(entries, func(a, b dconfCacheEntry) int {
 		return cmp.Compare(a.priority, b.priority)
 	})
 
 	policies := make([]*pb.DConfPolicy, 0, len(entries))
-	ids := make([]string, 0, len(entries))
 	for _, e := range entries {
 		policies = append(policies, e.policy)
-		ids = append(ids, e.id)
 	}
 
 	merged := policy.MergeDConfPolicies(policies)
@@ -824,15 +819,15 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 
 	if err := policy.SyncDConfFiles(dbName, keyfile, locksfile); err != nil {
 		log.Printf("Error syncing dconf files: %v", err)
-		for _, id := range ids {
-			_ = client.ReportComplianceWithStatus(ctx, id,
+		for _, e := range entries {
+			_ = client.ReportComplianceWithStatus(ctx, e.id,
 				pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
 				"failed to sync dconf files: "+err.Error(), nil)
 		}
 		return
 	}
 
-	log.Printf("dconf policies synced (db=%s, %d policies)", dbName, len(ids))
+	log.Printf("dconf policies synced (db=%s, %d policies)", dbName, len(entries))
 
 	// Compliance check uses the locally cached schema index.
 	idx := dconfSchemaIndex
@@ -842,10 +837,20 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 	results := policy.CheckDConfCompliance(merged, idx)
 	overallStatus, msg := policy.RollupDConfCompliance(results)
 
-	// Convert per-item results to proto for structured reporting.
-	protoItems := make([]*pb.ComplianceItemResult, 0, len(results))
+	// Build a lookup of the merged value for each (schema_id, key) so we
+	// can detect keys that were overridden by a higher-priority policy.
+	// Path is intentionally excluded: gsettings compliance uses schema_id+key,
+	// and the path stored in entries may differ (e.g. "/org/gnome/…/" vs "").
+	type entryKey struct{ schemaID, key string }
+	mergedValue := make(map[entryKey]string, len(merged.GetEntries()))
+	for _, e := range merged.GetEntries() {
+		mergedValue[entryKey{e.GetSchemaId(), e.GetKey()}] = e.GetValue()
+	}
+
+	// Build base proto items from the merged compliance check.
+	baseItems := make([]*pb.ComplianceItemResult, 0, len(results))
 	for _, r := range results {
-		protoItems = append(protoItems, &pb.ComplianceItemResult{
+		baseItems = append(baseItems, &pb.ComplianceItemResult{
 			SchemaId: r.SchemaID,
 			Key:      r.Key,
 			Status:   r.Status,
@@ -853,8 +858,78 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client) {
 		})
 	}
 
-	for _, id := range ids {
-		_ = client.ReportComplianceWithStatus(ctx, id, overallStatus, msg, protoItems)
+	// Report per-policy: annotate items whose key was overridden by a
+	// higher-priority policy, then compute a per-policy rollup status.
+	for _, e := range entries {
+		items := make([]*pb.ComplianceItemResult, 0, len(baseItems))
+		// Index this policy's own intended values.
+		ownValue := make(map[entryKey]string, len(e.policy.GetEntries()))
+		for _, pe := range e.policy.GetEntries() {
+			ownValue[entryKey{pe.GetSchemaId(), pe.GetKey()}] = pe.GetValue()
+		}
+		for _, item := range baseItems {
+			k := entryKey{item.SchemaId, item.Key}
+			own, hasOwn := ownValue[k]
+			winner := mergedValue[k]
+			if hasOwn && policy.NormalizeGVariant(own) != policy.NormalizeGVariant(winner) {
+				// This key exists in the policy but was overridden in the merge.
+				items = append(items, &pb.ComplianceItemResult{
+					SchemaId: item.SchemaId,
+					Key:      item.Key,
+					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+					Message:  fmt.Sprintf("Overridden by a higher-priority policy; applied value: %s", winner),
+				})
+			} else {
+				items = append(items, item)
+			}
+		}
+
+		// Compute this policy's overall status from its own items rather than
+		// using the merged-policy rollup (which is always COMPLIANT when the
+		// highest-priority policy is correctly enforced).
+		policyStatus, policyMsg := rollupProtoItems(items, overallStatus, msg)
+		_ = client.ReportComplianceWithStatus(ctx, e.id, policyStatus, policyMsg, items)
+	}
+}
+
+// rollupProtoItems derives an overall ComplianceStatus and message from a
+// slice of per-item proto results. If items is empty, the caller-supplied
+// fallback values are returned unchanged.
+func rollupProtoItems(items []*pb.ComplianceItemResult, fallbackStatus pb.ComplianceStatus, fallbackMsg string) (pb.ComplianceStatus, string) {
+	if len(items) == 0 {
+		return fallbackStatus, fallbackMsg
+	}
+
+	allInapplicable := true
+	var msgs []string
+	var hasError, hasNonCompliant bool
+
+	for _, it := range items {
+		switch it.GetStatus() {
+		case pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE:
+			// stays inapplicable
+		case pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR:
+			allInapplicable = false
+			hasError = true
+			msgs = append(msgs, fmt.Sprintf("%s/%s: %s", it.GetSchemaId(), it.GetKey(), it.GetMessage()))
+		case pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT:
+			allInapplicable = false
+			hasNonCompliant = true
+			msgs = append(msgs, fmt.Sprintf("%s/%s: %s", it.GetSchemaId(), it.GetKey(), it.GetMessage()))
+		default:
+			allInapplicable = false
+		}
+	}
+
+	switch {
+	case allInapplicable:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, "all entries overridden or schema not available"
+	case hasError:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, strings.Join(msgs, "; ")
+	case hasNonCompliant:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT, strings.Join(msgs, "; ")
+	default:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, ""
 	}
 }
 

@@ -122,7 +122,7 @@ func (r *DConfRepository) ListSchemasByNode(ctx context.Context, nodeID string) 
 // UpsertComplianceResult inserts or updates a compliance result for a (node, policy) pair.
 // itemsJSON is a JSON array of per-item results (may be nil/empty for non-dconf policies).
 func (r *DConfRepository) UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) error {
-	var items interface{}
+	var items any
 	if len(itemsJSON) > 0 {
 		items = itemsJSON
 	}
@@ -182,21 +182,14 @@ func (r *DConfRepository) ListComplianceResults(ctx context.Context) ([]*Complia
 	for rows.Next() {
 		var cr ComplianceRow
 		var itemsJSON []byte
-		var reportedAt interface{}
+		var reportedAt time.Time
 		if err := rows.Scan(&cr.NodeID, &cr.NodeName, &cr.PolicyID, &cr.PolicyName, &cr.Status, &cr.Message, &itemsJSON, &reportedAt); err != nil {
 			return nil, fmt.Errorf("dconf: scan compliance row: %w", err)
 		}
 		if len(itemsJSON) > 0 {
 			cr.Items = json.RawMessage(itemsJSON)
 		}
-		switch v := reportedAt.(type) {
-		case []byte:
-			cr.ReportedAt = string(v)
-		case string:
-			cr.ReportedAt = v
-		default:
-			cr.ReportedAt = fmt.Sprintf("%v", v)
-		}
+		cr.ReportedAt = reportedAt.UTC().Format(time.RFC3339)
 		results = append(results, &cr)
 	}
 	return results, rows.Err()
