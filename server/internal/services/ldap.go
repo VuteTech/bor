@@ -23,8 +23,9 @@ type LDAPConfig struct {
 	Port         int    `json:"port"`
 	UseTLS       bool   `json:"use_tls"`
 	StartTLS     bool   `json:"start_tls"`
-	TLSCAFile    string `json:"tls_ca_file"`
-	BindDN       string `json:"bind_dn"`
+	TLSCAFile     string `json:"tls_ca_file"`
+	TLSSkipVerify bool   `json:"tls_skip_verify"`
+	BindDN        string `json:"bind_dn"`
 	BindPassword string `json:"-"`
 	BaseDN       string `json:"base_dn"`
 	// UserFilter is the LDAP search filter; use %s for the escaped username.
@@ -292,6 +293,11 @@ func (s *LDAPService) tlsConfig() (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		ServerName: s.config.Host,
+	}
+
+	if s.config.TLSSkipVerify {
+		cfg.InsecureSkipVerify = true //nolint:gosec // G402: admin-configured, dev/testing use
+		return cfg, nil
 	}
 
 	if s.config.TLSCAFile != "" {

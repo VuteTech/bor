@@ -168,6 +168,7 @@ func main() {
 			UseTLS:          cfg.LDAP.UseTLS,
 			StartTLS:        cfg.LDAP.StartTLS,
 			TLSCAFile:       cfg.LDAP.TLSCAFile,
+			TLSSkipVerify:   cfg.LDAP.TLSSkipVerify,
 			BindDN:          cfg.LDAP.BindDN,
 			BindPassword:    cfg.LDAP.BindPassword,
 			BaseDN:          cfg.LDAP.BaseDN,
@@ -184,6 +185,9 @@ func main() {
 		})
 		log.Printf("LDAP authentication enabled (host=%s port=%d tls=%v startTLS=%v)",
 			cfg.LDAP.Host, cfg.LDAP.Port, cfg.LDAP.UseTLS, cfg.LDAP.StartTLS)
+		if cfg.LDAP.TLSSkipVerify {
+			log.Printf("WARNING: LDAP TLS certificate verification is disabled (LDAP_TLS_SKIP_VERIFY=true)")
+		}
 	}
 
 	// Initialize MFA service

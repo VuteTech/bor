@@ -145,7 +145,10 @@ type LDAPConfig struct {
 	// TLSCAFile is an optional path to a PEM CA certificate used to verify
 	// the LDAP server certificate for LDAPS or StartTLS connections.
 	// When empty the system cert pool is used.
-	TLSCAFile    string
+	TLSCAFile string
+	// TLSSkipVerify disables all TLS certificate verification for the LDAP
+	// connection.  Intended for development / testing only.
+	TLSSkipVerify bool
 	BindDN       string
 	BindPassword string
 	BaseDN       string
@@ -243,6 +246,7 @@ type fileConfig struct {
 		UseTLS          bool   `yaml:"use_tls"`
 		StartTLS        bool   `yaml:"start_tls"`
 		TLSCAFile       string `yaml:"tls_ca_file"`
+		TLSSkipVerify   bool   `yaml:"tls_skip_verify"`
 		BindDN          string `yaml:"bind_dn"`
 		BindPassword    string `yaml:"bind_password"`
 		BaseDN          string `yaml:"base_dn"`
@@ -327,6 +331,7 @@ func Load() (*Config, error) {
 	}
 	ldapUseTLS := getEnvBool("LDAP_USE_TLS", fc.LDAP.UseTLS)
 	ldapStartTLS := getEnvBool("LDAP_START_TLS", fc.LDAP.StartTLS)
+	ldapTLSSkipVerify := getEnvBool("LDAP_TLS_SKIP_VERIFY", fc.LDAP.TLSSkipVerify)
 	ldapPageSizeStr := getEnv("LDAP_PAGE_SIZE", strconv.Itoa(fc.LDAP.PageSize))
 	ldapPageSize, err := strconv.Atoi(ldapPageSizeStr)
 	if err != nil {
@@ -433,6 +438,7 @@ func Load() (*Config, error) {
 			UseTLS:          ldapUseTLS,
 			StartTLS:        ldapStartTLS,
 			TLSCAFile:       getEnv("LDAP_TLS_CA_FILE", fc.LDAP.TLSCAFile),
+			TLSSkipVerify:   ldapTLSSkipVerify,
 			BindDN:          getEnv("LDAP_BIND_DN", fc.LDAP.BindDN),
 			BindPassword:    getEnv("LDAP_BIND_PASSWORD", fc.LDAP.BindPassword),
 			BaseDN:          getEnv("LDAP_BASE_DN", fc.LDAP.BaseDN),
