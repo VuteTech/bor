@@ -88,12 +88,17 @@ services:
       - BOR_WEBAUTHN_RPID=localhost
       - BOR_WEBAUTHN_ORIGINS=https://localhost:8443
       - BOR_WEBAUTHN_DISPLAY_NAME=Bor Policy Manager
+
     ports:
       - "8443:8443"
       - "8444:8444"
       - "9090:9090"
     volumes:
       - bor_pki:/var/lib/bor/pki:U
+      - ./dev/kerberos/bor.keytab:/etc/bor/krb5.keytab:ro
+      - ./dev/kerberos/krb5.conf:/etc/krb5.conf:ro
+    extra_hosts:
+      - "dc1.bor.blago.cloud:10.28.130.100"
     restart: unless-stopped
 
 volumes:

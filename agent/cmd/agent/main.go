@@ -159,21 +159,54 @@ func main() {
 	}
 
 	if !policyclient.IsEnrolled(paths) {
-		if *enrollToken == "" {
-			log.Fatal("Agent is not enrolled and no enrollment token was provided.\n" +
-				"Run with: bor-agent --token <TOKEN>\n" +
-				"Generate a token from the Node Groups page in the Bor web UI.")
+		enrolled := false
+
+		// ── Kerberos enrollment (token-free, domain-joined hosts) ─────────────
+		// Attempt Kerberos enrollment when enabled and the machine keytab exists.
+		// This covers FreeIPA and Active Directory (Samba AD) joined hosts.
+		if cfg.Kerberos.Enabled && cfg.Kerberos.KeytabFile != "" && cfg.Kerberos.ServicePrincipal != "" {
+			if _, statErr := os.Stat(cfg.Kerberos.KeytabFile); statErr == nil {
+				log.Printf("Kerberos keytab found at %s – attempting Kerberos enrollment", cfg.Kerberos.KeytabFile)
+				krbErr := policyclient.EnrollWithKerberos(
+					cfg.Server.EnrollmentAddr(),
+					cfg.Kerberos.KeytabFile,
+					cfg.Kerberos.ServicePrincipal,
+					cfg.Kerberos.KDC,
+					cfg.Kerberos.MachinePrincipal,
+					cfg.Agent.ClientID,
+					cfg.Server.InsecureSkipVerify,
+					paths,
+				)
+				if krbErr != nil {
+					log.Printf("Kerberos enrollment failed: %v – falling back to token-based enrollment", krbErr)
+				} else {
+					enrolled = true
+				}
+			} else {
+				log.Printf("Kerberos enrollment configured but keytab not found at %s – skipping", cfg.Kerberos.KeytabFile)
+			}
 		}
-		log.Println("Not yet enrolled – starting enrollment...")
-		if enrollErr := policyclient.Enroll(
-			cfg.Server.EnrollmentAddr(),
-			*enrollToken,
-			cfg.Agent.ClientID,
-			cfg.Server.InsecureSkipVerify,
-			paths,
-		); enrollErr != nil {
-			log.Fatalf("Enrollment failed: %v", enrollErr)
+
+		// ── Token-based enrollment (fallback or primary) ──────────────────────
+		if !enrolled {
+			if *enrollToken == "" {
+				log.Fatal("Agent is not enrolled and no enrollment token was provided.\n" +
+					"Run with: bor-agent --token <TOKEN>\n" +
+					"Generate a token from the Node Groups page in the Bor web UI.\n" +
+					"Alternatively, configure Kerberos enrollment in /etc/bor/config.yaml.")
+			}
+			log.Println("Not yet enrolled – starting token-based enrollment...")
+			if enrollErr := policyclient.Enroll(
+				cfg.Server.EnrollmentAddr(),
+				*enrollToken,
+				cfg.Agent.ClientID,
+				cfg.Server.InsecureSkipVerify,
+				paths,
+			); enrollErr != nil {
+				log.Fatalf("Enrollment failed: %v", enrollErr)
+			}
 		}
+
 		fmt.Printf(`
 Enrollment successful. Certificates stored in %s
 

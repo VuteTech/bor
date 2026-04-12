@@ -16,15 +16,16 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	Database DatabaseConfig
-	Server   ServerConfig
-	Security SecurityConfig
-	LDAP     LDAPConfig
-	TLS      TLSConfig
-	CA       CAConfig
-	WebAuthn WebAuthnConfig
-	Metrics  MetricsConfig
-	Audit    AuditConfig
+	Database  DatabaseConfig
+	Server    ServerConfig
+	Security  SecurityConfig
+	LDAP      LDAPConfig
+	Kerberos  KerberosConfig
+	TLS       TLSConfig
+	CA        CAConfig
+	WebAuthn  WebAuthnConfig
+	Metrics   MetricsConfig
+	Audit     AuditConfig
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -136,14 +137,66 @@ type LDAPConfig struct {
 	Enabled      bool
 	Host         string
 	Port         int
-	UseTLS       bool
+	// UseTLS enables LDAPS (TLS from the start, default port 636).
+	UseTLS bool
+	// StartTLS upgrades a plain LDAP connection (port 389) to TLS.
+	// Mutually exclusive with UseTLS; UseTLS takes precedence when both are set.
+	StartTLS bool
+	// TLSCAFile is an optional path to a PEM CA certificate used to verify
+	// the LDAP server certificate for LDAPS or StartTLS connections.
+	// When empty the system cert pool is used.
+	TLSCAFile    string
 	BindDN       string
 	BindPassword string
 	BaseDN       string
-	UserFilter   string
+	// UserFilter is the LDAP search filter for locating users.
+	// Use %s as a placeholder for the (escaped) username.
+	// FreeIPA default: "(uid=%s)"
+	// Active Directory default: "(sAMAccountName=%s)"
+	UserFilter string
+	// UPNSuffix, when set, attempts an additional bind as username+UPNSuffix
+	// (e.g. "@EXAMPLE.COM") when the primary bind with a service account fails
+	// to locate the user.  This is the UPN-style bind used by Active Directory.
+	UPNSuffix    string
 	AttrUsername string
 	AttrEmail    string
 	AttrFullName string
+	// GroupBaseDN is the base DN for group membership searches.
+	// Defaults to BaseDN when empty.
+	GroupBaseDN string
+	// GroupFilter is the LDAP filter used to retrieve the groups a user belongs
+	// to.  Use %s as a placeholder for the (escaped) user DN.
+	// Example (AD/FreeIPA): "(&(objectClass=group)(member=%s))"
+	GroupFilter string
+	// GroupMemberAttr is the attribute on a group object that lists its member
+	// DNs.  Typically "member" (AD, FreeIPA) or "uniqueMember" (OpenLDAP).
+	GroupMemberAttr string
+	// AttrMemberOf is the user attribute that lists the group DNs the user
+	// belongs to.  Typically "memberOf" (AD, FreeIPA).  When set, group
+	// membership is resolved via this attribute instead of a separate search.
+	AttrMemberOf string
+	// PageSize controls LDAP result paging (RFC 2696).  0 disables paging.
+	PageSize int
+}
+
+// KerberosConfig holds Kerberos/GSSAPI configuration for token-free agent enrollment.
+// Domain-joined nodes authenticate using the machine keytab (/etc/krb5.keytab)
+// and a Kerberos service ticket, eliminating the need for manually generated
+// enrollment tokens.  Supported by FreeIPA and Active Directory (Samba AD).
+type KerberosConfig struct {
+	// Enabled activates the KerberosEnroll gRPC endpoint.
+	Enabled bool // BOR_KERBEROS_ENABLED
+	// Realm is the Kerberos realm, e.g. "EXAMPLE.COM".
+	Realm string // BOR_KERBEROS_REALM
+	// KeytabFile is the path to the service keytab file on disk.
+	// The keytab must contain a key for ServicePrincipal.
+	KeytabFile string // BOR_KERBEROS_KEYTAB
+	// ServicePrincipal is the full Kerberos principal for the Bor service,
+	// e.g. "HTTP/bor.example.com@EXAMPLE.COM".
+	ServicePrincipal string // BOR_KERBEROS_PRINCIPAL
+	// DefaultNodeGroupID is the node group ID that newly-enrolled Kerberos
+	// agents are placed into when no group can be inferred from the principal.
+	DefaultNodeGroupID string // BOR_KERBEROS_DEFAULT_NODE_GROUP
 }
 
 // fileConfig mirrors Config for YAML unmarshalling.
@@ -184,18 +237,33 @@ type fileConfig struct {
 		} `yaml:"pkcs11"`
 	} `yaml:"ca"`
 	LDAP struct {
-		Enabled      bool   `yaml:"enabled"`
-		Host         string `yaml:"host"`
-		Port         int    `yaml:"port"`
-		UseTLS       bool   `yaml:"use_tls"`
-		BindDN       string `yaml:"bind_dn"`
-		BindPassword string `yaml:"bind_password"`
-		BaseDN       string `yaml:"base_dn"`
-		UserFilter   string `yaml:"user_filter"`
-		AttrUsername string `yaml:"attr_username"`
-		AttrEmail    string `yaml:"attr_email"`
-		AttrFullName string `yaml:"attr_full_name"`
+		Enabled         bool   `yaml:"enabled"`
+		Host            string `yaml:"host"`
+		Port            int    `yaml:"port"`
+		UseTLS          bool   `yaml:"use_tls"`
+		StartTLS        bool   `yaml:"start_tls"`
+		TLSCAFile       string `yaml:"tls_ca_file"`
+		BindDN          string `yaml:"bind_dn"`
+		BindPassword    string `yaml:"bind_password"`
+		BaseDN          string `yaml:"base_dn"`
+		UserFilter      string `yaml:"user_filter"`
+		UPNSuffix       string `yaml:"upn_suffix"`
+		AttrUsername    string `yaml:"attr_username"`
+		AttrEmail       string `yaml:"attr_email"`
+		AttrFullName    string `yaml:"attr_full_name"`
+		GroupBaseDN     string `yaml:"group_base_dn"`
+		GroupFilter     string `yaml:"group_filter"`
+		GroupMemberAttr string `yaml:"group_member_attr"`
+		AttrMemberOf    string `yaml:"attr_member_of"`
+		PageSize        int    `yaml:"page_size"`
 	} `yaml:"ldap"`
+	Kerberos struct {
+		Enabled            bool   `yaml:"enabled"`
+		Realm              string `yaml:"realm"`
+		KeytabFile         string `yaml:"keytab_file"`
+		ServicePrincipal   string `yaml:"service_principal"`
+		DefaultNodeGroupID string `yaml:"default_node_group_id"`
+	} `yaml:"kerberos"`
 	WebAuthn struct {
 		RPID        string   `yaml:"rpid"`
 		Origins     []string `yaml:"origins"`
@@ -258,6 +326,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid LDAP_PORT: %w", err)
 	}
 	ldapUseTLS := getEnvBool("LDAP_USE_TLS", fc.LDAP.UseTLS)
+	ldapStartTLS := getEnvBool("LDAP_START_TLS", fc.LDAP.StartTLS)
+	ldapPageSizeStr := getEnv("LDAP_PAGE_SIZE", strconv.Itoa(fc.LDAP.PageSize))
+	ldapPageSize, err := strconv.Atoi(ldapPageSizeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid LDAP_PAGE_SIZE: %w", err)
+	}
 
 	// ─── TLS ───────────────────────────────────────────────────────────────
 	tlsCertFile := getEnv("BOR_TLS_CERT_FILE", fc.TLS.CertFile)
@@ -353,17 +427,32 @@ func Load() (*Config, error) {
 			},
 		},
 		LDAP: LDAPConfig{
-			Enabled:      ldapEnabled,
-			Host:         getEnv("LDAP_HOST", fc.LDAP.Host),
-			Port:         ldapPort,
-			UseTLS:       ldapUseTLS,
-			BindDN:       getEnv("LDAP_BIND_DN", fc.LDAP.BindDN),
-			BindPassword: getEnv("LDAP_BIND_PASSWORD", fc.LDAP.BindPassword),
-			BaseDN:       getEnv("LDAP_BASE_DN", fc.LDAP.BaseDN),
-			UserFilter:   getEnv("LDAP_USER_FILTER", fc.LDAP.UserFilter),
-			AttrUsername: getEnv("LDAP_ATTR_USERNAME", fc.LDAP.AttrUsername),
-			AttrEmail:    getEnv("LDAP_ATTR_EMAIL", fc.LDAP.AttrEmail),
-			AttrFullName: getEnv("LDAP_ATTR_FULL_NAME", fc.LDAP.AttrFullName),
+			Enabled:         ldapEnabled,
+			Host:            getEnv("LDAP_HOST", fc.LDAP.Host),
+			Port:            ldapPort,
+			UseTLS:          ldapUseTLS,
+			StartTLS:        ldapStartTLS,
+			TLSCAFile:       getEnv("LDAP_TLS_CA_FILE", fc.LDAP.TLSCAFile),
+			BindDN:          getEnv("LDAP_BIND_DN", fc.LDAP.BindDN),
+			BindPassword:    getEnv("LDAP_BIND_PASSWORD", fc.LDAP.BindPassword),
+			BaseDN:          getEnv("LDAP_BASE_DN", fc.LDAP.BaseDN),
+			UserFilter:      getEnv("LDAP_USER_FILTER", fc.LDAP.UserFilter),
+			UPNSuffix:       getEnv("LDAP_UPN_SUFFIX", fc.LDAP.UPNSuffix),
+			AttrUsername:    getEnv("LDAP_ATTR_USERNAME", fc.LDAP.AttrUsername),
+			AttrEmail:       getEnv("LDAP_ATTR_EMAIL", fc.LDAP.AttrEmail),
+			AttrFullName:    getEnv("LDAP_ATTR_FULL_NAME", fc.LDAP.AttrFullName),
+			GroupBaseDN:     getEnv("LDAP_GROUP_BASE_DN", fc.LDAP.GroupBaseDN),
+			GroupFilter:     getEnv("LDAP_GROUP_FILTER", fc.LDAP.GroupFilter),
+			GroupMemberAttr: getEnv("LDAP_GROUP_MEMBER_ATTR", fc.LDAP.GroupMemberAttr),
+			AttrMemberOf:    getEnv("LDAP_ATTR_MEMBER_OF", fc.LDAP.AttrMemberOf),
+			PageSize:        ldapPageSize,
+		},
+		Kerberos: KerberosConfig{
+			Enabled:            getEnvBool("BOR_KERBEROS_ENABLED", fc.Kerberos.Enabled),
+			Realm:              getEnv("BOR_KERBEROS_REALM", fc.Kerberos.Realm),
+			KeytabFile:         getEnv("BOR_KERBEROS_KEYTAB", fc.Kerberos.KeytabFile),
+			ServicePrincipal:   getEnv("BOR_KERBEROS_PRINCIPAL", fc.Kerberos.ServicePrincipal),
+			DefaultNodeGroupID: getEnv("BOR_KERBEROS_DEFAULT_NODE_GROUP", fc.Kerberos.DefaultNodeGroupID),
 		},
 		WebAuthn: WebAuthnConfig{
 			RPID:        webAuthnRPID,
@@ -408,6 +497,9 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrUsername = "uid"
 	fc.LDAP.AttrEmail = "mail"
 	fc.LDAP.AttrFullName = "cn"
+	fc.LDAP.GroupMemberAttr = "member"
+	fc.LDAP.AttrMemberOf = "memberOf"
+	fc.LDAP.PageSize = 500
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
 	fc.Audit.Syslog.Network = "udp"
 	fc.Audit.Syslog.Addr = "localhost:514"

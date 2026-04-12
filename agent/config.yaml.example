@@ -23,8 +23,42 @@ agent:
 enrollment:
   # Directory where the agent stores its certificate, key, and CA cert after enrollment
   data_dir: "/var/lib/bor/agent"
-  # To enroll, run: bor-agent --token <TOKEN>
+  # To enroll manually, run: bor-agent --token <TOKEN>
   # Generate a token from the Node Groups page in the Bor web UI.
+  # Alternatively, enable Kerberos enrollment below for token-free enrollment.
+
+# Kerberos token-free enrollment (optional, for domain-joined hosts).
+#
+# When enabled, the agent authenticates to the Bor server using the machine
+# keytab (/etc/krb5.keytab) instead of a manually generated enrollment token.
+# This works with FreeIPA and Active Directory (Samba AD) domain-joined hosts.
+#
+# Prerequisites:
+#   - The host must be joined to the domain (ipa-client-install, realm join, etc.)
+#   - The machine keytab must exist at keytab_file
+#   - The Bor server must have Kerberos enrollment enabled (server.yaml kerberos.enabled)
+#   - service_principal must match the Bor server's Kerberos service principal
+#
+# FreeIPA joined hosts: /etc/krb5.keytab is created automatically by ipa-client-install
+# AD joined hosts:      /etc/krb5.keytab is created by realm join or adcli
+#
+#kerberos:
+#  enabled: false
+#  keytab_file: "/etc/krb5.keytab"
+#  service_principal: "HTTP/bor.example.com@EXAMPLE.COM"
+#  # kdc: hostname or IP of the Key Distribution Center (domain controller).
+#  # When set, the agent builds its Kerberos config from this address and the
+#  # realm in service_principal, bypassing /etc/krb5.conf entirely.
+#  # Useful when /etc/krb5.conf is missing, incomplete, or uses syntax that
+#  # the agent's Kerberos library does not support (e.g. on Fedora/RHEL).
+#  # Example: "dc1.example.com" or "192.0.2.10"
+#  kdc: ""
+#  # machine_principal: the Kerberos principal for this machine's keytab entry.
+#  # Default is "host/<hostname>" which is correct for FreeIPA-joined hosts.
+#  # For AD / Samba AD hosts joined with realm(1) or adcli, the keytab usually
+#  # contains "<HOSTNAME>$" (with dollar sign) or "host/<fqdn>@REALM".
+#  # Run "klist -kte /etc/krb5.keytab" on the agent host to find the value.
+#  machine_principal: ""
 
 # Firefox policy output paths
 firefox:
