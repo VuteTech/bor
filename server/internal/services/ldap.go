@@ -281,6 +281,13 @@ func (s *LDAPService) connect() (*ldap.Conn, error) {
 }
 
 // tlsConfig builds a *tls.Config, optionally loading a custom CA certificate.
+//
+// Samba AD (and some older LDAP servers) generate certificates that use only
+// the Common Name field for the hostname instead of Subject Alternative Names.
+// Go's default TLS verification rejects these.  When a custom CA file is
+// provided we therefore verify the certificate chain ourselves (ensuring the
+// cert is signed by the trusted CA) while allowing CN-based hostname matching
+// via VerifyHostname on the parsed certificate.
 func (s *LDAPService) tlsConfig() (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -288,15 +295,61 @@ func (s *LDAPService) tlsConfig() (*tls.Config, error) {
 	}
 
 	if s.config.TLSCAFile != "" {
-		pem, err := os.ReadFile(s.config.TLSCAFile) //nolint:gosec // G304: path is admin-configured
+		pemData, err := os.ReadFile(s.config.TLSCAFile) //nolint:gosec // G304: path is admin-configured
 		if err != nil {
 			return nil, fmt.Errorf("failed to read LDAP CA cert %s: %w", s.config.TLSCAFile, err)
 		}
 		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
+		if !pool.AppendCertsFromPEM(pemData) {
 			return nil, fmt.Errorf("no valid certificates found in %s", s.config.TLSCAFile)
 		}
 		cfg.RootCAs = pool
+
+		// Custom verification: check the chain against our CA pool but
+		// tolerate certificates that lack SANs (common with Samba AD).
+		cfg.InsecureSkipVerify = true //nolint:gosec // G402: we verify manually below
+		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return fmt.Errorf("server presented no TLS certificates")
+			}
+			cert, err := x509.ParseCertificate(rawCerts[0])
+			if err != nil {
+				return fmt.Errorf("failed to parse server certificate: %w", err)
+			}
+
+			// Build the intermediate chain (if any).
+			intermediates := x509.NewCertPool()
+			for _, raw := range rawCerts[1:] {
+				if ic, err := x509.ParseCertificate(raw); err == nil {
+					intermediates.AddCert(ic)
+				}
+			}
+
+			// Verify the chain against our trusted CA pool.
+			_, err = cert.Verify(x509.VerifyOptions{
+				Roots:         pool,
+				Intermediates: intermediates,
+				// Skip hostname check here; we do it below with the
+				// more lenient VerifyHostname that accepts CN.
+			})
+			if err != nil {
+				return fmt.Errorf("certificate chain verification failed: %w", err)
+			}
+
+			// Try standard SAN-based hostname check first.
+			// If it fails and the cert has no SANs, fall back to
+			// matching the Common Name (legacy Samba AD certs).
+			if err := cert.VerifyHostname(s.config.Host); err != nil {
+				if len(cert.DNSNames) == 0 && len(cert.IPAddresses) == 0 {
+					if !strings.EqualFold(cert.Subject.CommonName, s.config.Host) {
+						return fmt.Errorf("certificate CN %q does not match host %q", cert.Subject.CommonName, s.config.Host)
+					}
+				} else {
+					return fmt.Errorf("hostname verification failed: %w", err)
+				}
+			}
+			return nil
+		}
 	}
 
 	return cfg, nil

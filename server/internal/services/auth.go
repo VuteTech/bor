@@ -198,6 +198,7 @@ func (s *AuthService) authenticateLocal(user *models.User, password string) (*mo
 func (s *AuthService) authenticateLDAP(ctx context.Context, username, password string) (*models.LoginResponse, error) {
 	ldapUser, err := s.ldapSvc.Authenticate(username, password)
 	if err != nil {
+		log.Printf("LDAP authentication failed for user %s: %v", username, err)
 		return nil, fmt.Errorf("invalid username or password")
 	}
 
@@ -369,7 +370,22 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up user: %w", err)
 	}
+
+	// If the user does not exist locally but LDAP is enabled, let the full
+	// authentication step handle it — LDAP users are created on first login.
 	if user == nil {
+		if s.ldapSvc != nil && s.ldapSvc.IsEnabled() {
+			// Issue a session token without a real user ID; the password step
+			// will authenticate against LDAP and create the user record.
+			sessionToken, err := s.generateSessionToken("", req.Username, models.SourceLDAP, false)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate session token: %w", err)
+			}
+			return &models.AuthBeginResponse{
+				SessionToken: sessionToken,
+				Next:         "password",
+			}, nil
+		}
 		return nil, fmt.Errorf("invalid username or password")
 	}
 	if !user.Enabled {
@@ -446,23 +462,14 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		}, nil
 
 	case "password":
-		// If the user has MFA enabled (TOTP or WebAuthn), the MFA step must
-		// have been completed before the password step is allowed.
-		hasMFA := false
-		if s.mfaSvc != nil {
-			enabled, _ := s.mfaSvc.IsMFAEnabled(ctx, sessionClaims.UserID)
-			if enabled {
-				hasMFA = true
+		// UserID is empty for first-time LDAP users (not yet in local DB).
+		// In that case, skip MFA checks (no local record) and go straight to LDAP.
+		if sessionClaims.UserID == "" && sessionClaims.Source == models.SourceLDAP {
+			loginResp, err := s.authenticateLDAP(ctx, sessionClaims.Username, req.Credential)
+			if err != nil {
+				return nil, err
 			}
-		}
-		if !hasMFA && s.webauthnSvc != nil {
-			hasCreds, _ := s.webauthnSvc.HasCredentials(ctx, sessionClaims.UserID)
-			if hasCreds {
-				hasMFA = true
-			}
-		}
-		if hasMFA && !sessionClaims.TOTPDone {
-			return nil, fmt.Errorf("MFA verification required before password step")
+			return &models.AuthStepResponse{Next: "done", Token: loginResp.Token, User: &loginResp.User}, nil
 		}
 
 		user, err := s.userRepo.GetByID(ctx, sessionClaims.UserID)
@@ -474,7 +481,7 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		}
 
 		var loginResp *models.LoginResponse
-		if sessionClaims.Source == string(models.SourceLDAP) {
+		if sessionClaims.Source == models.SourceLDAP {
 			loginResp, err = s.authenticateLDAP(ctx, user.Username, req.Credential)
 		} else {
 			loginResp, err = s.authenticateLocal(user, req.Credential)

@@ -56,6 +56,9 @@ services:
       - path: .env
         required: false
     environment:
+      # Samba AD auto-generated certs use negative serial numbers,
+      # rejected by Go 1.23+ by default.
+      - GODEBUG=x509negativeserial=1,x509usefallbackroots=1
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=bor
@@ -97,6 +100,7 @@ services:
       - bor_pki:/var/lib/bor/pki:U
       - ./dev/kerberos/bor.keytab:/etc/bor/krb5.keytab:ro
       - ./dev/kerberos/krb5.conf:/etc/krb5.conf:ro
+      - ./dev/kerberos/dc1-ca.crt:/etc/bor/dc1-ca.crt:ro
     extra_hosts:
       - "dc1.bor.blago.cloud:10.28.130.100"
     restart: unless-stopped
