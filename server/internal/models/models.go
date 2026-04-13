@@ -449,8 +449,7 @@ type MFAStatusResponse struct {
 
 // MFASetupBeginResponse is returned by POST /api/v1/users/me/mfa/setup/begin
 type MFASetupBeginResponse struct {
-	Secret    string `json:"secret"`      // base32 TOTP secret (show to user)
-	QRCodeURL string `json:"qr_code_url"` // otpauth:// URI for QR code
+	Secret    string `json:"secret"` // base32 TOTP secret (manual entry)
 	Algorithm string `json:"algorithm"`
 }
 

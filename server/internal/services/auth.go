@@ -652,8 +652,13 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 
 	adminPassword := os.Getenv("BOR_ADMIN_PASSWORD")
 	if adminPassword == "" {
-		adminPassword = "admin"
-		log.Println("WARNING: Using default admin password. Set BOR_ADMIN_PASSWORD environment variable for production.")
+		generated, genErr := generateRandomPassword(16)
+		if genErr != nil {
+			return fmt.Errorf("failed to generate admin password: %w", genErr)
+		}
+		adminPassword = generated
+		log.Printf("Generated initial admin password: %s", adminPassword)
+		log.Println("Set BOR_ADMIN_PASSWORD to use a fixed password.")
 	}
 
 	_, err = s.CreateUser(ctx, &models.CreateUserRequest{
@@ -668,4 +673,18 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// generateRandomPassword creates a cryptographically random password of the
+// given length using alphanumeric characters and a small set of symbols.
+func generateRandomPassword(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*"
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b), nil
 }

@@ -5,11 +5,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +20,8 @@ import (
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	qrcode "github.com/yeqown/go-qrcode/v2"
+	qrwriter "github.com/yeqown/go-qrcode/writer/standard"
 )
 
 const (
@@ -97,10 +101,61 @@ func (s *MFAService) BeginSetup(ctx context.Context, userID, username string) (*
 
 	return &models.MFASetupBeginResponse{
 		Secret:    key.Secret(),
-		QRCodeURL: key.URL(),
 		Algorithm: algStr,
 	}, nil
 }
+
+// GenerateSetupQR returns a PNG image of the QR code for a pending (not yet
+// enabled) TOTP setup. The QR encodes the otpauth:// URI that authenticator
+// apps scan. Generating the QR server-side avoids sending the TOTP secret to
+// any third-party service.
+func (s *MFAService) GenerateSetupQR(ctx context.Context, userID, username string) ([]byte, error) {
+	row, err := s.mfaRepo.GetByUserID(ctx, userID)
+	if err != nil || row == nil {
+		return nil, fmt.Errorf("no pending MFA setup found")
+	}
+	if row.TOTPEnabled {
+		return nil, fmt.Errorf("MFA is already enabled")
+	}
+
+	secret, err := s.decryptSecret(row.TOTPSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	algorithm := stringToOTPAlgorithm(row.TOTPAlgorithm)
+
+	// Reconstruct the otpauth:// URI.
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      totpIssuer,
+		AccountName: username,
+		Algorithm:   algorithm,
+		Digits:      otp.DigitsSix,
+		Period:      30,
+		Secret:      []byte(secret),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct totp key: %w", err)
+	}
+
+	qrc, err := qrcode.New(key.URL())
+	if err != nil {
+		return nil, fmt.Errorf("create qr code: %w", err)
+	}
+
+	var buf bytes.Buffer
+	w := qrwriter.NewWithWriter(nopWriteCloser{&buf})
+	if err := qrc.Save(w); err != nil {
+		return nil, fmt.Errorf("render qr code: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// nopWriteCloser wraps an io.Writer to satisfy io.WriteCloser.
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 // FinishSetup verifies the first TOTP code and enables MFA.
 func (s *MFAService) FinishSetup(ctx context.Context, userID, code string) (*models.MFASetupFinishResponse, error) {

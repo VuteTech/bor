@@ -17,23 +17,22 @@ type contextKey string
 
 const userContextKey contextKey = "user"
 
-// AuthMiddleware validates JWT tokens on protected routes
+// SessionCookieName is the name of the httpOnly cookie that carries the JWT.
+const SessionCookieName = "bor_session"
+
+// AuthMiddleware validates JWT tokens on protected routes.
+// It checks the bor_session httpOnly cookie first, then falls back to the
+// Authorization: Bearer header (for API clients and the agent).
 func AuthMiddleware(authSvc *services.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, `{"error":"authorization header required"}`, http.StatusUnauthorized)
+			token := tokenFromRequest(r)
+			if token == "" {
+				http.Error(w, `{"error":"authorization required"}`, http.StatusUnauthorized)
 				return
 			}
 
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				http.Error(w, `{"error":"invalid authorization header format"}`, http.StatusUnauthorized)
-				return
-			}
-
-			claims, err := authSvc.ValidateToken(parts[1])
+			claims, err := authSvc.ValidateToken(token)
 			if err != nil {
 				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 				return
@@ -43,6 +42,37 @@ func AuthMiddleware(authSvc *services.AuthService) func(http.Handler) http.Handl
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// tokenFromRequest extracts the JWT from the request, checking the session
+// cookie first, then the Authorization header.
+func tokenFromRequest(r *http.Request) string {
+	if c, err := r.Cookie(SessionCookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	authHeader := r.Header.Get("Authorization")
+	if parts := strings.SplitN(authHeader, " ", 2); len(parts) == 2 && parts[0] == "Bearer" {
+		return parts[1]
+	}
+	return ""
+}
+
+// SetSessionCookie sets the bor_session httpOnly cookie on the response.
+func SetSessionCookie(w http.ResponseWriter, token string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// ClearSessionCookie removes the session cookie.
+func ClearSessionCookie(w http.ResponseWriter) {
+	SetSessionCookie(w, "", -1)
 }
 
 // RequirePermission checks that the authenticated user has a specific permission

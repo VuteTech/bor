@@ -46,6 +46,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	SetSessionCookie(w, resp.Token, 86400)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Failed to encode login response: %v", err)
@@ -96,6 +97,11 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 		log.Printf("AuthStep failed: %v", err)
 		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
 		return
+	}
+
+	// When the final JWT is issued, set it as an httpOnly cookie.
+	if resp.Token != "" {
+		SetSessionCookie(w, resp.Token, 86400) // 24h matches JWT expiry
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -213,6 +219,44 @@ func (h *AuthHandler) MFASetupBegin(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode MFA setup begin response: %v", err)
 	}
+}
+
+// MFASetupQR handles GET /api/v1/users/me/mfa/setup/qr
+// Returns the QR code as a PNG image, generated server-side so the TOTP
+// secret is never sent to an external service.
+func (h *AuthHandler) MFASetupQR(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if h.mfaSvc == nil {
+		http.Error(w, `{"error":"MFA not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	user, err := h.authSvc.GetUser(r.Context(), claims.UserID)
+	if err != nil || user == nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+
+	png, err := h.mfaSvc.GenerateSetupQR(r.Context(), claims.UserID, user.Username)
+	if err != nil {
+		log.Printf("MFA QR generation failed for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"failed to generate QR code"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }
 
 // MFASetupFinish handles POST /api/v1/users/me/mfa/setup/finish
@@ -512,10 +556,22 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 		Token: loginResp.Token,
 		User:  &loginResp.User,
 	}
+	SetSessionCookie(w, loginResp.Token, 86400)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode WebAuthn auth finish response: %v", err)
 	}
+}
+
+// Logout handles POST /api/v1/auth/logout — clears the session cookie.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	ClearSessionCookie(w)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // MFADisable handles DELETE /api/v1/users/me/mfa (also accepts POST from the route /users/me/mfa/disable)

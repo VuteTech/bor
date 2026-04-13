@@ -6,7 +6,10 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -409,7 +412,7 @@ func Load() (*Config, error) {
 			Hostnames:      hostnames,
 		},
 		Security: SecurityConfig{
-			JWTSecret:   getEnv("JWT_SECRET", fc.Security.JWTSecret),
+			JWTSecret:   resolveJWTSecret(getEnv("JWT_SECRET", fc.Security.JWTSecret)),
 			TLSEnabled:  getEnvBool("TLS_ENABLED", false),
 			TLSCertFile: getEnv("TLS_CERT_FILE", ""),
 			TLSKeyFile:  getEnv("TLS_KEY_FILE", ""),
@@ -494,7 +497,7 @@ func defaultFileConfig() fileConfig {
 	fc.Database.Password = "bor"
 	fc.Database.Name = "bor"
 	fc.Database.SSLMode = "disable"
-	fc.Security.JWTSecret = "change-me-in-production"
+	fc.Security.JWTSecret = defaultJWTSecret
 	fc.TLS.AutogenDir = "/var/lib/bor/pki/ui"
 	fc.CA.AutogenDir = "/var/lib/bor/pki/ca"
 	fc.LDAP.Host = "localhost"
@@ -512,6 +515,32 @@ func defaultFileConfig() fileConfig {
 	fc.Audit.Syslog.Format = "cef"
 	fc.Audit.Syslog.Facility = 16 // local0
 	return fc
+}
+
+const defaultJWTSecret = "change-me-in-production"
+
+// resolveJWTSecret validates the JWT secret and auto-generates one if the
+// default placeholder is still in use. A generated secret does not survive
+// server restarts (all sessions are invalidated on restart).
+func resolveJWTSecret(secret string) string {
+	if secret != defaultJWTSecret && len(secret) >= 32 {
+		return secret
+	}
+
+	if secret == defaultJWTSecret {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			// Extremely unlikely; crypto/rand should always succeed.
+			log.Fatalf("Failed to generate random JWT secret: %v", err)
+		}
+		generated := hex.EncodeToString(b)
+		log.Println("WARNING: JWT_SECRET not set — using auto-generated secret (sessions will not survive restarts)")
+		return generated
+	}
+
+	// Secret was set explicitly but is too short.
+	log.Fatalf("JWT_SECRET is too short (%d bytes); minimum 32 bytes required", len(secret))
+	return "" // unreachable
 }
 
 func getEnv(key, defaultValue string) string {

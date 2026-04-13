@@ -320,6 +320,7 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/step", authHandler.Step)
 	mux.HandleFunc("/api/v1/auth/webauthn/begin", authHandler.WebAuthnAuthBegin)
 	mux.HandleFunc("/api/v1/auth/webauthn/finish", authHandler.WebAuthnAuthFinish)
+	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -331,6 +332,7 @@ func main() {
 	// MFA routes for the current user
 	mux.Handle("/api/v1/users/me/mfa", authMiddleware(http.HandlerFunc(authHandler.MFAStatus)))
 	mux.Handle("/api/v1/users/me/mfa/setup/begin", authMiddleware(http.HandlerFunc(authHandler.MFASetupBegin)))
+	mux.Handle("/api/v1/users/me/mfa/setup/qr", authMiddleware(http.HandlerFunc(authHandler.MFASetupQR)))
 	mux.Handle("/api/v1/users/me/mfa/setup/finish", authMiddleware(http.HandlerFunc(authHandler.MFASetupFinish)))
 	mux.Handle("/api/v1/users/me/mfa/disable", authMiddleware(http.HandlerFunc(authHandler.MFADisable)))
 

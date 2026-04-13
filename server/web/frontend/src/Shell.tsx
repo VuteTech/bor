@@ -36,7 +36,7 @@ import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
 import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
 import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
-import { checkSession, logout, getStoredToken, getMFAStatus, UserInfo } from "./apiClient/authApi";
+import { checkSession, logout, getMFAStatus, UserInfo } from "./apiClient/authApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
 import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
@@ -143,16 +143,10 @@ export const Shell: React.FC = () => {
 
   /* ── Validate existing session on mount ── */
   useEffect(() => {
-    const existingToken = getStoredToken();
-    if (!existingToken) {
-      setAuthChecked(true);
-      return;
-    }
     checkSession()
       .then((user: UserInfo) => applySession(user))
       .catch(() => {
         clearPermissions();
-        logout();
       })
       .finally(() => setAuthChecked(true));
   }, [applySession]);
@@ -173,7 +167,7 @@ export const Shell: React.FC = () => {
 
   const performLogout = useCallback(() => {
     clearPermissions();
-    logout();
+    logout().catch(() => { /* best-effort server notification */ });
     setIsLoggedIn(false);
     setCurrentUser("");
     setActiveScreen("dashboard");
