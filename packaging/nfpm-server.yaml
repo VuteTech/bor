@@ -16,14 +16,7 @@ contents:
     file_info:
       mode: 0755
 
-  # Default environment config (preserved on upgrade)
-  - src: packaging/env/bor-server.env
-    dst: /etc/bor/server.env
-    type: config|noreplace
-    file_info:
-      mode: 0640
-
-  # YAML config file (preserved on upgrade)
+  # Primary config file (single source of truth — preserved on upgrade)
   - src: server/server.yaml.example
     dst: /etc/bor/server.yaml
     type: config|noreplace
@@ -46,6 +39,20 @@ contents:
     type: dir
     file_info:
       mode: 0750
+
+overrides:
+  deb:
+    depends:
+      - postgresql
+  rpm:
+    depends:
+      - postgresql-server
+  apk:
+    depends:
+      - postgresql
+  archlinux:
+    depends:
+      - postgresql
 
 scripts:
   postinstall: packaging/scripts/postinstall-server.sh
