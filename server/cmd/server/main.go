@@ -186,6 +186,11 @@ func main() {
 		log.Printf("LDAP authentication enabled (host=%s port=%d tls=%v startTLS=%v)",
 			cfg.LDAP.Host, cfg.LDAP.Port, cfg.LDAP.UseTLS, cfg.LDAP.StartTLS)
 		if cfg.LDAP.TLSSkipVerify {
+			devMode := strings.EqualFold(os.Getenv("BOR_DEV_MODE"), "true")
+			allowInsecure := strings.EqualFold(os.Getenv("BOR_ALLOW_INSECURE_LDAP"), "true")
+			if !devMode && !allowInsecure {
+				log.Fatalf("LDAP_TLS_SKIP_VERIFY=true requires BOR_DEV_MODE=true or BOR_ALLOW_INSECURE_LDAP=true") //nolint:gocritic // exitAfterDefer: intentional fatal on misconfiguration at startup
+			}
 			log.Printf("WARNING: LDAP TLS certificate verification is disabled (LDAP_TLS_SKIP_VERIFY=true)")
 		}
 	}
@@ -511,7 +516,10 @@ func main() {
 		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
 			enrollGrpcSrv.ServeHTTP(w, r)
 		} else {
-			mux.ServeHTTP(w, r)
+			// Security headers + CSRF applied to HTTP only, not gRPC.
+			api.SecurityHeadersMiddleware(
+				api.CSRFMiddleware(mux),
+			).ServeHTTP(w, r)
 		}
 	})
 

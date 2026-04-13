@@ -47,6 +47,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	SetSessionCookie(w, resp.Token, 86400)
+	SetCSRFCookie(w)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Failed to encode login response: %v", err)
@@ -101,7 +102,8 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 
 	// When the final JWT is issued, set it as an httpOnly cookie.
 	if resp.Token != "" {
-		SetSessionCookie(w, resp.Token, 86400) // 24h matches JWT expiry
+		SetSessionCookie(w, resp.Token, 86400)
+		SetCSRFCookie(w) // 24h matches JWT expiry
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -557,6 +559,7 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 		User:  &loginResp.User,
 	}
 	SetSessionCookie(w, loginResp.Token, 86400)
+	SetCSRFCookie(w)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode WebAuthn auth finish response: %v", err)

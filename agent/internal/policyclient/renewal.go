@@ -98,9 +98,10 @@ func RenewCertificate(serverAddr, caCertPath, certPath, keyPath string) error {
 	}
 	// TLS 1.3 minimum: renewal connects to the agent-only mTLS port (8444).
 	tlsCfg := &tls.Config{
-		RootCAs:      caPool,
-		Certificates: []tls.Certificate{clientCert},
-		MinVersion:   tls.VersionTLS13,
+		RootCAs:          caPool,
+		Certificates:     []tls.Certificate{clientCert},
+		MinVersion:       tls.VersionTLS13,
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
 	}
 	conn, err := grpc.NewClient(serverAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),

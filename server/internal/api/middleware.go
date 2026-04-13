@@ -6,6 +6,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -73,6 +75,99 @@ func SetSessionCookie(w http.ResponseWriter, token string, maxAge int) {
 // ClearSessionCookie removes the session cookie.
 func ClearSessionCookie(w http.ResponseWriter) {
 	SetSessionCookie(w, "", -1)
+	clearCSRFCookie(w)
+}
+
+// CSRFCookieName is the non-httpOnly cookie used for double-submit CSRF protection.
+const CSRFCookieName = "bor_csrf"
+
+// SetCSRFCookie generates a random CSRF token and sets it as a non-httpOnly
+// cookie (readable by JavaScript) alongside the session cookie.
+func SetCSRFCookie(w http.ResponseWriter) {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	token := hex.EncodeToString(b)
+	http.SetCookie(w, &http.Cookie{
+		Name:     CSRFCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: false, // must be readable by JS
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func clearCSRFCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CSRFCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: false,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// csrfExemptPaths are public auth endpoints that don't have a CSRF cookie yet.
+var csrfExemptPaths = map[string]bool{
+	"/api/v1/auth/login":           true,
+	"/api/v1/auth/begin":           true,
+	"/api/v1/auth/step":            true,
+	"/api/v1/auth/logout":          true,
+	"/api/v1/auth/webauthn/begin":  true,
+	"/api/v1/auth/webauthn/finish": true,
+}
+
+// CSRFMiddleware validates the double-submit CSRF token on state-changing
+// requests (POST, PUT, PATCH, DELETE). The X-CSRF-Token header must match the
+// bor_csrf cookie value. GET, HEAD, OPTIONS, and public auth endpoints are exempt.
+func CSRFMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip CSRF check for public auth endpoints and non-API routes.
+		if csrfExemptPaths[r.URL.Path] || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		cookie, err := r.Cookie(CSRFCookieName)
+		if err != nil || cookie.Value == "" {
+			http.Error(w, `{"error":"missing CSRF token"}`, http.StatusForbidden)
+			return
+		}
+
+		header := r.Header.Get("X-CSRF-Token")
+		if header == "" || header != cookie.Value {
+			http.Error(w, `{"error":"invalid CSRF token"}`, http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// SecurityHeadersMiddleware adds standard security headers to all HTTP responses.
+// Applied to the UI/API handler chain (not gRPC).
+func SecurityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RequirePermission checks that the authenticated user has a specific permission

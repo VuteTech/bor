@@ -98,7 +98,8 @@ func Enroll(serverAddr, token, nodeName string, insecureSkipVerify bool, paths E
 
 	// 3. Connect to server with TLS (no client cert yet — this is the bootstrap call)
 	tlsCfg := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
+		MinVersion:         tls.VersionTLS13,
+		CurvePreferences:   []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
 		InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // G402: controlled by admin config, only used for initial enrollment
 	}
 	if insecureSkipVerify {
@@ -288,7 +289,8 @@ func EnrollWithKerberos(serverAddr, keytabPath, servicePrincipal, kdc, machinePr
 
 	// ── 8. Connect and call KerberosEnroll ───────────────────────────────────
 	tlsCfg := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
+		MinVersion:         tls.VersionTLS13,
+		CurvePreferences:   []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
 		InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // G402: controlled by admin config
 	}
 	if insecureSkipVerify {

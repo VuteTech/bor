@@ -22,6 +22,7 @@ import (
 	"github.com/pquerna/otp/totp"
 	qrcode "github.com/yeqown/go-qrcode/v2"
 	qrwriter "github.com/yeqown/go-qrcode/writer/standard"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -330,28 +331,36 @@ func otpAlgorithmToString(a otp.Algorithm) string {
 }
 
 func generateBackupCodes() (plain, hashed []string, err error) {
-	for i := 0; i < backupCodeNum; i++ {
+	for range backupCodeNum {
 		b := make([]byte, 5)
 		if _, err = rand.Read(b); err != nil {
 			return nil, nil, fmt.Errorf("backup code rand: %w", err)
 		}
 		code := strings.ToUpper(hex.EncodeToString(b))
 		plain = append(plain, code[:5]+"-"+code[5:])
-		h := sha256.Sum256([]byte(code))
-		hashed = append(hashed, hex.EncodeToString(h[:]))
+		hash, bcryptErr := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+		if bcryptErr != nil {
+			return nil, nil, fmt.Errorf("backup code hash: %w", bcryptErr)
+		}
+		hashed = append(hashed, string(hash))
 	}
 	return plain, hashed, nil
 }
 
 func verifyBackupCode(plain, hashed string) bool {
-	h := sha256.Sum256([]byte(plain))
-	candidate := hex.EncodeToString(h[:])
-	if len(candidate) != len(hashed) {
-		return false
+	// bcrypt hashes start with "$2". Support legacy unsalted SHA-256
+	// (hex-encoded, 64 chars) for a transition period.
+	if !strings.HasPrefix(hashed, "$2") {
+		h := sha256.Sum256([]byte(plain))
+		candidate := hex.EncodeToString(h[:])
+		if len(candidate) != len(hashed) {
+			return false
+		}
+		var diff byte
+		for i := range candidate {
+			diff |= candidate[i] ^ hashed[i]
+		}
+		return diff == 0
 	}
-	var diff byte
-	for i := range candidate {
-		diff |= candidate[i] ^ hashed[i]
-	}
-	return diff == 0
+	return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(plain)) == nil
 }

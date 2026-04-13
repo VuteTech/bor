@@ -2,11 +2,20 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+// csrfToken reads the bor_csrf cookie for double-submit CSRF protection.
+function csrfToken(): string {
+  const match = document.cookie.match(/(?:^|;\s*)bor_csrf=([^;]*)/);
+  return match ? match[1] : "";
+}
+
 // authHeaders returns headers for authenticated API requests.
-// Authentication is handled via httpOnly session cookies set by the server;
-// no token is stored client-side.
+// Authentication is handled via httpOnly session cookies set by the server.
+// The X-CSRF-Token header is included for CSRF protection on mutating requests.
 export function authHeaders(): Record<string, string> {
-  return { "Content-Type": "application/json" };
+  const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+  const csrf = csrfToken();
+  if (csrf) hdrs["X-CSRF-Token"] = csrf;
+  return hdrs;
 }
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
