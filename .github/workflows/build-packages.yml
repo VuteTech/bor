@@ -28,10 +28,34 @@ jobs:
       - name: Test agent
         run: cd agent && go test ./...
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Lint server
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: server
+
+      - name: Lint agent
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: agent
+
   build-server-backend:
     name: Build Server Backend
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, lint]
     permissions:
       contents: read
     steps:
@@ -49,7 +73,7 @@ jobs:
   build-agent:
     name: Build Agent
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, lint]
     permissions:
       contents: read
     steps:
@@ -67,7 +91,7 @@ jobs:
   build-server-frontend:
     name: Build Server Frontend
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, lint]
     permissions:
       contents: read
     steps:
