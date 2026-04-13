@@ -1,7 +1,9 @@
 # ────────────────────────────────────────────────────────
 # Stage 0a: Generate protobuf Go bindings
+# Runs on the build host ($BUILDPLATFORM) — generated .pb.go files are
+# architecture-independent Go source code.
 # ────────────────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi10/go-toolset:10.1 AS proto-go-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.1 AS proto-go-builder
 
 USER root
 ENV GOPATH=/root/go
@@ -33,10 +35,11 @@ RUN mkdir -p /out/go && \
 
 # ────────────────────────────────────────────────────────
 # Stage 0b: Generate protobuf TypeScript bindings
+# Runs on the build host ($BUILDPLATFORM) — ts-proto depends on dprint-node
+# which has no ppc64le/s390x native binary. Generated .ts files are
+# architecture-independent.
 # ────────────────────────────────────────────────────────
-# ts-proto depends on dprint-node which ships no ppc64le/s390x native binary.
-# TypeScript output is pure text so it is safe to always generate on amd64.
-FROM --platform=linux/amd64 registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS proto-ts-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS proto-ts-builder
 
 USER root
 
@@ -63,8 +66,10 @@ RUN mkdir -p /out/ts && \
 
 # ────────────────────────────────────────────────────────
 # Stage 1: Build the React frontend
+# Runs on the build host ($BUILDPLATFORM) — webpack output (JS/CSS/HTML) is
+# architecture-independent; no reason to run under QEMU emulation.
 # ────────────────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS frontend-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS frontend-builder
 
 COPY server/web/frontend/package.json server/web/frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -77,8 +82,10 @@ RUN npm run build
 
 # ────────────────────────────────────────────────────────
 # Stage 2: Build the Go server binary
+# Runs on the build host ($BUILDPLATFORM) using Go cross-compilation.
+# CGO_ENABLED=0 makes pure-Go cross-compilation correct and fast — no QEMU needed.
 # ────────────────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi10/go-toolset:10.1 AS builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.1 AS builder
 
 COPY server/go.mod server/go.sum ./
 RUN go mod download
@@ -92,10 +99,12 @@ COPY --from=proto-go-builder /out/go/ ./pkg/grpc/policy/
 COPY --from=frontend-builder /opt/app-root/static/ ./web/static/
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o server ./cmd/server
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+    -ldflags="-s -w -X main.Version=${VERSION}" -o server ./cmd/server
 
 # ────────────────────────────────────────────────────────
-# Stage 3: Runtime image
+# Stage 3: Runtime image — target platform native
 # ────────────────────────────────────────────────────────
 FROM registry.access.redhat.com/ubi10/ubi:10.1
 
