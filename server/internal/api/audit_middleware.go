@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 
@@ -81,7 +82,7 @@ func captureDetails(r *http.Request) string {
 }
 
 // AuditMiddleware logs state-changing HTTP requests (POST, PUT, PATCH, DELETE) as audit events
-func AuditMiddleware(auditSvc *services.AuditService) func(http.Handler) http.Handler {
+func AuditMiddleware(auditSvc *services.AuditService, anonymizeIPs bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only audit state-changing methods
@@ -133,7 +134,7 @@ func AuditMiddleware(auditSvc *services.AuditService) func(http.Handler) http.Ha
 					Id:   resourceID,
 				},
 				Outcome: auditpb.Outcome_OUTCOME_SUCCESS,
-				SrcIp:   extractIP(r),
+				SrcIp:   extractAuditIP(r, anonymizeIPs),
 				Payload: &auditpb.AuditEvent_HttpChange{
 					HttpChange: &auditpb.HttpPayload{
 						Method:   r.Method,
@@ -195,7 +196,16 @@ func parseResourceFromPath(path string) (resource, action string) {
 	return resourceType, resourceID
 }
 
-// extractIP extracts the client IP address from the request
+// extractAuditIP extracts the client IP, optionally anonymizing it for GDPR.
+func extractAuditIP(r *http.Request, anonymize bool) string {
+	ip := extractIP(r)
+	if anonymize {
+		return anonymizeIP(ip)
+	}
+	return ip
+}
+
+// extractIP extracts the client IP address from the request.
 func extractIP(r *http.Request) string {
 	// Check X-Forwarded-For first (behind proxy)
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -215,4 +225,22 @@ func extractIP(r *http.Request) string {
 		return addr[:idx]
 	}
 	return addr
+}
+
+// anonymizeIP truncates an IP address for GDPR data minimization:
+// IPv4 → /24 (last octet zeroed), IPv6 → /48 (last 80 bits zeroed).
+func anonymizeIP(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip // unparseable, return as-is
+	}
+	if v4 := parsed.To4(); v4 != nil {
+		v4[3] = 0
+		return v4.String()
+	}
+	// IPv6: zero bytes 6-15 (keep first 48 bits)
+	for i := 6; i < 16; i++ {
+		parsed[i] = 0
+	}
+	return parsed.String()
 }

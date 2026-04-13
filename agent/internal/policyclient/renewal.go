@@ -42,7 +42,7 @@ func CertExpiringSoon(certPath string, threshold time.Duration) (bool, error) {
 }
 
 // RenewCertificate performs in-place certificate renewal:
-//  1. Generates a new RSA 2048 key pair.
+//  1. Generates a new ECDSA P-256 key pair (FIPS 140-3 / BSI TR-02102-1 approved).
 //  2. Creates a CSR with the same CN as the existing cert.
 //  3. Calls the RenewCertificate RPC (authenticated with the current cert).
 //  4. Atomically replaces key + cert on disk.

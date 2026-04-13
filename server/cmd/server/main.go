@@ -214,7 +214,7 @@ func main() {
 	}
 
 	// Initialize auth service
-	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc, mfaSvc, webauthnSvc)
+	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, cfg.Security.JWTLifetime, cfg.Security.RefreshLifetime, ldapSvc, mfaSvc, webauthnSvc)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
@@ -264,6 +264,24 @@ func main() {
 		})
 		auditSvc.AddSink(syslogSink)
 		log.Printf("Audit syslog sink enabled: %s → %s (format=%s)", cfg.Audit.Syslog.Network, cfg.Audit.Syslog.Addr, cfg.Audit.Syslog.Format)
+	}
+
+	// Start audit log retention purge if configured.
+	if cfg.Audit.RetentionDays > 0 {
+		go func() {
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for {
+				cutoff := time.Now().AddDate(0, 0, -cfg.Audit.RetentionDays)
+				if n, purgeErr := auditLogRepo.DeleteOlderThan(context.Background(), cutoff); purgeErr != nil {
+					log.Printf("Audit log retention purge failed: %v", purgeErr)
+				} else if n > 0 {
+					log.Printf("Audit log retention: purged %d records older than %d days", n, cfg.Audit.RetentionDays)
+				}
+				<-ticker.C
+			}
+		}()
+		log.Printf("Audit log retention enabled: %d days", cfg.Audit.RetentionDays)
 	}
 
 	// Initialize settings service
@@ -317,7 +335,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Audit middleware for logging state-changing API calls
-	auditMw := api.AuditMiddleware(auditSvc)
+	auditMw := api.AuditMiddleware(auditSvc, cfg.Audit.AnonymizeIPs)
 
 	// Public routes
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
@@ -326,6 +344,7 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/webauthn/begin", authHandler.WebAuthnAuthBegin)
 	mux.HandleFunc("/api/v1/auth/webauthn/finish", authHandler.WebAuthnAuthFinish)
 	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
+	mux.HandleFunc("/api/v1/auth/refresh", authHandler.Refresh)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -333,6 +352,9 @@ func main() {
 
 	// Auth routes (no additional permission needed — user just needs to be authenticated)
 	mux.Handle("/api/v1/auth/me", authMiddleware(http.HandlerFunc(authHandler.Me)))
+
+	// GDPR data export for the current user
+	mux.Handle("/api/v1/users/me/export", authMiddleware(http.HandlerFunc(authHandler.DataExport)))
 
 	// MFA routes for the current user
 	mux.Handle("/api/v1/users/me/mfa", authMiddleware(http.HandlerFunc(authHandler.MFAStatus)))

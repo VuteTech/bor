@@ -14,7 +14,7 @@ import (
 
 func TestAuthService_GenerateAndValidateToken(t *testing.T) {
 	secret := "test-secret-key"
-	authSvc := &AuthService{jwtSecret: secret}
+	authSvc := &AuthService{jwtSecret: secret, tokenLifetime: time.Hour}
 
 	user := &models.User{
 		ID:       "test-id-123",
@@ -73,7 +73,7 @@ func TestAuthService_ValidateToken_WrongSecret(t *testing.T) {
 
 func TestAuthService_ValidateToken_ExpiredToken(t *testing.T) {
 	secret := "test-secret-key"
-	authSvc := &AuthService{jwtSecret: secret}
+	authSvc := &AuthService{jwtSecret: secret, tokenLifetime: time.Hour}
 
 	// Create an expired token
 	claims := &Claims{
@@ -100,7 +100,7 @@ func TestAuthService_ValidateToken_ExpiredToken(t *testing.T) {
 
 func TestAuthService_ValidateToken_WrongSigningMethod(t *testing.T) {
 	secret := "test-secret-key"
-	authSvc := &AuthService{jwtSecret: secret}
+	authSvc := &AuthService{jwtSecret: secret, tokenLifetime: time.Hour}
 
 	// Create a token with "none" signing method
 	token := jwt.NewWithClaims(jwt.SigningMethodNone, &Claims{

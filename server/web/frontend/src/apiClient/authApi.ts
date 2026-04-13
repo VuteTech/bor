@@ -18,8 +18,37 @@ export function authHeaders(): Record<string, string> {
   return hdrs;
 }
 
+// tryRefresh attempts to refresh the access token using the refresh cookie.
+// Returns true if the refresh succeeded and a new session cookie was set.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  // Coalesce concurrent refresh attempts into a single request.
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch("/api/v1/auth/refresh", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { credentials: "same-origin", ...init });
+  let res = await fetch(url, { credentials: "same-origin", ...init });
+  if (res.status === 401) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      res = await fetch(url, { credentials: "same-origin", ...init });
+    }
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -31,6 +60,10 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(detail);
   }
   return res.json();
+}
+
+export async function refreshSession(): Promise<boolean> {
+  return tryRefresh();
 }
 
 /* ── Auth ── */

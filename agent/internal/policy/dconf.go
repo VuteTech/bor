@@ -164,6 +164,7 @@ func SyncDConfFiles(dbName string, keyfile, locksfile []byte) error {
 
 // ensureDConfProfile ensures /etc/dconf/profile/user contains the line
 // "system-db:<dbName>".  Existing content is preserved.
+// Uses atomic write (temp file + rename) to avoid corruption on crash.
 func ensureDConfProfile(dbName string) error {
 	profilePath := "/etc/dconf/profile/user"
 	desired := "system-db:" + dbName
@@ -173,7 +174,7 @@ func ensureDConfProfile(dbName string) error {
 		return fmt.Errorf("read profile: %w", err)
 	}
 
-	// Scan existing lines.
+	// Scan existing lines — return early if already present.
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		if strings.TrimSpace(scanner.Text()) == desired {
@@ -181,27 +182,23 @@ func ensureDConfProfile(dbName string) error {
 		}
 	}
 
-	// Append the line.
-	f, err := os.OpenFile(profilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644) //nolint:gosec // G304
-	if err != nil {
-		return fmt.Errorf("open profile: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	// Make sure the file doesn't end mid-line before appending.
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		if _, writeErr := f.WriteString("\n"); writeErr != nil {
-			return writeErr
-		}
-	}
-	// First line must be "user-db:user" if the file was just created.
+	// Build the new content in memory.
+	var buf bytes.Buffer
 	if len(data) == 0 {
-		if _, writeErr := f.WriteString("user-db:user\n"); writeErr != nil {
-			return writeErr
+		buf.WriteString("user-db:user\n")
+	} else {
+		buf.Write(data)
+		if data[len(data)-1] != '\n' {
+			buf.WriteByte('\n')
 		}
 	}
-	_, writeErr := fmt.Fprintf(f, "%s\n", desired)
-	return writeErr
+	fmt.Fprintf(&buf, "%s\n", desired)
+
+	// Atomic write: temp file + rename in the same directory.
+	if mkdirErr := os.MkdirAll(filepath.Dir(profilePath), 0o755); mkdirErr != nil { //nolint:gosec // G301: system config dir
+		return fmt.Errorf("mkdir profile dir: %w", mkdirErr)
+	}
+	return WriteFileAtomically(profilePath, buf.Bytes())
 }
 
 // gvariantIntPrefixes is the set of type-prefix words that GVariant text format

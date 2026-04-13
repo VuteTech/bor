@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,7 +34,9 @@ type Config struct {
 
 // AuditConfig holds configuration for audit event forwarding.
 type AuditConfig struct {
-	Syslog SyslogConfig
+	Syslog        SyslogConfig
+	RetentionDays int  // BOR_AUDIT_RETENTION_DAYS – purge audit logs older than N days (default 365; 0 disables)
+	AnonymizeIPs  bool // BOR_AUDIT_ANONYMIZE_IPS – truncate IPs to /24 (v4) or /48 (v6) before storing
 }
 
 // SyslogConfig holds configuration for the syslog audit sink.
@@ -98,11 +101,13 @@ func (s ServerConfig) PolicyAddr() string {
 
 // SecurityConfig holds security configuration.
 type SecurityConfig struct {
-	JWTSecret   string
-	TLSEnabled  bool
-	TLSCertFile string
-	TLSKeyFile  string
-	AdminToken  string // BOR_ADMIN_TOKEN – static admin token for gRPC enrollment calls
+	JWTSecret       string
+	JWTLifetime     time.Duration // BOR_JWT_LIFETIME, default 1h
+	RefreshLifetime time.Duration // BOR_REFRESH_LIFETIME, default 24h
+	TLSEnabled      bool
+	TLSCertFile     string
+	TLSKeyFile      string
+	AdminToken      string // BOR_ADMIN_TOKEN – static admin token for gRPC enrollment calls
 }
 
 // TLSConfig holds UI HTTPS TLS configuration.
@@ -223,8 +228,10 @@ type fileConfig struct {
 		SSLMode  string `yaml:"sslmode"`
 	} `yaml:"database"`
 	Security struct {
-		JWTSecret  string `yaml:"jwt_secret"`
-		AdminToken string `yaml:"admin_token"`
+		JWTSecret       string `yaml:"jwt_secret"`
+		JWTLifetime     string `yaml:"jwt_lifetime"`
+		RefreshLifetime string `yaml:"refresh_lifetime"`
+		AdminToken      string `yaml:"admin_token"`
 	} `yaml:"security"`
 	TLS struct {
 		CertFile   string `yaml:"cert_file"`
@@ -281,7 +288,8 @@ type fileConfig struct {
 		BearerToken string `yaml:"bearer_token"`
 	} `yaml:"metrics"`
 	Audit struct {
-		Syslog struct {
+		RetentionDays int `yaml:"retention_days"`
+		Syslog        struct {
 			Enabled   bool   `yaml:"enabled"`
 			Network   string `yaml:"network"`
 			Addr      string `yaml:"addr"`
@@ -396,6 +404,25 @@ func Load() (*Config, error) {
 	}
 	syslogTLSCA := getEnv("BOR_AUDIT_SYSLOG_TLS_CA", fc.Audit.Syslog.TLSCAFile)
 
+	// ─── Audit retention ───────────────────────────────────────────────────
+	auditRetentionStr := getEnv("BOR_AUDIT_RETENTION_DAYS", strconv.Itoa(fc.Audit.RetentionDays))
+	auditRetentionDays, err := strconv.Atoi(auditRetentionStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_AUDIT_RETENTION_DAYS: %w", err)
+	}
+
+	// ─── JWT lifetimes ────────────────────────────────────────────────────
+	jwtLifetimeStr := getEnv("BOR_JWT_LIFETIME", fc.Security.JWTLifetime)
+	jwtLifetime, err := time.ParseDuration(jwtLifetimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_JWT_LIFETIME: %w", err)
+	}
+	refreshLifetimeStr := getEnv("BOR_REFRESH_LIFETIME", fc.Security.RefreshLifetime)
+	refreshLifetime, err := time.ParseDuration(refreshLifetimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_REFRESH_LIFETIME: %w", err)
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -412,11 +439,13 @@ func Load() (*Config, error) {
 			Hostnames:      hostnames,
 		},
 		Security: SecurityConfig{
-			JWTSecret:   resolveJWTSecret(getEnv("JWT_SECRET", fc.Security.JWTSecret)),
-			TLSEnabled:  getEnvBool("TLS_ENABLED", false),
-			TLSCertFile: getEnv("TLS_CERT_FILE", ""),
-			TLSKeyFile:  getEnv("TLS_KEY_FILE", ""),
-			AdminToken:  getEnv("BOR_ADMIN_TOKEN", fc.Security.AdminToken),
+			JWTSecret:       resolveJWTSecret(getEnv("JWT_SECRET", fc.Security.JWTSecret)),
+			JWTLifetime:     jwtLifetime,
+			RefreshLifetime: refreshLifetime,
+			TLSEnabled:      getEnvBool("TLS_ENABLED", false),
+			TLSCertFile:     getEnv("TLS_CERT_FILE", ""),
+			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
+			AdminToken:      getEnv("BOR_ADMIN_TOKEN", fc.Security.AdminToken),
 		},
 		TLS: TLSConfig{
 			CertFile:   tlsCertFile,
@@ -473,6 +502,8 @@ func Load() (*Config, error) {
 			BearerToken: metricsToken,
 		},
 		Audit: AuditConfig{
+			RetentionDays: auditRetentionDays,
+			AnonymizeIPs:  getEnvBool("BOR_AUDIT_ANONYMIZE_IPS", false),
 			Syslog: SyslogConfig{
 				Enabled:   syslogEnabled,
 				Network:   syslogNetwork,
@@ -496,8 +527,10 @@ func defaultFileConfig() fileConfig {
 	fc.Database.User = "bor"
 	fc.Database.Password = "bor"
 	fc.Database.Name = "bor"
-	fc.Database.SSLMode = "disable"
+	fc.Database.SSLMode = "require"
 	fc.Security.JWTSecret = defaultJWTSecret
+	fc.Security.JWTLifetime = "1h"
+	fc.Security.RefreshLifetime = "24h"
 	fc.TLS.AutogenDir = "/var/lib/bor/pki/ui"
 	fc.CA.AutogenDir = "/var/lib/bor/pki/ca"
 	fc.LDAP.Host = "localhost"
@@ -510,6 +543,7 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrMemberOf = "memberOf"
 	fc.LDAP.PageSize = 500
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
+	fc.Audit.RetentionDays = 365
 	fc.Audit.Syslog.Network = "udp"
 	fc.Audit.Syslog.Addr = "localhost:514"
 	fc.Audit.Syslog.Format = "cef"

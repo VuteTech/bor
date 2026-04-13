@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -46,8 +47,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SetSessionCookie(w, resp.Token, 86400)
+	SetSessionCookie(w, resp.Token, h.authSvc.TokenLifetime())
 	SetCSRFCookie(w)
+	if refreshToken, err := h.authSvc.GenerateRefreshToken(&resp.User); err == nil {
+		SetRefreshCookie(w, refreshToken, h.authSvc.RefreshLifetimeSeconds())
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Failed to encode login response: %v", err)
@@ -101,9 +105,15 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// When the final JWT is issued, set it as an httpOnly cookie.
-	if resp.Token != "" {
-		SetSessionCookie(w, resp.Token, 86400)
-		SetCSRFCookie(w) // 24h matches JWT expiry
+	if resp.Token != "" && resp.User != nil {
+		SetSessionCookie(w, resp.Token, h.authSvc.TokenLifetime())
+		SetCSRFCookie(w)
+		if refreshToken, rtErr := h.authSvc.GenerateRefreshToken(resp.User); rtErr == nil {
+			SetRefreshCookie(w, refreshToken, h.authSvc.RefreshLifetimeSeconds())
+		}
+	} else if resp.Token != "" {
+		SetSessionCookie(w, resp.Token, h.authSvc.TokenLifetime())
+		SetCSRFCookie(w)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -558,8 +568,11 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 		Token: loginResp.Token,
 		User:  &loginResp.User,
 	}
-	SetSessionCookie(w, loginResp.Token, 86400)
+	SetSessionCookie(w, loginResp.Token, h.authSvc.TokenLifetime())
 	SetCSRFCookie(w)
+	if refreshToken, rtErr := h.authSvc.GenerateRefreshToken(&loginResp.User); rtErr == nil {
+		SetRefreshCookie(w, refreshToken, h.authSvc.RefreshLifetimeSeconds())
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode WebAuthn auth finish response: %v", err)
@@ -575,6 +588,102 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	ClearSessionCookie(w)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// Refresh handles POST /api/v1/auth/refresh — issues a new access token
+// using the bor_refresh httpOnly cookie. No auth middleware is needed since
+// the refresh cookie itself is the credential.
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	cookie, err := r.Cookie(RefreshCookieName)
+	if err != nil || cookie.Value == "" {
+		http.Error(w, `{"error":"missing refresh token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	claims, err := h.authSvc.ValidateRefreshToken(cookie.Value)
+	if err != nil {
+		log.Printf("Refresh token validation failed: %v", err)
+		http.Error(w, `{"error":"invalid or expired refresh token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.authSvc.GetUser(r.Context(), claims.UserID)
+	if err != nil || user == nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusUnauthorized)
+		return
+	}
+	if !user.Enabled {
+		http.Error(w, `{"error":"user account is disabled"}`, http.StatusUnauthorized)
+		return
+	}
+
+	loginResp, err := h.authSvc.IssueTokenByUserID(r.Context(), claims.UserID)
+	if err != nil {
+		log.Printf("Failed to issue token during refresh for user %s: %v", claims.UserID, err)
+		http.Error(w, `{"error":"failed to issue token"}`, http.StatusInternalServerError)
+		return
+	}
+
+	SetSessionCookie(w, loginResp.Token, h.authSvc.TokenLifetime())
+	SetCSRFCookie(w)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// DataExport handles GET /api/v1/users/me/export — GDPR data subject access request.
+// Returns a JSON document with all personal data stored for the requesting user.
+func (h *AuthHandler) DataExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.authSvc.GetUser(r.Context(), claims.UserID)
+	if err != nil || user == nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+
+	export := map[string]any{
+		"user":        user,
+		"exported_at": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// MFA status (enabled/disabled, NOT the secret)
+	if h.mfaSvc != nil {
+		status, mfaErr := h.mfaSvc.GetStatus(r.Context(), claims.UserID)
+		if mfaErr == nil && status != nil {
+			export["mfa"] = map[string]any{
+				"enabled":   status.Enabled,
+				"algorithm": status.Algorithm,
+			}
+		}
+	}
+
+	// WebAuthn credential metadata (NOT keys)
+	if h.webauthnSvc != nil {
+		creds, credErr := h.webauthnSvc.ListCredentials(r.Context(), claims.UserID)
+		if credErr == nil && len(creds) > 0 {
+			export["webauthn_credentials"] = creds
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="bor-data-export.json"`)
+	if err := json.NewEncoder(w).Encode(export); err != nil {
+		log.Printf("Failed to encode data export for user %s: %v", claims.UserID, err)
+	}
 }
 
 // MFADisable handles DELETE /api/v1/users/me/mfa (also accepts POST from the route /users/me/mfa/disable)

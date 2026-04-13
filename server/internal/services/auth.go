@@ -87,48 +87,56 @@ func verifyPassword(hash, password string) error {
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	userRepo    *database.UserRepository
-	roleRepo    *database.RoleRepository
-	bindingRepo *database.UserRoleBindingRepository
-	jwtSecret   string
-	ldapSvc     *LDAPService
-	mfaSvc      *MFAService
-	webauthnSvc *WebAuthnService
+	userRepo        *database.UserRepository
+	roleRepo        *database.RoleRepository
+	bindingRepo     *database.UserRoleBindingRepository
+	jwtSecret       string
+	tokenLifetime   time.Duration
+	refreshLifetime time.Duration
+	ldapSvc         *LDAPService
+	mfaSvc          *MFAService
+	webauthnSvc     *WebAuthnService
 }
 
 // NewAuthService creates a new AuthService
-func NewAuthService(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService) *AuthService {
+func NewAuthService(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, tokenLifetime, refreshLifetime time.Duration, ldapSvc *LDAPService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		roleRepo:    roleRepo,
-		bindingRepo: bindingRepo,
-		jwtSecret:   jwtSecret,
-		ldapSvc:     ldapSvc,
+		userRepo:        userRepo,
+		roleRepo:        roleRepo,
+		bindingRepo:     bindingRepo,
+		jwtSecret:       jwtSecret,
+		tokenLifetime:   tokenLifetime,
+		refreshLifetime: refreshLifetime,
+		ldapSvc:         ldapSvc,
 	}
 }
 
 // NewAuthServiceWithMFA creates a new AuthService with MFA support.
-func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService) *AuthService {
+func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, tokenLifetime, refreshLifetime time.Duration, ldapSvc *LDAPService, mfaSvc *MFAService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		roleRepo:    roleRepo,
-		bindingRepo: bindingRepo,
-		jwtSecret:   jwtSecret,
-		ldapSvc:     ldapSvc,
-		mfaSvc:      mfaSvc,
+		userRepo:        userRepo,
+		roleRepo:        roleRepo,
+		bindingRepo:     bindingRepo,
+		jwtSecret:       jwtSecret,
+		tokenLifetime:   tokenLifetime,
+		refreshLifetime: refreshLifetime,
+		ldapSvc:         ldapSvc,
+		mfaSvc:          mfaSvc,
 	}
 }
 
 // NewAuthServiceWithMFAAndWebAuthn creates a new AuthService with MFA and WebAuthn support.
-func NewAuthServiceWithMFAAndWebAuthn(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService, webauthnSvc *WebAuthnService) *AuthService {
+func NewAuthServiceWithMFAAndWebAuthn(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, tokenLifetime, refreshLifetime time.Duration, ldapSvc *LDAPService, mfaSvc *MFAService, webauthnSvc *WebAuthnService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		roleRepo:    roleRepo,
-		bindingRepo: bindingRepo,
-		jwtSecret:   jwtSecret,
-		ldapSvc:     ldapSvc,
-		mfaSvc:      mfaSvc,
-		webauthnSvc: webauthnSvc,
+		userRepo:        userRepo,
+		roleRepo:        roleRepo,
+		bindingRepo:     bindingRepo,
+		jwtSecret:       jwtSecret,
+		tokenLifetime:   tokenLifetime,
+		refreshLifetime: refreshLifetime,
+		ldapSvc:         ldapSvc,
+		mfaSvc:          mfaSvc,
+		webauthnSvc:     webauthnSvc,
 	}
 }
 
@@ -256,7 +264,7 @@ func (s *AuthService) generateToken(user *models.User) (string, error) {
 		UserID:   user.ID,
 		Username: user.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.tokenLifetime)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Subject:   user.ID,
 		},
@@ -264,6 +272,62 @@ func (s *AuthService) generateToken(user *models.User) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// RefreshClaims represents JWT claims for a refresh token.
+type RefreshClaims struct {
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	TokenType string `json:"token_type"` // always "refresh"
+	jwt.RegisteredClaims
+}
+
+// GenerateRefreshToken creates a refresh JWT for the given user.
+func (s *AuthService) GenerateRefreshToken(user *models.User) (string, error) {
+	claims := &RefreshClaims{
+		UserID:    user.ID,
+		Username:  user.Username,
+		TokenType: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshLifetime)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   user.ID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// ValidateRefreshToken validates a refresh JWT and returns its claims.
+func (s *AuthService) ValidateRefreshToken(tokenString string) (*RefreshClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &RefreshClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*RefreshClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid refresh token claims")
+	}
+	if claims.TokenType != "refresh" {
+		return nil, fmt.Errorf("invalid token: not a refresh token")
+	}
+	return claims, nil
+}
+
+// TokenLifetime returns the configured access token lifetime in seconds.
+func (s *AuthService) TokenLifetime() int {
+	return int(s.tokenLifetime.Seconds())
+}
+
+// RefreshLifetimeSeconds returns the configured refresh token lifetime in seconds.
+func (s *AuthService) RefreshLifetimeSeconds() int {
+	return int(s.refreshLifetime.Seconds())
 }
 
 // ValidateToken validates a JWT token and returns the claims.

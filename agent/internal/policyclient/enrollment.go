@@ -67,7 +67,7 @@ func RemoveEnrollmentCerts(paths EnrollmentPaths) error {
 }
 
 // Enroll performs the one-time enrollment flow:
-//  1. Generate an RSA 2048 key pair.
+//  1. Generate an ECDSA P-256 key pair (FIPS 140-3 / BSI TR-02102-1 approved).
 //  2. Create a CSR with the agent's node name.
 //  3. Connect to the server (TLS, optionally skip-verify for self-signed).
 //  4. Call EnrollmentService.Enroll with the token + CSR.

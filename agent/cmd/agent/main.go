@@ -128,10 +128,37 @@ var polkitActionsReported bool
 // fileWatcher monitors Bor-managed files and restores them when modified externally.
 var fileWatcher *filewatcher.FileWatcher
 
+// resolveEnrollToken returns the enrollment token from the most secure
+// available source: --token-file > BOR_ENROLLMENT_TOKEN > --token.
+func resolveEnrollToken(cliToken, tokenFilePath string) string {
+	if tokenFilePath != "" {
+		data, err := os.ReadFile(tokenFilePath) //nolint:gosec // G304: path from trusted CLI flag
+		if err != nil {
+			log.Fatalf("Failed to read token file %s: %v", tokenFilePath, err)
+		}
+		token := strings.TrimSpace(string(data))
+		if token == "" {
+			log.Fatalf("Token file %s is empty", tokenFilePath)
+		}
+		return token
+	}
+	if envToken := os.Getenv("BOR_ENROLLMENT_TOKEN"); envToken != "" {
+		return envToken
+	}
+	if cliToken != "" {
+		log.Println("WARNING: passing enrollment token via --token CLI flag exposes it in process listings; prefer --token-file or BOR_ENROLLMENT_TOKEN")
+	}
+	return cliToken
+}
+
 func main() {
 	configPath := flag.String("config", defaultConfigPath, "path to configuration file")
-	enrollToken := flag.String("token", "", "one-time enrollment token (from Node Groups UI)")
+	enrollToken := flag.String("token", "", "one-time enrollment token (deprecated: use --token-file or BOR_ENROLLMENT_TOKEN)")
+	enrollTokenFile := flag.String("token-file", "", "path to file containing the enrollment token (one line, trimmed)")
 	flag.Parse()
+
+	// Resolve enrollment token: --token-file > BOR_ENROLLMENT_TOKEN > --token
+	resolvedToken := resolveEnrollToken(*enrollToken, *enrollTokenFile)
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Bor Agent starting")
@@ -151,8 +178,8 @@ func main() {
 	// existing certificates so that re-enrollment proceeds cleanly. This
 	// covers intentional re-enrollment (moving a node to a different group,
 	// CA rotation, etc.).
-	if *enrollToken != "" && policyclient.IsEnrolled(paths) {
-		log.Println("--token provided for an already-enrolled agent – removing old certificates for re-enrollment")
+	if resolvedToken != "" && policyclient.IsEnrolled(paths) {
+		log.Println("Enrollment token provided for an already-enrolled agent – removing old certificates for re-enrollment")
 		if removeErr := policyclient.RemoveEnrollmentCerts(paths); removeErr != nil {
 			log.Fatalf("Failed to remove old enrollment certificates: %v", removeErr)
 		}
@@ -189,16 +216,16 @@ func main() {
 
 		// ── Token-based enrollment (fallback or primary) ──────────────────────
 		if !enrolled {
-			if *enrollToken == "" {
+			if resolvedToken == "" {
 				log.Fatal("Agent is not enrolled and no enrollment token was provided.\n" +
-					"Run with: bor-agent --token <TOKEN>\n" +
+					"Provide a token via: --token-file <PATH>, BOR_ENROLLMENT_TOKEN env var, or --token <TOKEN>\n" +
 					"Generate a token from the Node Groups page in the Bor web UI.\n" +
 					"Alternatively, configure Kerberos enrollment in /etc/bor/config.yaml.")
 			}
 			log.Println("Not yet enrolled – starting token-based enrollment...")
 			if enrollErr := policyclient.Enroll(
 				cfg.Server.EnrollmentAddr(),
-				*enrollToken,
+				resolvedToken,
 				cfg.Agent.ClientID,
 				cfg.Server.InsecureSkipVerify,
 				paths,

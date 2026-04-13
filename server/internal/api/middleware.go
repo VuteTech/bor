@@ -72,9 +72,26 @@ func SetSessionCookie(w http.ResponseWriter, token string, maxAge int) {
 	})
 }
 
-// ClearSessionCookie removes the session cookie.
+// RefreshCookieName is the name of the httpOnly cookie that carries the refresh token.
+const RefreshCookieName = "bor_refresh"
+
+// SetRefreshCookie sets the bor_refresh httpOnly cookie on the response.
+func SetRefreshCookie(w http.ResponseWriter, token string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     RefreshCookieName,
+		Value:    token,
+		Path:     "/api/v1/auth/refresh",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// ClearSessionCookie removes the session and refresh cookies.
 func ClearSessionCookie(w http.ResponseWriter) {
 	SetSessionCookie(w, "", -1)
+	SetRefreshCookie(w, "", -1)
 	clearCSRFCookie(w)
 }
 
@@ -116,6 +133,7 @@ var csrfExemptPaths = map[string]bool{
 	"/api/v1/auth/begin":           true,
 	"/api/v1/auth/step":            true,
 	"/api/v1/auth/logout":          true,
+	"/api/v1/auth/refresh":         true,
 	"/api/v1/auth/webauthn/begin":  true,
 	"/api/v1/auth/webauthn/finish": true,
 }
