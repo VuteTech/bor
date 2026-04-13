@@ -13,11 +13,28 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/hkdf"
 )
 
+// hkdfSalt is a fixed, application-specific salt for HKDF key derivation.
+// Changing this value would invalidate all existing encrypted data.
+var hkdfSalt = []byte("bor-mfa-aes-key-v1") //nolint:gochecknoglobals // fixed cryptographic parameter
+
 // deriveAESKey derives a 256-bit AES key from an arbitrary-length passphrase
-// using SHA-256. The passphrase should be a high-entropy secret (e.g. BOR_MFA_SECRET).
+// using HKDF-SHA256 (FIPS 140-3 / BSI TR-02102 compliant).
 func deriveAESKey(passphrase string) []byte {
+	r := hkdf.New(sha256.New, []byte(passphrase), hkdfSalt, []byte("mfa-secret-encryption"))
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(r, key); err != nil {
+		panic("hkdf: " + err.Error()) // only fails if output exceeds 255*HashLen
+	}
+	return key
+}
+
+// deriveLegacyAESKey derives a key using the old SHA-256 method (pre-HKDF).
+// Used only for migrating existing encrypted TOTP secrets.
+func deriveLegacyAESKey(passphrase string) []byte {
 	h := sha256.Sum256([]byte(passphrase))
 	return h[:]
 }

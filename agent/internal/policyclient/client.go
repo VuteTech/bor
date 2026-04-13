@@ -216,7 +216,7 @@ func (c *Client) ReportTamperEvent(ctx context.Context, filePath string, process
 	var pbProcs []*pb.TamperProcessInfo
 	for _, p := range processes {
 		pbProcs = append(pbProcs, &pb.TamperProcessInfo{
-			Pid:  int32(min(p.PID, math.MaxInt32)), //nolint:gosec // G115: value is clamped to MaxInt32 via min()
+			Pid:  clampInt32(p.PID),
 			Comm: p.Comm,
 			User: p.User,
 		})
@@ -349,4 +349,15 @@ func (c *Client) ReportPolkitCatalogue(ctx context.Context, actions []*pb.Polkit
 		return fmt.Errorf("ReportPolkitCatalogue RPC failed: %w", err)
 	}
 	return nil
+}
+
+// clampInt32 safely converts an int to int32, clamping to [0, MaxInt32].
+func clampInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v) //nolint:gosec // G115: bounds checked above
 }
