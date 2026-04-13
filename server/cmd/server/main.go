@@ -182,10 +182,22 @@ func main() {
 			GroupMemberAttr: cfg.LDAP.GroupMemberAttr,
 			AttrMemberOf:    cfg.LDAP.AttrMemberOf,
 			PageSize:        cfg.LDAP.PageSize,
+			GroupRoleMap:    cfg.LDAP.GroupRoleMap,
 		})
 		log.Printf("LDAP authentication enabled (host=%s port=%d tls=%v startTLS=%v)",
 			cfg.LDAP.Host, cfg.LDAP.Port, cfg.LDAP.UseTLS, cfg.LDAP.StartTLS)
+		if len(cfg.LDAP.GroupRoleMap) > 0 {
+			log.Printf("LDAP group→role mapping: %d mapping(s) active (set BOR_LDAP_GROUP_ROLE_MAP to configure)", len(cfg.LDAP.GroupRoleMap))
+			for grp, role := range cfg.LDAP.GroupRoleMap {
+				log.Printf("  LDAP group %q → Bor role %q", grp, role)
+			}
+		}
 		if cfg.LDAP.TLSSkipVerify {
+			devMode := strings.EqualFold(os.Getenv("BOR_DEV_MODE"), "true")
+			allowInsecure := strings.EqualFold(os.Getenv("BOR_ALLOW_INSECURE_LDAP"), "true")
+			if !devMode && !allowInsecure {
+				log.Fatalf("LDAP_TLS_SKIP_VERIFY=true requires BOR_DEV_MODE=true or BOR_ALLOW_INSECURE_LDAP=true") //nolint:gocritic // exitAfterDefer: intentional fatal on misconfiguration at startup
+			}
 			log.Printf("WARNING: LDAP TLS certificate verification is disabled (LDAP_TLS_SKIP_VERIFY=true)")
 		}
 	}
@@ -209,7 +221,7 @@ func main() {
 	}
 
 	// Initialize auth service
-	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, ldapSvc, mfaSvc, webauthnSvc)
+	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, cfg.Security.JWTLifetime, cfg.Security.RefreshLifetime, ldapSvc, mfaSvc, webauthnSvc)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
@@ -261,6 +273,24 @@ func main() {
 		log.Printf("Audit syslog sink enabled: %s → %s (format=%s)", cfg.Audit.Syslog.Network, cfg.Audit.Syslog.Addr, cfg.Audit.Syslog.Format)
 	}
 
+	// Start audit log retention purge if configured.
+	if cfg.Audit.RetentionDays > 0 {
+		go func() {
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for {
+				cutoff := time.Now().AddDate(0, 0, -cfg.Audit.RetentionDays)
+				if n, purgeErr := auditLogRepo.DeleteOlderThan(context.Background(), cutoff); purgeErr != nil {
+					log.Printf("Audit log retention purge failed: %v", purgeErr)
+				} else if n > 0 {
+					log.Printf("Audit log retention: purged %d records older than %d days", n, cfg.Audit.RetentionDays)
+				}
+				<-ticker.C
+			}
+		}()
+		log.Printf("Audit log retention enabled: %d days", cfg.Audit.RetentionDays)
+	}
+
 	// Initialize settings service
 	settingsSvc := services.NewSettingsService(settingsRepo)
 
@@ -276,7 +306,8 @@ func main() {
 	policyHub := grpcserver.NewPolicyHub()
 
 	// Initialize API handlers
-	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc)
+	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc).
+		WithPrivacyPolicyURL(cfg.UI.PrivacyPolicyURL)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
@@ -312,14 +343,20 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Audit middleware for logging state-changing API calls
-	auditMw := api.AuditMiddleware(auditSvc)
+	auditMw := api.AuditMiddleware(auditSvc, cfg.Audit.AnonymizeIPs)
 
-	// Public routes
-	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/v1/auth/begin", authHandler.Begin)
-	mux.HandleFunc("/api/v1/auth/step", authHandler.Step)
-	mux.HandleFunc("/api/v1/auth/webauthn/begin", authHandler.WebAuthnAuthBegin)
-	mux.HandleFunc("/api/v1/auth/webauthn/finish", authHandler.WebAuthnAuthFinish)
+	// Rate limiter for authentication endpoints: 10 req/min per IP (NIS2 / brute-force protection).
+	authRateLimit := api.NewRateLimitMiddleware(10, time.Minute)
+
+	// Public routes (no auth required)
+	mux.HandleFunc("/api/v1/config", authHandler.PublicConfig)
+	mux.Handle("/api/v1/auth/login", authRateLimit(http.HandlerFunc(authHandler.Login)))
+	mux.Handle("/api/v1/auth/begin", authRateLimit(http.HandlerFunc(authHandler.Begin)))
+	mux.Handle("/api/v1/auth/step", authRateLimit(http.HandlerFunc(authHandler.Step)))
+	mux.Handle("/api/v1/auth/webauthn/begin", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthBegin)))
+	mux.Handle("/api/v1/auth/webauthn/finish", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthFinish)))
+	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
+	mux.HandleFunc("/api/v1/auth/refresh", authHandler.Refresh)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -328,9 +365,13 @@ func main() {
 	// Auth routes (no additional permission needed — user just needs to be authenticated)
 	mux.Handle("/api/v1/auth/me", authMiddleware(http.HandlerFunc(authHandler.Me)))
 
+	// GDPR data export for the current user
+	mux.Handle("/api/v1/users/me/export", authMiddleware(http.HandlerFunc(authHandler.DataExport)))
+
 	// MFA routes for the current user
 	mux.Handle("/api/v1/users/me/mfa", authMiddleware(http.HandlerFunc(authHandler.MFAStatus)))
 	mux.Handle("/api/v1/users/me/mfa/setup/begin", authMiddleware(http.HandlerFunc(authHandler.MFASetupBegin)))
+	mux.Handle("/api/v1/users/me/mfa/setup/qr", authMiddleware(http.HandlerFunc(authHandler.MFASetupQR)))
 	mux.Handle("/api/v1/users/me/mfa/setup/finish", authMiddleware(http.HandlerFunc(authHandler.MFASetupFinish)))
 	mux.Handle("/api/v1/users/me/mfa/disable", authMiddleware(http.HandlerFunc(authHandler.MFADisable)))
 
@@ -509,7 +550,10 @@ func main() {
 		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
 			enrollGrpcSrv.ServeHTTP(w, r)
 		} else {
-			mux.ServeHTTP(w, r)
+			// Security headers + CSRF applied to HTTP only, not gRPC.
+			api.SecurityHeadersMiddleware(
+				api.CSRFMiddleware(mux),
+			).ServeHTTP(w, r)
 		}
 	})
 
@@ -562,9 +606,16 @@ func main() {
 	}()
 
 	go func() {
-		log.Printf("Metrics (Prometheus) listening on http://%s/metrics", cfg.Metrics.ListenAddr)
-		if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
-			log.Printf("Metrics server error: %v", err)
+		if cfg.Metrics.TLSCertFile != "" && cfg.Metrics.TLSKeyFile != "" {
+			log.Printf("Metrics (Prometheus) listening on https://%s/metrics (TLS)", cfg.Metrics.ListenAddr)
+			if err := metricsServer.ListenAndServeTLS(cfg.Metrics.TLSCertFile, cfg.Metrics.TLSKeyFile); err != http.ErrServerClosed {
+				log.Printf("Metrics server error: %v", err)
+			}
+		} else {
+			log.Printf("Metrics (Prometheus) listening on http://%s/metrics", cfg.Metrics.ListenAddr)
+			if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
+				log.Printf("Metrics server error: %v", err)
+			}
 		}
 	}()
 

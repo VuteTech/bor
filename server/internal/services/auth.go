@@ -87,48 +87,56 @@ func verifyPassword(hash, password string) error {
 
 // AuthService handles authentication and authorization
 type AuthService struct {
-	userRepo    *database.UserRepository
-	roleRepo    *database.RoleRepository
-	bindingRepo *database.UserRoleBindingRepository
-	jwtSecret   string
-	ldapSvc     *LDAPService
-	mfaSvc      *MFAService
-	webauthnSvc *WebAuthnService
+	userRepo        *database.UserRepository
+	roleRepo        *database.RoleRepository
+	bindingRepo     *database.UserRoleBindingRepository
+	jwtSecret       string
+	tokenLifetime   time.Duration
+	refreshLifetime time.Duration
+	ldapSvc         *LDAPService
+	mfaSvc          *MFAService
+	webauthnSvc     *WebAuthnService
 }
 
 // NewAuthService creates a new AuthService
-func NewAuthService(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService) *AuthService {
+func NewAuthService(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, tokenLifetime, refreshLifetime time.Duration, ldapSvc *LDAPService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		roleRepo:    roleRepo,
-		bindingRepo: bindingRepo,
-		jwtSecret:   jwtSecret,
-		ldapSvc:     ldapSvc,
+		userRepo:        userRepo,
+		roleRepo:        roleRepo,
+		bindingRepo:     bindingRepo,
+		jwtSecret:       jwtSecret,
+		tokenLifetime:   tokenLifetime,
+		refreshLifetime: refreshLifetime,
+		ldapSvc:         ldapSvc,
 	}
 }
 
 // NewAuthServiceWithMFA creates a new AuthService with MFA support.
-func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService) *AuthService {
+func NewAuthServiceWithMFA(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, tokenLifetime, refreshLifetime time.Duration, ldapSvc *LDAPService, mfaSvc *MFAService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		roleRepo:    roleRepo,
-		bindingRepo: bindingRepo,
-		jwtSecret:   jwtSecret,
-		ldapSvc:     ldapSvc,
-		mfaSvc:      mfaSvc,
+		userRepo:        userRepo,
+		roleRepo:        roleRepo,
+		bindingRepo:     bindingRepo,
+		jwtSecret:       jwtSecret,
+		tokenLifetime:   tokenLifetime,
+		refreshLifetime: refreshLifetime,
+		ldapSvc:         ldapSvc,
+		mfaSvc:          mfaSvc,
 	}
 }
 
 // NewAuthServiceWithMFAAndWebAuthn creates a new AuthService with MFA and WebAuthn support.
-func NewAuthServiceWithMFAAndWebAuthn(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, ldapSvc *LDAPService, mfaSvc *MFAService, webauthnSvc *WebAuthnService) *AuthService {
+func NewAuthServiceWithMFAAndWebAuthn(userRepo *database.UserRepository, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, jwtSecret string, tokenLifetime, refreshLifetime time.Duration, ldapSvc *LDAPService, mfaSvc *MFAService, webauthnSvc *WebAuthnService) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		roleRepo:    roleRepo,
-		bindingRepo: bindingRepo,
-		jwtSecret:   jwtSecret,
-		ldapSvc:     ldapSvc,
-		mfaSvc:      mfaSvc,
-		webauthnSvc: webauthnSvc,
+		userRepo:        userRepo,
+		roleRepo:        roleRepo,
+		bindingRepo:     bindingRepo,
+		jwtSecret:       jwtSecret,
+		tokenLifetime:   tokenLifetime,
+		refreshLifetime: refreshLifetime,
+		ldapSvc:         ldapSvc,
+		mfaSvc:          mfaSvc,
+		webauthnSvc:     webauthnSvc,
 	}
 }
 
@@ -239,6 +247,11 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 		user.FullName = fullName
 	}
 
+	// Sync role bindings based on LDAP group membership.
+	if len(s.ldapSvc.config.GroupRoleMap) > 0 {
+		s.syncLDAPRoles(ctx, user.ID, ldapUser.Groups, s.ldapSvc.config.GroupRoleMap)
+	}
+
 	token, err := s.generateToken(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
@@ -250,13 +263,77 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 	}, nil
 }
 
+// syncLDAPRoles grants or revokes roles whose names appear in groupRoleMap based
+// on the user's current LDAP group memberships. Only roles that are present in
+// groupRoleMap are touched; role bindings created by an administrator are left
+// intact.
+func (s *AuthService) syncLDAPRoles(ctx context.Context, userID string, ldapGroups []string, groupRoleMap map[string]string) {
+	// Build the set of role names this user should hold.
+	wantedRoles := make(map[string]bool)
+	for _, grp := range ldapGroups {
+		if roleName, ok := groupRoleMap[grp]; ok {
+			wantedRoles[roleName] = true
+		}
+	}
+
+	// Build the set of all role names managed by this map.
+	managedRoles := make(map[string]bool)
+	for _, roleName := range groupRoleMap {
+		managedRoles[roleName] = true
+	}
+
+	// Fetch the user's current role bindings.
+	bindings, err := s.bindingRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("syncLDAPRoles: list bindings for user %s: %v", userID, err)
+		return
+	}
+
+	// Index current bindings by role ID.
+	currentByRoleID := make(map[string]string) // roleID → bindingID
+	for _, b := range bindings {
+		currentByRoleID[b.RoleID] = b.ID
+	}
+
+	// For each managed role, grant or revoke as needed.
+	for roleName := range managedRoles {
+		role, roleErr := s.roleRepo.GetByName(ctx, roleName)
+		if roleErr != nil || role == nil {
+			log.Printf("syncLDAPRoles: role %q not found in DB, skipping", roleName)
+			continue
+		}
+
+		_, hasBinding := currentByRoleID[role.ID]
+		shouldHave := wantedRoles[roleName]
+
+		switch {
+		case shouldHave && !hasBinding:
+			if createErr := s.bindingRepo.Create(ctx, &models.UserRoleBinding{
+				UserID:    userID,
+				RoleID:    role.ID,
+				ScopeType: "global",
+			}); createErr != nil {
+				log.Printf("syncLDAPRoles: grant role %q to user %s: %v", roleName, userID, createErr)
+			} else {
+				log.Printf("syncLDAPRoles: granted role %q to LDAP user %s", roleName, userID)
+			}
+		case !shouldHave && hasBinding:
+			if delErr := s.bindingRepo.Delete(ctx, currentByRoleID[role.ID]); delErr != nil {
+				log.Printf("syncLDAPRoles: revoke role %q from user %s: %v", roleName, userID, delErr)
+			} else {
+				log.Printf("syncLDAPRoles: revoked role %q from LDAP user %s", roleName, userID)
+			}
+		}
+	}
+}
+
 // generateToken creates a JWT token for the given user
 func (s *AuthService) generateToken(user *models.User) (string, error) {
 	claims := &Claims{
 		UserID:   user.ID,
 		Username: user.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.tokenLifetime)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Subject:   user.ID,
 		},
@@ -264,6 +341,62 @@ func (s *AuthService) generateToken(user *models.User) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// RefreshClaims represents JWT claims for a refresh token.
+type RefreshClaims struct {
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	TokenType string `json:"token_type"` // always "refresh"
+	jwt.RegisteredClaims
+}
+
+// GenerateRefreshToken creates a refresh JWT for the given user.
+func (s *AuthService) GenerateRefreshToken(user *models.User) (string, error) {
+	claims := &RefreshClaims{
+		UserID:    user.ID,
+		Username:  user.Username,
+		TokenType: "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshLifetime)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   user.ID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.jwtSecret))
+}
+
+// ValidateRefreshToken validates a refresh JWT and returns its claims.
+func (s *AuthService) ValidateRefreshToken(tokenString string) (*RefreshClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &RefreshClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*RefreshClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid refresh token claims")
+	}
+	if claims.TokenType != "refresh" {
+		return nil, fmt.Errorf("invalid token: not a refresh token")
+	}
+	return claims, nil
+}
+
+// TokenLifetime returns the configured access token lifetime in seconds.
+func (s *AuthService) TokenLifetime() int {
+	return int(s.tokenLifetime.Seconds())
+}
+
+// RefreshLifetimeSeconds returns the configured refresh token lifetime in seconds.
+func (s *AuthService) RefreshLifetimeSeconds() int {
+	return int(s.refreshLifetime.Seconds())
 }
 
 // ValidateToken validates a JWT token and returns the claims.
@@ -652,8 +785,16 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 
 	adminPassword := os.Getenv("BOR_ADMIN_PASSWORD")
 	if adminPassword == "" {
-		adminPassword = "admin"
-		log.Println("WARNING: Using default admin password. Set BOR_ADMIN_PASSWORD environment variable for production.")
+		generated, genErr := generateRandomPassword(16)
+		if genErr != nil {
+			return fmt.Errorf("failed to generate admin password: %w", genErr)
+		}
+		adminPassword = generated
+		log.Println("======================================================")
+		log.Printf("  Initial admin password: %s", adminPassword)
+		log.Println("  Username: admin")
+		log.Println("  Change this immediately or set BOR_ADMIN_PASSWORD.")
+		log.Println("======================================================")
 	}
 
 	_, err = s.CreateUser(ctx, &models.CreateUserRequest{
@@ -668,4 +809,18 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// generateRandomPassword creates a cryptographically random password of the
+// given length using alphanumeric characters and a small set of symbols.
+func generateRandomPassword(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*"
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b), nil
 }

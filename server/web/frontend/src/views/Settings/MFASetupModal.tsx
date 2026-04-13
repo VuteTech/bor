@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Modal,
   ModalHeader,
@@ -38,8 +38,9 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
 }) => {
   const [step, setStep] = useState<Step>("qr");
   const [secret, setSecret] = useState("");
-  const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const [qrBlobUrl, setQrBlobUrl] = useState("");
   const [algorithm, setAlgorithm] = useState("");
+  const qrBlobRef = useRef("");
   const [totpCode, setTotpCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,8 +53,21 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     try {
       const result = await mfaSetupBegin();
       setSecret(result.secret);
-      setQrCodeUrl(result.qr_code_url);
       setAlgorithm(result.algorithm);
+
+      // Fetch QR code image from server (generated server-side, no
+      // third-party service involved).
+      const qrRes = await fetch("/api/v1/users/me/mfa/setup/qr", {
+        credentials: "same-origin",
+      });
+      if (qrRes.ok) {
+        const blob = await qrRes.blob();
+        // Revoke any previous blob URL to avoid memory leaks.
+        if (qrBlobRef.current) URL.revokeObjectURL(qrBlobRef.current);
+        const url = URL.createObjectURL(blob);
+        qrBlobRef.current = url;
+        setQrBlobUrl(url);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to begin MFA setup");
     } finally {
@@ -68,6 +82,16 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
       setBackupCodes([]);
       setError(null);
       beginSetup();
+    } else {
+      // Clear sensitive data when modal closes.
+      setSecret("");
+      setAlgorithm("");
+      setBackupCodes([]);
+      if (qrBlobRef.current) {
+        URL.revokeObjectURL(qrBlobRef.current);
+        qrBlobRef.current = "";
+      }
+      setQrBlobUrl("");
     }
   }, [isOpen, beginSetup]);
 
@@ -89,10 +113,6 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     onSuccess();
     onClose();
   };
-
-  const qrImageUrl = qrCodeUrl
-    ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrCodeUrl)}&size=200x200`
-    : "";
 
   const qrActions = [
     <Button
@@ -140,10 +160,10 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
                   Authenticator, FreeOTP, Aegis). Algorithm: <strong>{algorithm}</strong>
                 </Content>
               </Content>
-              {qrImageUrl && (
+              {qrBlobUrl && (
                 <div style={{ textAlign: "center", marginBottom: 16 }}>
                   <img
-                    src={qrImageUrl}
+                    src={qrBlobUrl}
                     alt="TOTP QR Code"
                     width={200}
                     height={200}

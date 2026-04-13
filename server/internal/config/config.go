@@ -6,10 +6,14 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,11 +30,14 @@ type Config struct {
 	WebAuthn WebAuthnConfig
 	Metrics  MetricsConfig
 	Audit    AuditConfig
+	UI       UIConfig
 }
 
 // AuditConfig holds configuration for audit event forwarding.
 type AuditConfig struct {
-	Syslog SyslogConfig
+	Syslog        SyslogConfig
+	RetentionDays int  // BOR_AUDIT_RETENTION_DAYS – purge audit logs older than N days (default 365; 0 disables)
+	AnonymizeIPs  bool // BOR_AUDIT_ANONYMIZE_IPS – truncate IPs to /24 (v4) or /48 (v6) before storing
 }
 
 // SyslogConfig holds configuration for the syslog audit sink.
@@ -56,6 +63,18 @@ type MetricsConfig struct {
 	// "Authorization: Bearer <token>". Leave unset for unauthenticated access
 	// (appropriate when the listener is bound to localhost only).
 	BearerToken string // BOR_METRICS_TOKEN, optional
+
+	// TLSCertFile and TLSKeyFile, when both set, enable HTTPS on the metrics
+	// endpoint. Useful when the scraper is on a different host.
+	TLSCertFile string // BOR_METRICS_TLS_CERT_FILE, optional
+	TLSKeyFile  string // BOR_METRICS_TLS_KEY_FILE, optional
+}
+
+// UIConfig holds configuration for the web frontend.
+type UIConfig struct {
+	// PrivacyPolicyURL, when set, shows a privacy policy link in the sidebar footer.
+	// Complies with GDPR Article 13 transparency requirements.
+	PrivacyPolicyURL string // BOR_PRIVACY_POLICY_URL, optional
 }
 
 // WebAuthnConfig holds WebAuthn (FIDO2) relying party configuration.
@@ -95,11 +114,13 @@ func (s ServerConfig) PolicyAddr() string {
 
 // SecurityConfig holds security configuration.
 type SecurityConfig struct {
-	JWTSecret   string
-	TLSEnabled  bool
-	TLSCertFile string
-	TLSKeyFile  string
-	AdminToken  string // BOR_ADMIN_TOKEN – static admin token for gRPC enrollment calls
+	JWTSecret       string
+	JWTLifetime     time.Duration // BOR_JWT_LIFETIME, default 1h
+	RefreshLifetime time.Duration // BOR_REFRESH_LIFETIME, default 24h
+	TLSEnabled      bool
+	TLSCertFile     string
+	TLSKeyFile      string
+	AdminToken      string // BOR_ADMIN_TOKEN – static admin token for gRPC enrollment calls
 }
 
 // TLSConfig holds UI HTTPS TLS configuration.
@@ -180,6 +201,10 @@ type LDAPConfig struct {
 	AttrMemberOf string
 	// PageSize controls LDAP result paging (RFC 2696).  0 disables paging.
 	PageSize int
+	// GroupRoleMap maps LDAP group CNs to Bor role names.
+	// Set via BOR_LDAP_GROUP_ROLE_MAP="Domain Admins=Super Admin,IT Staff=Org Admin"
+	// or the ldap.group_role_map YAML map.
+	GroupRoleMap map[string]string
 }
 
 // KerberosConfig holds Kerberos/GSSAPI configuration for token-free agent enrollment.
@@ -220,8 +245,10 @@ type fileConfig struct {
 		SSLMode  string `yaml:"sslmode"`
 	} `yaml:"database"`
 	Security struct {
-		JWTSecret  string `yaml:"jwt_secret"`
-		AdminToken string `yaml:"admin_token"`
+		JWTSecret       string `yaml:"jwt_secret"`
+		JWTLifetime     string `yaml:"jwt_lifetime"`
+		RefreshLifetime string `yaml:"refresh_lifetime"`
+		AdminToken      string `yaml:"admin_token"`
 	} `yaml:"security"`
 	TLS struct {
 		CertFile   string `yaml:"cert_file"`
@@ -240,26 +267,27 @@ type fileConfig struct {
 		} `yaml:"pkcs11"`
 	} `yaml:"ca"`
 	LDAP struct {
-		Enabled         bool   `yaml:"enabled"`
-		Host            string `yaml:"host"`
-		Port            int    `yaml:"port"`
-		UseTLS          bool   `yaml:"use_tls"`
-		StartTLS        bool   `yaml:"start_tls"`
-		TLSCAFile       string `yaml:"tls_ca_file"`
-		TLSSkipVerify   bool   `yaml:"tls_skip_verify"`
-		BindDN          string `yaml:"bind_dn"`
-		BindPassword    string `yaml:"bind_password"`
-		BaseDN          string `yaml:"base_dn"`
-		UserFilter      string `yaml:"user_filter"`
-		UPNSuffix       string `yaml:"upn_suffix"`
-		AttrUsername    string `yaml:"attr_username"`
-		AttrEmail       string `yaml:"attr_email"`
-		AttrFullName    string `yaml:"attr_full_name"`
-		GroupBaseDN     string `yaml:"group_base_dn"`
-		GroupFilter     string `yaml:"group_filter"`
-		GroupMemberAttr string `yaml:"group_member_attr"`
-		AttrMemberOf    string `yaml:"attr_member_of"`
-		PageSize        int    `yaml:"page_size"`
+		Enabled         bool              `yaml:"enabled"`
+		Host            string            `yaml:"host"`
+		Port            int               `yaml:"port"`
+		UseTLS          bool              `yaml:"use_tls"`
+		StartTLS        bool              `yaml:"start_tls"`
+		TLSCAFile       string            `yaml:"tls_ca_file"`
+		TLSSkipVerify   bool              `yaml:"tls_skip_verify"`
+		BindDN          string            `yaml:"bind_dn"`
+		BindPassword    string            `yaml:"bind_password"`
+		BaseDN          string            `yaml:"base_dn"`
+		UserFilter      string            `yaml:"user_filter"`
+		UPNSuffix       string            `yaml:"upn_suffix"`
+		AttrUsername    string            `yaml:"attr_username"`
+		AttrEmail       string            `yaml:"attr_email"`
+		AttrFullName    string            `yaml:"attr_full_name"`
+		GroupBaseDN     string            `yaml:"group_base_dn"`
+		GroupFilter     string            `yaml:"group_filter"`
+		GroupMemberAttr string            `yaml:"group_member_attr"`
+		AttrMemberOf    string            `yaml:"attr_member_of"`
+		PageSize        int               `yaml:"page_size"`
+		GroupRoleMap    map[string]string `yaml:"group_role_map"`
 	} `yaml:"ldap"`
 	Kerberos struct {
 		Enabled            bool   `yaml:"enabled"`
@@ -276,9 +304,15 @@ type fileConfig struct {
 	Metrics struct {
 		ListenAddr  string `yaml:"listen_addr"`
 		BearerToken string `yaml:"bearer_token"`
+		TLSCertFile string `yaml:"tls_cert_file"`
+		TLSKeyFile  string `yaml:"tls_key_file"`
 	} `yaml:"metrics"`
+	UI struct {
+		PrivacyPolicyURL string `yaml:"privacy_policy_url"`
+	} `yaml:"ui"`
 	Audit struct {
-		Syslog struct {
+		RetentionDays int `yaml:"retention_days"`
+		Syslog        struct {
 			Enabled   bool   `yaml:"enabled"`
 			Network   string `yaml:"network"`
 			Addr      string `yaml:"addr"`
@@ -337,6 +371,11 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid LDAP_PAGE_SIZE: %w", err)
 	}
+	// BOR_LDAP_GROUP_ROLE_MAP overrides the YAML map entirely when set.
+	ldapGroupRoleMap := fc.LDAP.GroupRoleMap
+	if envMap := os.Getenv("BOR_LDAP_GROUP_ROLE_MAP"); envMap != "" {
+		ldapGroupRoleMap = parseGroupRoleMap(envMap)
+	}
 
 	// ─── TLS ───────────────────────────────────────────────────────────────
 	tlsCertFile := getEnv("BOR_TLS_CERT_FILE", fc.TLS.CertFile)
@@ -380,6 +419,11 @@ func Load() (*Config, error) {
 	// ─── Metrics ───────────────────────────────────────────────────────────
 	metricsAddr := getEnv("BOR_METRICS_ADDR", fc.Metrics.ListenAddr)
 	metricsToken := getEnv("BOR_METRICS_TOKEN", fc.Metrics.BearerToken)
+	metricsTLSCert := getEnv("BOR_METRICS_TLS_CERT_FILE", fc.Metrics.TLSCertFile)
+	metricsTLSKey := getEnv("BOR_METRICS_TLS_KEY_FILE", fc.Metrics.TLSKeyFile)
+	if (metricsTLSCert != "" && metricsTLSKey == "") || (metricsTLSCert == "" && metricsTLSKey != "") {
+		return nil, fmt.Errorf("both BOR_METRICS_TLS_CERT_FILE and BOR_METRICS_TLS_KEY_FILE must be set, or neither")
+	}
 
 	// ─── Audit syslog ──────────────────────────────────────────────────────
 	syslogEnabled := getEnvBool("BOR_AUDIT_SYSLOG_ENABLED", fc.Audit.Syslog.Enabled)
@@ -392,6 +436,25 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid BOR_AUDIT_SYSLOG_FACILITY: %w", err)
 	}
 	syslogTLSCA := getEnv("BOR_AUDIT_SYSLOG_TLS_CA", fc.Audit.Syslog.TLSCAFile)
+
+	// ─── Audit retention ───────────────────────────────────────────────────
+	auditRetentionStr := getEnv("BOR_AUDIT_RETENTION_DAYS", strconv.Itoa(fc.Audit.RetentionDays))
+	auditRetentionDays, err := strconv.Atoi(auditRetentionStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_AUDIT_RETENTION_DAYS: %w", err)
+	}
+
+	// ─── JWT lifetimes ────────────────────────────────────────────────────
+	jwtLifetimeStr := getEnv("BOR_JWT_LIFETIME", fc.Security.JWTLifetime)
+	jwtLifetime, err := time.ParseDuration(jwtLifetimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_JWT_LIFETIME: %w", err)
+	}
+	refreshLifetimeStr := getEnv("BOR_REFRESH_LIFETIME", fc.Security.RefreshLifetime)
+	refreshLifetime, err := time.ParseDuration(refreshLifetimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_REFRESH_LIFETIME: %w", err)
+	}
 
 	return &Config{
 		Database: DatabaseConfig{
@@ -409,11 +472,13 @@ func Load() (*Config, error) {
 			Hostnames:      hostnames,
 		},
 		Security: SecurityConfig{
-			JWTSecret:   getEnv("JWT_SECRET", fc.Security.JWTSecret),
-			TLSEnabled:  getEnvBool("TLS_ENABLED", false),
-			TLSCertFile: getEnv("TLS_CERT_FILE", ""),
-			TLSKeyFile:  getEnv("TLS_KEY_FILE", ""),
-			AdminToken:  getEnv("BOR_ADMIN_TOKEN", fc.Security.AdminToken),
+			JWTSecret:       resolveJWTSecret(getEnv("JWT_SECRET", fc.Security.JWTSecret)),
+			JWTLifetime:     jwtLifetime,
+			RefreshLifetime: refreshLifetime,
+			TLSEnabled:      getEnvBool("TLS_ENABLED", false),
+			TLSCertFile:     getEnv("TLS_CERT_FILE", ""),
+			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
+			AdminToken:      getEnv("BOR_ADMIN_TOKEN", fc.Security.AdminToken),
 		},
 		TLS: TLSConfig{
 			CertFile:   tlsCertFile,
@@ -452,6 +517,7 @@ func Load() (*Config, error) {
 			GroupMemberAttr: getEnv("LDAP_GROUP_MEMBER_ATTR", fc.LDAP.GroupMemberAttr),
 			AttrMemberOf:    getEnv("LDAP_ATTR_MEMBER_OF", fc.LDAP.AttrMemberOf),
 			PageSize:        ldapPageSize,
+			GroupRoleMap:    ldapGroupRoleMap,
 		},
 		Kerberos: KerberosConfig{
 			Enabled:            getEnvBool("BOR_KERBEROS_ENABLED", fc.Kerberos.Enabled),
@@ -468,8 +534,15 @@ func Load() (*Config, error) {
 		Metrics: MetricsConfig{
 			ListenAddr:  metricsAddr,
 			BearerToken: metricsToken,
+			TLSCertFile: metricsTLSCert,
+			TLSKeyFile:  metricsTLSKey,
+		},
+		UI: UIConfig{
+			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),
 		},
 		Audit: AuditConfig{
+			RetentionDays: auditRetentionDays,
+			AnonymizeIPs:  getEnvBool("BOR_AUDIT_ANONYMIZE_IPS", false),
 			Syslog: SyslogConfig{
 				Enabled:   syslogEnabled,
 				Network:   syslogNetwork,
@@ -493,8 +566,10 @@ func defaultFileConfig() fileConfig {
 	fc.Database.User = "bor"
 	fc.Database.Password = "bor"
 	fc.Database.Name = "bor"
-	fc.Database.SSLMode = "disable"
-	fc.Security.JWTSecret = "change-me-in-production"
+	fc.Database.SSLMode = "require"
+	fc.Security.JWTSecret = defaultJWTSecret
+	fc.Security.JWTLifetime = "1h"
+	fc.Security.RefreshLifetime = "24h"
 	fc.TLS.AutogenDir = "/var/lib/bor/pki/ui"
 	fc.CA.AutogenDir = "/var/lib/bor/pki/ca"
 	fc.LDAP.Host = "localhost"
@@ -507,11 +582,38 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrMemberOf = "memberOf"
 	fc.LDAP.PageSize = 500
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
+	fc.Audit.RetentionDays = 365
 	fc.Audit.Syslog.Network = "udp"
 	fc.Audit.Syslog.Addr = "localhost:514"
 	fc.Audit.Syslog.Format = "cef"
 	fc.Audit.Syslog.Facility = 16 // local0
 	return fc
+}
+
+const defaultJWTSecret = "change-me-in-production"
+
+// resolveJWTSecret validates the JWT secret and auto-generates one if the
+// default placeholder is still in use. A generated secret does not survive
+// server restarts (all sessions are invalidated on restart).
+func resolveJWTSecret(secret string) string {
+	if secret != defaultJWTSecret && len(secret) >= 32 {
+		return secret
+	}
+
+	if secret == defaultJWTSecret {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			// Extremely unlikely; crypto/rand should always succeed.
+			log.Fatalf("Failed to generate random JWT secret: %v", err)
+		}
+		generated := hex.EncodeToString(b)
+		log.Println("WARNING: JWT_SECRET not set — using auto-generated secret (sessions will not survive restarts)")
+		return generated
+	}
+
+	// Secret was set explicitly but is too short.
+	log.Fatalf("JWT_SECRET is too short (%d bytes); minimum 32 bytes required", len(secret))
+	return "" // unreachable
 }
 
 func getEnv(key, defaultValue string) string {
@@ -542,4 +644,29 @@ func splitComma(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseGroupRoleMap parses a string like "Domain Admins=Super Admin,IT Staff=Org Admin"
+// into a map[string]string. Entries with no '=' separator are silently skipped.
+func parseGroupRoleMap(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	m := make(map[string]string)
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		idx := strings.Index(part, "=")
+		if idx < 1 {
+			continue
+		}
+		group := strings.TrimSpace(part[:idx])
+		role := strings.TrimSpace(part[idx+1:])
+		if group != "" && role != "" {
+			m[group] = role
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }

@@ -2,17 +2,10 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-const TOKEN_STORAGE_KEY = "bor_token";
-
-function authHeaders(): Record<string, string> {
-  const tk = localStorage.getItem(TOKEN_STORAGE_KEY);
-  const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-  if (tk) hdrs["Authorization"] = `Bearer ${tk}`;
-  return hdrs;
-}
+import { authHeaders } from "./authApi";
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch(url, { credentials: "same-origin", ...init });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -83,12 +76,8 @@ export async function exportAuditLogs(
   params?.action?.forEach((v) => qp.append("action", v));
   if (params?.username) qp.set("username", params.username);
 
-  const tk = localStorage.getItem(TOKEN_STORAGE_KEY);
-  const hdrs: Record<string, string> = {};
-  if (tk) hdrs["Authorization"] = `Bearer ${tk}`;
-
   const res = await fetch(`/api/v1/audit-logs/export?${qp.toString()}`, {
-    headers: hdrs,
+    credentials: "same-origin",
   });
 
   if (!res.ok) {

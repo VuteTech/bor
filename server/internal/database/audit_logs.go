@@ -41,6 +41,16 @@ func (r *AuditLogRepository) Create(ctx context.Context, entry *models.AuditLog)
 	return nil
 }
 
+// DeleteOlderThan removes audit log entries with a timestamp before the given cutoff.
+// It returns the number of deleted rows.
+func (r *AuditLogRepository) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM audit_logs WHERE created_at < $1", cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old audit logs: %w", err)
+	}
+	return result.RowsAffected()
+}
+
 // List retrieves audit logs with pagination and optional filters
 func (r *AuditLogRepository) List(ctx context.Context, req *models.AuditLogListRequest) ([]*models.AuditLog, error) {
 	where, args := buildAuditLogFilter(req)

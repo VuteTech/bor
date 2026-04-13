@@ -34,9 +34,18 @@ type Client struct {
 // and private key. If insecureSkipVerify is true, server cert verification
 // is skipped.
 func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string, insecureSkipVerify bool) (*Client, error) {
+	// After enrollment the agent has a client cert — refuse to operate
+	// without proper CA verification in that case.
+	enrolled := clientCertPath != "" && clientKeyPath != ""
+	if enrolled && insecureSkipVerify && caCertPath == "" {
+		return nil, fmt.Errorf("agent is enrolled but no CA certificate configured; " +
+			"insecure_skip_verify is not allowed post-enrollment — set ca_cert_path")
+	}
+
 	// TLS 1.3 minimum: this client connects to the agent-only mTLS port (8444).
 	tlsCfg := &tls.Config{
-		MinVersion: tls.VersionTLS13,
+		MinVersion:       tls.VersionTLS13,
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256, tls.CurveP384},
 	}
 
 	switch {
@@ -51,7 +60,7 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 		}
 		tlsCfg.RootCAs = pool
 	case insecureSkipVerify:
-		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: controlled by admin config, only used before enrollment
+		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: controlled by admin config, only during enrollment bootstrap
 		log.Println("WARNING: server certificate verification is disabled (insecure_skip_verify)")
 	default:
 		return nil, fmt.Errorf("no CA certificate configured and insecure_skip_verify is false – cannot connect securely; enroll first or set insecure_skip_verify")

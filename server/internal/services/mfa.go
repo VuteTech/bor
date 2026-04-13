@@ -5,11 +5,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +20,9 @@ import (
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	qrcode "github.com/yeqown/go-qrcode/v2"
+	qrwriter "github.com/yeqown/go-qrcode/writer/standard"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -97,10 +102,58 @@ func (s *MFAService) BeginSetup(ctx context.Context, userID, username string) (*
 
 	return &models.MFASetupBeginResponse{
 		Secret:    key.Secret(),
-		QRCodeURL: key.URL(),
 		Algorithm: algStr,
 	}, nil
 }
+
+// GenerateSetupQR returns a PNG image of the QR code for a pending (not yet
+// enabled) TOTP setup. The QR encodes the otpauth:// URI that authenticator
+// apps scan. Generating the QR server-side avoids sending the TOTP secret to
+// any third-party service.
+func (s *MFAService) GenerateSetupQR(ctx context.Context, userID, username string) ([]byte, error) {
+	row, err := s.mfaRepo.GetByUserID(ctx, userID)
+	if err != nil || row == nil {
+		return nil, fmt.Errorf("no pending MFA setup found")
+	}
+	if row.TOTPEnabled {
+		return nil, fmt.Errorf("MFA is already enabled")
+	}
+
+	secret, err := s.decryptSecret(row.TOTPSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	algStr := strings.ToUpper(row.TOTPAlgorithm)
+	if algStr == "" {
+		algStr = "SHA256"
+	}
+
+	// Build the otpauth:// URI directly. The secret from the DB is already
+	// base32-encoded, so we embed it as-is (totp.Generate would double-encode).
+	otpauthURL := fmt.Sprintf(
+		"otpauth://totp/%s:%s?algorithm=%s&digits=6&issuer=%s&period=30&secret=%s",
+		totpIssuer, username, algStr, totpIssuer, secret,
+	)
+
+	qrc, err := qrcode.New(otpauthURL)
+	if err != nil {
+		return nil, fmt.Errorf("create qr code: %w", err)
+	}
+
+	var buf bytes.Buffer
+	w := qrwriter.NewWithWriter(nopWriteCloser{&buf})
+	if err := qrc.Save(w); err != nil {
+		return nil, fmt.Errorf("render qr code: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// nopWriteCloser wraps an io.Writer to satisfy io.WriteCloser.
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 // FinishSetup verifies the first TOTP code and enables MFA.
 func (s *MFAService) FinishSetup(ctx context.Context, userID, code string) (*models.MFASetupFinishResponse, error) {
@@ -278,28 +331,36 @@ func otpAlgorithmToString(a otp.Algorithm) string {
 }
 
 func generateBackupCodes() (plain, hashed []string, err error) {
-	for i := 0; i < backupCodeNum; i++ {
+	for range backupCodeNum {
 		b := make([]byte, 5)
 		if _, err = rand.Read(b); err != nil {
 			return nil, nil, fmt.Errorf("backup code rand: %w", err)
 		}
 		code := strings.ToUpper(hex.EncodeToString(b))
 		plain = append(plain, code[:5]+"-"+code[5:])
-		h := sha256.Sum256([]byte(code))
-		hashed = append(hashed, hex.EncodeToString(h[:]))
+		hash, bcryptErr := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+		if bcryptErr != nil {
+			return nil, nil, fmt.Errorf("backup code hash: %w", bcryptErr)
+		}
+		hashed = append(hashed, string(hash))
 	}
 	return plain, hashed, nil
 }
 
 func verifyBackupCode(plain, hashed string) bool {
-	h := sha256.Sum256([]byte(plain))
-	candidate := hex.EncodeToString(h[:])
-	if len(candidate) != len(hashed) {
-		return false
+	// bcrypt hashes start with "$2". Support legacy unsalted SHA-256
+	// (hex-encoded, 64 chars) for a transition period.
+	if !strings.HasPrefix(hashed, "$2") {
+		h := sha256.Sum256([]byte(plain))
+		candidate := hex.EncodeToString(h[:])
+		if len(candidate) != len(hashed) {
+			return false
+		}
+		var diff byte
+		for i := range candidate {
+			diff |= candidate[i] ^ hashed[i]
+		}
+		return diff == 0
 	}
-	var diff byte
-	for i := range candidate {
-		diff |= candidate[i] ^ hashed[i]
-	}
-	return diff == 0
+	return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(plain)) == nil
 }

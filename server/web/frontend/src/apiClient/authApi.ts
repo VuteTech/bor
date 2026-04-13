@@ -2,21 +2,53 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-const TOKEN_STORAGE_KEY = "bor_token";
-
-function storedToken(): string | null {
-  return localStorage.getItem(TOKEN_STORAGE_KEY);
+// csrfToken reads the bor_csrf cookie for double-submit CSRF protection.
+function csrfToken(): string {
+  const match = document.cookie.match(/(?:^|;\s*)bor_csrf=([^;]*)/);
+  return match ? match[1] : "";
 }
 
-function authHeaders(): Record<string, string> {
-  const tk = storedToken();
+// authHeaders returns headers for authenticated API requests.
+// Authentication is handled via httpOnly session cookies set by the server.
+// The X-CSRF-Token header is included for CSRF protection on mutating requests.
+export function authHeaders(): Record<string, string> {
   const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-  if (tk) hdrs["Authorization"] = `Bearer ${tk}`;
+  const csrf = csrfToken();
+  if (csrf) hdrs["X-CSRF-Token"] = csrf;
   return hdrs;
 }
 
+// tryRefresh attempts to refresh the access token using the refresh cookie.
+// Returns true if the refresh succeeded and a new session cookie was set.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  // Coalesce concurrent refresh attempts into a single request.
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch("/api/v1/auth/refresh", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  let res = await fetch(url, { credentials: "same-origin", ...init });
+  if (res.status === 401) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      res = await fetch(url, { credentials: "same-origin", ...init });
+    }
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -28,6 +60,10 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(detail);
   }
   return res.json();
+}
+
+export async function refreshSession(): Promise<boolean> {
+  return tryRefresh();
 }
 
 /* ── Auth ── */
@@ -50,15 +86,11 @@ export async function login(
   username: string,
   password: string
 ): Promise<LoginResult> {
-  const result = await apiRequest<LoginResult>("/api/v1/auth/login", {
+  return apiRequest<LoginResult>("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-  if (result.token) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
-  }
-  return result;
 }
 
 /* ── New multi-step auth flow ── */
@@ -89,15 +121,11 @@ export async function authStep(
   type: "totp" | "password",
   credential: string
 ): Promise<AuthStepResponse> {
-  const result = await apiRequest<AuthStepResponse>("/api/v1/auth/step", {
+  return apiRequest<AuthStepResponse>("/api/v1/auth/step", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_token: sessionToken, type, credential }),
   });
-  if (result.token) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
-  }
-  return result;
 }
 
 /* ── MFA ── */
@@ -110,7 +138,6 @@ export interface MFAStatus {
 
 export interface MFASetupBeginResult {
   secret: string;
-  qr_code_url: string;
   algorithm: string;
 }
 
@@ -148,6 +175,7 @@ export async function mfaDisable(password: string): Promise<void> {
   const res = await fetch("/api/v1/users/me/mfa/disable", {
     method: "POST",
     headers: authHeaders(),
+    credentials: "same-origin",
     body: JSON.stringify({ password }),
   });
   if (!res.ok) {
@@ -182,12 +210,23 @@ export async function checkSession(): Promise<UserInfo> {
   });
 }
 
-export function logout(): void {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
+/* ── Public server config ── */
+
+export interface PublicConfig {
+  privacy_policy_url: string;
 }
 
-export function getStoredToken(): string | null {
-  return storedToken();
+export async function getPublicConfig(): Promise<PublicConfig> {
+  const res = await fetch("/api/v1/config");
+  if (!res.ok) return { privacy_policy_url: "" };
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  await fetch("/api/v1/auth/logout", {
+    method: "POST",
+    credentials: "same-origin",
+  });
 }
 
 /* ── WebAuthn ── */
@@ -236,6 +275,7 @@ export async function renameWebAuthnCredential(
   const res = await fetch(`/api/v1/users/me/webauthn/credentials/${id}`, {
     method: "PUT",
     headers: authHeaders(),
+    credentials: "same-origin",
     body: JSON.stringify({ name }),
   });
   if (!res.ok) {
@@ -254,6 +294,7 @@ export async function deleteWebAuthnCredential(id: string): Promise<void> {
   const res = await fetch(`/api/v1/users/me/webauthn/credentials/${id}`, {
     method: "DELETE",
     headers: authHeaders(),
+    credentials: "same-origin",
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -281,7 +322,7 @@ export async function webAuthnAuthFinish(
   sessionToken: string,
   credential: unknown
 ): Promise<AuthStepResponse> {
-  const result = await apiRequest<AuthStepResponse>(
+  return apiRequest<AuthStepResponse>(
     "/api/v1/auth/webauthn/finish",
     {
       method: "POST",
@@ -289,8 +330,4 @@ export async function webAuthnAuthFinish(
       body: JSON.stringify({ session_token: sessionToken, credential }),
     }
   );
-  if (result.token) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
-  }
-  return result;
 }
