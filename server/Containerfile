@@ -82,7 +82,8 @@ COPY --from=proto-go-builder /out/go/ ./pkg/grpc/policy/
 # Inject built frontend assets
 COPY --from=frontend-builder /opt/app-root/static/ ./web/static/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./cmd/server
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.Version=${VERSION}" -o server ./cmd/server
 
 # ────────────────────────────────────────────────────────
 # Stage 3: Runtime image

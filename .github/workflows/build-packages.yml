@@ -8,40 +8,16 @@ on:
     types: [published]
 
 jobs:
-  # lint:
-  #   name: Lint
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v6
-
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v6
-  #       with:
-  #         go-version-file: server/go.mod
-  #         cache: true
-
-  #     - name: Lint server
-  #       uses: golangci/golangci-lint-action@v9
-  #       with:
-  #         working-directory: server
-  #         version: latest
-
-  #     - name: Lint agent
-  #       uses: golangci/golangci-lint-action@v6
-  #       with:
-  #         working-directory: agent
-  #         version: latest
-
   test:
     name: Test
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
           cache: true
@@ -58,10 +34,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
           cache: true
@@ -78,12 +54,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: '25'
+          node-version: '22'
           cache: npm
           cache-dependency-path: server/web/frontend/package-lock.json
 
@@ -93,56 +69,9 @@ jobs:
       - name: Build
         run: cd server/web/frontend && npm run build
 
-  build-image:
-    name: Build Container Image
-    runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
-    needs: [test, build-backend, build-frontend]
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=,suffix=,format=short
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: server/Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-
   build-packages:
     name: Build Packages (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
     needs: [test, build-backend, build-frontend]
     permissions:
       contents: write
@@ -151,18 +80,18 @@ jobs:
         arch: [amd64, arm64]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
           cache: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: '25'
+          node-version: '22'
           cache: npm
           cache-dependency-path: server/web/frontend/package-lock.json
 
@@ -174,18 +103,21 @@ jobs:
       - name: Determine version
         id: version
         run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            TAG="${{ github.event.release.tag_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
           else
-            echo "version=0.0.0" >> "$GITHUB_OUTPUT"
+            VERSION="0.0.0+git.${SHORT_SHA}"
           fi
+          echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build packages
         run: make packages VERSION=${{ steps.version.outputs.version }} ARCH=${{ matrix.arch }}
 
       - name: Upload packages as workflow artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
           path: builds/
@@ -196,3 +128,62 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: builds/*
+
+  build-image:
+    name: Build Container Image
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
+    needs: [test, build-backend, build-frontend]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="0.0.0+git.${SHORT_SHA}"
+          fi
+          echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.version.outputs.version }}

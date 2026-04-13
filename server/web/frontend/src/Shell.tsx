@@ -37,6 +37,7 @@ import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
 import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
 import { checkSession, logout, getMFAStatus, getPublicConfig, UserInfo } from "./apiClient/authApi";
+import { getServerVersion } from "./apiClient/systemApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
 import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
@@ -110,9 +111,11 @@ export const Shell: React.FC = () => {
 
   /* ── Public server config ── */
   const [privacyPolicyURL, setPrivacyPolicyURL] = useState<string>("");
+  const [serverVersion, setServerVersion] = useState<string>("");
 
   useEffect(() => {
     getPublicConfig().then(cfg => setPrivacyPolicyURL(cfg.privacy_policy_url)).catch(() => {});
+    getServerVersion().then(v => setServerVersion(v.version)).catch(() => {});
   }, []);
 
   /* ── Auth state ── */
@@ -396,6 +399,19 @@ export const Shell: React.FC = () => {
             gap: "0.75rem",
           }}
         >
+          {serverVersion && (
+            <div
+              style={{
+                fontSize: "0.7rem",
+                color: "#777",
+                textAlign: "center",
+                fontFamily: "monospace",
+              }}
+              aria-label={`Server version ${serverVersion}`}
+            >
+              v{serverVersion}
+            </div>
+          )}
           <div
             style={{
               fontSize: "0.75rem",

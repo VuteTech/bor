@@ -2,7 +2,8 @@
         packages packages-agent packages-server
 
 # Versioning — override with: make packages VERSION=1.2.3
-VERSION ?= 0.1.0
+# Defaults to "dev" so local builds always produce a labelled binary.
+VERSION ?= dev
 # Target architecture — override with: make packages ARCH=arm64
 ARCH    ?= amd64
 
@@ -45,14 +46,19 @@ help:
 
 # Build server
 server:
-	@echo "Building server (FIPS 140-3)..."
-	cd server && GOFIPS140=v1.0.0 go build -o server ./cmd/server
+	@echo "Building server (FIPS 140-3, version=$(VERSION), arch=$(ARCH))..."
+	cd server && GOFIPS140=v1.0.0 GOARCH=$(ARCH) go build \
+		-ldflags "-X main.Version=$(VERSION)" \
+		-o server ./cmd/server
 
 # Build server with PKCS#11 HSM support (requires CGO + pkcs11 headers)
 # Before first use: cd server && go get github.com/ThalesIgnite/crypto11
 server-pkcs11:
-	@echo "Building server (FIPS 140-3 + PKCS#11 HSM support)..."
-	cd server && GOFIPS140=v1.0.0 CGO_ENABLED=1 go build -tags pkcs11 -o server ./cmd/server
+	@echo "Building server (FIPS 140-3 + PKCS#11 HSM support, version=$(VERSION), arch=$(ARCH))..."
+	cd server && GOFIPS140=v1.0.0 GOARCH=$(ARCH) CGO_ENABLED=1 go build \
+		-tags pkcs11 \
+		-ldflags "-X main.Version=$(VERSION)" \
+		-o server ./cmd/server
 
 # Build frontend
 frontend:
@@ -61,8 +67,10 @@ frontend:
 
 # Build agent
 agent:
-	@echo "Building agent (FIPS 140-3)..."
-	cd agent && GOFIPS140=v1.0.0 go build -o bor-agent ./cmd/agent
+	@echo "Building agent (FIPS 140-3, version=$(VERSION), arch=$(ARCH))..."
+	cd agent && GOFIPS140=v1.0.0 GOARCH=$(ARCH) go build \
+		-ldflags "-X main.Version=$(VERSION)" \
+		-o bor-agent ./cmd/agent
 
 # Regenerate dconf built-in schema catalogue from the local system's GSettings schemas.
 # Run this on a reference GNOME installation to refresh server/assets/dconf_builtin_schemas.json.

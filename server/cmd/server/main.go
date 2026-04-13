@@ -37,6 +37,9 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Version is set at build time via -ldflags "-X main.Version=x.y.z".
+var Version = "dev"
+
 func main() {
 	resetMFAUser := flag.String("reset-mfa", "", "Disable MFA for the given username and exit")
 	flag.Parse()
@@ -48,7 +51,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Println("Bor Policy Management Server")
+	log.Printf("Bor Policy Management Server %s", Version)
 
 	// Initialize configuration
 	cfg, err := config.Load()
@@ -350,6 +353,7 @@ func main() {
 	authRateLimit := api.NewRateLimitMiddleware(10, time.Minute)
 
 	// Public routes (no auth required)
+	mux.HandleFunc("/api/v1/version", api.NewVersionHandler(Version))
 	mux.HandleFunc("/api/v1/config", authHandler.PublicConfig)
 	mux.Handle("/api/v1/auth/login", authRateLimit(http.HandlerFunc(authHandler.Login)))
 	mux.Handle("/api/v1/auth/begin", authRateLimit(http.HandlerFunc(authHandler.Begin)))
