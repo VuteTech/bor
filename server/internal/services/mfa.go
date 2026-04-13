@@ -123,22 +123,19 @@ func (s *MFAService) GenerateSetupQR(ctx context.Context, userID, username strin
 		return nil, err
 	}
 
-	algorithm := stringToOTPAlgorithm(row.TOTPAlgorithm)
-
-	// Reconstruct the otpauth:// URI.
-	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      totpIssuer,
-		AccountName: username,
-		Algorithm:   algorithm,
-		Digits:      otp.DigitsSix,
-		Period:      30,
-		Secret:      []byte(secret),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("reconstruct totp key: %w", err)
+	algStr := strings.ToUpper(row.TOTPAlgorithm)
+	if algStr == "" {
+		algStr = "SHA256"
 	}
 
-	qrc, err := qrcode.New(key.URL())
+	// Build the otpauth:// URI directly. The secret from the DB is already
+	// base32-encoded, so we embed it as-is (totp.Generate would double-encode).
+	otpauthURL := fmt.Sprintf(
+		"otpauth://totp/%s:%s?algorithm=%s&digits=6&issuer=%s&period=30&secret=%s",
+		totpIssuer, username, algStr, totpIssuer, secret,
+	)
+
+	qrc, err := qrcode.New(otpauthURL)
 	if err != nil {
 		return nil, fmt.Errorf("create qr code: %w", err)
 	}
