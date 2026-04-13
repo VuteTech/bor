@@ -106,7 +106,7 @@ jobs:
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
           else
-            VERSION="0.0.0+git.${SHORT_SHA}"
+            VERSION="${SHORT_SHA}"
           fi
           echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
@@ -146,7 +146,7 @@ jobs:
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
           else
-            VERSION="0.0.0+git.${SHORT_SHA}"
+            VERSION="${SHORT_SHA}"
           fi
           echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
