@@ -43,13 +43,15 @@ jobs:
           cache: true
 
       - name: Lint server
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
+          version: latest
           working-directory: server
 
       - name: Lint agent
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
+          version: latest
           working-directory: agent
 
   build-server-backend:
