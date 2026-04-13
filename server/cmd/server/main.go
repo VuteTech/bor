@@ -469,10 +469,66 @@ func main() {
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
 
-	// ─── TLS certificate for both servers ───────────────────────────────
-	uiTLSCert, err := pki.LoadTLSCert(tlsCertFile, tlsKeyFile)
+	// ─── TLS: load server cert (always needed for the agent port :8444) ───
+	// When ACME is enabled, tlsCertFile/tlsKeyFile point to the internal
+	// CA-signed cert (auto-generated above); the UI port (:8443) will use
+	// a dynamically obtained ACME certificate instead.
+	serverCert, err := pki.LoadTLSCert(tlsCertFile, tlsKeyFile)
 	if err != nil {
-		log.Fatalf("Failed to load UI TLS certificate: %v", err) //nolint:gocritic // process is exiting, deferred cleanup not needed
+		log.Fatalf("Failed to load TLS certificate: %v", err) //nolint:gocritic // process is exiting, deferred cleanup not needed
+	}
+
+	// ─── UI certificate source: ACME or static ───────────────────────────
+	// uiGetCertificate is called for every TLS handshake on port 8443.
+	// When ACME is enabled it delegates to autocert, which issues and
+	// renews certificates automatically. Otherwise it returns the static
+	// server cert loaded above.
+	var uiGetCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	uiNextProtos := []string{"h2", "http/1.1"}
+
+	if cfg.ACME.Enabled {
+		acmeMgr, acmeErr := pki.NewACMEManager(pki.ACMEManagerConfig{
+			DirectoryURL: cfg.ACME.DirectoryURL,
+			Email:        cfg.ACME.Email,
+			Domains:      cfg.ACME.Domains,
+			CacheDir:     cfg.ACME.CacheDir,
+		})
+		if acmeErr != nil {
+			log.Fatalf("Failed to initialize ACME manager: %v", acmeErr)
+		}
+		uiGetCertificate = acmeMgr.GetCertificate
+		// Include TLS-ALPN-01 protocol so the ACME CA can validate ownership
+		// via a TLS handshake in addition to the HTTP-01 challenge.
+		uiNextProtos = append(uiNextProtos, pki.ALPNProto)
+
+		caLabel := cfg.ACME.DirectoryURL
+		if caLabel == "" {
+			caLabel = "Let's Encrypt"
+		}
+		log.Printf("ACME certificate provisioning enabled (CA=%s domains=%s)",
+			caLabel, strings.Join(cfg.ACME.Domains, ", "))
+
+		// HTTP-01 challenge listener: the ACME CA probes
+		// http://<domain>/.well-known/acme-challenge/<token> on this port.
+		// Firewall rules must allow inbound TCP on this port from the CA.
+		challengeAddr := fmt.Sprintf("%s:%d", cfg.Server.Address, cfg.ACME.HTTPPort)
+		go func() {
+			log.Printf("ACME HTTP-01 challenge listener on %s", challengeAddr)
+			challengeSrv := &http.Server{
+				Addr:              challengeAddr,
+				Handler:           acmeMgr.HTTPHandler(nil),
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+			if err := challengeSrv.ListenAndServe(); err != http.ErrServerClosed {
+				log.Printf("ACME HTTP challenge server stopped: %v", err)
+			}
+		}()
+	} else {
+		// Static cert: return the same certificate for every handshake.
+		cert := serverCert // capture for closure
+		uiGetCertificate = func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return &cert, nil
+		}
 	}
 
 	// ─── Kerberos enrollment service (optional) ───────────────────────────────
@@ -528,11 +584,11 @@ func main() {
 	// X25519 is listed first for performance where FIPS mode is not enforced;
 	// GODEBUG=fips140=on will automatically remove it at runtime.
 	uiTLSConfig := &tls.Config{
-		Certificates: []tls.Certificate{uiTLSCert},
-		ClientCAs:    caCertPool,
-		ClientAuth:   tls.VerifyClientCertIfGiven,
-		MinVersion:   tls.VersionTLS12,
-		NextProtos:   []string{"h2", "http/1.1"},
+		GetCertificate: uiGetCertificate, // ACME or static, set above
+		ClientCAs:      caCertPool,
+		ClientAuth:     tls.VerifyClientCertIfGiven,
+		MinVersion:     tls.VersionTLS12,
+		NextProtos:     uiNextProtos, // includes ACME ALPNProto when ACME is enabled
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -566,8 +622,11 @@ func main() {
 
 	// ─── Agent policy server (:8444) — RequireAndVerifyClientCert ────────
 	// TLS 1.3 minimum: agent-only port, no browser clients, strongest TLS.
+	// Always uses the internal CA-signed cert (serverCert) so agents can
+	// verify it against the CA cert they received during enrollment, even
+	// when ACME is active on the UI port.
 	agentTLSConfig := &tls.Config{
-		Certificates: []tls.Certificate{uiTLSCert},
+		Certificates: []tls.Certificate{serverCert},
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		MinVersion:   tls.VersionTLS13,
