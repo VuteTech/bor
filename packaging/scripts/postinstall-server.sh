@@ -28,8 +28,10 @@ if ! getent passwd bor > /dev/null 2>&1; then
 fi
 
 # ── Permissions ────────────────────────────────────────────────────────────────
-chown bor:bor /var/lib/bor/pki 2>/dev/null || true
-chmod 0750    /var/lib/bor/pki 2>/dev/null || true
+chown bor:bor /var/lib/bor/pki  2>/dev/null || true
+chmod 0750    /var/lib/bor/pki  2>/dev/null || true
+chown bor:bor /var/lib/bor/acme 2>/dev/null || true
+chmod 0750    /var/lib/bor/acme 2>/dev/null || true
 
 # server.yaml contains the JWT secret and optionally the DB password.
 # Restrict access to root (write) and the bor service account (read).

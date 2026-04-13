@@ -109,7 +109,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
 FROM registry.access.redhat.com/ubi10/ubi:10.1
 
 USER root
-RUN mkdir -p /var/lib/bor/pki/ui && chown -R 1001:1001 /var/lib/bor
+RUN mkdir -p /var/lib/bor/pki/ui /var/lib/bor/acme && chown -R 1001:1001 /var/lib/bor
 
 COPY --from=builder /opt/app-root/src/server /usr/local/bin/server
 
