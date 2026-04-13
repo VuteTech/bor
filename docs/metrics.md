@@ -23,6 +23,8 @@ Bor exposes a Prometheus-compatible `/metrics` endpoint on a dedicated port (def
 |----------|---------|-------------|
 | `BOR_METRICS_ADDR` | `127.0.0.1:9090` | `host:port` the endpoint binds to |
 | `BOR_METRICS_TOKEN` | _(empty)_ | When set, requires `Authorization: Bearer <token>` on every scrape request |
+| `BOR_METRICS_TLS_CERT_FILE` | _(empty)_ | Path to TLS certificate; enables HTTPS when set together with `BOR_METRICS_TLS_KEY_FILE` |
+| `BOR_METRICS_TLS_KEY_FILE` | _(empty)_ | Path to TLS private key |
 
 ### YAML (`/etc/bor/server.yaml`)
 
@@ -30,6 +32,8 @@ Bor exposes a Prometheus-compatible `/metrics` endpoint on a dedicated port (def
 metrics:
   listen_addr: "127.0.0.1:9090"   # change host to expose on a management interface
   bearer_token: ""                 # leave empty when listener is localhost-only
+  # tls_cert_file: "/etc/bor/metrics.crt"   # optional: enable HTTPS
+  # tls_key_file:  "/etc/bor/metrics.key"
 ```
 
 ### Binding to a specific interface
@@ -310,7 +314,7 @@ Add to `prometheus.yml`:
 ```yaml
 scrape_configs:
   - job_name: bor
-    # Plain HTTP — the metrics port is not TLS.
+    # Plain HTTP (default — listener bound to localhost or behind a firewall)
     scheme: http
     static_configs:
       - targets:
@@ -320,6 +324,16 @@ scrape_configs:
     #   credentials: "your-token-here"
     scrape_interval: 30s
     scrape_timeout: 10s
+
+  # Alternative: HTTPS (when BOR_METRICS_TLS_CERT_FILE / KEY are configured)
+  # - job_name: bor-tls
+  #   scheme: https
+  #   tls_config:
+  #     ca_file: /path/to/bor-metrics-ca.crt   # CA that signed the metrics cert
+  #   static_configs:
+  #     - targets: ["bor-server:9090"]
+  #   authorization:
+  #     credentials: "your-token-here"
 ```
 
 ### Quick test from the host
@@ -339,8 +353,9 @@ curl -s http://localhost:9090/metrics | grep "^bor_"
 
 ## Security
 
-- The endpoint serves **plain HTTP**, not HTTPS. Never expose it directly on the internet.
+- The endpoint serves **plain HTTP** by default. Never expose it without TLS or a firewall when not on localhost.
 - **Bind to localhost** (`127.0.0.1:9090`) when Prometheus runs on the same host as Bor — the default.
 - **Bind to a management interface** (`192.168.100.10:9090`) when Prometheus is on a separate host. Restrict access with a firewall rule so only the Prometheus server can reach port 9090.
 - **Bearer token** (`BOR_METRICS_TOKEN`) adds a layer of defence-in-depth when the listener is on a network interface. The token is checked with a constant-time comparison; choose a random string of at least 32 characters.
+- **TLS** (`BOR_METRICS_TLS_CERT_FILE` + `BOR_METRICS_TLS_KEY_FILE`): when both are set, the endpoint switches to HTTPS. Recommended when the Prometheus scraper is on a different host and a VPN or firewall is not available.
 - The endpoint does **not** expose any secret values, user credentials, or policy content — only aggregate counts and per-node timing information.

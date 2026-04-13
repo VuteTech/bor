@@ -14,9 +14,10 @@ LDAP authentication is optional. When disabled, only the built-in Bor accounts (
 4. [Active Directory setup](#active-directory-setup)
 5. [StartTLS vs LDAPS](#starttls-vs-ldaps)
 6. [Group membership](#group-membership)
-7. [User attribute mapping](#user-attribute-mapping)
-8. [Testing the connection](#testing-the-connection)
-9. [Troubleshooting](#troubleshooting)
+7. [Role mapping](#role-mapping)
+8. [User attribute mapping](#user-attribute-mapping)
+9. [Testing the connection](#testing-the-connection)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -60,6 +61,7 @@ The authentication flow when LDAP is enabled:
 | `LDAP_GROUP_MEMBER_ATTR` | `member` | Group attribute listing member DNs |
 | `LDAP_ATTR_MEMBER_OF` | `memberOf` | User attribute listing group DNs (preferred, skips group search) |
 | `LDAP_PAGE_SIZE` | `500` | LDAP results paging (RFC 2696); `0` = disabled |
+| `BOR_LDAP_GROUP_ROLE_MAP` | _(empty)_ | Map LDAP group CNs to Bor roles; format: `"Group CN=Role Name,Another Group=Another Role"` |
 
 ### YAML (`/etc/bor/server.yaml`)
 
@@ -80,6 +82,10 @@ ldap:
   attr_full_name: "cn"
   attr_member_of: "memberOf"
   page_size: 500
+  # Optional: map LDAP group CNs to Bor role names
+  # group_role_map:
+  #   "Domain Admins": "Super Admin"
+  #   "IT Staff": "Org Admin"
 ```
 
 > **Security note:** Never store `bind_password` in `server.yaml` if the file is world-readable. Use the `LDAP_BIND_PASSWORD` environment variable instead and restrict the `.env` file to the `bor` service account (`chmod 600`).
@@ -301,7 +307,7 @@ When both `use_tls` and `start_tls` are `true`, `use_tls` takes precedence.
 
 ## Group membership
 
-Bor resolves group membership for informational purposes (visible in user session context) and can be used by future RBAC extensions. Two resolution strategies are supported:
+Bor resolves group membership on every LDAP login and uses it to automatically grant or revoke Bor roles (see [Role mapping](#role-mapping) below). Two resolution strategies are supported:
 
 ### Strategy 1: `memberOf` attribute (preferred)
 
@@ -333,6 +339,54 @@ Common filters:
 | Active Directory | `(&(objectClass=group)(member=%s))` |
 | OpenLDAP (groupOfNames) | `(&(objectClass=groupOfNames)(member=%s))` |
 | OpenLDAP (posixGroup) | `(&(objectClass=posixGroup)(memberUid=%s))` — note: uses UID not DN |
+
+---
+
+## Role mapping
+
+Bor can automatically grant and revoke roles based on LDAP group membership. The mapping is evaluated on every successful login — users gain roles when they join a mapped group and lose them when they leave.
+
+Only roles listed in the mapping are managed automatically. Role bindings created manually in the Bor web UI are never touched.
+
+### Configuration
+
+**Environment variable** — comma-separated `LDAP Group CN=Bor Role Name` pairs:
+
+```bash
+BOR_LDAP_GROUP_ROLE_MAP="Domain Admins=Super Admin,IT Staff=Org Admin"
+```
+
+**YAML** (`/etc/bor/server.yaml`):
+
+```yaml
+ldap:
+  group_role_map:
+    "Domain Admins": "Super Admin"
+    "IT Staff":      "Org Admin"
+    "Auditors":      "Auditor"
+```
+
+### Available Bor roles
+
+| Role name | Permissions |
+|-----------|-------------|
+| `Super Admin` | All permissions |
+| `Org Admin` | All except role management |
+| `Policy Editor` | Create and edit policies |
+| `Policy Reviewer` | View and release policies |
+| `Compliance Viewer` | View compliance data |
+| `Auditor` | Read-only access + audit log export |
+
+### How it works
+
+1. The user authenticates successfully via LDAP.
+2. Bor retrieves the user's LDAP group CNs (via `attr_member_of` or group search).
+3. For each role in `group_role_map`, Bor checks whether the user is currently in the mapped group.
+   - If yes and the user does not already hold the role → role binding is created.
+   - If no and the user currently holds the role → role binding is deleted.
+4. Role bindings for roles **not** in the map are left unchanged.
+
+> **Note:** Group CNs are matched exactly as returned by LDAP (e.g. `"Domain Admins"`, not the full DN). The `cnFromDN` function automatically extracts the CN from a full DN, so `memberOf`-style values work without additional configuration.
 
 ---
 
