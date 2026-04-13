@@ -9,7 +9,7 @@ USER root
 ENV GOPATH=/root/go
 ENV PATH=${PATH}:/root/go/bin
 
-ARG PROTOC_VERSION=29.3
+ARG PROTOC_VERSION=34.1
 RUN dnf install -y --nodocs curl unzip && dnf clean all && \
     ARCH=$(uname -m) && \
     case "${ARCH}" in \
