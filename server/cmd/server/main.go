@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/api"
+	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
@@ -162,19 +162,32 @@ func main() {
 	var ldapSvc *services.LDAPService
 	if cfg.LDAP.Enabled {
 		ldapSvc = services.NewLDAPService(&services.LDAPConfig{
-			Enabled:      cfg.LDAP.Enabled,
-			Host:         cfg.LDAP.Host,
-			Port:         cfg.LDAP.Port,
-			UseTLS:       cfg.LDAP.UseTLS,
-			BindDN:       cfg.LDAP.BindDN,
-			BindPassword: cfg.LDAP.BindPassword,
-			BaseDN:       cfg.LDAP.BaseDN,
-			UserFilter:   cfg.LDAP.UserFilter,
-			AttrUsername: cfg.LDAP.AttrUsername,
-			AttrEmail:    cfg.LDAP.AttrEmail,
-			AttrFullName: cfg.LDAP.AttrFullName,
+			Enabled:         cfg.LDAP.Enabled,
+			Host:            cfg.LDAP.Host,
+			Port:            cfg.LDAP.Port,
+			UseTLS:          cfg.LDAP.UseTLS,
+			StartTLS:        cfg.LDAP.StartTLS,
+			TLSCAFile:       cfg.LDAP.TLSCAFile,
+			TLSSkipVerify:   cfg.LDAP.TLSSkipVerify,
+			BindDN:          cfg.LDAP.BindDN,
+			BindPassword:    cfg.LDAP.BindPassword,
+			BaseDN:          cfg.LDAP.BaseDN,
+			UserFilter:      cfg.LDAP.UserFilter,
+			UPNSuffix:       cfg.LDAP.UPNSuffix,
+			AttrUsername:    cfg.LDAP.AttrUsername,
+			AttrEmail:       cfg.LDAP.AttrEmail,
+			AttrFullName:    cfg.LDAP.AttrFullName,
+			GroupBaseDN:     cfg.LDAP.GroupBaseDN,
+			GroupFilter:     cfg.LDAP.GroupFilter,
+			GroupMemberAttr: cfg.LDAP.GroupMemberAttr,
+			AttrMemberOf:    cfg.LDAP.AttrMemberOf,
+			PageSize:        cfg.LDAP.PageSize,
 		})
-		log.Println("LDAP authentication enabled")
+		log.Printf("LDAP authentication enabled (host=%s port=%d tls=%v startTLS=%v)",
+			cfg.LDAP.Host, cfg.LDAP.Port, cfg.LDAP.UseTLS, cfg.LDAP.StartTLS)
+		if cfg.LDAP.TLSSkipVerify {
+			log.Printf("WARNING: LDAP TLS certificate verification is disabled (LDAP_TLS_SKIP_VERIFY=true)")
+		}
 	}
 
 	// Initialize MFA service
@@ -236,7 +249,7 @@ func main() {
 	// Register SyslogSink if configured.
 	var syslogSink *auditsink.SyslogSink
 	if cfg.Audit.Syslog.Enabled {
-		syslogSink = auditsink.NewSyslogSink(auditsink.SyslogConfig{
+		syslogSink = auditsink.NewSyslogSink(&auditsink.SyslogConfig{
 			Enabled:   cfg.Audit.Syslog.Enabled,
 			Network:   cfg.Audit.Syslog.Network,
 			Addr:      cfg.Audit.Syslog.Addr,
@@ -281,9 +294,9 @@ func main() {
 	// Wire policy and binding change notifications to the hub.
 	// Only agents whose node groups are affected by the change are signalled.
 	policyHandler.OnPolicyChange = func(policyID string) {
-		groupIDs, err := policyBindingSvc.GetEnabledGroupIDsForPolicy(context.Background(), policyID)
-		if err != nil {
-			log.Printf("Warning: failed to get enabled group IDs for policy %s: %v", policyID, err)
+		groupIDs, lookupErr := policyBindingSvc.GetEnabledGroupIDsForPolicy(context.Background(), policyID)
+		if lookupErr != nil {
+			log.Printf("Warning: failed to get enabled group IDs for policy %s: %v", policyID, lookupErr)
 			return
 		}
 		if len(groupIDs) == 0 {
@@ -421,18 +434,43 @@ func main() {
 		log.Fatalf("Failed to load UI TLS certificate: %v", err) //nolint:gocritic // process is exiting, deferred cleanup not needed
 	}
 
+	// ─── Kerberos enrollment service (optional) ───────────────────────────────
+	var kerberosvc *services.KerberosService
+	if cfg.Kerberos.Enabled {
+		var krbErr error
+		kerberosvc, krbErr = services.NewKerberosService(services.KerberosConfig{
+			Enabled:            cfg.Kerberos.Enabled,
+			Realm:              cfg.Kerberos.Realm,
+			KeytabFile:         cfg.Kerberos.KeytabFile,
+			ServicePrincipal:   cfg.Kerberos.ServicePrincipal,
+			DefaultNodeGroupID: cfg.Kerberos.DefaultNodeGroupID,
+		})
+		if krbErr != nil {
+			log.Fatalf("Failed to initialize Kerberos service: %v", krbErr)
+		}
+		log.Printf("Kerberos enrollment enabled (realm=%s principal=%s default_group=%s)",
+			cfg.Kerberos.Realm, cfg.Kerberos.ServicePrincipal, cfg.Kerberos.DefaultNodeGroupID)
+	}
+
 	// ─── Enrollment gRPC server (no mandatory client cert at TLS layer) ──
-	// Require a verified client certificate for all RPCs except Enroll
-	// (which is the bootstrapping call that exchanges a token for a cert).
+	// Require a verified client certificate for all RPCs except Enroll and
+	// KerberosEnroll (both are bootstrapping calls that exchange credentials
+	// for a signed certificate).
 	exemptMethods := map[string]bool{
-		"/bor.enrollment.v1.EnrollmentService/Enroll": true,
+		"/bor.enrollment.v1.EnrollmentService/Enroll":         true,
+		"/bor.enrollment.v1.EnrollmentService/KerberosEnroll": true,
+	}
+
+	enrollSrvImpl := grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken)
+	if kerberosvc != nil {
+		enrollSrvImpl.WithKerberosService(kerberosvc)
 	}
 
 	enrollGrpcSrv := grpc.NewServer(
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods, revocationRepo)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods, revocationRepo)),
 	)
-	enrollpb.RegisterEnrollmentServiceServer(enrollGrpcSrv, grpcserver.NewEnrollmentServer(enrollSvc, cfg.Security.AdminToken))
+	enrollpb.RegisterEnrollmentServiceServer(enrollGrpcSrv, enrollSrvImpl)
 
 	// ─── Policy gRPC server (mandatory client cert — agents only) ────────
 	policyGrpcSrv := grpc.NewServer(

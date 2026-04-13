@@ -30,6 +30,7 @@ type MFAService struct {
 	mfaRepo      *database.MFARepository
 	settingsRepo *database.SettingsRepository
 	aesKey       []byte
+	legacyAESKey []byte // pre-HKDF key for migrating existing secrets
 }
 
 // NewMFAService creates a new MFAService.
@@ -42,6 +43,7 @@ func NewMFAService(mfaRepo *database.MFARepository, settingsRepo *database.Setti
 		mfaRepo:      mfaRepo,
 		settingsRepo: settingsRepo,
 		aesKey:       deriveAESKey(secret),
+		legacyAESKey: deriveLegacyAESKey(secret),
 	}
 }
 
@@ -239,8 +241,15 @@ func (s *MFAService) UpdateMFASettings(ctx context.Context, settings *models.MFA
 }
 
 func (s *MFAService) decryptSecret(encSecret string) (string, error) {
+	// Try the current HKDF-derived key first.
 	b, err := aesDecrypt(s.aesKey, encSecret)
-	if err != nil {
+	if err == nil {
+		return string(b), nil
+	}
+	// Fall back to the legacy SHA-256-derived key for secrets encrypted
+	// before the HKDF migration.
+	b, legacyErr := aesDecrypt(s.legacyAESKey, encSecret)
+	if legacyErr != nil {
 		return "", fmt.Errorf("decrypt totp secret: %w", err)
 	}
 	return string(b), nil

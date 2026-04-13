@@ -25,8 +25,8 @@ type xmlSchemaList struct {
 }
 
 type xmlEnum struct {
-	ID     string        `xml:"id,attr"`
-	Values []xmlEnumVal  `xml:"value"`
+	ID     string       `xml:"id,attr"`
+	Values []xmlEnumVal `xml:"value"`
 }
 
 type xmlEnumVal struct {
@@ -147,16 +147,17 @@ func parseSchemaFile(path string) (*xmlSchemaList, error) {
 func xmlSchemaToProto(xs *xmlSchema, enumIndex map[string]*xmlEnum) *pb.GSettingsSchema {
 	relocatable := xs.Path == ""
 	schema := &pb.GSettingsSchema{
-		SchemaId:   xs.ID,
-		Path:       xs.Path,
+		SchemaId:    xs.ID,
+		Path:        xs.Path,
 		Relocatable: relocatable,
 	}
 
-	for _, xk := range xs.Keys {
+	for i := range xs.Keys {
+		xk := &xs.Keys[i]
 		key := &pb.GSettingsKey{
-			Name:        xk.Name,
-			Summary:     strings.TrimSpace(xk.Summary),
-			Description: strings.TrimSpace(xk.Description),
+			Name:         xk.Name,
+			Summary:      strings.TrimSpace(xk.Summary),
+			Description:  strings.TrimSpace(xk.Description),
 			DefaultValue: strings.TrimSpace(xk.Default.Value),
 		}
 

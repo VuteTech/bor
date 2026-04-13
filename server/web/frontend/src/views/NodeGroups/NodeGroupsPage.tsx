@@ -389,6 +389,16 @@ export const NodeGroupsPage: React.FC = () => {
         <ModalBody>
           <LiveAlert id="err-ng-form" message={formError} isInline style={{ marginBottom: "1rem" }} />
           <Form>
+            {editingGroup && (
+              <FormGroup label="Group ID" fieldId="ng-id">
+                <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied!" id="ng-id">
+                  {editingGroup.id}
+                </ClipboardCopy>
+                <p style={{ marginTop: "0.25rem", color: "#6a6e73", fontSize: "0.875rem" }}>
+                  Use this ID for <abbr title="BOR_KERBEROS_DEFAULT_NODE_GROUP">Kerberos auto-enrollment</abbr> configuration.
+                </p>
+              </FormGroup>
+            )}
             <FormGroup label="Name" isRequired fieldId="ng-name">
               <TextInput
                 id="ng-name"

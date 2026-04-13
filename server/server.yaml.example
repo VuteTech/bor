@@ -71,18 +71,144 @@ ca:
   #  token_label: "bor-ca"                      # HSM token label
   #  key_label: "bor-ca-key"                    # CA key label on the token
 
+# LDAP / Active Directory authentication (optional).
+#
+# Supports FreeIPA (MIT Kerberos, 389 DS back-end) and Active Directory /
+# Samba AD out of the box.  Use the commented-out AD example below as a
+# starting point for Windows AD or Samba AD environments.
 ldap:
   enabled: false
   host: "ldap.example.com"
   port: 389
+
+  # use_tls: enable LDAPS (TLS from the start, default port 636).
   use_tls: false
+
+  # start_tls: upgrade a plain LDAP (port 389) connection to TLS with
+  # STARTTLS.  Mutually exclusive with use_tls; use_tls takes precedence.
+  start_tls: false
+
+  # tls_ca_file: path to a PEM CA certificate used to verify the LDAP
+  # server's certificate for LDAPS or StartTLS connections.  Leave empty
+  # to use the system certificate pool.
+  tls_ca_file: ""
+
+  # Service account used to search for users before binding as the user.
+  # FreeIPA: "uid=bor-svc,cn=users,cn=accounts,dc=example,dc=com"
+  # AD:      "CN=bor-svc,CN=Users,DC=example,DC=com"
   bind_dn: "cn=readonly,dc=example,dc=com"
   bind_password: ""
+
   base_dn: "dc=example,dc=com"
+
+  # user_filter: LDAP filter for user lookup.  Use %s as the username placeholder.
+  # FreeIPA: "(uid=%s)"        (default)
+  # AD:      "(sAMAccountName=%s)"
   user_filter: "(uid=%s)"
-  attr_username: "uid"
-  attr_email: "mail"
-  attr_full_name: "cn"
+
+  # upn_suffix: when set, the agent falls back to a UPN-style bind
+  # (username@UPN_SUFFIX) if the service-account search returns no results.
+  # AD only.  Example: "@EXAMPLE.COM"
+  upn_suffix: ""
+
+  # Attribute names for the user entry.
+  # FreeIPA defaults shown; AD equivalents in parentheses.
+  attr_username: "uid"         # (sAMAccountName)
+  attr_email: "mail"           # (mail)
+  attr_full_name: "cn"         # (displayName)
+
+  # Group membership resolution (optional).
+  # group_base_dn: base DN for group searches (defaults to base_dn).
+  group_base_dn: ""
+
+  # group_filter: find the groups a user DN belongs to.
+  # FreeIPA: "(&(objectClass=groupofnames)(member=%s))"
+  # AD:      "(&(objectClass=group)(member=%s))"
+  group_filter: ""
+
+  # group_member_attr: attribute on a group object listing member DNs.
+  # Typically "member" (AD/FreeIPA) or "uniqueMember" (OpenLDAP).
+  group_member_attr: "member"
+
+  # attr_member_of: user attribute listing group DNs directly.
+  # Typically "memberOf".  When set, a separate group search is skipped.
+  attr_member_of: "memberOf"
+
+  # page_size: LDAP results paging (RFC 2696).  0 disables paging.
+  page_size: 500
+
+# Active Directory / Samba AD example (uncomment and adapt):
+#ldap:
+#  enabled: true
+#  host: "dc01.example.com"
+#  port: 636
+#  use_tls: true
+#  tls_ca_file: "/etc/ssl/certs/example-ca.crt"  # or leave empty for system pool
+#  bind_dn: "CN=bor-svc,CN=Users,DC=example,DC=com"
+#  bind_password: ""    # set via LDAP_BIND_PASSWORD env var
+#  base_dn: "DC=example,DC=com"
+#  user_filter: "(sAMAccountName=%s)"
+#  upn_suffix: "@EXAMPLE.COM"
+#  attr_username: "sAMAccountName"
+#  attr_email: "mail"
+#  attr_full_name: "displayName"
+#  group_filter: "(&(objectClass=group)(member=%s))"
+#  group_member_attr: "member"
+#  attr_member_of: "memberOf"
+#  page_size: 1000
+
+# FreeIPA example (uncomment and adapt):
+#ldap:
+#  enabled: true
+#  host: "ipa.example.com"
+#  port: 636
+#  use_tls: true
+#  tls_ca_file: "/etc/ipa/ca.crt"
+#  bind_dn: "uid=bor-svc,cn=users,cn=accounts,dc=example,dc=com"
+#  bind_password: ""    # set via LDAP_BIND_PASSWORD env var
+#  base_dn: "dc=example,dc=com"
+#  user_filter: "(uid=%s)"
+#  attr_username: "uid"
+#  attr_email: "mail"
+#  attr_full_name: "cn"
+#  group_filter: "(&(objectClass=groupofnames)(member=%s))"
+#  group_member_attr: "member"
+#  attr_member_of: "memberOf"
+#  page_size: 500
+
+# Kerberos token-free agent enrollment (optional).
+#
+# Domain-joined nodes (FreeIPA or Active Directory / Samba AD) can enroll
+# automatically using their machine keytab (/etc/krb5.keytab) without
+# requiring a manually generated enrollment token.  This is the recommended
+# approach for large deployments.
+#
+# 1. Create a service keytab for the Bor server (examples below).
+# 2. Set keytab_file to the keytab path on the Bor server host.
+# 3. Set service_principal to the full Kerberos principal for the service.
+# 4. Set default_node_group_id to the UUID of the node group that newly
+#    enrolled agents will be placed into.  Obtain this from the Bor web UI
+#    (Node Groups → copy the group ID from the URL).
+#
+# FreeIPA — create service and export keytab:
+#   ipa service-add HTTP/bor.example.com
+#   ipa-getkeytab -s ipa.example.com -p HTTP/bor.example.com@EXAMPLE.COM \
+#       -k /etc/bor/krb5.keytab
+#
+# Active Directory / Samba AD — create service account and keytab:
+#   net ads keytab create -k /etc/bor/krb5.keytab  (Samba)
+#   # or use ktpass.exe on Windows AD
+#
+# IMPORTANT: set the keytab file permissions to 640, owned by the bor service
+# account.  Never store the keytab in a world-readable location.
+#
+#kerberos:
+#  enabled: false
+#  realm: "EXAMPLE.COM"
+#  keytab_file: "/etc/bor/krb5.keytab"
+#  service_principal: "HTTP/bor.example.com@EXAMPLE.COM"
+#  # default_node_group_id: UUID of the node group for auto-enrolled agents
+#  default_node_group_id: ""
 
 # WebAuthn / FIDO2 (optional — disabled unless rpid is set)
 #

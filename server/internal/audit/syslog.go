@@ -22,6 +22,7 @@ import (
 // SyslogFormat selects the message body format.
 type SyslogFormat string
 
+// Supported syslog message body formats.
 const (
 	FormatCEFSyslog  SyslogFormat = "cef"
 	FormatOCSFSyslog SyslogFormat = "ocsf"
@@ -46,7 +47,7 @@ type SyslogConfig struct {
 // or unreachable SIEM never blocks the request path. When the channel is full,
 // events are dropped and a warning is logged.
 type SyslogSink struct {
-	cfg      SyslogConfig
+	cfg      *SyslogConfig
 	queue    chan *auditpb.AuditEvent
 	mu       sync.Mutex
 	conn     net.Conn
@@ -58,7 +59,7 @@ const syslogQueueSize = 512
 
 // NewSyslogSink creates and starts a SyslogSink.
 // Call Close() to drain the queue and shut down the sender goroutine.
-func NewSyslogSink(cfg SyslogConfig) *SyslogSink {
+func NewSyslogSink(cfg *SyslogConfig) *SyslogSink {
 	s := &SyslogSink{
 		cfg:   cfg,
 		queue: make(chan *auditpb.AuditEvent, syslogQueueSize),

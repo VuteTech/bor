@@ -28,10 +28,10 @@ func TestPolkitPoliciesToJS_DenyActionPrefix(t *testing.T) {
 	pol := &pb.PolkitPolicy{
 		Rules: []*pb.PolkitRule{
 			{
-				Description:     "Deny non-admins from managing networks",
-				ActionPrefixes:  []string{"org.freedesktop.NetworkManager.network."},
-				Subject:         &pb.PolkitSubjectFilter{InGroup: "wheel", NegateGroup: true},
-				Result:          pb.PolkitResult_POLKIT_RESULT_NO,
+				Description:    "Deny non-admins from managing networks",
+				ActionPrefixes: []string{"org.freedesktop.NetworkManager.network."},
+				Subject:        &pb.PolkitSubjectFilter{InGroup: "wheel", NegateGroup: true},
+				Result:         pb.PolkitResult_POLKIT_RESULT_NO,
 			},
 		},
 	}

@@ -120,6 +120,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
 		t.Fatal("Failed to decode signed cert PEM")
+		return // unreachable, but satisfies staticcheck SA5011
 	}
 	signedCert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {

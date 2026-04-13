@@ -106,8 +106,8 @@ func marshalFirefoxPolicies(policies []*pb.FirefoxPolicy) ([]byte, error) {
 	}
 
 	var policiesMap map[string]interface{}
-	if err := json.Unmarshal(jsonBytes, &policiesMap); err != nil {
-		return nil, fmt.Errorf("failed to parse marshalled Firefox policy: %w", err)
+	if unmarshalErr := json.Unmarshal(jsonBytes, &policiesMap); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to parse marshalled Firefox policy: %w", unmarshalErr)
 	}
 
 	managed := struct {

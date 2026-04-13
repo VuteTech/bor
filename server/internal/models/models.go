@@ -24,13 +24,13 @@ const (
 
 // Policy represents a desktop policy
 type Policy struct {
-	ID                  string     `json:"id" db:"id"`
-	Name                string     `json:"name" db:"name"`
-	Description         string     `json:"description" db:"description"`
-	Type                string     `json:"type" db:"type"`
-	Content             string     `json:"content" db:"content"` // JSON string
-	Version             int        `json:"version" db:"version"`
-	State               string     `json:"state" db:"state"`
+	ID          string `json:"id" db:"id"`
+	Name        string `json:"name" db:"name"`
+	Description string `json:"description" db:"description"`
+	Type        string `json:"type" db:"type"`
+	Content     string `json:"content" db:"content"` // JSON string
+	Version     int    `json:"version" db:"version"`
+	State       string `json:"state" db:"state"`
 	// Priority is the maximum binding priority across all enabled bindings for
 	// this policy. Only populated when fetched via node-group queries
 	// (ListPoliciesByGroupIDs). Zero for all other fetches.

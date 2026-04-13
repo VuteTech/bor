@@ -180,7 +180,7 @@ func PolkitRulesPath(priority int32, policyID string) string {
 // no explicit reload command is needed.
 func SyncPolkitRules(rulesPath string, js []byte) error {
 	// Ensure the directory exists.
-	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o755); err != nil { //nolint:gosec // G301: polkit rules directory must be world-readable
 		return fmt.Errorf("polkit: create rules dir: %w", err)
 	}
 
@@ -193,20 +193,20 @@ func SyncPolkitRules(rulesPath string, js []byte) error {
 	tmpPath := tmp.Name()
 
 	if _, err := tmp.Write(js); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("polkit: write temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("polkit: close temp file: %w", err)
 	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
-		os.Remove(tmpPath)
+	if err := os.Chmod(tmpPath, 0o644); err != nil { //nolint:gosec // G302: polkit rules files must be world-readable for polkitd
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("polkit: chmod temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, rulesPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("polkit: rename rules file: %w", err)
 	}
 
@@ -241,7 +241,7 @@ func ListBorManagedPolkitFiles() ([]string, error) {
 			continue
 		}
 		path := filepath.Join(PolkitRulesDir, entry.Name())
-		f, err := os.Open(path)
+		f, err := os.Open(path) //nolint:gosec // G304: path constructed from constant PolkitRulesDir + directory listing
 		if err != nil {
 			continue
 		}
@@ -277,7 +277,7 @@ func CheckPolkitCompliance(pol *pb.PolkitPolicy, rulesPath string) []PolkitRuleR
 		return results
 	}
 
-	actual, readErr := os.ReadFile(rulesPath)
+	actual, readErr := os.ReadFile(rulesPath) //nolint:gosec // G304: rulesPath is derived from trusted policy config
 	if readErr != nil {
 		// File missing or unreadable — all rules non-compliant.
 		msg := fmt.Sprintf("rules file missing or unreadable at %s", rulesPath)
@@ -331,7 +331,7 @@ func CheckPolkitCompliance(pol *pb.PolkitPolicy, rulesPath string) []PolkitRuleR
 }
 
 // RollupPolkitCompliance derives an overall status from per-rule results.
-func RollupPolkitCompliance(results []PolkitRuleResult) (pb.ComplianceStatus, string) {
+func RollupPolkitCompliance(results []PolkitRuleResult) (status pb.ComplianceStatus, message string) {
 	if len(results) == 0 {
 		return pb.ComplianceStatus_COMPLIANCE_STATUS_UNKNOWN, ""
 	}

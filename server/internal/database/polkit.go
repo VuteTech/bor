@@ -63,7 +63,7 @@ func (r *PolkitRepository) ReplaceNodeActions(ctx context.Context, nodeID string
 	if err != nil {
 		return fmt.Errorf("polkit: begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is a no-op
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM node_polkit_actions WHERE node_id = $1`, nodeID); err != nil {
 		return fmt.Errorf("polkit: delete node actions: %w", err)
@@ -91,7 +91,7 @@ func (r *PolkitRepository) ListActions(ctx context.Context) ([]*pb.PolkitActionD
 	if err != nil {
 		return nil, fmt.Errorf("polkit: list actions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanActions(rows)
 }
@@ -108,7 +108,7 @@ func (r *PolkitRepository) ListActionsByNode(ctx context.Context, nodeID string)
 	if err != nil {
 		return nil, fmt.Errorf("polkit: list actions by node: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanActions(rows)
 }

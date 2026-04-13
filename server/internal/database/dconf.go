@@ -60,7 +60,7 @@ func (r *DConfRepository) ReplaceNodeSchemas(ctx context.Context, nodeID string,
 	if err != nil {
 		return fmt.Errorf("dconf: begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is a no-op
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM node_dconf_schemas WHERE node_id = $1`, nodeID); err != nil {
 		return fmt.Errorf("dconf: delete node schemas: %w", err)
@@ -92,7 +92,7 @@ func (r *DConfRepository) ListSchemasByNode(ctx context.Context, nodeID string) 
 	if err != nil {
 		return nil, fmt.Errorf("dconf: list schemas by node: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var schemas []*pb.GSettingsSchema
 	for rows.Next() {
@@ -176,7 +176,7 @@ func (r *DConfRepository) ListComplianceResults(ctx context.Context) ([]*Complia
 	if err != nil {
 		return nil, fmt.Errorf("dconf: list compliance results: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []*ComplianceRow
 	for rows.Next() {
@@ -202,7 +202,7 @@ func (r *DConfRepository) ListSchemas(ctx context.Context) ([]*pb.GSettingsSchem
 	if err != nil {
 		return nil, fmt.Errorf("dconf: list schemas: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var schemas []*pb.GSettingsSchema
 	for rows.Next() {
@@ -217,9 +217,9 @@ func (r *DConfRepository) ListSchemas(ctx context.Context) ([]*pb.GSettingsSchem
 			return nil, fmt.Errorf("dconf: unmarshal keys for %s: %w", schemaID, err)
 		}
 		s := &pb.GSettingsSchema{
-			SchemaId:   schemaID,
+			SchemaId:    schemaID,
 			Relocatable: relocatable,
-			Keys:       keys,
+			Keys:        keys,
 		}
 		if path != nil {
 			s.Path = *path

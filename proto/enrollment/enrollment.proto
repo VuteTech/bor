@@ -15,6 +15,12 @@ service EnrollmentService {
   // Enroll registers a new agent using an enrollment token and CSR.
   // Called by the agent on first run.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
+
+  // KerberosEnroll registers a domain-joined agent using a Kerberos SPNEGO token.
+  // No manually-generated enrollment token is required; the agent authenticates
+  // using its machine keytab (/etc/krb5.keytab).  Supported by FreeIPA and
+  // Active Directory (Samba AD) domains.
+  rpc KerberosEnroll(KerberosEnrollRequest) returns (EnrollResponse);
 }
 
 // CreateEnrollmentTokenRequest is sent by an admin to generate an enrollment token.
@@ -42,4 +48,17 @@ message EnrollResponse {
   bytes signed_cert_pem = 2;
   bytes ca_cert_pem = 3;
   string assigned_node_group = 4;
+}
+
+// KerberosEnrollRequest is sent by a domain-joined agent to enroll using its
+// machine Kerberos identity.  The SPNEGO token carries a Kerberos AP_REQ
+// built from the machine keytab (/etc/krb5.keytab); no enrollment token is
+// required.
+message KerberosEnrollRequest {
+  // spnego_token is the raw DER-encoded SPNEGO NegTokenInit wrapping a
+  // Kerberos AP_REQ for the Bor service principal.
+  bytes spnego_token = 1;
+  bytes csr_pem = 2;
+  string node_name = 3;
+  map<string, string> facts = 4;
 }

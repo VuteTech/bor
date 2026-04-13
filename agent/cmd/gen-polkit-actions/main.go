@@ -48,21 +48,21 @@ func main() {
 
 	arr := make([]json.RawMessage, 0, len(actions))
 	for _, a := range actions {
-		b, err := m.Marshal(a)
-		if err != nil {
-			log.Printf("WARNING: failed to marshal action %s: %v", a.GetActionId(), err)
+		b, marshalErr := m.Marshal(a)
+		if marshalErr != nil {
+			log.Printf("WARNING: failed to marshal action %s: %v", a.GetActionId(), marshalErr)
 			continue
 		}
 		arr = append(arr, json.RawMessage(b))
 	}
 
-	out, err := json.MarshalIndent(arr, "", "  ")
-	if err != nil {
-		log.Fatalf("marshal array: %v", err)
+	out, jsonErr := json.MarshalIndent(arr, "", "  ")
+	if jsonErr != nil {
+		log.Fatalf("marshal array: %v", jsonErr)
 	}
 
-	if err := os.WriteFile(*outFile, append(out, '\n'), 0o644); err != nil {
-		log.Fatalf("write %s: %v", *outFile, err)
+	if writeErr := os.WriteFile(*outFile, append(out, '\n'), 0o600); writeErr != nil {
+		log.Fatalf("write %s: %v", *outFile, writeErr)
 	}
 
 	fmt.Printf("Wrote %d actions to %s (%d bytes)\n", len(arr), *outFile, len(out))

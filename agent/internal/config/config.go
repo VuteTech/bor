@@ -21,6 +21,7 @@ type Config struct {
 	Chrome     ChromeConfig     `yaml:"chrome"`
 	KConfig    KConfigConfig    `yaml:"kconfig"`
 	Enrollment EnrollmentConfig `yaml:"enrollment"`
+	Kerberos   KerberosConfig   `yaml:"kerberos"`
 }
 
 // ServerConfig holds server connection settings.
@@ -79,6 +80,43 @@ type EnrollmentConfig struct {
 	DataDir string `yaml:"data_dir"` // directory for persisted certs/keys (default /var/lib/bor/agent)
 }
 
+// KerberosConfig holds agent-side Kerberos configuration for token-free enrollment.
+// When enabled, the agent authenticates to the Bor server using the machine
+// keytab instead of requiring a manually generated enrollment token.
+// Supported on FreeIPA and Active Directory (Samba AD) domain-joined hosts.
+type KerberosConfig struct {
+	// Enabled activates Kerberos-based enrollment.  When true, the agent
+	// attempts Kerberos enrollment first; it falls back to token-based
+	// enrollment only when KeytabFile is not present on disk.
+	Enabled bool `yaml:"enabled"`
+	// KeytabFile is the path to the machine keytab.
+	// FreeIPA: /etc/krb5.keytab (created by ipa-client-install)
+	// AD:      /etc/krb5.keytab (created by realm join / adcli)
+	// Default: /etc/krb5.keytab
+	KeytabFile string `yaml:"keytab_file"`
+	// ServicePrincipal is the Kerberos principal of the Bor server service,
+	// e.g. "HTTP/bor.example.com@EXAMPLE.COM".  The agent requests a service
+	// ticket for this principal from the KDC before contacting the server.
+	ServicePrincipal string `yaml:"service_principal"`
+	// KDC is the hostname or IP address of the Key Distribution Center.
+	// When set, the agent builds its Kerberos configuration from this address
+	// and the realm extracted from ServicePrincipal, bypassing /etc/krb5.conf.
+	// This is useful when the system krb5.conf does not list the realm or when
+	// its syntax is incompatible with the Kerberos library used by the agent.
+	// Example: "dc1.example.com" or "192.0.2.10"
+	KDC string `yaml:"kdc"`
+	// MachinePrincipal is the Kerberos principal for this host's machine account
+	// as it appears in the keytab (keytab_file).  When empty the agent defaults
+	// to "host/<hostname>" which is correct for FreeIPA.  AD / Samba AD hosts
+	// joined with realm(1) or adcli typically use "<HOSTNAME>$" (with a dollar
+	// sign) or "host/<fqdn>@REALM".  Run "klist -kte /etc/krb5.keytab" to find
+	// the exact principal name.
+	// Examples:
+	//   "FEDORA$"                          (AD short form — realm auto-appended)
+	//   "host/fedora.example.com@EXAMPLE.COM"  (FreeIPA / AD long form)
+	MachinePrincipal string `yaml:"machine_principal"`
+}
+
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
@@ -103,6 +141,9 @@ func DefaultConfig() *Config {
 		},
 		Enrollment: EnrollmentConfig{
 			DataDir: "/var/lib/bor/agent",
+		},
+		Kerberos: KerberosConfig{
+			KeytabFile: "/etc/krb5.keytab",
 		},
 	}
 }

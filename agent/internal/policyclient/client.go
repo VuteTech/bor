@@ -95,12 +95,12 @@ type PolicyInfo struct {
 	Type          string
 	Content       string // kept for compatibility / fallback
 	Version       int32
-	Priority      int32              // max binding priority across enabled bindings for this node
-	KConfigPolicy *pb.KConfigPolicy  // populated from typed_content for Kconfig type
-	FirefoxPolicy *pb.FirefoxPolicy  // populated from typed_content for Firefox type
-	ChromePolicy  *pb.ChromePolicy   // populated from typed_content for Chrome type
-	DConfPolicy   *pb.DConfPolicy    // populated from typed_content for Dconf type
-	PolkitPolicy  *pb.PolkitPolicy   // populated from typed_content for Polkit type
+	Priority      int32             // max binding priority across enabled bindings for this node
+	KConfigPolicy *pb.KConfigPolicy // populated from typed_content for Kconfig type
+	FirefoxPolicy *pb.FirefoxPolicy // populated from typed_content for Firefox type
+	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
+	DConfPolicy   *pb.DConfPolicy   // populated from typed_content for Dconf type
+	PolkitPolicy  *pb.PolkitPolicy  // populated from typed_content for Polkit type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -216,7 +216,7 @@ func (c *Client) ReportTamperEvent(ctx context.Context, filePath string, process
 	var pbProcs []*pb.TamperProcessInfo
 	for _, p := range processes {
 		pbProcs = append(pbProcs, &pb.TamperProcessInfo{
-			Pid:  int32(min(p.PID, math.MaxInt32)),
+			Pid:  clampInt32(p.PID),
 			Comm: p.Comm,
 			User: p.User,
 		})
@@ -349,4 +349,15 @@ func (c *Client) ReportPolkitCatalogue(ctx context.Context, actions []*pb.Polkit
 		return fmt.Errorf("ReportPolkitCatalogue RPC failed: %w", err)
 	}
 	return nil
+}
+
+// clampInt32 safely converts an int to int32, clamping to [0, MaxInt32].
+func clampInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v) //nolint:gosec // G115: bounds checked above
 }
