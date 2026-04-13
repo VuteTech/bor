@@ -30,6 +30,7 @@ type Config struct {
 	WebAuthn WebAuthnConfig
 	Metrics  MetricsConfig
 	Audit    AuditConfig
+	UI       UIConfig
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -62,6 +63,18 @@ type MetricsConfig struct {
 	// "Authorization: Bearer <token>". Leave unset for unauthenticated access
 	// (appropriate when the listener is bound to localhost only).
 	BearerToken string // BOR_METRICS_TOKEN, optional
+
+	// TLSCertFile and TLSKeyFile, when both set, enable HTTPS on the metrics
+	// endpoint. Useful when the scraper is on a different host.
+	TLSCertFile string // BOR_METRICS_TLS_CERT_FILE, optional
+	TLSKeyFile  string // BOR_METRICS_TLS_KEY_FILE, optional
+}
+
+// UIConfig holds configuration for the web frontend.
+type UIConfig struct {
+	// PrivacyPolicyURL, when set, shows a privacy policy link in the sidebar footer.
+	// Complies with GDPR Article 13 transparency requirements.
+	PrivacyPolicyURL string // BOR_PRIVACY_POLICY_URL, optional
 }
 
 // WebAuthnConfig holds WebAuthn (FIDO2) relying party configuration.
@@ -188,6 +201,10 @@ type LDAPConfig struct {
 	AttrMemberOf string
 	// PageSize controls LDAP result paging (RFC 2696).  0 disables paging.
 	PageSize int
+	// GroupRoleMap maps LDAP group CNs to Bor role names.
+	// Set via BOR_LDAP_GROUP_ROLE_MAP="Domain Admins=Super Admin,IT Staff=Org Admin"
+	// or the ldap.group_role_map YAML map.
+	GroupRoleMap map[string]string
 }
 
 // KerberosConfig holds Kerberos/GSSAPI configuration for token-free agent enrollment.
@@ -250,26 +267,27 @@ type fileConfig struct {
 		} `yaml:"pkcs11"`
 	} `yaml:"ca"`
 	LDAP struct {
-		Enabled         bool   `yaml:"enabled"`
-		Host            string `yaml:"host"`
-		Port            int    `yaml:"port"`
-		UseTLS          bool   `yaml:"use_tls"`
-		StartTLS        bool   `yaml:"start_tls"`
-		TLSCAFile       string `yaml:"tls_ca_file"`
-		TLSSkipVerify   bool   `yaml:"tls_skip_verify"`
-		BindDN          string `yaml:"bind_dn"`
-		BindPassword    string `yaml:"bind_password"`
-		BaseDN          string `yaml:"base_dn"`
-		UserFilter      string `yaml:"user_filter"`
-		UPNSuffix       string `yaml:"upn_suffix"`
-		AttrUsername    string `yaml:"attr_username"`
-		AttrEmail       string `yaml:"attr_email"`
-		AttrFullName    string `yaml:"attr_full_name"`
-		GroupBaseDN     string `yaml:"group_base_dn"`
-		GroupFilter     string `yaml:"group_filter"`
-		GroupMemberAttr string `yaml:"group_member_attr"`
-		AttrMemberOf    string `yaml:"attr_member_of"`
-		PageSize        int    `yaml:"page_size"`
+		Enabled         bool              `yaml:"enabled"`
+		Host            string            `yaml:"host"`
+		Port            int               `yaml:"port"`
+		UseTLS          bool              `yaml:"use_tls"`
+		StartTLS        bool              `yaml:"start_tls"`
+		TLSCAFile       string            `yaml:"tls_ca_file"`
+		TLSSkipVerify   bool              `yaml:"tls_skip_verify"`
+		BindDN          string            `yaml:"bind_dn"`
+		BindPassword    string            `yaml:"bind_password"`
+		BaseDN          string            `yaml:"base_dn"`
+		UserFilter      string            `yaml:"user_filter"`
+		UPNSuffix       string            `yaml:"upn_suffix"`
+		AttrUsername    string            `yaml:"attr_username"`
+		AttrEmail       string            `yaml:"attr_email"`
+		AttrFullName    string            `yaml:"attr_full_name"`
+		GroupBaseDN     string            `yaml:"group_base_dn"`
+		GroupFilter     string            `yaml:"group_filter"`
+		GroupMemberAttr string            `yaml:"group_member_attr"`
+		AttrMemberOf    string            `yaml:"attr_member_of"`
+		PageSize        int               `yaml:"page_size"`
+		GroupRoleMap    map[string]string `yaml:"group_role_map"`
 	} `yaml:"ldap"`
 	Kerberos struct {
 		Enabled            bool   `yaml:"enabled"`
@@ -286,7 +304,12 @@ type fileConfig struct {
 	Metrics struct {
 		ListenAddr  string `yaml:"listen_addr"`
 		BearerToken string `yaml:"bearer_token"`
+		TLSCertFile string `yaml:"tls_cert_file"`
+		TLSKeyFile  string `yaml:"tls_key_file"`
 	} `yaml:"metrics"`
+	UI struct {
+		PrivacyPolicyURL string `yaml:"privacy_policy_url"`
+	} `yaml:"ui"`
 	Audit struct {
 		RetentionDays int `yaml:"retention_days"`
 		Syslog        struct {
@@ -348,6 +371,11 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid LDAP_PAGE_SIZE: %w", err)
 	}
+	// BOR_LDAP_GROUP_ROLE_MAP overrides the YAML map entirely when set.
+	ldapGroupRoleMap := fc.LDAP.GroupRoleMap
+	if envMap := os.Getenv("BOR_LDAP_GROUP_ROLE_MAP"); envMap != "" {
+		ldapGroupRoleMap = parseGroupRoleMap(envMap)
+	}
 
 	// ─── TLS ───────────────────────────────────────────────────────────────
 	tlsCertFile := getEnv("BOR_TLS_CERT_FILE", fc.TLS.CertFile)
@@ -391,6 +419,11 @@ func Load() (*Config, error) {
 	// ─── Metrics ───────────────────────────────────────────────────────────
 	metricsAddr := getEnv("BOR_METRICS_ADDR", fc.Metrics.ListenAddr)
 	metricsToken := getEnv("BOR_METRICS_TOKEN", fc.Metrics.BearerToken)
+	metricsTLSCert := getEnv("BOR_METRICS_TLS_CERT_FILE", fc.Metrics.TLSCertFile)
+	metricsTLSKey := getEnv("BOR_METRICS_TLS_KEY_FILE", fc.Metrics.TLSKeyFile)
+	if (metricsTLSCert != "" && metricsTLSKey == "") || (metricsTLSCert == "" && metricsTLSKey != "") {
+		return nil, fmt.Errorf("both BOR_METRICS_TLS_CERT_FILE and BOR_METRICS_TLS_KEY_FILE must be set, or neither")
+	}
 
 	// ─── Audit syslog ──────────────────────────────────────────────────────
 	syslogEnabled := getEnvBool("BOR_AUDIT_SYSLOG_ENABLED", fc.Audit.Syslog.Enabled)
@@ -484,6 +517,7 @@ func Load() (*Config, error) {
 			GroupMemberAttr: getEnv("LDAP_GROUP_MEMBER_ATTR", fc.LDAP.GroupMemberAttr),
 			AttrMemberOf:    getEnv("LDAP_ATTR_MEMBER_OF", fc.LDAP.AttrMemberOf),
 			PageSize:        ldapPageSize,
+			GroupRoleMap:    ldapGroupRoleMap,
 		},
 		Kerberos: KerberosConfig{
 			Enabled:            getEnvBool("BOR_KERBEROS_ENABLED", fc.Kerberos.Enabled),
@@ -500,6 +534,11 @@ func Load() (*Config, error) {
 		Metrics: MetricsConfig{
 			ListenAddr:  metricsAddr,
 			BearerToken: metricsToken,
+			TLSCertFile: metricsTLSCert,
+			TLSKeyFile:  metricsTLSKey,
+		},
+		UI: UIConfig{
+			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),
 		},
 		Audit: AuditConfig{
 			RetentionDays: auditRetentionDays,
@@ -605,4 +644,29 @@ func splitComma(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseGroupRoleMap parses a string like "Domain Admins=Super Admin,IT Staff=Org Admin"
+// into a map[string]string. Entries with no '=' separator are silently skipped.
+func parseGroupRoleMap(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	m := make(map[string]string)
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		idx := strings.Index(part, "=")
+		if idx < 1 {
+			continue
+		}
+		group := strings.TrimSpace(part[:idx])
+		role := strings.TrimSpace(part[idx+1:])
+		if group != "" && role != "" {
+			m[group] = role
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }

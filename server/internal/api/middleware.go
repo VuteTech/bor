@@ -8,8 +8,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -169,6 +173,92 @@ func CSRFMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ipBucket tracks request counts within a sliding time window for one IP.
+type ipBucket struct {
+	count       int
+	windowStart time.Time
+}
+
+// ipRateLimiter is a simple per-IP sliding-window rate limiter.
+type ipRateLimiter struct {
+	mu      sync.Mutex
+	clients map[string]*ipBucket
+	rate    int           // max requests allowed per window
+	window  time.Duration // length of the window
+}
+
+// newIPRateLimiter creates a rate limiter and starts a background cleanup goroutine.
+func newIPRateLimiter(rate int, window time.Duration) *ipRateLimiter {
+	rl := &ipRateLimiter{
+		clients: make(map[string]*ipBucket),
+		rate:    rate,
+		window:  window,
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+// allow returns true if the IP is within the rate limit, false if it should be rejected.
+func (rl *ipRateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	b, ok := rl.clients[ip]
+	if !ok || now.Sub(b.windowStart) >= rl.window {
+		rl.clients[ip] = &ipBucket{count: 1, windowStart: now}
+		return true
+	}
+	if b.count >= rl.rate {
+		return false
+	}
+	b.count++
+	return true
+}
+
+// cleanupLoop removes stale entries every two windows to bound memory use.
+func (rl *ipRateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.window * 2)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		now := time.Now()
+		for ip, b := range rl.clients {
+			if now.Sub(b.windowStart) >= rl.window*2 {
+				delete(rl.clients, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+// clientIP extracts the request's remote IP from RemoteAddr, ignoring the port.
+// RemoteAddr is set by the HTTP server and cannot be spoofed by the client.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// NewRateLimitMiddleware returns a middleware that limits callers to rate requests
+// per window per remote IP. Excess requests receive 429 with a Retry-After header.
+func NewRateLimitMiddleware(rate int, window time.Duration) func(http.Handler) http.Handler {
+	rl := newIPRateLimiter(rate, window)
+	retryAfter := strconv.Itoa(int(window.Seconds()))
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !rl.allow(clientIP(r)) {
+				w.Header().Set("Retry-After", retryAfter)
+				http.Error(w, `{"error":"rate limit exceeded, try again later"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // SecurityHeadersMiddleware adds standard security headers to all HTTP responses.

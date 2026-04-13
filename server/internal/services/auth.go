@@ -247,6 +247,11 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 		user.FullName = fullName
 	}
 
+	// Sync role bindings based on LDAP group membership.
+	if len(s.ldapSvc.config.GroupRoleMap) > 0 {
+		s.syncLDAPRoles(ctx, user.ID, ldapUser.Groups, s.ldapSvc.config.GroupRoleMap)
+	}
+
 	token, err := s.generateToken(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
@@ -256,6 +261,70 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 		Token: token,
 		User:  *user,
 	}, nil
+}
+
+// syncLDAPRoles grants or revokes roles whose names appear in groupRoleMap based
+// on the user's current LDAP group memberships. Only roles that are present in
+// groupRoleMap are touched; role bindings created by an administrator are left
+// intact.
+func (s *AuthService) syncLDAPRoles(ctx context.Context, userID string, ldapGroups []string, groupRoleMap map[string]string) {
+	// Build the set of role names this user should hold.
+	wantedRoles := make(map[string]bool)
+	for _, grp := range ldapGroups {
+		if roleName, ok := groupRoleMap[grp]; ok {
+			wantedRoles[roleName] = true
+		}
+	}
+
+	// Build the set of all role names managed by this map.
+	managedRoles := make(map[string]bool)
+	for _, roleName := range groupRoleMap {
+		managedRoles[roleName] = true
+	}
+
+	// Fetch the user's current role bindings.
+	bindings, err := s.bindingRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("syncLDAPRoles: list bindings for user %s: %v", userID, err)
+		return
+	}
+
+	// Index current bindings by role ID.
+	currentByRoleID := make(map[string]string) // roleID → bindingID
+	for _, b := range bindings {
+		currentByRoleID[b.RoleID] = b.ID
+	}
+
+	// For each managed role, grant or revoke as needed.
+	for roleName := range managedRoles {
+		role, roleErr := s.roleRepo.GetByName(ctx, roleName)
+		if roleErr != nil || role == nil {
+			log.Printf("syncLDAPRoles: role %q not found in DB, skipping", roleName)
+			continue
+		}
+
+		_, hasBinding := currentByRoleID[role.ID]
+		shouldHave := wantedRoles[roleName]
+
+		switch {
+		case shouldHave && !hasBinding:
+			if createErr := s.bindingRepo.Create(ctx, &models.UserRoleBinding{
+				UserID:    userID,
+				RoleID:    role.ID,
+				ScopeType: "global",
+			}); createErr != nil {
+				log.Printf("syncLDAPRoles: grant role %q to user %s: %v", roleName, userID, createErr)
+			} else {
+				log.Printf("syncLDAPRoles: granted role %q to LDAP user %s", roleName, userID)
+			}
+		case !shouldHave && hasBinding:
+			if delErr := s.bindingRepo.Delete(ctx, currentByRoleID[role.ID]); delErr != nil {
+				log.Printf("syncLDAPRoles: revoke role %q from user %s: %v", roleName, userID, delErr)
+			} else {
+				log.Printf("syncLDAPRoles: revoked role %q from LDAP user %s", roleName, userID)
+			}
+		}
+	}
 }
 
 // generateToken creates a JWT token for the given user
@@ -721,8 +790,11 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 			return fmt.Errorf("failed to generate admin password: %w", genErr)
 		}
 		adminPassword = generated
-		log.Printf("Generated initial admin password: %s", adminPassword)
-		log.Println("Set BOR_ADMIN_PASSWORD to use a fixed password.")
+		log.Println("======================================================")
+		log.Printf("  Initial admin password: %s", adminPassword)
+		log.Println("  Username: admin")
+		log.Println("  Change this immediately or set BOR_ADMIN_PASSWORD.")
+		log.Println("======================================================")
 	}
 
 	_, err = s.CreateUser(ctx, &models.CreateUserRequest{

@@ -53,6 +53,11 @@ type LDAPConfig struct {
 	AttrMemberOf string `json:"attr_member_of"`
 	// PageSize controls LDAP result paging (RFC 2696).  0 disables paging.
 	PageSize int `json:"page_size"`
+	// GroupRoleMap maps LDAP group CNs to Bor role names.
+	// Users are automatically granted / revoked these roles on every login
+	// based on their current LDAP group membership.
+	// Example: {"Domain Admins": "Super Admin", "IT Staff": "Org Admin"}
+	GroupRoleMap map[string]string `json:"group_role_map"`
 }
 
 // LDAPUser represents user information retrieved from LDAP.

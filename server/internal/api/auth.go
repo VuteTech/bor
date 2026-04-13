@@ -17,14 +17,21 @@ import (
 
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	authSvc     *services.AuthService
-	mfaSvc      *services.MFAService
-	webauthnSvc *services.WebAuthnService
+	authSvc          *services.AuthService
+	mfaSvc           *services.MFAService
+	webauthnSvc      *services.WebAuthnService
+	privacyPolicyURL string
 }
 
 // NewAuthHandler creates a new AuthHandler
 func NewAuthHandler(authSvc *services.AuthService, mfaSvc *services.MFAService, webauthnSvc *services.WebAuthnService) *AuthHandler {
 	return &AuthHandler{authSvc: authSvc, mfaSvc: mfaSvc, webauthnSvc: webauthnSvc}
+}
+
+// WithPrivacyPolicyURL sets the privacy policy URL returned by PublicConfig.
+func (h *AuthHandler) WithPrivacyPolicyURL(url string) *AuthHandler {
+	h.privacyPolicyURL = url
+	return h
 }
 
 // Login handles POST /api/v1/auth/login
@@ -738,4 +745,19 @@ func (h *AuthHandler) MFADisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// PublicConfig handles GET /api/v1/config — returns non-sensitive server
+// configuration needed by the frontend before the user is authenticated.
+func (h *AuthHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"privacy_policy_url": h.privacyPolicyURL,
+	}); err != nil {
+		log.Printf("PublicConfig: encode error: %v", err)
+	}
 }

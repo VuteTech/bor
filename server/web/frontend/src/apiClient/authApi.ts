@@ -210,6 +210,18 @@ export async function checkSession(): Promise<UserInfo> {
   });
 }
 
+/* ── Public server config ── */
+
+export interface PublicConfig {
+  privacy_policy_url: string;
+}
+
+export async function getPublicConfig(): Promise<PublicConfig> {
+  const res = await fetch("/api/v1/config");
+  if (!res.ok) return { privacy_policy_url: "" };
+  return res.json();
+}
+
 export async function logout(): Promise<void> {
   await fetch("/api/v1/auth/logout", {
     method: "POST",

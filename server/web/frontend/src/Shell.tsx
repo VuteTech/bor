@@ -36,7 +36,7 @@ import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
 import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
 import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
-import { checkSession, logout, getMFAStatus, UserInfo } from "./apiClient/authApi";
+import { checkSession, logout, getMFAStatus, getPublicConfig, UserInfo } from "./apiClient/authApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
 import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
@@ -107,6 +107,13 @@ export const Shell: React.FC = () => {
     document.documentElement.classList.toggle("bor-theme-hc", isHighContrast);
     localStorage.setItem("bor-hc", String(isHighContrast));
   }, [isHighContrast]);
+
+  /* ── Public server config ── */
+  const [privacyPolicyURL, setPrivacyPolicyURL] = useState<string>("");
+
+  useEffect(() => {
+    getPublicConfig().then(cfg => setPrivacyPolicyURL(cfg.privacy_policy_url)).catch(() => {});
+  }, []);
 
   /* ── Auth state ── */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -406,6 +413,19 @@ export const Shell: React.FC = () => {
             >
               getbor.dev
             </a>
+            {privacyPolicyURL && (
+              <>
+                {" · "}
+                <a
+                  href={privacyPolicyURL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "#999", textDecoration: "none" }}
+                >
+                  Privacy Policy
+                </a>
+              </>
+            )}
           </div>
         </div>
       </PageSidebarBody>

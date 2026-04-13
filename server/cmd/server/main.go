@@ -182,9 +182,16 @@ func main() {
 			GroupMemberAttr: cfg.LDAP.GroupMemberAttr,
 			AttrMemberOf:    cfg.LDAP.AttrMemberOf,
 			PageSize:        cfg.LDAP.PageSize,
+			GroupRoleMap:    cfg.LDAP.GroupRoleMap,
 		})
 		log.Printf("LDAP authentication enabled (host=%s port=%d tls=%v startTLS=%v)",
 			cfg.LDAP.Host, cfg.LDAP.Port, cfg.LDAP.UseTLS, cfg.LDAP.StartTLS)
+		if len(cfg.LDAP.GroupRoleMap) > 0 {
+			log.Printf("LDAP group→role mapping: %d mapping(s) active (set BOR_LDAP_GROUP_ROLE_MAP to configure)", len(cfg.LDAP.GroupRoleMap))
+			for grp, role := range cfg.LDAP.GroupRoleMap {
+				log.Printf("  LDAP group %q → Bor role %q", grp, role)
+			}
+		}
 		if cfg.LDAP.TLSSkipVerify {
 			devMode := strings.EqualFold(os.Getenv("BOR_DEV_MODE"), "true")
 			allowInsecure := strings.EqualFold(os.Getenv("BOR_ALLOW_INSECURE_LDAP"), "true")
@@ -299,7 +306,8 @@ func main() {
 	policyHub := grpcserver.NewPolicyHub()
 
 	// Initialize API handlers
-	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc)
+	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc).
+		WithPrivacyPolicyURL(cfg.UI.PrivacyPolicyURL)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
@@ -337,12 +345,16 @@ func main() {
 	// Audit middleware for logging state-changing API calls
 	auditMw := api.AuditMiddleware(auditSvc, cfg.Audit.AnonymizeIPs)
 
-	// Public routes
-	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/v1/auth/begin", authHandler.Begin)
-	mux.HandleFunc("/api/v1/auth/step", authHandler.Step)
-	mux.HandleFunc("/api/v1/auth/webauthn/begin", authHandler.WebAuthnAuthBegin)
-	mux.HandleFunc("/api/v1/auth/webauthn/finish", authHandler.WebAuthnAuthFinish)
+	// Rate limiter for authentication endpoints: 10 req/min per IP (NIS2 / brute-force protection).
+	authRateLimit := api.NewRateLimitMiddleware(10, time.Minute)
+
+	// Public routes (no auth required)
+	mux.HandleFunc("/api/v1/config", authHandler.PublicConfig)
+	mux.Handle("/api/v1/auth/login", authRateLimit(http.HandlerFunc(authHandler.Login)))
+	mux.Handle("/api/v1/auth/begin", authRateLimit(http.HandlerFunc(authHandler.Begin)))
+	mux.Handle("/api/v1/auth/step", authRateLimit(http.HandlerFunc(authHandler.Step)))
+	mux.Handle("/api/v1/auth/webauthn/begin", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthBegin)))
+	mux.Handle("/api/v1/auth/webauthn/finish", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthFinish)))
 	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
 	mux.HandleFunc("/api/v1/auth/refresh", authHandler.Refresh)
 
@@ -594,9 +606,16 @@ func main() {
 	}()
 
 	go func() {
-		log.Printf("Metrics (Prometheus) listening on http://%s/metrics", cfg.Metrics.ListenAddr)
-		if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
-			log.Printf("Metrics server error: %v", err)
+		if cfg.Metrics.TLSCertFile != "" && cfg.Metrics.TLSKeyFile != "" {
+			log.Printf("Metrics (Prometheus) listening on https://%s/metrics (TLS)", cfg.Metrics.ListenAddr)
+			if err := metricsServer.ListenAndServeTLS(cfg.Metrics.TLSCertFile, cfg.Metrics.TLSKeyFile); err != http.ErrServerClosed {
+				log.Printf("Metrics server error: %v", err)
+			}
+		} else {
+			log.Printf("Metrics (Prometheus) listening on http://%s/metrics", cfg.Metrics.ListenAddr)
+			if err := metricsServer.ListenAndServe(); err != http.ErrServerClosed {
+				log.Printf("Metrics server error: %v", err)
+			}
 		}
 	}()
 
