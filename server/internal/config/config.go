@@ -31,6 +31,7 @@ type Config struct {
 	Metrics  MetricsConfig
 	Audit    AuditConfig
 	UI       UIConfig
+	ACME     ACMEConfig
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -75,6 +76,46 @@ type UIConfig struct {
 	// PrivacyPolicyURL, when set, shows a privacy policy link in the sidebar footer.
 	// Complies with GDPR Article 13 transparency requirements.
 	PrivacyPolicyURL string // BOR_PRIVACY_POLICY_URL, optional
+}
+
+// ACMEConfig holds ACME (RFC 8555) automatic certificate provisioning settings
+// for the UI HTTPS port. Supports Let's Encrypt and any other ACME-compatible
+// certificate authority.
+type ACMEConfig struct {
+	// Enabled activates ACME certificate provisioning for the UI port (8443).
+	// When true, BOR_TLS_CERT_FILE and BOR_TLS_KEY_FILE must not be set, and
+	// at least one domain must be configured via BOR_ACME_DOMAINS.
+	Enabled bool // BOR_ACME_ENABLED
+
+	// DirectoryURL is the ACME directory URL of the certificate authority.
+	// When empty, Let's Encrypt production is used. Any RFC 8555-compliant CA
+	// is supported by providing its directory URL here.
+	// Well-known values:
+	//   Let's Encrypt production: https://acme-v02.api.letsencrypt.org/directory
+	//   Let's Encrypt staging:    https://acme-staging-v02.api.letsencrypt.org/directory
+	//   ZeroSSL:                  https://acme.zerossl.com/v2/DV90
+	//   Buypass:                  https://api.buypass.com/acme/directory
+	//   Google Trust Services:    https://dv.acme-v02.api.pki.goog/directory
+	DirectoryURL string // BOR_ACME_DIRECTORY
+
+	// Email is the contact address registered with the ACME CA.
+	// Required; used by CAs for expiry notifications and account recovery.
+	Email string // BOR_ACME_EMAIL
+
+	// Domains is the whitelist of domain names the server may request
+	// certificates for. At least one entry is required when ACME is enabled.
+	Domains []string // BOR_ACME_DOMAINS (comma-separated)
+
+	// CacheDir is the directory where ACME account keys and issued
+	// certificates are persisted across restarts.
+	// Default: /var/lib/bor/acme
+	CacheDir string // BOR_ACME_CACHE_DIR
+
+	// HTTPPort is the local port for the ACME HTTP-01 challenge listener.
+	// The ACME CA must be able to reach this port over plain HTTP on each
+	// validated domain (typically port 80, or via a reverse-proxy forward).
+	// Default: 80
+	HTTPPort int // BOR_ACME_HTTP_PORT
 }
 
 // WebAuthnConfig holds WebAuthn (FIDO2) relying party configuration.
@@ -310,6 +351,14 @@ type fileConfig struct {
 	UI struct {
 		PrivacyPolicyURL string `yaml:"privacy_policy_url"`
 	} `yaml:"ui"`
+	ACME struct {
+		Enabled      bool     `yaml:"enabled"`
+		DirectoryURL string   `yaml:"directory_url"`
+		Email        string   `yaml:"email"`
+		Domains      []string `yaml:"domains"`
+		CacheDir     string   `yaml:"cache_dir"`
+		HTTPPort     int      `yaml:"http_port"`
+	} `yaml:"acme"`
 	Audit struct {
 		RetentionDays int `yaml:"retention_days"`
 		Syslog        struct {
@@ -382,6 +431,30 @@ func Load() (*Config, error) {
 	tlsKeyFile := getEnv("BOR_TLS_KEY_FILE", fc.TLS.KeyFile)
 	if (tlsCertFile != "" && tlsKeyFile == "") || (tlsCertFile == "" && tlsKeyFile != "") {
 		return nil, fmt.Errorf("both BOR_TLS_CERT_FILE and BOR_TLS_KEY_FILE must be set, or neither")
+	}
+
+	// ─── ACME ──────────────────────────────────────────────────────────────
+	acmeEnabled := getEnvBool("BOR_ACME_ENABLED", fc.ACME.Enabled)
+	acmeDirectoryURL := getEnv("BOR_ACME_DIRECTORY", fc.ACME.DirectoryURL)
+	acmeEmail := getEnv("BOR_ACME_EMAIL", fc.ACME.Email)
+	acmeDomains := fc.ACME.Domains
+	if envDomains := os.Getenv("BOR_ACME_DOMAINS"); envDomains != "" {
+		acmeDomains = splitComma(envDomains)
+	}
+	acmeCacheDir := getEnv("BOR_ACME_CACHE_DIR", fc.ACME.CacheDir)
+	acmeHTTPPortStr := getEnv("BOR_ACME_HTTP_PORT", strconv.Itoa(fc.ACME.HTTPPort))
+	acmeHTTPPort, err := strconv.Atoi(acmeHTTPPortStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_ACME_HTTP_PORT: %w", err)
+	}
+	if acmeEnabled && (tlsCertFile != "" || tlsKeyFile != "") {
+		return nil, fmt.Errorf("BOR_ACME_ENABLED and BOR_TLS_CERT_FILE/BOR_TLS_KEY_FILE are mutually exclusive")
+	}
+	if acmeEnabled && len(acmeDomains) == 0 {
+		return nil, fmt.Errorf("BOR_ACME_ENABLED requires BOR_ACME_DOMAINS to be set (comma-separated list of domain names)")
+	}
+	if acmeEnabled && acmeEmail == "" {
+		return nil, fmt.Errorf("BOR_ACME_ENABLED requires BOR_ACME_EMAIL to be set")
 	}
 
 	// ─── CA ────────────────────────────────────────────────────────────────
@@ -540,6 +613,14 @@ func Load() (*Config, error) {
 		UI: UIConfig{
 			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),
 		},
+		ACME: ACMEConfig{
+			Enabled:      acmeEnabled,
+			DirectoryURL: acmeDirectoryURL,
+			Email:        acmeEmail,
+			Domains:      acmeDomains,
+			CacheDir:     acmeCacheDir,
+			HTTPPort:     acmeHTTPPort,
+		},
 		Audit: AuditConfig{
 			RetentionDays: auditRetentionDays,
 			AnonymizeIPs:  getEnvBool("BOR_AUDIT_ANONYMIZE_IPS", false),
@@ -582,6 +663,8 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrMemberOf = "memberOf"
 	fc.LDAP.PageSize = 500
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
+	fc.ACME.HTTPPort = 80
+	fc.ACME.CacheDir = "/var/lib/bor/acme"
 	fc.Audit.RetentionDays = 365
 	fc.Audit.Syslog.Network = "udp"
 	fc.Audit.Syslog.Addr = "localhost:514"
