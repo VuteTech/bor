@@ -69,6 +69,12 @@ security:
   # Leave empty to require a web-UI-generated one-time enrollment token.
   admin_token: ""
 
+  # Initial admin account password (used only on first startup when no users exist).
+  # On package installs this is set by the post-install script; a random password
+  # is generated and written here. Leave empty to have the server generate one at
+  # runtime and print it to the log.
+  #admin_password: ""
+
 tls:
   # Paths to an externally-managed TLS certificate and private key.
   # If empty, the server auto-generates a certificate signed by the

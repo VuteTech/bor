@@ -58,6 +58,24 @@ if _is_fresh_install "$@"; then
             /etc/bor/server.yaml 2>/dev/null || true
     fi
 
+    # ── Generate a random initial admin password ───────────────────────────────
+    # Written to server.yaml so the server uses it on first startup when no
+    # users exist.  The password is also printed to the console for the admin.
+    _admin_pw=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -A n -t x1 | tr -d ' \n')
+    if [ -n "$_admin_pw" ]; then
+        # Append the setting under the security section (after admin_token line).
+        sed -i "s|#admin_password: \"\"|admin_password: \"${_admin_pw}\"|" \
+            /etc/bor/server.yaml 2>/dev/null || true
+        echo ""
+        echo "bor-server: ======================================================"
+        echo "bor-server:  Initial admin credentials"
+        echo "bor-server:    Username: admin"
+        echo "bor-server:    Password: ${_admin_pw}"
+        echo "bor-server:  Change this password immediately after first login."
+        echo "bor-server: ======================================================"
+        echo ""
+    fi
+
     # ── PostgreSQL setup ───────────────────────────────────────────────────────
     # Locate the postgres superuser account (varies by distro)
     _pg_superuser=""

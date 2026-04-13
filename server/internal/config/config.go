@@ -121,6 +121,7 @@ type SecurityConfig struct {
 	TLSCertFile     string
 	TLSKeyFile      string
 	AdminToken      string // BOR_ADMIN_TOKEN – static admin token for gRPC enrollment calls
+	AdminPassword   string // BOR_ADMIN_PASSWORD – initial admin password (used once on first startup when no users exist)
 }
 
 // TLSConfig holds UI HTTPS TLS configuration.
@@ -249,6 +250,7 @@ type fileConfig struct {
 		JWTLifetime     string `yaml:"jwt_lifetime"`
 		RefreshLifetime string `yaml:"refresh_lifetime"`
 		AdminToken      string `yaml:"admin_token"`
+		AdminPassword   string `yaml:"admin_password"`
 	} `yaml:"security"`
 	TLS struct {
 		CertFile   string `yaml:"cert_file"`
@@ -479,6 +481,7 @@ func Load() (*Config, error) {
 			TLSCertFile:     getEnv("TLS_CERT_FILE", ""),
 			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
 			AdminToken:      getEnv("BOR_ADMIN_TOKEN", fc.Security.AdminToken),
+			AdminPassword:   getEnv("BOR_ADMIN_PASSWORD", fc.Security.AdminPassword),
 		},
 		TLS: TLSConfig{
 			CertFile:   tlsCertFile,

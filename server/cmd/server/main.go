@@ -221,7 +221,8 @@ func main() {
 	}
 
 	// Initialize auth service
-	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, cfg.Security.JWTLifetime, cfg.Security.RefreshLifetime, ldapSvc, mfaSvc, webauthnSvc)
+	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, cfg.Security.JWTLifetime, cfg.Security.RefreshLifetime, ldapSvc, mfaSvc, webauthnSvc).
+		WithAdminPassword(cfg.Security.AdminPassword)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
