@@ -148,14 +148,20 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
+            APK_VERSION="${VERSION}"
           else
-            VERSION="${SHORT_SHA}"
+            # deb/rpm/archlinux accept alphanumeric+dots and require a digit start.
+            VERSION="0.0.0.git${SHORT_SHA}"
+            # apk (Alpine) requires strictly numeric dot-components (e.g. 1.2.3).
+            # Use the numeric prefix only; the SHA is dropped for apk.
+            APK_VERSION="0.0.0"
           fi
-          echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "apk_version=${APK_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}"     >> "$GITHUB_OUTPUT"
 
       - name: Build packages
-        run: make packages VERSION=${{ steps.version.outputs.version }} ARCH=${{ matrix.arch }}
+        run: make packages VERSION=${{ steps.version.outputs.version }} APK_VERSION=${{ steps.version.outputs.apk_version }} ARCH=${{ matrix.arch }}
 
       - name: Upload packages as workflow artifacts
         uses: actions/upload-artifact@v4

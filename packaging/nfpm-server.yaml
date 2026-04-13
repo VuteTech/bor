@@ -40,6 +40,11 @@ contents:
     file_info:
       mode: 0750
 
+  - dst: /var/lib/bor/acme
+    type: dir
+    file_info:
+      mode: 0750
+
 overrides:
   deb:
     depends:

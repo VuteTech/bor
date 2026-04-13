@@ -6,6 +6,10 @@
 VERSION ?= dev
 # Target architecture — override with: make packages ARCH=arm64
 ARCH    ?= amd64
+# APK version — Alpine requires strictly numeric dot-components (e.g. 1.2.3).
+# For dev/feature builds where VERSION contains a SHA, set this to the numeric
+# prefix only. Defaults to VERSION so release builds need no extra argument.
+APK_VERSION ?= $(VERSION)
 
 # Default target
 help:
@@ -145,21 +149,21 @@ lint-agent:
 packages: packages-agent packages-server
 
 packages-agent: agent
-	@echo "Building bor-agent packages (version=$(VERSION) arch=$(ARCH))..."
+	@echo "Building bor-agent packages (version=$(VERSION) apk=$(APK_VERSION) arch=$(ARCH))..."
 	@mkdir -p builds
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager deb        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager rpm        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager apk        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager archlinux  --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager deb        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager rpm        --target builds/
+	VERSION=$(APK_VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager apk        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager archlinux  --target builds/
 	@echo "Agent packages written to builds/"
 
 packages-server: server frontend
-	@echo "Building bor-server packages (version=$(VERSION) arch=$(ARCH))..."
+	@echo "Building bor-server packages (version=$(VERSION) apk=$(APK_VERSION) arch=$(ARCH))..."
 	@mkdir -p builds
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager deb        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager rpm        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager apk        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager archlinux  --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager deb        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager rpm        --target builds/
+	VERSION=$(APK_VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager apk        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager archlinux  --target builds/
 	@echo "Server packages written to builds/"
 
 # Clean build artifacts
