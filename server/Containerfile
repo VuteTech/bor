@@ -34,7 +34,9 @@ RUN mkdir -p /out/go && \
 # ────────────────────────────────────────────────────────
 # Stage 0b: Generate protobuf TypeScript bindings
 # ────────────────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS proto-ts-builder
+# ts-proto depends on dprint-node which ships no ppc64le/s390x native binary.
+# TypeScript output is pure text so it is safe to always generate on amd64.
+FROM --platform=linux/amd64 registry.access.redhat.com/ubi10/nodejs-24-minimal:10.1 AS proto-ts-builder
 
 USER root
 
