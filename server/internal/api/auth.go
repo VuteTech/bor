@@ -631,7 +631,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	loginResp, err := h.authSvc.IssueTokenByUserID(r.Context(), claims.UserID)
 	if err != nil {
-		log.Printf("Failed to issue token during refresh for user %s: %v", claims.UserID, err)
+		log.Printf("Failed to issue token during refresh for user %q: %v", claims.UserID, err)
 		http.Error(w, `{"error":"failed to issue token"}`, http.StatusInternalServerError)
 		return
 	}

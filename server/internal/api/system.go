@@ -19,7 +19,7 @@ type VersionResponse struct {
 // per request. No authentication is required — the version string is not sensitive.
 func NewVersionHandler(version string) http.HandlerFunc {
 	payload, _ := json.Marshal(VersionResponse{Version: version})
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(payload)
