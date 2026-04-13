@@ -66,7 +66,7 @@ func captureDetails(r *http.Request) string {
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	var m map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &m); err != nil {
+	if unmarshalErr := json.Unmarshal(bodyBytes, &m); unmarshalErr != nil {
 		// Body is not JSON (e.g. form data) — store nothing.
 		return ""
 	}

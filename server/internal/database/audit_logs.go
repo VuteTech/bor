@@ -100,8 +100,6 @@ func (r *AuditLogRepository) Count(ctx context.Context, req *models.AuditLogList
 	return count, nil
 }
 
-// buildAuditLogFilter builds WHERE clause and args for audit log queries.
-// Multiple values for Actions or ResourceTypes are OR'd within the field.
 // CountByAction returns the total number of audit log entries grouped by action.
 func (r *AuditLogRepository) CountByAction(ctx context.Context) (map[string]int, error) {
 	rows, err := r.db.QueryContext(ctx,

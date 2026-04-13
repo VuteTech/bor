@@ -14,8 +14,8 @@ import (
 // OCSF class IDs used by Bor.
 // https://schema.ocsf.io
 const (
-	ocsfClassFileActivity = 1001 // File System Activity  — tamper events
-	ocsfClassAPIActivity  = 6003 // API Activity          — REST CRUD operations
+	ocsfClassFileActivity  = 1001 // File System Activity  — tamper events
+	ocsfClassAPIActivity   = 6003 // API Activity          — REST CRUD operations
 	ocsfClassAccountChange = 3002 // Account Change        — user create/update/delete
 )
 
@@ -95,8 +95,8 @@ type ocsfAPIRequest struct {
 }
 
 type ocsfFileActivity struct {
-	Path      string         `json:"path,omitempty"`
-	Processes []ocsfProcess  `json:"process,omitempty"`
+	Path      string        `json:"path,omitempty"`
+	Processes []ocsfProcess `json:"process,omitempty"`
 }
 
 type ocsfProcess struct {
@@ -198,8 +198,7 @@ func buildOCSFEvent(event *auditpb.AuditEvent) ocsfEvent {
 
 // classForEvent selects the OCSF class based on the resource type and action.
 func classForEvent(event *auditpb.AuditEvent) (classUID int, className string, catID int, catName string) {
-	switch event.GetPayload().(type) {
-	case *auditpb.AuditEvent_Tamper:
+	if _, ok := event.GetPayload().(*auditpb.AuditEvent_Tamper); ok {
 		return ocsfClassFileActivity, "File System Activity", 1, "System Activity"
 	}
 	// REST API events
@@ -212,7 +211,7 @@ func classForEvent(event *auditpb.AuditEvent) (classUID int, className string, c
 }
 
 // activityForAction maps Bor action verbs to OCSF activity IDs.
-func activityForAction(action string) (int, string) {
+func activityForAction(action string) (activityID int, activityName string) {
 	switch action {
 	case "create":
 		return ocsfActivityCreate, "Create"
@@ -229,7 +228,7 @@ func activityForAction(action string) (int, string) {
 
 // severityForAction maps Bor action verbs to OCSF severity IDs.
 // OCSF severity: 0=Unknown 1=Informational 2=Low 3=Medium 4=High 5=Critical
-func severityForAction(action string) (int, string) {
+func severityForAction(action string) (severityID int, severityName string) {
 	switch action {
 	case "tamper_detected":
 		return 4, "High"

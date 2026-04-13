@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/api"
+	auditsink "github.com/VuteTech/Bor/server/internal/audit"
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
@@ -249,7 +249,7 @@ func main() {
 	// Register SyslogSink if configured.
 	var syslogSink *auditsink.SyslogSink
 	if cfg.Audit.Syslog.Enabled {
-		syslogSink = auditsink.NewSyslogSink(auditsink.SyslogConfig{
+		syslogSink = auditsink.NewSyslogSink(&auditsink.SyslogConfig{
 			Enabled:   cfg.Audit.Syslog.Enabled,
 			Network:   cfg.Audit.Syslog.Network,
 			Addr:      cfg.Audit.Syslog.Addr,
@@ -294,9 +294,9 @@ func main() {
 	// Wire policy and binding change notifications to the hub.
 	// Only agents whose node groups are affected by the change are signalled.
 	policyHandler.OnPolicyChange = func(policyID string) {
-		groupIDs, err := policyBindingSvc.GetEnabledGroupIDsForPolicy(context.Background(), policyID)
-		if err != nil {
-			log.Printf("Warning: failed to get enabled group IDs for policy %s: %v", policyID, err)
+		groupIDs, lookupErr := policyBindingSvc.GetEnabledGroupIDsForPolicy(context.Background(), policyID)
+		if lookupErr != nil {
+			log.Printf("Warning: failed to get enabled group IDs for policy %s: %v", policyID, lookupErr)
 			return
 		}
 		if len(groupIDs) == 0 {

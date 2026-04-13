@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
+	enrollpb "github.com/VuteTech/Bor/server/pkg/grpc/enrollment"
+	krb5client "github.com/jcmturner/gokrb5/v8/client"
 	krb5cfg "github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
-	krb5client "github.com/jcmturner/gokrb5/v8/client"
 	"github.com/jcmturner/gokrb5/v8/spnego"
-	enrollpb "github.com/VuteTech/Bor/server/pkg/grpc/enrollment"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -235,9 +235,9 @@ func EnrollWithKerberos(serverAddr, keytabPath, servicePrincipal, kdc, machinePr
 	// ── 4. Authenticate with keytab ─────────────────────────────────────────
 	cl := krb5client.NewWithKeytab(hostPrincipal, realm, kt, krb5Conf,
 		krb5client.DisablePAFXFAST(true))
-	if err := cl.Login(); err != nil {
-		return fmt.Errorf("Kerberos login failed (keytab=%s, principal=%s@%s): %w",
-			keytabPath, hostPrincipal, realm, err)
+	if loginErr := cl.Login(); loginErr != nil {
+		return fmt.Errorf("kerberos login failed (keytab=%s, principal=%s@%s): %w",
+			keytabPath, hostPrincipal, realm, loginErr)
 	}
 	defer cl.Destroy()
 
@@ -370,7 +370,7 @@ var nonBoolKrb5Setting = regexp.MustCompile(
 // gokrb5 cannot parse (notably "dns_canonicalize_hostname = fallback" used
 // on Fedora/RHEL), and returns a parsed *krb5cfg.Config.
 func loadKrb5Config(path string) (*krb5cfg.Config, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: path is a fixed system config path (/etc/krb5.conf)
 	if err != nil {
 		return nil, err
 	}

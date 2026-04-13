@@ -90,7 +90,7 @@ func (s *KerberosService) ValidateToken(tokenBytes []byte) (string, error) {
 		return "", fmt.Errorf("AP_REQ verification failed: %w", err)
 	}
 	if !ok {
-		return "", fmt.Errorf("Kerberos AP_REQ rejected")
+		return "", fmt.Errorf("kerberos AP_REQ rejected")
 	}
 
 	// Build the full principal string: primary/instance@REALM

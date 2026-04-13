@@ -26,24 +26,24 @@ func NewDConfHandler(dconfRepo *database.DConfRepository) *DConfHandler {
 
 // dconfSchemaResponse is the JSON representation of a GSettings schema.
 type dconfSchemaResponse struct {
-	SchemaID    string            `json:"schema_id"`
-	Path        string            `json:"path"`
-	Relocatable bool              `json:"relocatable"`
-	Source      string            `json:"source"`
+	SchemaID    string             `json:"schema_id"`
+	Path        string             `json:"path"`
+	Relocatable bool               `json:"relocatable"`
+	Source      string             `json:"source"`
 	Keys        []dconfKeyResponse `json:"keys"`
 }
 
 // dconfKeyResponse is the JSON representation of a single GSettings key.
 type dconfKeyResponse struct {
-	Name         string                  `json:"name"`
-	Type         string                  `json:"type"`
-	Summary      string                  `json:"summary,omitempty"`
-	Description  string                  `json:"description,omitempty"`
-	DefaultValue string                  `json:"default_value,omitempty"`
+	Name         string                   `json:"name"`
+	Type         string                   `json:"type"`
+	Summary      string                   `json:"summary,omitempty"`
+	Description  string                   `json:"description,omitempty"`
+	DefaultValue string                   `json:"default_value,omitempty"`
 	EnumValues   []dconfEnumValueResponse `json:"enum_values,omitempty"`
-	RangeMin     string                  `json:"range_min,omitempty"`
-	RangeMax     string                  `json:"range_max,omitempty"`
-	Choices      []string                `json:"choices,omitempty"`
+	RangeMin     string                   `json:"range_min,omitempty"`
+	RangeMax     string                   `json:"range_max,omitempty"`
+	Choices      []string                 `json:"choices,omitempty"`
 }
 
 // dconfEnumValueResponse is the JSON representation of one enum nick/value pair.

@@ -226,4 +226,3 @@ func TestWriteFileAtomically(t *testing.T) {
 		t.Errorf("expected permissions 0o644, got %o", info.Mode().Perm())
 	}
 }
-

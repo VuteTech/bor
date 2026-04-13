@@ -148,7 +148,7 @@ func (r *PolicyBindingRepository) GetEnabledGroupIDsByPolicyID(ctx context.Conte
 	if err != nil {
 		return nil, fmt.Errorf("failed to get enabled group IDs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

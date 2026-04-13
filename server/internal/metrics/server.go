@@ -31,7 +31,7 @@ func NewServer(addr, bearerToken string, collector prometheus.Collector) *http.S
 		EnableOpenMetrics: true,
 	})
 
-	var handler http.Handler = metricsHandler
+	handler := metricsHandler
 	if bearerToken != "" {
 		handler = bearerTokenMiddleware(bearerToken, metricsHandler)
 	}
@@ -63,12 +63,4 @@ func bearerTokenMiddleware(token string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// min returns the smaller of a and b (backport for Go < 1.21).
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -18,16 +18,16 @@ import (
 // The same struct mirrors config.LDAPConfig; it is kept here so that
 // the services package does not import the config package directly.
 type LDAPConfig struct {
-	Enabled      bool   `json:"enabled"`
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	UseTLS       bool   `json:"use_tls"`
-	StartTLS     bool   `json:"start_tls"`
+	Enabled       bool   `json:"enabled"`
+	Host          string `json:"host"`
+	Port          int    `json:"port"`
+	UseTLS        bool   `json:"use_tls"`
+	StartTLS      bool   `json:"start_tls"`
 	TLSCAFile     string `json:"tls_ca_file"`
 	TLSSkipVerify bool   `json:"tls_skip_verify"`
 	BindDN        string `json:"bind_dn"`
-	BindPassword string `json:"-"`
-	BaseDN       string `json:"base_dn"`
+	BindPassword  string `json:"-"`
+	BaseDN        string `json:"base_dn"`
 	// UserFilter is the LDAP search filter; use %s for the escaped username.
 	// FreeIPA: "(uid=%s)"
 	// Active Directory: "(sAMAccountName=%s)"
@@ -100,8 +100,8 @@ func (s *LDAPService) Authenticate(username, password string) (*LDAPUser, error)
 	defer func() { _ = conn.Close() }()
 
 	// ── Step 1: service account bind ─────────────────────────────────────────
-	if err := conn.Bind(s.config.BindDN, s.config.BindPassword); err != nil {
-		return nil, fmt.Errorf("failed to bind with service account: %w", err)
+	if bindErr := conn.Bind(s.config.BindDN, s.config.BindPassword); bindErr != nil {
+		return nil, fmt.Errorf("failed to bind with service account: %w", bindErr)
 	}
 
 	// ── Step 2: search for the user ──────────────────────────────────────────
@@ -129,7 +129,7 @@ func (s *LDAPService) Authenticate(username, password string) (*LDAPUser, error)
 	// when anonymous/bind-account search fails due to restrictive ACLs.
 	if entry == nil && s.config.UPNSuffix != "" {
 		upn := username + s.config.UPNSuffix
-		if err := conn.Bind(upn, password); err != nil {
+		if upnErr := conn.Bind(upn, password); upnErr != nil {
 			return nil, fmt.Errorf("user not found and UPN bind failed: invalid credentials")
 		}
 		// Re-search now that we're bound as the user.
@@ -138,7 +138,7 @@ func (s *LDAPService) Authenticate(username, password string) (*LDAPUser, error)
 			return nil, fmt.Errorf("user not found in LDAP")
 		}
 		// Password already verified via the UPN bind above.
-		return s.buildUser(conn, entry, username)
+		return s.buildUser(conn, entry, username), nil
 	}
 
 	if entry == nil {
@@ -146,12 +146,12 @@ func (s *LDAPService) Authenticate(username, password string) (*LDAPUser, error)
 	}
 
 	// ── Step 4: user bind to verify password ─────────────────────────────────
-	if err := conn.Bind(entry.DN, password); err != nil {
+	if userBindErr := conn.Bind(entry.DN, password); userBindErr != nil {
 		return nil, fmt.Errorf("invalid LDAP credentials")
 	}
 
 	// ── Step 5: build user with group info ───────────────────────────────────
-	return s.buildUser(conn, entry, username)
+	return s.buildUser(conn, entry, username), nil
 }
 
 // searchUser runs a paged (or non-paged) LDAP search and returns the first
@@ -166,7 +166,7 @@ func (s *LDAPService) searchUser(conn *ldap.Conn, filter string, attrs []string)
 			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
 			filter, attrs, []ldap.Control{paging},
 		)
-		result, err := conn.SearchWithPaging(req, uint32(s.config.PageSize)) //nolint:gosec
+		result, err := conn.SearchWithPaging(req, uint32(s.config.PageSize)) //nolint:gosec // page size is admin-configured
 		if err != nil {
 			return nil, fmt.Errorf("LDAP search failed: %w", err)
 		}
@@ -192,7 +192,7 @@ func (s *LDAPService) searchUser(conn *ldap.Conn, filter string, attrs []string)
 }
 
 // buildUser constructs an LDAPUser from the search entry and resolves groups.
-func (s *LDAPService) buildUser(conn *ldap.Conn, entry *ldap.Entry, fallbackUsername string) (*LDAPUser, error) {
+func (s *LDAPService) buildUser(conn *ldap.Conn, entry *ldap.Entry, fallbackUsername string) *LDAPUser {
 	username := entry.GetAttributeValue(s.config.AttrUsername)
 	if username == "" {
 		username = fallbackUsername
@@ -210,7 +210,7 @@ func (s *LDAPService) buildUser(conn *ldap.Conn, entry *ldap.Entry, fallbackUser
 		for _, dn := range entry.GetAttributeValues(s.config.AttrMemberOf) {
 			user.Groups = append(user.Groups, cnFromDN(dn))
 		}
-		return user, nil
+		return user
 	}
 
 	// Fall back to a separate group search using GroupFilter.
@@ -235,7 +235,7 @@ func (s *LDAPService) buildUser(conn *ldap.Conn, entry *ldap.Entry, fallbackUser
 		}
 	}
 
-	return user, nil
+	return user
 }
 
 // cnFromDN extracts the CN value from a Distinguished Name string.
@@ -318,40 +318,40 @@ func (s *LDAPService) tlsConfig() (*tls.Config, error) {
 			if len(rawCerts) == 0 {
 				return fmt.Errorf("server presented no TLS certificates")
 			}
-			cert, err := x509.ParseCertificate(rawCerts[0])
-			if err != nil {
-				return fmt.Errorf("failed to parse server certificate: %w", err)
+			cert, parseErr := x509.ParseCertificate(rawCerts[0])
+			if parseErr != nil {
+				return fmt.Errorf("failed to parse server certificate: %w", parseErr)
 			}
 
 			// Build the intermediate chain (if any).
 			intermediates := x509.NewCertPool()
 			for _, raw := range rawCerts[1:] {
-				if ic, err := x509.ParseCertificate(raw); err == nil {
+				if ic, icErr := x509.ParseCertificate(raw); icErr == nil {
 					intermediates.AddCert(ic)
 				}
 			}
 
 			// Verify the chain against our trusted CA pool.
-			_, err = cert.Verify(x509.VerifyOptions{
+			_, verifyErr := cert.Verify(x509.VerifyOptions{
 				Roots:         pool,
 				Intermediates: intermediates,
 				// Skip hostname check here; we do it below with the
 				// more lenient VerifyHostname that accepts CN.
 			})
-			if err != nil {
-				return fmt.Errorf("certificate chain verification failed: %w", err)
+			if verifyErr != nil {
+				return fmt.Errorf("certificate chain verification failed: %w", verifyErr)
 			}
 
 			// Try standard SAN-based hostname check first.
 			// If it fails and the cert has no SANs, fall back to
 			// matching the Common Name (legacy Samba AD certs).
-			if err := cert.VerifyHostname(s.config.Host); err != nil {
+			if hostErr := cert.VerifyHostname(s.config.Host); hostErr != nil {
 				if len(cert.DNSNames) == 0 && len(cert.IPAddresses) == 0 {
 					if !strings.EqualFold(cert.Subject.CommonName, s.config.Host) {
 						return fmt.Errorf("certificate CN %q does not match host %q", cert.Subject.CommonName, s.config.Host)
 					}
 				} else {
-					return fmt.Errorf("hostname verification failed: %w", err)
+					return fmt.Errorf("hostname verification failed: %w", hostErr)
 				}
 			}
 			return nil

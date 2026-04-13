@@ -909,7 +909,7 @@ func syncAllDConf(ctx context.Context, client *policyclient.Client, cfg *config.
 		dbName = "local"
 	}
 
-	dbDir := filepath.Join("/etc/dconf/db", dbName+".d")
+	dbDir := filepath.Join(policy.DConfDBDir, dbName+".d")
 	keyfilePath := filepath.Join(dbDir, "00-bor")
 	locksPath := filepath.Join(dbDir, "locks", "bor")
 	suppressManagedWrites(cfg, keyfilePath, locksPath)
@@ -1095,7 +1095,7 @@ func polkitRuleKey(desc string) string {
 // rollupProtoItems derives an overall ComplianceStatus and message from a
 // slice of per-item proto results. If items is empty, the caller-supplied
 // fallback values are returned unchanged.
-func rollupProtoItems(items []*pb.ComplianceItemResult, fallbackStatus pb.ComplianceStatus, fallbackMsg string) (pb.ComplianceStatus, string) {
+func rollupProtoItems(items []*pb.ComplianceItemResult, fallbackStatus pb.ComplianceStatus, fallbackMsg string) (status pb.ComplianceStatus, message string) {
 	if len(items) == 0 {
 		return fallbackStatus, fallbackMsg
 	}
@@ -1142,9 +1142,8 @@ func detectGNOMEVersion() string {
 		// Good enough for informational reporting.
 		content := string(data)
 		start := len("<platform>")
-		si := len(content)
 		if idx := lastIndex(content, "<platform>"); idx >= 0 {
-			si = idx + start
+			si := idx + start
 			ei := si
 			for ei < len(content) && content[ei] != '<' {
 				ei++
@@ -1227,7 +1226,7 @@ func getManagedPaths(cfg *config.Config) []string {
 		dconfDBs[db] = true
 	}
 	for db := range dconfDBs {
-		dbDir := filepath.Join("/etc/dconf/db", db+".d")
+		dbDir := filepath.Join(policy.DConfDBDir, db+".d")
 		paths = append(paths,
 			filepath.Join(dbDir, "00-bor"),
 			filepath.Join(dbDir, "locks", "bor"),

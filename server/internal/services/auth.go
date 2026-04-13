@@ -377,9 +377,9 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 		if s.ldapSvc != nil && s.ldapSvc.IsEnabled() {
 			// Issue a session token without a real user ID; the password step
 			// will authenticate against LDAP and create the user record.
-			sessionToken, err := s.generateSessionToken("", req.Username, models.SourceLDAP, false)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate session token: %w", err)
+			sessionToken, tokenErr := s.generateSessionToken("", req.Username, models.SourceLDAP, false)
+			if tokenErr != nil {
+				return nil, fmt.Errorf("failed to generate session token: %w", tokenErr)
 			}
 			return &models.AuthBeginResponse{
 				SessionToken: sessionToken,

@@ -32,13 +32,13 @@ type BorCollector struct {
 	repos repos
 
 	// ── Node metrics ──────────────────────────────────────────────────────
-	nodesTotal       *prometheus.Desc
-	nodeCertExpiry   *prometheus.Desc
-	nodeLastSeen     *prometheus.Desc
+	nodesTotal     *prometheus.Desc
+	nodeCertExpiry *prometheus.Desc
+	nodeLastSeen   *prometheus.Desc
 
 	// ── Policy metrics ────────────────────────────────────────────────────
-	policiesTotal      *prometheus.Desc
-	bindingsTotal      *prometheus.Desc
+	policiesTotal *prometheus.Desc
+	bindingsTotal *prometheus.Desc
 
 	// ── Compliance metrics ────────────────────────────────────────────────
 	complianceTotal *prometheus.Desc

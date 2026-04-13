@@ -70,21 +70,21 @@ func main() {
 
 	arr := make([]json.RawMessage, 0, len(schemas))
 	for _, s := range schemas {
-		b, err := m.Marshal(s)
-		if err != nil {
-			log.Printf("WARNING: failed to marshal schema %s: %v", s.GetSchemaId(), err)
+		b, marshalErr := m.Marshal(s)
+		if marshalErr != nil {
+			log.Printf("WARNING: failed to marshal schema %s: %v", s.GetSchemaId(), marshalErr)
 			continue
 		}
 		arr = append(arr, json.RawMessage(b))
 	}
 
-	out, err := json.MarshalIndent(arr, "", "  ")
-	if err != nil {
-		log.Fatalf("marshal array: %v", err)
+	out, jsonErr := json.MarshalIndent(arr, "", "  ")
+	if jsonErr != nil {
+		log.Fatalf("marshal array: %v", jsonErr)
 	}
 
-	if err := os.WriteFile(*outFile, append(out, '\n'), 0o644); err != nil {
-		log.Fatalf("write %s: %v", *outFile, err)
+	if writeErr := os.WriteFile(*outFile, append(out, '\n'), 0o600); writeErr != nil {
+		log.Fatalf("write %s: %v", *outFile, writeErr)
 	}
 
 	fmt.Printf("Wrote %d schemas to %s (%d bytes)\n", len(arr), *outFile, len(out))
@@ -106,7 +106,7 @@ func enrichEnums(schemas []*pb.GSettingsSchema) int {
 				continue
 			}
 
-			out, err := exec.Command("gsettings", "range", s.GetSchemaId(), k.GetName()).Output() //nolint:gosec
+			out, err := exec.Command("gsettings", "range", s.GetSchemaId(), k.GetName()).Output() //nolint:gosec // G204: args from trusted schema data
 			if err != nil {
 				continue
 			}

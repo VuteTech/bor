@@ -16,6 +16,9 @@ import (
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 )
 
+// DConfDBDir is the base directory for dconf database keyfiles.
+const DConfDBDir = "/etc/dconf/db"
+
 // dconfManagedHeader is prepended to every dconf keyfile written by Bor.
 const dconfManagedHeader = "# This file is managed by Bor. Do not edit manually.\n# Changes will be overwritten by policy enforcement.\n\n"
 
@@ -61,7 +64,7 @@ func MergeDConfPolicies(policies []*pb.DConfPolicy) *pb.DConfPolicy {
 //
 // keyfile content uses dconf INI path syntax: [org/gnome/desktop/screensaver]
 // locksfile content: one absolute dconf path per locked key.
-func DConfPolicyToFiles(pol *pb.DConfPolicy) (keyfile []byte, locksfile []byte) {
+func DConfPolicyToFiles(pol *pb.DConfPolicy) (keyfile, locksfile []byte) {
 	// Group entries by section path.
 	type section struct {
 		path    string
@@ -102,8 +105,8 @@ func DConfPolicyToFiles(pol *pb.DConfPolicy) (keyfile []byte, locksfile []byte) 
 // INI section path (dots replaced with slashes, leading/trailing slashes
 // removed from the schema-derived form).
 //
-//   "org.gnome.desktop.screensaver"  → "org/gnome/desktop/screensaver"
-//   path="/org/gnome/foo/"           → "org/gnome/foo"  (override wins)
+//	"org.gnome.desktop.screensaver"  → "org/gnome/desktop/screensaver"
+//	path="/org/gnome/foo/"           → "org/gnome/foo"  (override wins)
 func schemaToPath(schemaID, pathOverride string) string {
 	if pathOverride != "" {
 		p := strings.Trim(pathOverride, "/")
@@ -117,16 +120,16 @@ func schemaToPath(schemaID, pathOverride string) string {
 //
 // It creates the necessary directories, backs up pre-existing unmanaged files,
 // and ensures /etc/dconf/profile/user contains "system-db:<dbName>".
-func SyncDConfFiles(dbName string, keyfile []byte, locksfile []byte) error {
+func SyncDConfFiles(dbName string, keyfile, locksfile []byte) error {
 	if dbName == "" {
 		dbName = "local"
 	}
 
-	dbDir := filepath.Join("/etc/dconf/db", dbName+".d")
+	dbDir := filepath.Join(DConfDBDir, dbName+".d")
 	locksDir := filepath.Join(dbDir, "locks")
 
 	for _, dir := range []string{dbDir, locksDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: dconf directories must be world-readable for desktop sessions
 			return fmt.Errorf("dconf: create dir %s: %w", dir, err)
 		}
 	}
@@ -183,22 +186,22 @@ func ensureDConfProfile(dbName string) error {
 	if err != nil {
 		return fmt.Errorf("open profile: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Make sure the file doesn't end mid-line before appending.
 	if len(data) > 0 && data[len(data)-1] != '\n' {
-		if _, err := f.WriteString("\n"); err != nil {
-			return err
+		if _, writeErr := f.WriteString("\n"); writeErr != nil {
+			return writeErr
 		}
 	}
 	// First line must be "user-db:user" if the file was just created.
 	if len(data) == 0 {
-		if _, err := f.WriteString("user-db:user\n"); err != nil {
-			return err
+		if _, writeErr := f.WriteString("user-db:user\n"); writeErr != nil {
+			return writeErr
 		}
 	}
-	_, err = fmt.Fprintf(f, "%s\n", desired)
-	return err
+	_, writeErr := fmt.Fprintf(f, "%s\n", desired)
+	return writeErr
 }
 
 // gvariantIntPrefixes is the set of type-prefix words that GVariant text format
@@ -288,7 +291,7 @@ func CheckDConfCompliance(pol *pb.DConfPolicy, knownSchemas map[string]struct{})
 //   - Any ERROR        → ERROR
 //   - Any NON_COMPLIANT → NON_COMPLIANT
 //   - Otherwise        → COMPLIANT
-func RollupDConfCompliance(results []DConfItemResult) (pb.ComplianceStatus, string) {
+func RollupDConfCompliance(results []DConfItemResult) (status pb.ComplianceStatus, message string) {
 	if len(results) == 0 {
 		return pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, "no entries"
 	}

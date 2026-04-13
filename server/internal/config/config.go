@@ -16,16 +16,16 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	Database  DatabaseConfig
-	Server    ServerConfig
-	Security  SecurityConfig
-	LDAP      LDAPConfig
-	Kerberos  KerberosConfig
-	TLS       TLSConfig
-	CA        CAConfig
-	WebAuthn  WebAuthnConfig
-	Metrics   MetricsConfig
-	Audit     AuditConfig
+	Database DatabaseConfig
+	Server   ServerConfig
+	Security SecurityConfig
+	LDAP     LDAPConfig
+	Kerberos KerberosConfig
+	TLS      TLSConfig
+	CA       CAConfig
+	WebAuthn WebAuthnConfig
+	Metrics  MetricsConfig
+	Audit    AuditConfig
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -134,9 +134,9 @@ type CAConfig struct {
 
 // LDAPConfig holds LDAP connection configuration.
 type LDAPConfig struct {
-	Enabled      bool
-	Host         string
-	Port         int
+	Enabled bool
+	Host    string
+	Port    int
 	// UseTLS enables LDAPS (TLS from the start, default port 636).
 	UseTLS bool
 	// StartTLS upgrades a plain LDAP connection (port 389) to TLS.
@@ -149,9 +149,9 @@ type LDAPConfig struct {
 	// TLSSkipVerify disables all TLS certificate verification for the LDAP
 	// connection.  Intended for development / testing only.
 	TLSSkipVerify bool
-	BindDN       string
-	BindPassword string
-	BaseDN       string
+	BindDN        string
+	BindPassword  string
+	BaseDN        string
 	// UserFilter is the LDAP search filter for locating users.
 	// Use %s as a placeholder for the (escaped) username.
 	// FreeIPA default: "(uid=%s)"
