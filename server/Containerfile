@@ -9,8 +9,15 @@ ENV PATH=${PATH}:/root/go/bin
 
 ARG PROTOC_VERSION=29.3
 RUN dnf install -y --nodocs curl unzip && dnf clean all && \
+    ARCH=$(uname -m) && \
+    case "${ARCH}" in \
+      aarch64) PROTOC_ARCH="aarch_64" ;; \
+      ppc64le) PROTOC_ARCH="ppcle_64" ;; \
+      s390x)   PROTOC_ARCH="s390_64"  ;; \
+      *)       PROTOC_ARCH="${ARCH}"  ;; \
+    esac && \
     curl -fsSL -o /tmp/protoc.zip \
-      "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-$(uname -m).zip" && \
+      "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip" && \
     unzip -q /tmp/protoc.zip -d /usr/local && \
     rm /tmp/protoc.zip
 

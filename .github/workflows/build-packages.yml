@@ -31,6 +31,7 @@ jobs:
   build-server-backend:
     name: Build Server Backend
     runs-on: ubuntu-latest
+    needs: [test]
     permissions:
       contents: read
     steps:
@@ -48,6 +49,7 @@ jobs:
   build-agent:
     name: Build Agent
     runs-on: ubuntu-latest
+    needs: [test]
     permissions:
       contents: read
     steps:
@@ -65,6 +67,7 @@ jobs:
   build-server-frontend:
     name: Build Server Frontend
     runs-on: ubuntu-latest
+    needs: [test]
     permissions:
       contents: read
     steps:
@@ -86,7 +89,7 @@ jobs:
   build-packages:
     name: Build Packages (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    needs: [test, build-server-backend, build-server-frontend]
+    needs: [build-server-backend, build-agent, build-server-frontend]
     permissions:
       contents: write
     strategy:
@@ -144,7 +147,7 @@ jobs:
   build-image:
     name: Build Container Image
     runs-on: ubuntu-latest
-    needs: [test, build-server-backend, build-server-frontend]
+    needs: [build-server-backend, build-agent, build-server-frontend]
     permissions:
       contents: read
       packages: write
