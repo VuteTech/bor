@@ -277,7 +277,7 @@ func dbusCall(s session, dest, objectPath, method string) error {
 // environment. The subprocess inherits the target UID/GID so that
 // SO_PEERCRED matches the bus owner and dbus-broker accepts the connection.
 func runAsUser(s session, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) //nolint:gosec // G204: all call sites pass hardcoded binary names ("dbus-send", etc.)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid: s.UID,
@@ -298,7 +298,7 @@ func runAsUser(s session, name string, args ...string) error {
 
 // runAsUserOutput is like runAsUser but returns the command's stdout.
 func runAsUserOutput(s session, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) //nolint:gosec // G204: all call sites pass hardcoded binary names ("notify-send", etc.)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid: s.UID,
