@@ -593,6 +593,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ClearSessionCookie(w)
+	clearCSRFCookie(w)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
@@ -637,7 +638,10 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	SetSessionCookie(w, loginResp.Token, h.authSvc.TokenLifetime())
-	SetCSRFCookie(w)
+	// Do NOT rotate the CSRF cookie here. The CSRF token is a session-level
+	// credential set at login and valid until logout. Rotating it on every
+	// JWT refresh causes the apiRequest retry (which still carries the old
+	// X-CSRF-Token header) to fail with "invalid CSRF token".
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
