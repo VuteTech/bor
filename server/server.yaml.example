@@ -1,8 +1,12 @@
-# Bor Server Configuration
+# Bor Policy Management Server — primary configuration
 #
-# Copy to /etc/bor/server.yaml (or set BOR_CONFIG env var to a custom path).
-# Environment variables always take precedence over this file.
+# Installed to /etc/bor/server.yaml (mode 640, owner root:bor).
+# Environment variables take precedence over this file when set.
 # Missing fields fall back to built-in defaults.
+#
+# On first install the post-install script patches database.host to the
+# local PostgreSQL socket path and generates a random jwt_secret.
+# Review and adjust before starting the service.
 
 server:
   # Server hostname or IP address (no port). Leave empty to listen on all interfaces.
@@ -10,44 +14,67 @@ server:
 
   # Port for the admin UI and enrollment gRPC (default: 8443).
   # Browsers and agents connecting for the first time use this port.
-  # Corresponds to the BOR_ENROLLMENT_PORT environment variable.
   enrollment_port: 8443
 
   # Port for mTLS policy streaming and certificate renewal (default: 8444).
   # Only enrolled agents with a valid, non-revoked client certificate are accepted.
-  # Corresponds to the BOR_POLICY_PORT environment variable.
   policy_port: 8444
 
   # Additional hostnames and IP addresses to include as Subject Alternative
   # Names in the auto-generated TLS certificate. The system hostname,
   # "localhost", 127.0.0.1, and ::1 are always included automatically.
-  # Add your server's FQDN and any DNS aliases so that browsers and agents
-  # can verify the certificate without warnings.
+  # Add your server's FQDN and any DNS aliases.
   #
-  # Each entry is treated as a DNS name unless it parses as an IP address.
+  # Ignored when acme is enabled (the ACME cert covers exactly the listed domains).
+  #
   #hostnames:
   #  - "bor.example.com"
   #  - "bor.internal"
   #  - "192.0.2.10"
 
 database:
-  host: "localhost"
+  # Unix socket directory for local PostgreSQL (peer auth — no password needed).
+  # The post-install script sets this to the socket found on your distribution.
+  # For a remote PostgreSQL instance replace with the hostname and set password.
+  host: "/var/run/postgresql"
   port: 5432
   user: "bor"
-  password: "change-me"
+  # password: ""   # not required for Unix socket / peer auth
+  #                # for TCP connections: set to the bor role's password
   name: "bor"
-  sslmode: "disable"
+  sslmode: "disable"   # use "require" for TCP connections to a remote server
+
+  # Remote PostgreSQL example (replace host above and uncomment):
+  #host: "db.example.com"
+  #port: 5432
+  #user: "bor"
+  #password: "change-me"
+  #name: "bor"
+  #sslmode: "require"
 
 security:
+  # JWT signing secret. Auto-generated on first install by the post-install script.
+  # Changing this value invalidates all active browser sessions.
+  # Minimum 32 characters; use a cryptographically random string.
   jwt_secret: "change-me-in-production"
-  # Static admin token for gRPC enrollment calls (optional, leave empty to
-  # require a web-UI-generated enrollment token instead).
+
+  # JWT access token lifetime (default: 1h). Short-lived; the refresh token
+  # extends sessions without re-authentication.
+  #jwt_lifetime: "1h"
+
+  # Refresh token lifetime (default: 24h). Stored in an httpOnly cookie.
+  #refresh_lifetime: "24h"
+
+  # Static admin token for gRPC enrollment calls (optional).
+  # Leave empty to require a web-UI-generated one-time enrollment token.
   admin_token: ""
 
 tls:
   # Paths to an externally-managed TLS certificate and private key.
   # If empty, the server auto-generates a certificate signed by the
   # internal CA and stores it in autogen_dir.
+  #
+  # Mutually exclusive with the acme section below.
   cert_file: ""
   key_file:  ""
   autogen_dir: "/var/lib/bor/pki/ui"
@@ -62,80 +89,71 @@ ca:
 
   # Optional: store the CA private key in a PKCS#11 HSM instead of a file.
   # Requires the server binary to be built with: make server-pkcs11
-  # The CA certificate is still stored on disk (cert_file / autogen_dir above).
-  # IMPORTANT: set the PIN via the BOR_CA_PKCS11_PIN environment variable
-  # rather than storing it in this file.
+  # Set the PIN via the BOR_CA_PKCS11_PIN environment variable — do not
+  # store it in this file.
   #
   #pkcs11:
-  #  lib: "/usr/lib/softhsm/libsofthsm2.so"   # path to PKCS#11 shared library
-  #  token_label: "bor-ca"                      # HSM token label
-  #  key_label: "bor-ca-key"                    # CA key label on the token
+  #  lib: "/usr/lib/softhsm/libsofthsm2.so"
+  #  token_label: "bor-ca"
+  #  key_label: "bor-ca-key"
+
+# ACME automatic TLS certificate (Let's Encrypt or any RFC 8555-compatible CA).
+#
+# When enabled, the server obtains and renews a publicly-trusted certificate
+# automatically. Requires a domain name reachable by the ACME CA on port 80
+# (HTTP-01 challenge) or port 443 (TLS-ALPN-01).
+#
+# Mutually exclusive with tls.cert_file / tls.key_file.
+# See docs/acme.md for full documentation.
+#
+#acme:
+#  enabled: true
+#  domains:
+#    - "bor.example.com"
+#  email: "admin@example.com"
+#  # directory_url defaults to Let's Encrypt production when omitted.
+#  # Staging (not browser-trusted, for testing):
+#  #   https://acme-staging-v02.api.letsencrypt.org/directory
+#  # ZeroSSL: https://acme.zerossl.com/v2/DV90
+#  # Buypass:  https://api.buypass.com/acme/directory
+#  # directory_url: "https://acme-v02.api.letsencrypt.org/directory"
+#  # cache_dir: "/var/lib/bor/acme"
+#  # http_port: 80
 
 # LDAP / Active Directory authentication (optional).
 #
 # Supports FreeIPA (MIT Kerberos, 389 DS back-end) and Active Directory /
-# Samba AD out of the box.  Use the commented-out AD example below as a
-# starting point for Windows AD or Samba AD environments.
+# Samba AD out of the box.
 ldap:
   enabled: false
   host: "ldap.example.com"
   port: 389
-
-  # use_tls: enable LDAPS (TLS from the start, default port 636).
   use_tls: false
-
-  # start_tls: upgrade a plain LDAP (port 389) connection to TLS with
-  # STARTTLS.  Mutually exclusive with use_tls; use_tls takes precedence.
   start_tls: false
-
-  # tls_ca_file: path to a PEM CA certificate used to verify the LDAP
-  # server's certificate for LDAPS or StartTLS connections.  Leave empty
-  # to use the system certificate pool.
   tls_ca_file: ""
-
-  # Service account used to search for users before binding as the user.
-  # FreeIPA: "uid=bor-svc,cn=users,cn=accounts,dc=example,dc=com"
-  # AD:      "CN=bor-svc,CN=Users,DC=example,DC=com"
   bind_dn: "cn=readonly,dc=example,dc=com"
+  # Set via LDAP_BIND_PASSWORD env var rather than storing here.
   bind_password: ""
-
   base_dn: "dc=example,dc=com"
-
-  # user_filter: LDAP filter for user lookup.  Use %s as the username placeholder.
-  # FreeIPA: "(uid=%s)"        (default)
-  # AD:      "(sAMAccountName=%s)"
+  # FreeIPA: "(uid=%s)"   AD: "(sAMAccountName=%s)"
   user_filter: "(uid=%s)"
-
-  # upn_suffix: when set, the agent falls back to a UPN-style bind
-  # (username@UPN_SUFFIX) if the service-account search returns no results.
-  # AD only.  Example: "@EXAMPLE.COM"
-  upn_suffix: ""
-
-  # Attribute names for the user entry.
-  # FreeIPA defaults shown; AD equivalents in parentheses.
-  attr_username: "uid"         # (sAMAccountName)
-  attr_email: "mail"           # (mail)
-  attr_full_name: "cn"         # (displayName)
-
-  # Group membership resolution (optional).
-  # group_base_dn: base DN for group searches (defaults to base_dn).
+  upn_suffix: ""           # AD UPN fallback, e.g. "@EXAMPLE.COM"
+  attr_username: "uid"     # AD: sAMAccountName
+  attr_email: "mail"
+  attr_full_name: "cn"     # AD: displayName
   group_base_dn: ""
-
-  # group_filter: find the groups a user DN belongs to.
-  # FreeIPA: "(&(objectClass=groupofnames)(member=%s))"
-  # AD:      "(&(objectClass=group)(member=%s))"
   group_filter: ""
-
-  # group_member_attr: attribute on a group object listing member DNs.
-  # Typically "member" (AD/FreeIPA) or "uniqueMember" (OpenLDAP).
   group_member_attr: "member"
-
-  # attr_member_of: user attribute listing group DNs directly.
-  # Typically "memberOf".  When set, a separate group search is skipped.
   attr_member_of: "memberOf"
-
-  # page_size: LDAP results paging (RFC 2696).  0 disables paging.
   page_size: 500
+
+  # Map LDAP group CNs to Bor role names (synced on every login).
+  # Only roles listed here are managed; manually assigned roles are preserved.
+  # Available roles: Super Admin, Org Admin, Policy Editor, Policy Reviewer,
+  #                  Compliance Viewer, Auditor
+  #group_role_map:
+  #  "Domain Admins": "Super Admin"
+  #  "IT Staff": "Org Admin"
 
 # Active Directory / Samba AD example (uncomment and adapt):
 #ldap:
@@ -143,9 +161,9 @@ ldap:
 #  host: "dc01.example.com"
 #  port: 636
 #  use_tls: true
-#  tls_ca_file: "/etc/ssl/certs/example-ca.crt"  # or leave empty for system pool
+#  tls_ca_file: "/etc/ssl/certs/example-ca.crt"
 #  bind_dn: "CN=bor-svc,CN=Users,DC=example,DC=com"
-#  bind_password: ""    # set via LDAP_BIND_PASSWORD env var
+#  bind_password: ""   # set via LDAP_BIND_PASSWORD env var
 #  base_dn: "DC=example,DC=com"
 #  user_filter: "(sAMAccountName=%s)"
 #  upn_suffix: "@EXAMPLE.COM"
@@ -165,7 +183,7 @@ ldap:
 #  use_tls: true
 #  tls_ca_file: "/etc/ipa/ca.crt"
 #  bind_dn: "uid=bor-svc,cn=users,cn=accounts,dc=example,dc=com"
-#  bind_password: ""    # set via LDAP_BIND_PASSWORD env var
+#  bind_password: ""   # set via LDAP_BIND_PASSWORD env var
 #  base_dn: "dc=example,dc=com"
 #  user_filter: "(uid=%s)"
 #  attr_username: "uid"
@@ -178,50 +196,14 @@ ldap:
 
 # Kerberos token-free agent enrollment (optional).
 #
-# Domain-joined nodes (FreeIPA or Active Directory / Samba AD) can enroll
-# automatically using their machine keytab (/etc/krb5.keytab) without
-# requiring a manually generated enrollment token.  This is the recommended
-# approach for large deployments.
-#
-# 1. Create a service keytab for the Bor server (examples below).
-# 2. Set keytab_file to the keytab path on the Bor server host.
-# 3. Set service_principal to the full Kerberos principal for the service.
-# 4. Set default_node_group_id to the UUID of the node group that newly
-#    enrolled agents will be placed into.  Obtain this from the Bor web UI
-#    (Node Groups → copy the group ID from the URL).
-#
-# FreeIPA — create service and export keytab:
-#   ipa service-add HTTP/bor.example.com
-#   ipa-getkeytab -s ipa.example.com -p HTTP/bor.example.com@EXAMPLE.COM \
-#       -k /etc/bor/krb5.keytab
-#
-# Active Directory / Samba AD — create service account and keytab:
-#   net ads keytab create -k /etc/bor/krb5.keytab  (Samba)
-#   # or use ktpass.exe on Windows AD
-#
-# IMPORTANT: set the keytab file permissions to 640, owned by the bor service
-# account.  Never store the keytab in a world-readable location.
-#
 #kerberos:
 #  enabled: false
 #  realm: "EXAMPLE.COM"
 #  keytab_file: "/etc/bor/krb5.keytab"
 #  service_principal: "HTTP/bor.example.com@EXAMPLE.COM"
-#  # default_node_group_id: UUID of the node group for auto-enrolled agents
-#  default_node_group_id: ""
+#  default_node_group_id: ""   # UUID of the node group for auto-enrolled agents
 
-# WebAuthn / FIDO2 (optional — disabled unless rpid is set)
-#
-# Enables hardware security keys (YubiKey, FIDO2 USB/NFC tokens) and software
-# passkey managers (Bitwarden, 1Password, OS passkey store) as a second factor.
-#
-# rpid must equal the domain name of the URL users browse to — no scheme, no
-# port. For example, if the UI is at https://bor.example.com the rpid is
-# "bor.example.com". Credentials are scoped to this value and cannot be used
-# with a different rpid.
-#
-# origins is the list of allowed origins (scheme + host + optional port). It
-# must include every URL from which the login page is served.
+# WebAuthn / FIDO2 hardware security keys (optional).
 #
 #webauthn:
 #  rpid: "bor.example.com"
@@ -231,42 +213,27 @@ ldap:
 
 # Prometheus metrics endpoint (plain HTTP, separate port).
 #
-# listen_addr is the host:port the /metrics endpoint binds to.
-# Defaults to "127.0.0.1:9090" — reachable from localhost only.
-# Change the host part to expose on a specific interface:
-#   "192.168.1.10:9090"  — management VLAN only
-#   ":9090"              — all interfaces (protect with a firewall)
-# Corresponds to the BOR_METRICS_ADDR environment variable.
-#
-# bearer_token, when set, requires every Prometheus scrape request to carry
-# "Authorization: Bearer <token>". Leave empty when the listener is bound to
-# localhost or a trusted management network.
-# Corresponds to the BOR_METRICS_TOKEN environment variable.
-#
 #metrics:
 #  listen_addr: "127.0.0.1:9090"
 #  bearer_token: ""
+#  # tls_cert_file: "/etc/bor/metrics.crt"
+#  # tls_key_file:  "/etc/bor/metrics.key"
 
-# Audit event forwarding via syslog (CEF or OCSF format).
-#
-# When enabled, every audit event (REST API changes, tamper detections) is
-# forwarded to a remote syslog receiver using RFC 5424 framing. This enables
-# real-time ingestion by SIEMs such as Splunk, IBM QRadar, or Microsoft Sentinel.
-#
-# network: transport protocol — "udp" (default), "tcp", or "tcp+tls"
-# addr:    syslog receiver host:port (default: "localhost:514")
-# format:  message body format — "cef" (ArcSight CEF, default) or "ocsf" (JSON)
-# facility: RFC 5424 facility code, 0-23 (default: 16 = local0)
-# tls_ca:  path to a PEM CA certificate file for tcp+tls server verification;
-#          leave empty to use the system cert pool
-#
-# Corresponds to the BOR_AUDIT_SYSLOG_* environment variables.
+# Audit log settings.
 #
 #audit:
+#  retention_days: 365
+#  # anonymize_ips: false   # truncate IPs to /24 (v4) or /48 (v6) — GDPR minimisation
 #  syslog:
 #    enabled: false
-#    network: "udp"
+#    network: "udp"                   # udp | tcp | tcp+tls
 #    addr: "siem.example.com:514"
-#    format: "cef"
-#    facility: 16
-#    tls_ca: ""
+#    format: "cef"                    # cef (ArcSight) | ocsf (JSON, OCSF v1.3)
+#    facility: 16                     # RFC 5424 facility code (16 = local0)
+#    tls_ca: ""                       # PEM CA for tcp+tls server verification
+
+# UI settings.
+#
+#ui:
+#  # Show a Privacy Policy link in the sidebar footer (GDPR Article 13).
+#  privacy_policy_url: "https://example.com/privacy"
