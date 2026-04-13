@@ -638,10 +638,28 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	SetSessionCookie(w, loginResp.Token, h.authSvc.TokenLifetime())
-	// Do NOT rotate the CSRF cookie here. The CSRF token is a session-level
-	// credential set at login and valid until logout. Rotating it on every
-	// JWT refresh causes the apiRequest retry (which still carries the old
-	// X-CSRF-Token header) to fail with "invalid CSRF token".
+	// Re-issue the CSRF cookie after a token refresh.
+	// • If the bor_csrf cookie is already present (the common case after a short
+	//   JWT expiry), re-issue with the SAME value so that any in-flight
+	//   apiRequest retry (which still carries the old X-CSRF-Token header) keeps
+	//   matching.  This also resets the MaxAge so long-lived sessions don't lose
+	//   the CSRF cookie before the refresh token itself expires.
+	// • If the bor_csrf cookie is absent (e.g. it expired after 24 h while the
+	//   refresh token was still valid), issue a fresh token so that the next POST
+	//   request can succeed.
+	if csrfCookie, csrfErr := r.Cookie(CSRFCookieName); csrfErr == nil && csrfCookie.Value != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     CSRFCookieName,
+			Value:    csrfCookie.Value,
+			Path:     "/",
+			MaxAge:   86400,
+			HttpOnly: false,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+		})
+	} else {
+		SetCSRFCookie(w)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
