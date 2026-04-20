@@ -2,14 +2,16 @@
         packages packages-agent packages-server
 
 # Versioning — override with: make packages VERSION=1.2.3
-# Defaults to "dev" so local builds always produce a labelled binary.
-VERSION ?= dev
+# Defaults to 0.0.0.git<sha> so local builds produce a dpkg/rpm/apk-valid version.
+# dpkg requires the version to start with a digit; plain "dev" is rejected.
+GIT_SHA     := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+VERSION     ?= 0.0.0.git$(GIT_SHA)
 # Target architecture — override with: make packages ARCH=arm64
-ARCH    ?= amd64
+ARCH        ?= amd64
 # APK version — Alpine requires strictly numeric dot-components (e.g. 1.2.3).
-# For dev/feature builds where VERSION contains a SHA, set this to the numeric
-# prefix only. Defaults to VERSION so release builds need no extra argument.
-APK_VERSION ?= $(VERSION)
+# Strip the git suffix for local dev builds; release builds set VERSION to a
+# plain semver so this falls through to VERSION unchanged.
+APK_VERSION ?= $(shell echo "$(VERSION)" | sed 's/\.git.*//')
 
 # Default target
 help:
