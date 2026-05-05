@@ -2,9 +2,16 @@
         packages packages-agent packages-server
 
 # Versioning — override with: make packages VERSION=1.2.3
-VERSION ?= 0.1.0
+# Defaults to 0.0.0.git<sha> so local builds produce a dpkg/rpm/apk-valid version.
+# dpkg requires the version to start with a digit; plain "dev" is rejected.
+GIT_SHA     := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+VERSION     ?= 0.0.0.git$(GIT_SHA)
 # Target architecture — override with: make packages ARCH=arm64
-ARCH    ?= amd64
+ARCH        ?= amd64
+# APK version — Alpine requires strictly numeric dot-components (e.g. 1.2.3).
+# Strip the git suffix for local dev builds; release builds set VERSION to a
+# plain semver so this falls through to VERSION unchanged.
+APK_VERSION ?= $(shell echo "$(VERSION)" | sed 's/\.git.*//')
 
 # Default target
 help:
@@ -45,14 +52,19 @@ help:
 
 # Build server
 server:
-	@echo "Building server (FIPS 140-3)..."
-	cd server && GOFIPS140=v1.0.0 go build -o server ./cmd/server
+	@echo "Building server (FIPS 140-3, version=$(VERSION), arch=$(ARCH))..."
+	cd server && GOFIPS140=v1.0.0 GOARCH=$(ARCH) go build \
+		-ldflags "-X main.Version=$(VERSION)" \
+		-o server ./cmd/server
 
 # Build server with PKCS#11 HSM support (requires CGO + pkcs11 headers)
 # Before first use: cd server && go get github.com/ThalesIgnite/crypto11
 server-pkcs11:
-	@echo "Building server (FIPS 140-3 + PKCS#11 HSM support)..."
-	cd server && GOFIPS140=v1.0.0 CGO_ENABLED=1 go build -tags pkcs11 -o server ./cmd/server
+	@echo "Building server (FIPS 140-3 + PKCS#11 HSM support, version=$(VERSION), arch=$(ARCH))..."
+	cd server && GOFIPS140=v1.0.0 GOARCH=$(ARCH) CGO_ENABLED=1 go build \
+		-tags pkcs11 \
+		-ldflags "-X main.Version=$(VERSION)" \
+		-o server ./cmd/server
 
 # Build frontend
 frontend:
@@ -61,8 +73,10 @@ frontend:
 
 # Build agent
 agent:
-	@echo "Building agent (FIPS 140-3)..."
-	cd agent && GOFIPS140=v1.0.0 go build -o bor-agent ./cmd/agent
+	@echo "Building agent (FIPS 140-3, version=$(VERSION), arch=$(ARCH))..."
+	cd agent && GOFIPS140=v1.0.0 GOARCH=$(ARCH) go build \
+		-ldflags "-X main.Version=$(VERSION)" \
+		-o bor-agent ./cmd/agent
 
 # Regenerate dconf built-in schema catalogue from the local system's GSettings schemas.
 # Run this on a reference GNOME installation to refresh server/assets/dconf_builtin_schemas.json.
@@ -137,21 +151,21 @@ lint-agent:
 packages: packages-agent packages-server
 
 packages-agent: agent
-	@echo "Building bor-agent packages (version=$(VERSION) arch=$(ARCH))..."
+	@echo "Building bor-agent packages (version=$(VERSION) apk=$(APK_VERSION) arch=$(ARCH))..."
 	@mkdir -p builds
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager deb        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager rpm        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager apk        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager archlinux  --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager deb        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager rpm        --target builds/
+	VERSION=$(APK_VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager apk        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-agent.yaml --packager archlinux  --target builds/
 	@echo "Agent packages written to builds/"
 
 packages-server: server frontend
-	@echo "Building bor-server packages (version=$(VERSION) arch=$(ARCH))..."
+	@echo "Building bor-server packages (version=$(VERSION) apk=$(APK_VERSION) arch=$(ARCH))..."
 	@mkdir -p builds
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager deb        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager rpm        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager apk        --target builds/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager archlinux  --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager deb        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager rpm        --target builds/
+	VERSION=$(APK_VERSION) ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager apk        --target builds/
+	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager archlinux  --target builds/
 	@echo "Server packages written to builds/"
 
 # Clean build artifacts

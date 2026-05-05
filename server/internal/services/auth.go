@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -96,6 +95,14 @@ type AuthService struct {
 	ldapSvc         *LDAPService
 	mfaSvc          *MFAService
 	webauthnSvc     *WebAuthnService
+	adminPassword   string // initial admin password; used once when no users exist
+}
+
+// WithAdminPassword sets the initial admin password used by EnsureDefaultAdmin.
+// When non-empty this takes precedence over a generated password.
+func (s *AuthService) WithAdminPassword(password string) *AuthService {
+	s.adminPassword = password
+	return s
 }
 
 // NewAuthService creates a new AuthService
@@ -783,7 +790,7 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 		return nil
 	}
 
-	adminPassword := os.Getenv("BOR_ADMIN_PASSWORD")
+	adminPassword := s.adminPassword
 	if adminPassword == "" {
 		generated, genErr := generateRandomPassword(16)
 		if genErr != nil {
@@ -793,7 +800,8 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 		log.Println("======================================================")
 		log.Printf("  Initial admin password: %s", adminPassword)
 		log.Println("  Username: admin")
-		log.Println("  Change this immediately or set BOR_ADMIN_PASSWORD.")
+		log.Println("  Change this immediately or set BOR_ADMIN_PASSWORD")
+		log.Println("  (or security.admin_password in server.yaml).")
 		log.Println("======================================================")
 	}
 

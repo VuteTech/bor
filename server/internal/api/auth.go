@@ -593,6 +593,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ClearSessionCookie(w)
+	clearCSRFCookie(w)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
@@ -631,13 +632,34 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	loginResp, err := h.authSvc.IssueTokenByUserID(r.Context(), claims.UserID)
 	if err != nil {
-		log.Printf("Failed to issue token during refresh for user %s: %v", claims.UserID, err)
+		log.Printf("Failed to issue token during refresh for user %q: %v", claims.UserID, err) //nolint:gosec // G706: %q escapes all control characters including newlines, preventing log injection
 		http.Error(w, `{"error":"failed to issue token"}`, http.StatusInternalServerError)
 		return
 	}
 
 	SetSessionCookie(w, loginResp.Token, h.authSvc.TokenLifetime())
-	SetCSRFCookie(w)
+	// Re-issue the CSRF cookie after a token refresh.
+	// • If the bor_csrf cookie is already present (the common case after a short
+	//   JWT expiry), re-issue with the SAME value so that any in-flight
+	//   apiRequest retry (which still carries the old X-CSRF-Token header) keeps
+	//   matching.  This also resets the MaxAge so long-lived sessions don't lose
+	//   the CSRF cookie before the refresh token itself expires.
+	// • If the bor_csrf cookie is absent (e.g. it expired after 24 h while the
+	//   refresh token was still valid), issue a fresh token so that the next POST
+	//   request can succeed.
+	if csrfCookie, csrfErr := r.Cookie(CSRFCookieName); csrfErr == nil && csrfCookie.Value != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     CSRFCookieName,
+			Value:    csrfCookie.Value,
+			Path:     "/",
+			MaxAge:   86400,
+			HttpOnly: false,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+		})
+	} else {
+		SetCSRFCookie(w)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }

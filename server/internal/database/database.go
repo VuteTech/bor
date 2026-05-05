@@ -34,12 +34,31 @@ type Config struct {
 	SSLMode  string
 }
 
-// New creates a new database connection
-func New(cfg *Config) (*DB, error) {
-	connStr := fmt.Sprintf(
+// buildDSN constructs a libpq connection string from cfg.
+// When Host starts with '/' it is treated as a Unix socket directory:
+// port is omitted (libpq ignores it for sockets) and sslmode defaults
+// to "disable" because TLS does not apply to local socket connections.
+func buildDSN(cfg *Config) string {
+	if strings.HasPrefix(cfg.Host, "/") {
+		// Unix-socket path — peer/ident auth; password and port not used.
+		sslmode := cfg.SSLMode
+		if sslmode == "" {
+			sslmode = "disable"
+		}
+		return fmt.Sprintf(
+			"host=%s user=%s dbname=%s sslmode=%s",
+			cfg.Host, cfg.User, cfg.Database, sslmode,
+		)
+	}
+	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Database, cfg.SSLMode,
 	)
+}
+
+// New creates a new database connection
+func New(cfg *Config) (*DB, error) {
+	connStr := buildDSN(cfg)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {

@@ -318,7 +318,10 @@ func (s *LDAPService) tlsConfig() (*tls.Config, error) {
 
 		// Custom verification: check the chain against our CA pool but
 		// tolerate certificates that lack SANs (common with Samba AD).
+		// Session tickets are disabled so that VerifyPeerCertificate is
+		// always invoked — resumed sessions would otherwise skip it (G123).
 		cfg.InsecureSkipVerify = true //nolint:gosec // G402: we verify manually below
+		cfg.SessionTicketsDisabled = true
 		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
 				return fmt.Errorf("server presented no TLS certificates")

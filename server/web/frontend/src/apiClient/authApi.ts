@@ -46,7 +46,16 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   if (res.status === 401) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      res = await fetch(url, { credentials: "same-origin", ...init });
+      // Re-read the CSRF token: the Refresh endpoint may have issued or
+      // refreshed the bor_csrf cookie (same value with reset MaxAge, or a
+      // brand-new token when the previous one had expired).  Using the fresh
+      // value ensures the retry header always matches the server-side cookie.
+      const freshCsrf = csrfToken();
+      const baseHeaders = (init?.headers ?? {}) as Record<string, string>;
+      const retryHeaders: Record<string, string> = freshCsrf
+        ? { ...baseHeaders, "X-CSRF-Token": freshCsrf }
+        : { ...baseHeaders };
+      res = await fetch(url, { credentials: "same-origin", ...init, headers: retryHeaders });
     }
   }
   if (!res.ok) {
