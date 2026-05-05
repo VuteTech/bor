@@ -501,7 +501,16 @@ func main() {
 		if acmeErr != nil {
 			log.Fatalf("Failed to initialize ACME manager: %v", acmeErr)
 		}
-		uiGetCertificate = acmeMgr.GetCertificate
+		// Clients without SNI (e.g. IP scanners) get the internal cert so the
+		// autocert manager is not invoked and no error is logged.
+		acmeGetCert := acmeMgr.GetCertificate
+		fallbackCert := serverCert
+		uiGetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if hello.ServerName == "" {
+				return &fallbackCert, nil
+			}
+			return acmeGetCert(hello)
+		}
 		// Include TLS-ALPN-01 protocol so the ACME CA can validate ownership
 		// via a TLS handshake in addition to the HTTP-01 challenge.
 		uiNextProtos = append(uiNextProtos, pki.ALPNProto)

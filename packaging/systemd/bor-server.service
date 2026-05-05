@@ -21,6 +21,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=bor-server
 
+# Allow binding to privileged ports (80 for the ACME HTTP-01 challenge,
+# 443 for HTTPS) without running as root. AmbientCapabilities grants the
+# capability to the spawned process; CapabilityBoundingSet limits the
+# total set so nothing else can be acquired even under NoNewPrivileges=no.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
 # Security hardening
 NoNewPrivileges=yes
 PrivateTmp=yes
