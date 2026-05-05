@@ -648,7 +648,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	//   refresh token was still valid), issue a fresh token so that the next POST
 	//   request can succeed.
 	if csrfCookie, csrfErr := r.Cookie(CSRFCookieName); csrfErr == nil && csrfCookie.Value != "" {
-		http.SetCookie(w, &http.Cookie{
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // HttpOnly:false is required for double-submit CSRF; Secure+SameSite=Strict are set
 			Name:     CSRFCookieName,
 			Value:    csrfCookie.Value,
 			Path:     "/",
