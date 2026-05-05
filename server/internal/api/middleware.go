@@ -108,7 +108,7 @@ func SetCSRFCookie(w http.ResponseWriter) {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	token := hex.EncodeToString(b)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // HttpOnly:false is required for double-submit CSRF; Secure+SameSite=Strict are set
 		Name:     CSRFCookieName,
 		Value:    token,
 		Path:     "/",
@@ -120,7 +120,7 @@ func SetCSRFCookie(w http.ResponseWriter) {
 }
 
 func clearCSRFCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // HttpOnly:false is required for double-submit CSRF; Secure+SameSite=Strict are set
 		Name:     CSRFCookieName,
 		Value:    "",
 		Path:     "/",

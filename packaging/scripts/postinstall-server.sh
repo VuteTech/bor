@@ -38,6 +38,15 @@ chmod 0750    /var/lib/bor/acme 2>/dev/null || true
 chown root:bor /etc/bor/server.yaml 2>/dev/null || true
 chmod 0640     /etc/bor/server.yaml 2>/dev/null || true
 
+# ── Privileged-port capability ────────────────────────────────────────────────
+# Grant CAP_NET_BIND_SERVICE on the binary so it can bind 80/443 outside
+# systemd (containers, manual launches). The systemd unit grants the same
+# capability via AmbientCapabilities; this is the belt-and-suspenders path.
+# Re-applied on every install/upgrade so a fresh binary keeps the cap.
+if command -v setcap > /dev/null 2>&1; then
+    setcap 'cap_net_bind_service=+ep' /usr/bin/bor-server 2>/dev/null || true
+fi
+
 # ── Detect fresh install vs upgrade ───────────────────────────────────────────
 # In RPM $1==1 means first install; in Debian $1=="configure" and $2 is empty
 # on first install, set on upgrade.  Alpine and Arch pass no arguments.
@@ -148,4 +157,7 @@ fi  # end fresh-install block
 # ── Systemd ────────────────────────────────────────────────────────────────────
 if command -v systemctl > /dev/null 2>&1 && systemctl is-system-running > /dev/null 2>&1; then
     systemctl daemon-reload || true
+    # try-restart is a no-op when the service is inactive, so it's safe on
+    # fresh installs. On upgrades it picks up unit and capability changes.
+    systemctl try-restart bor-server.service 2>/dev/null || true
 fi
