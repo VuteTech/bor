@@ -164,7 +164,7 @@ jobs:
         run: make packages VERSION=${{ steps.version.outputs.version }} APK_VERSION=${{ steps.version.outputs.apk_version }} ARCH=${{ matrix.arch }}
 
       - name: Upload packages as workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
           path: builds/
@@ -254,7 +254,7 @@ jobs:
 
       - name: Upload container image as artifact
         if: github.ref != 'refs/heads/master' && github.event_name != 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: container-${{ steps.version.outputs.version }}
           path: /tmp/bor-server.tar
