@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
@@ -41,6 +42,13 @@ type WebAuthnService struct {
 func NewWebAuthnService(repo *database.WebAuthnRepository, rpid, displayName string, origins []string) (*WebAuthnService, error) {
 	if rpid == "" {
 		return nil, fmt.Errorf("WebAuthn RPID must not be empty")
+	}
+	if len(origins) == 0 {
+		// go-webauthn/webauthn v0.11+ requires at least one origin. Derive a
+		// sensible default so operators only need to set BOR_WEBAUTHN_RPID.
+		// Set BOR_WEBAUTHN_ORIGINS explicitly when running on a non-standard port.
+		origins = []string{"https://" + rpid}
+		log.Printf("WARNING: BOR_WEBAUTHN_ORIGINS not set — defaulting to %q; set BOR_WEBAUTHN_ORIGINS explicitly if the server is on a non-standard port", origins[0])
 	}
 	wa, err := webauthn.New(&webauthn.Config{
 		RPID:          rpid,
