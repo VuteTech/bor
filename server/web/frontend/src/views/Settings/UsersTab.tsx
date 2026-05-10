@@ -33,6 +33,7 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  adminSetUserPassword,
   fetchUserBindings,
   createBinding,
   deleteBinding,
@@ -319,6 +320,16 @@ const EditUserModal: React.FC<{
               <RoleAssignmentsTab userId={user.id} />
             </div>
           </Tab>
+          {user.source === "local" && (
+            <Tab
+              eventKey="password"
+              title={<TabTitleText>Password</TabTitleText>}
+            >
+              <div style={{ padding: "16px 0" }}>
+                <AdminPasswordTab userId={user.id} />
+              </div>
+            </Tab>
+          )}
         </Tabs>
       </ModalBody>
     </Modal>
@@ -576,6 +587,82 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
           </ModalFooter>
         </Modal>
       )}
+    </>
+  );
+};
+
+/* ── Admin Password Tab ── */
+
+const AdminPasswordTab: React.FC<{ userId: string }> = ({ userId }) => {
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const mismatch = confirm !== "" && next !== confirm;
+  const canSubmit = next !== "" && confirm !== "" && !mismatch;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await adminSetUserPassword(userId, next);
+      setSuccess("Password updated successfully.");
+      setNext("");
+      setConfirm("");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to set password");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
+      <LiveAlert message={success} isInline variant="success" style={{ marginBottom: 16 }} />
+      <Form onSubmit={handleSubmit} style={{ maxWidth: 480 }}>
+        <FormGroup label="New password" isRequired fieldId="ap-new">
+          <TextInput
+            id="ap-new"
+            type="password"
+            value={next}
+            onChange={(_ev, v) => setNext(v)}
+            autoComplete="new-password"
+            aria-required
+          />
+        </FormGroup>
+        <FormGroup
+          label="Confirm new password"
+          isRequired
+          fieldId="ap-confirm"
+          helperTextInvalid="Passwords do not match"
+          validated={mismatch ? "error" : "default"}
+        >
+          <TextInput
+            id="ap-confirm"
+            type="password"
+            value={confirm}
+            onChange={(_ev, v) => setConfirm(v)}
+            autoComplete="new-password"
+            validated={mismatch ? "error" : "default"}
+            aria-required
+            aria-invalid={mismatch || undefined}
+          />
+        </FormGroup>
+        <Button
+          type="submit"
+          variant="primary"
+          isDisabled={!canSubmit || saving}
+          isLoading={saving}
+        >
+          Set password
+        </Button>
+      </Form>
     </>
   );
 };

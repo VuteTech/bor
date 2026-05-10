@@ -213,6 +213,23 @@ export async function updateMFASettings(settings: MFASettings): Promise<MFASetti
   });
 }
 
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch("/api/v1/users/me/password", {
+    method: "PUT",
+    headers: authHeaders(),
+    credentials: "same-origin",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch { /* swallow */ }
+    throw new Error(detail);
+  }
+}
+
 export async function checkSession(): Promise<UserInfo> {
   return apiRequest<UserInfo>("/api/v1/auth/me", {
     headers: authHeaders(),

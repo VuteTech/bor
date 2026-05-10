@@ -121,6 +121,7 @@ export const Shell: React.FC = () => {
   /* ── Auth state ── */
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
+  const [currentUserSource, setCurrentUserSource] = useState<string>("local");
   const [authChecked, setAuthChecked] = useState(false);
 
   const [activeScreen, setActiveScreen] = useState<ScreenKey>("dashboard");
@@ -140,6 +141,7 @@ export const Shell: React.FC = () => {
   const applySession = useCallback(async (user: UserInfo) => {
     setPermissions(user.permissions || []);
     setCurrentUser(user.full_name || user.username);
+    setCurrentUserSource(user.source || "local");
     setIsLoggedIn(true);
     // Check whether MFA is enforced but not yet set up for this user.
     // A failure here is non-fatal — we simply don't show the gate.
@@ -513,6 +515,7 @@ export const Shell: React.FC = () => {
       </Page>
       <AccountModal
         isOpen={isAccountModalOpen}
+        userSource={currentUserSource}
         onClose={() => {
           setIsAccountModalOpen(false);
           setTimeout(() => accountModalTriggerRef.current?.focus(), 0);

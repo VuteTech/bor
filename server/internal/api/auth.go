@@ -664,6 +664,41 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
+// ChangePassword handles PUT /api/v1/users/me/password — self-service password change.
+// Requires the current password; not available for LDAP accounts.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req models.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		http.Error(w, `{"error":"current_password and new_password are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authSvc.ChangePassword(r.Context(), claims.UserID, req.CurrentPassword, req.NewPassword); err != nil {
+		log.Printf("ChangePassword failed for user %s: %v", claims.UserID, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // DataExport handles GET /api/v1/users/me/export — GDPR data subject access request.
 // Returns a JSON document with all personal data stored for the requesting user.
 func (h *AuthHandler) DataExport(w http.ResponseWriter, r *http.Request) {

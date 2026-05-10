@@ -236,6 +236,17 @@ type UpdateUserRequest struct {
 	Enabled  *bool   `json:"enabled,omitempty"`
 }
 
+// ChangePasswordRequest is used by the authenticated user to change their own password.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// AdminSetPasswordRequest lets an admin set a new password for any local user.
+type AdminSetPasswordRequest struct {
+	NewPassword string `json:"new_password"`
+}
+
 // CreateRoleRequest represents a request to create a role
 type CreateRoleRequest struct {
 	Name        string `json:"name"`

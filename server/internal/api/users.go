@@ -160,8 +160,49 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SetPassword handles PUT /api/v1/users/{id}/password — admin sets a user's password.
+// Only works for local accounts; no knowledge of the current password is required.
+func (h *UserHandler) SetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := extractIDFromPath(strings.TrimSuffix(r.URL.Path, "/password"), "/api/v1/users/")
+	if id == "" {
+		http.Error(w, `{"error":"user id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req models.AdminSetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.NewPassword == "" {
+		http.Error(w, `{"error":"new_password is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authSvc.AdminSetPassword(r.Context(), id, req.NewPassword); err != nil {
+		log.Printf("AdminSetPassword failed for user %q: %v", id, err) //nolint:gosec // id is a UUID from a URL path; %q prevents injection
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ServeHTTP routes requests to the appropriate handler method
 func (h *UserHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Sub-resource: /api/v1/users/{id}/password
+	if strings.HasSuffix(r.URL.Path, "/password") {
+		h.SetPassword(w, r)
+		return
+	}
+
 	id := extractIDFromPath(r.URL.Path, "/api/v1/users/")
 
 	if id == "" {
