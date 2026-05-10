@@ -6,7 +6,7 @@ require (
 	github.com/VuteTech/Bor/server v0.0.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	google.golang.org/grpc v1.79.3
+	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -22,7 +22,7 @@ require (
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )
 
 replace github.com/VuteTech/Bor/server => ../server
