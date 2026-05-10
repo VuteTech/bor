@@ -370,6 +370,9 @@ func main() {
 	// Auth routes (no additional permission needed — user just needs to be authenticated)
 	mux.Handle("/api/v1/auth/me", authMiddleware(http.HandlerFunc(authHandler.Me)))
 
+	// Self-service password change
+	mux.Handle("/api/v1/users/me/password", authMiddleware(http.HandlerFunc(authHandler.ChangePassword)))
+
 	// GDPR data export for the current user
 	mux.Handle("/api/v1/users/me/export", authMiddleware(http.HandlerFunc(authHandler.DataExport)))
 

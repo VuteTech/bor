@@ -106,6 +106,14 @@ export async function updateUser(
   });
 }
 
+export async function adminSetUserPassword(id: string, newPassword: string): Promise<void> {
+  return apiRequestNoBody(`/api/v1/users/${encodeURIComponent(id)}/password`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+}
+
 export async function deleteUser(id: string): Promise<void> {
   return apiRequestNoBody(`/api/v1/users/${encodeURIComponent(id)}`, {
     method: "DELETE",

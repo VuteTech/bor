@@ -2,25 +2,54 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React from "react";
-import { Modal, ModalVariant, ModalHeader, ModalBody } from "@patternfly/react-core";
+import React, { useState } from "react";
+import {
+  Modal,
+  ModalVariant,
+  ModalHeader,
+  ModalBody,
+  Tabs,
+  Tab,
+  TabTitleText,
+} from "@patternfly/react-core";
 import { MFATab } from "./MFATab";
+import { PasswordTab } from "./PasswordTab";
 
 interface AccountModalProps {
   isOpen: boolean;
   onClose: () => void;
+  userSource?: string;
 }
 
-export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) => {
+export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, userSource }) => {
+  const [activeTab, setActiveTab] = useState<string | number>("security");
+  const isLocal = !userSource || userSource === "local";
+
   return (
     <Modal
       variant={ModalVariant.medium}
       isOpen={isOpen}
       onClose={onClose}
     >
-      <ModalHeader title="Account Security" />
+      <ModalHeader title="Account Settings" />
       <ModalBody>
-        <MFATab />
+        <Tabs
+          activeKey={activeTab}
+          onSelect={(_ev, k) => setActiveTab(k)}
+        >
+          <Tab eventKey="security" title={<TabTitleText>Security</TabTitleText>}>
+            <div style={{ paddingTop: 16 }}>
+              <MFATab />
+            </div>
+          </Tab>
+          {isLocal && (
+            <Tab eventKey="password" title={<TabTitleText>Change Password</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <PasswordTab />
+              </div>
+            </Tab>
+          )}
+        </Tabs>
       </ModalBody>
     </Modal>
   );

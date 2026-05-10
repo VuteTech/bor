@@ -819,6 +819,55 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 	return nil
 }
 
+// ChangePassword verifies currentPassword then replaces it with newPassword.
+// Returns an error for LDAP accounts or if the current password is wrong.
+func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	if newPassword == "" {
+		return fmt.Errorf("new password must not be empty")
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to look up user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.Source != models.SourceLocal {
+		return fmt.Errorf("password change is not available for LDAP accounts")
+	}
+	if err = verifyPassword(user.PasswordHash, currentPassword); err != nil {
+		return fmt.Errorf("current password is incorrect")
+	}
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+	return s.userRepo.UpdatePassword(ctx, userID, hash)
+}
+
+// AdminSetPassword sets a new password for a local user without requiring the
+// current password. Returns an error for LDAP accounts.
+func (s *AuthService) AdminSetPassword(ctx context.Context, userID, newPassword string) error {
+	if newPassword == "" {
+		return fmt.Errorf("new password must not be empty")
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to look up user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.Source != models.SourceLocal {
+		return fmt.Errorf("password change is not available for LDAP accounts")
+	}
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+	return s.userRepo.UpdatePassword(ctx, userID, hash)
+}
+
 // generateRandomPassword creates a cryptographically random password of the
 // given length using alphanumeric characters and a small set of symbols.
 func generateRandomPassword(length int) (string, error) {
