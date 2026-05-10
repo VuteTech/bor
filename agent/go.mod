@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/VuteTech/Bor/server v0.0.0
-	github.com/fsnotify/fsnotify v1.10.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
