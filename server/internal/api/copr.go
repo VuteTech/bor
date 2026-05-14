@@ -7,6 +7,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,10 @@ var (
 	// coprChrootRE matches COPR chroot names such as "fedora-42-x86_64" or "epel-9-aarch64".
 	coprChrootRE = regexp.MustCompile(`^[a-z][a-z0-9._-]+$`)
 )
+
+// errCOPRNoKey is returned by fetchGPGKey when the COPR project has not
+// published a signing key (i.e. pubkey.gpg returns HTTP 404).
+var errCOPRNoKey = errors.New("COPR project has no signing key")
 
 // COPRInfoResponse is returned by GET /api/v1/copr-info.
 type COPRInfoResponse struct {
@@ -82,9 +87,14 @@ func (h *COPRInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// COPR places pubkey.gpg one directory above the chroot-specific path.
 	gpgKeyURL := coprGPGKeyURL(baseURL)
 	if gpgKeyData, gpgErr := h.fetchGPGKey(gpgKeyURL); gpgErr != nil {
-		resp.Warning = "Could not fetch the signing key from COPR. " +
-			"GPG verification has been disabled — please upload the GPG key manually " +
-			"or enable gpg_check after uploading."
+		if errors.Is(gpgErr, errCOPRNoKey) {
+			resp.Warning = "This COPR project has not published a signing key. " +
+				"GPG verification has been disabled. You can upload a key manually if you obtain one separately."
+		} else {
+			resp.Warning = "Could not fetch the signing key from COPR. " +
+				"GPG verification has been disabled — please upload the GPG key manually " +
+				"or enable gpg_check after uploading."
+		}
 	} else {
 		resp.GPGKeyData = gpgKeyData
 	}
@@ -156,6 +166,9 @@ func (h *COPRInfoHandler) fetchGPGKey(gpgKeyURL string) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return "", errCOPRNoKey
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GPG key endpoint returned HTTP %d", resp.StatusCode)
 	}
