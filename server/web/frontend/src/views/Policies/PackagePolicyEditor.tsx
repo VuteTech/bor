@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useCallback, useId, useRef } from "react";
+import { authHeaders } from "../../apiClient/authApi";
 import {
   Button,
   Card,
@@ -20,6 +21,7 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
+  Radio,
   Select,
   SelectList,
   SelectOption,
@@ -118,6 +120,29 @@ const UBUNTU_CODENAMES: { value: string; label: string }[] = [
   { value: "bionic",   label: "bionic   (18.04 LTS)" },
 ];
 
+/* ── YMP import types ── */
+
+interface YMPImportRepo {
+  id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+  baseurl: string;
+  gpgCheck: boolean;
+}
+
+interface YMPImportPackage {
+  name: string;
+  state: string;
+}
+
+interface YMPImportGroup {
+  distVersion: string;
+  repositories: YMPImportRepo[];
+  packages: YMPImportPackage[];
+  warnings?: string[];
+}
+
 /* ── PPA helpers ── */
 
 interface ParsedPPA {
@@ -154,6 +179,7 @@ async function fetchPPAInfo(owner: string, ppaname: string, suite: string): Prom
   try {
     const resp = await fetch(
       `/api/v1/ppa-info?owner=${encodeURIComponent(owner)}&ppa=${encodeURIComponent(ppaname)}`,
+      { headers: authHeaders() },
     );
     if (resp.ok) {
       proxyData = (await resp.json()) as typeof proxyData;
@@ -755,6 +781,67 @@ const AddPPAModal: React.FC<AddPPAModalProps> = ({ isOpen, onClose, onAdd, trigg
   );
 };
 
+/* ── YMPDistVersionModal sub-component ── */
+
+interface YMPDistVersionModalProps {
+  isOpen: boolean;
+  groups: YMPImportGroup[];
+  selectedIdx: number;
+  onSelect: (idx: number) => void;
+  onImport: () => void;
+  onClose: () => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+}
+
+const YMPDistVersionModal: React.FC<YMPDistVersionModalProps> = ({
+  isOpen, groups, selectedIdx, onSelect, onImport, onClose, triggerRef,
+}) => {
+  const idPrefix = useId();
+
+  const handleClose = () => {
+    onClose();
+    triggerRef.current?.focus();
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      aria-labelledby={`${idPrefix}-ymp-title`}
+      variant="small"
+    >
+      <ModalHeader title="Import from .ymp" labelId={`${idPrefix}-ymp-title`} />
+      <ModalBody>
+        <p style={{ marginBottom: "1rem" }}>
+          This file contains entries for multiple distribution versions.
+          Select which one to import:
+        </p>
+        {groups.map((g, i) => (
+          <div key={i} style={{ marginBottom: "0.75rem" }}>
+            <Radio
+              id={`${idPrefix}-ymp-group-${i}`}
+              name={`${idPrefix}-ymp-group`}
+              label={g.distVersion || `Group ${i + 1}`}
+              description={`${g.repositories.length} repositor${g.repositories.length === 1 ? "y" : "ies"}, ${g.packages.length} package${g.packages.length === 1 ? "" : "s"}`}
+              isChecked={selectedIdx === i}
+              onChange={() => onSelect(i)}
+            />
+            {g.warnings && g.warnings.length > 0 && (
+              <div style={{ marginLeft: "1.5rem", marginTop: "0.25rem", fontSize: "0.875rem", color: "var(--pf-t--global--color--status--warning--100)" }}>
+                <ExclamationTriangleIcon aria-hidden /> {g.warnings.join("; ")}
+              </div>
+            )}
+          </div>
+        ))}
+      </ModalBody>
+      <ModalFooter>
+        <Button onClick={onImport}>Import selected</Button>
+        <Button variant="link" onClick={handleClose}>Cancel</Button>
+      </ModalFooter>
+    </Modal>
+  );
+};
+
 /* ── main component ── */
 
 export interface PackagePolicyEditorProps {
@@ -774,6 +861,14 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
   const [ppaModalOpen, setPPAModalOpen] = useState(false);
   const [ppaWarning, setPPAWarning] = useState<string | null>(null);
   const ppaButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // YMP import state
+  const ympFileInputRef = useRef<HTMLInputElement | null>(null);
+  const ympButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [ympGroups, setYMPGroups] = useState<YMPImportGroup[]>([]);
+  const [ympSelectedIdx, setYMPSelectedIdx] = useState(0);
+  const [ympModalOpen, setYMPModalOpen] = useState(false);
+  const [ympAlert, setYMPAlert] = useState<{ variant: "success" | "warning" | "danger"; msg: string } | null>(null);
 
   const content = (() => {
     try {
@@ -807,6 +902,84 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
     setPPAWarning(warning ?? null);
   };
 
+  /* ── ymp handlers ── */
+
+  const applyYMPGroup = useCallback((group: YMPImportGroup) => {
+    const existingIDs = new Set(repos.map(r => r.id));
+    const newRepos: RepoEntry[] = [];
+    for (const r of group.repositories) {
+      let id = r.id;
+      let counter = 2;
+      while (existingIDs.has(id)) { id = `${r.id}-${counter++}`; }
+      existingIDs.add(id);
+      newRepos.push({ id, name: r.name, type: "REPOSITORY_TYPE_ZYPPER", enabled: r.enabled, baseurl: r.baseurl, gpgCheck: false });
+    }
+
+    const existingPkgNames = new Set(pkgs.map(p => p.name));
+    const newPkgs: PkgEntry[] = [];
+    let skipped = 0;
+    for (const p of group.packages) {
+      if (existingPkgNames.has(p.name)) { skipped++; continue; }
+      existingPkgNames.add(p.name);
+      newPkgs.push({ name: p.name, state: p.state as PkgState });
+    }
+
+    pushChange({ ...content, repositories: [...repos, ...newRepos], packages: [...pkgs, ...newPkgs] });
+
+    const parts: string[] = [];
+    if (newRepos.length > 0) parts.push(`${newRepos.length} repositor${newRepos.length === 1 ? "y" : "ies"}`);
+    if (newPkgs.length > 0) parts.push(`${newPkgs.length} package${newPkgs.length === 1 ? "" : "s"}`);
+    const skipNote = skipped > 0 ? ` (${skipped} package${skipped === 1 ? "" : "s"} already existed, skipped)` : "";
+    const warnings = group.warnings ?? [];
+    const msgBase = parts.length > 0
+      ? `Imported ${parts.join(" and ")} from .ymp file${skipNote}.`
+      : `Nothing new to import${skipNote}.`;
+    setYMPAlert({
+      variant: warnings.length > 0 ? "warning" : "success",
+      msg: warnings.length > 0 ? `${msgBase} Note: ${warnings.join("; ")}` : msgBase,
+    });
+  }, [content, repos, pkgs, pushChange]);
+
+  const handleYMPFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ""; // allow re-uploading the same file
+    setYMPAlert(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      // Drop Content-Type from authHeaders — the browser sets it automatically
+      // with the correct multipart boundary when body is FormData.
+      const { "Content-Type": _, ...csrfHeader } = authHeaders();
+      const resp = await fetch("/api/v1/ymp-import", { method: "POST", headers: csrfHeader, body: formData });
+      if (!resp.ok) {
+        const text = await resp.text();
+        setYMPAlert({ variant: "danger", msg: `Import failed: ${text.trim()}` });
+        return;
+      }
+      const data = (await resp.json()) as { groups: YMPImportGroup[] };
+      if (!data.groups || data.groups.length === 0) {
+        setYMPAlert({ variant: "danger", msg: "No groups found in .ymp file." });
+        return;
+      }
+      if (data.groups.length === 1) {
+        applyYMPGroup(data.groups[0]);
+      } else {
+        setYMPGroups(data.groups);
+        setYMPSelectedIdx(0);
+        setYMPModalOpen(true);
+      }
+    } catch {
+      setYMPAlert({ variant: "danger", msg: "Could not upload the .ymp file." });
+    }
+  };
+
+  const handleYMPImportSelected = () => {
+    applyYMPGroup(ympGroups[ympSelectedIdx]);
+    setYMPModalOpen(false);
+    setYMPGroups([]);
+  };
+
   /* ── pkg handlers ── */
 
   const addPkg = () => pushChange({ ...content, packages: [...pkgs, { ...DEFAULT_PKG }] });
@@ -830,6 +1003,11 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
             <LiveAlert
               message={ppaWarning}
               variant="warning"
+              style={{ marginBottom: "1rem" }}
+            />
+            <LiveAlert
+              message={ympAlert?.msg ?? null}
+              variant={ympAlert?.variant ?? "info"}
               style={{ marginBottom: "1rem" }}
             />
             {repos.length === 0 && (
@@ -866,6 +1044,24 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               >
                 Add Ubuntu PPA…
               </Button>
+              <Button
+                variant="secondary"
+                onClick={() => { setYMPAlert(null); ympFileInputRef.current?.click(); }}
+                isDisabled={isDisabled}
+                ref={ympButtonRef}
+                aria-label="Add OpenSUSE 1-Click .ymp repository"
+              >
+                Add openSUSE 1-Click .ymp…
+              </Button>
+              {/* Hidden file input for .ymp upload */}
+              <input
+                ref={ympFileInputRef}
+                type="file"
+                accept=".ymp,text/x-suse-ymp"
+                style={{ display: "none" }}
+                aria-hidden="true"
+                onChange={handleYMPFileChange}
+              />
             </div>
 
             <AddPPAModal
@@ -873,6 +1069,15 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               onClose={() => setPPAModalOpen(false)}
               onAdd={handlePPAAdd}
               triggerRef={ppaButtonRef}
+            />
+            <YMPDistVersionModal
+              isOpen={ympModalOpen}
+              groups={ympGroups}
+              selectedIdx={ympSelectedIdx}
+              onSelect={setYMPSelectedIdx}
+              onImport={handleYMPImportSelected}
+              onClose={() => { setYMPModalOpen(false); setYMPGroups([]); }}
+              triggerRef={ympButtonRef}
             />
           </div>
         </Tab>

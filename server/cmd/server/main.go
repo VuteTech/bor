@@ -326,6 +326,7 @@ func main() {
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
 	ppaHandler := api.NewPPAInfoHandler()
+	ympHandler := api.NewYMPImportHandler()
 
 	// Wire policy and binding change notifications to the hub.
 	// Only agents whose node groups are affected by the change are signalled.
@@ -477,6 +478,9 @@ func main() {
 
 	// Ubuntu PPA info proxy — avoids browser CORS when fetching from Launchpad/keyserver
 	mux.Handle("/api/v1/ppa-info", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(ppaHandler.ServeHTTP))))
+
+	// OpenSUSE .ymp (1-click install) parser — extracts repos/packages from uploaded file
+	mux.Handle("/api/v1/ymp-import", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(ympHandler.ServeHTTP))))
 
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))
