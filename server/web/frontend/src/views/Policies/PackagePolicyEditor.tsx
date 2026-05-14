@@ -120,6 +120,37 @@ const UBUNTU_CODENAMES: { value: string; label: string }[] = [
   { value: "bionic",   label: "bionic   (18.04 LTS)" },
 ];
 
+/* ── Fedora COPR constants and helpers ── */
+
+const FEDORA_CHROOTS: { value: string; label: string }[] = [
+  { value: "fedora-44-x86_64",      label: "fedora-44      (x86_64)" },
+  { value: "fedora-43-x86_64",      label: "fedora-43      (x86_64)" },
+  { value: "fedora-42-x86_64",      label: "fedora-42      (x86_64)" },
+  { value: "fedora-41-x86_64",      label: "fedora-41      (x86_64)" },
+  { value: "fedora-rawhide-x86_64", label: "fedora-rawhide (x86_64)" },
+  { value: "epel-10-x86_64",        label: "epel-10 / RHEL 10 (x86_64)" },
+  { value: "epel-9-x86_64",         label: "epel-9  / RHEL 9  (x86_64)" },
+  { value: "epel-8-x86_64",         label: "epel-8  / RHEL 8  (x86_64)" },
+  { value: "fedora-44-aarch64",     label: "fedora-44      (aarch64)" },
+  { value: "fedora-43-aarch64",     label: "fedora-43      (aarch64)" },
+  { value: "fedora-42-aarch64",     label: "fedora-42      (aarch64)" },
+  { value: "epel-9-aarch64",        label: "epel-9  / RHEL 9  (aarch64)" },
+];
+
+interface ParsedCOPR {
+  owner: string;
+  project: string;
+}
+
+function parseCOPRAddress(input: string): ParsedCOPR | null {
+  const cleaned = input.trim().replace(/^copr:/i, "");
+  const parts = cleaned.split("/");
+  if (parts.length !== 2) return null;
+  const [owner, project] = parts.map(s => s.trim());
+  if (!owner || !project) return null;
+  return { owner, project };
+}
+
 /* ── YMP import types ── */
 
 interface YMPImportRepo {
@@ -781,6 +812,172 @@ const AddPPAModal: React.FC<AddPPAModalProps> = ({ isOpen, onClose, onAdd, trigg
   );
 };
 
+/* ── AddCOPRModal sub-component ── */
+
+interface AddCOPRModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (repo: RepoEntry, warning?: string) => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+}
+
+const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, triggerRef }) => {
+  const idPrefix = useId();
+  const [coprAddress, setCOPRAddress] = useState("");
+  const [chrootOpen, setChrootOpen] = useState(false);
+  const [chroot, setChroot] = useState("fedora-42-x86_64");
+  const [customChroot, setCustomChroot] = useState("");
+  const [fetchState, setFetchState] = useState<FetchState>("idle");
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const parsed = parseCOPRAddress(coprAddress);
+  const effectiveChroot = chroot === "_custom" ? customChroot.trim() : chroot;
+  const canSubmit = parsed !== null && effectiveChroot !== "" && fetchState !== "fetching";
+
+  const currentChrootLabel =
+    chroot === "_custom"
+      ? `Custom: ${customChroot || "…"}`
+      : (FEDORA_CHROOTS.find(c => c.value === chroot)?.label ?? chroot);
+
+  const handleClose = () => {
+    setCOPRAddress("");
+    setChroot("fedora-42-x86_64");
+    setCustomChroot("");
+    setFetchState("idle");
+    setFetchError(null);
+    onClose();
+    triggerRef.current?.focus();
+  };
+
+  const handleSubmit = async () => {
+    if (!parsed || !effectiveChroot) return;
+    setFetchState("fetching");
+    setFetchError(null);
+    try {
+      const resp = await fetch(
+        `/api/v1/copr-info?owner=${encodeURIComponent(parsed.owner)}&project=${encodeURIComponent(parsed.project)}&chroot=${encodeURIComponent(effectiveChroot)}`,
+        { headers: authHeaders() },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        setFetchState("idle");
+        setFetchError(text.trim() || "Failed to fetch COPR info.");
+        return;
+      }
+      const data = (await resp.json()) as { id?: string; baseurl?: string; gpgKeyData?: string; warning?: string };
+      setFetchState("done");
+
+      const repo: RepoEntry = {
+        id: data.id ?? `copr-${parsed.owner.replace(/^@/, "")}-${parsed.project}`.toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+        name: `COPR ${parsed.owner}/${parsed.project}`,
+        type: "REPOSITORY_TYPE_DNF",
+        enabled: true,
+        baseurl: data.baseurl ?? "",
+        gpgCheck: !!data.gpgKeyData,
+        gpgKeyData: data.gpgKeyData,
+      };
+      onAdd(repo, data.warning);
+      handleClose();
+    } catch {
+      setFetchState("idle");
+      setFetchError("Network error. Could not reach the server.");
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      aria-labelledby={`${idPrefix}-copr-title`}
+      variant="small"
+    >
+      <ModalHeader title="Add Fedora COPR" labelId={`${idPrefix}-copr-title`} />
+      <ModalBody>
+        <Form>
+          <FormGroup label="COPR address" fieldId={`${idPrefix}-copr-addr`} isRequired>
+            <TextInput
+              id={`${idPrefix}-copr-addr`}
+              value={coprAddress}
+              onChange={(_ev, v) => { setCOPRAddress(v); setFetchState("idle"); setFetchError(null); }}
+              placeholder="copr:owner/project  or  @group/project"
+              aria-label="COPR address"
+              aria-invalid={coprAddress !== "" && parsed === null ? true : undefined}
+              aria-describedby={coprAddress !== "" && parsed === null ? `${idPrefix}-copr-addr-err` : undefined}
+              autoFocus
+            />
+            {coprAddress !== "" && parsed === null && (
+              <FormHelperText>
+                <HelperText>
+                  <HelperTextItem variant="error" id={`${idPrefix}-copr-addr-err`}>
+                    Enter a COPR address like <code>copr:user/project</code> or <code>@group/project</code>
+                  </HelperTextItem>
+                </HelperText>
+              </FormHelperText>
+            )}
+          </FormGroup>
+
+          <FormGroup label="Chroot" fieldId={`${idPrefix}-chroot`} isRequired>
+            <Select
+              id={`${idPrefix}-chroot`}
+              isOpen={chrootOpen}
+              onOpenChange={setChrootOpen}
+              selected={chroot}
+              onSelect={(_ev, val) => { setChroot(val as string); setChrootOpen(false); }}
+              toggle={(ref: React.Ref<MenuToggleElement>) => (
+                <MenuToggle
+                  ref={ref}
+                  onClick={() => setChrootOpen(v => !v)}
+                  isExpanded={chrootOpen}
+                  aria-label="Select chroot"
+                  style={{ width: "100%" }}
+                >
+                  {currentChrootLabel}
+                </MenuToggle>
+              )}
+            >
+              <SelectList>
+                {FEDORA_CHROOTS.map(c => (
+                  <SelectOption key={c.value} value={c.value}>{c.label}</SelectOption>
+                ))}
+                <SelectOption value="_custom">Custom…</SelectOption>
+              </SelectList>
+            </Select>
+            {chroot === "_custom" && (
+              <TextInput
+                style={{ marginTop: "0.5rem" }}
+                value={customChroot}
+                onChange={(_ev, v) => setCustomChroot(v)}
+                placeholder="e.g. fedora-43-aarch64"
+                aria-label="Custom chroot name"
+              />
+            )}
+          </FormGroup>
+
+          {fetchError && (
+            <LiveAlert
+              id={`${idPrefix}-copr-err`}
+              message={fetchError}
+              variant="danger"
+            />
+          )}
+        </Form>
+      </ModalBody>
+      <ModalFooter>
+        <Button
+          onClick={handleSubmit}
+          isDisabled={!canSubmit}
+          icon={fetchState === "fetching" ? <Spinner size="sm" aria-label="Loading" /> : undefined}
+        >
+          {fetchState === "fetching" ? "Adding…" : "Add"}
+        </Button>
+        <Button variant="link" onClick={handleClose} isDisabled={fetchState === "fetching"}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+};
+
 /* ── YMPDistVersionModal sub-component ── */
 
 interface YMPDistVersionModalProps {
@@ -862,6 +1059,10 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
   const [ppaWarning, setPPAWarning] = useState<string | null>(null);
   const ppaButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  const [coprModalOpen, setCOPRModalOpen] = useState(false);
+  const [coprWarning, setCOPRWarning] = useState<string | null>(null);
+  const coprButtonRef = useRef<HTMLButtonElement | null>(null);
+
   // YMP import state
   const ympFileInputRef = useRef<HTMLInputElement | null>(null);
   const ympButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -900,6 +1101,11 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
   const handlePPAAdd = (repo: RepoEntry, warning?: string) => {
     pushChange({ ...content, repositories: [...repos, repo] });
     setPPAWarning(warning ?? null);
+  };
+
+  const handleCOPRAdd = (repo: RepoEntry, warning?: string) => {
+    pushChange({ ...content, repositories: [...repos, repo] });
+    setCOPRWarning(warning ?? null);
   };
 
   /* ── ymp handlers ── */
@@ -1006,6 +1212,11 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               style={{ marginBottom: "1rem" }}
             />
             <LiveAlert
+              message={coprWarning}
+              variant="warning"
+              style={{ marginBottom: "1rem" }}
+            />
+            <LiveAlert
               message={ympAlert?.msg ?? null}
               variant={ympAlert?.variant ?? "info"}
               style={{ marginBottom: "1rem" }}
@@ -1053,6 +1264,15 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               >
                 Add openSUSE 1-Click .ymp…
               </Button>
+              <Button
+                variant="secondary"
+                onClick={() => { setCOPRWarning(null); setCOPRModalOpen(true); }}
+                isDisabled={isDisabled}
+                ref={coprButtonRef}
+                aria-haspopup="dialog"
+              >
+                Add Fedora COPR…
+              </Button>
               {/* Hidden file input for .ymp upload */}
               <input
                 ref={ympFileInputRef}
@@ -1069,6 +1289,12 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               onClose={() => setPPAModalOpen(false)}
               onAdd={handlePPAAdd}
               triggerRef={ppaButtonRef}
+            />
+            <AddCOPRModal
+              isOpen={coprModalOpen}
+              onClose={() => setCOPRModalOpen(false)}
+              onAdd={handleCOPRAdd}
+              triggerRef={coprButtonRef}
             />
             <YMPDistVersionModal
               isOpen={ympModalOpen}
