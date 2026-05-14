@@ -68,16 +68,26 @@ type pkError struct {
 	Details string
 }
 
-// IsPackageKitAvailable returns true when the PackageKit daemon is reachable
-// on the system bus. Call this once at startup; if false, the entire
-// PackagePolicy is reported as INAPPLICABLE.
+// IsPackageKitAvailable returns true when the PackageKit daemon is either
+// currently running or D-Bus activatable (i.e. will be auto-started on the
+// first method call). PackageKit is idle-stopped after inactivity, so
+// checking ListNames alone produces a false negative between uses; we
+// additionally check ListActivatableNames so the guard only fails on nodes
+// where PackageKit is genuinely absent.
 func IsPackageKitAvailable(conn *dbus.Conn) bool {
 	obj := conn.Object("org.freedesktop.DBus", "/org/freedesktop/DBus")
-	var names []string
-	if err := obj.Call("org.freedesktop.DBus.ListNames", 0).Store(&names); err != nil {
+
+	var running []string
+	if err := obj.Call("org.freedesktop.DBus.ListNames", 0).Store(&running); err == nil &&
+		slices.Contains(running, pkService) {
+		return true
+	}
+
+	var activatable []string
+	if err := obj.Call("org.freedesktop.DBus.ListActivatableNames", 0).Store(&activatable); err != nil {
 		return false
 	}
-	return slices.Contains(names, pkService)
+	return slices.Contains(activatable, pkService)
 }
 
 // ResolvePackage resolves a package name to a PackageKit package_id string.

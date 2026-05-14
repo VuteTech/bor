@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useCallback, useId } from "react";
+import React, { useState, useCallback, useId, useRef } from "react";
 import {
   Button,
   Card,
@@ -11,11 +11,19 @@ import {
   Checkbox,
   Form,
   FormGroup,
+  FormHelperText,
+  HelperText,
+  HelperTextItem,
   MenuToggle,
   MenuToggleElement,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
   Select,
   SelectList,
   SelectOption,
+  Spinner,
   Switch,
   Tab,
   Tabs,
@@ -98,6 +106,78 @@ const PKG_STATE_LABELS: { value: PkgState; label: string; description: string }[
   { value: "PACKAGE_STATE_ABSENT",  label: "Absent",  description: "Remove if installed" },
   { value: "PACKAGE_STATE_LATEST",  label: "Latest",  description: "Install or upgrade to latest" },
 ];
+
+/* ── Ubuntu PPA constants ── */
+
+const UBUNTU_CODENAMES: { value: string; label: string }[] = [
+  { value: "plucky",   label: "plucky   (25.04)" },
+  { value: "noble",    label: "noble    (24.04 LTS)" },
+  { value: "oracular", label: "oracular (24.10)" },
+  { value: "jammy",    label: "jammy    (22.04 LTS)" },
+  { value: "focal",    label: "focal    (20.04 LTS)" },
+  { value: "bionic",   label: "bionic   (18.04 LTS)" },
+];
+
+/* ── PPA helpers ── */
+
+interface ParsedPPA {
+  owner: string;
+  ppaname: string;
+}
+
+function parsePPAAddress(input: string): ParsedPPA | null {
+  const cleaned = input.trim().replace(/^ppa:/, "");
+  const parts = cleaned.split("/");
+  if (parts.length !== 2) return null;
+  const [owner, ppaname] = parts.map(s => s.trim());
+  if (!owner || !ppaname) return null;
+  return { owner, ppaname };
+}
+
+function ppaToDep822ID(owner: string, ppaname: string): string {
+  // Produce a valid repo ID: lowercase, hyphens only.
+  return `ppa-${owner}-${ppaname}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+}
+
+
+interface PPAFetchResult {
+  repo: RepoEntry;
+  warning?: string;
+}
+
+async function fetchPPAInfo(owner: string, ppaname: string, suite: string): Promise<PPAFetchResult> {
+  const id = ppaToDep822ID(owner, ppaname);
+
+  // Fetch PPA info through the server-side proxy (/api/v1/ppa-info) so that
+  // requests to Launchpad and the Ubuntu keyserver are not subject to browser CORS.
+  let proxyData: { uri?: string; fingerprint?: string; gpgKeyData?: string; warning?: string } = {};
+  try {
+    const resp = await fetch(
+      `/api/v1/ppa-info?owner=${encodeURIComponent(owner)}&ppa=${encodeURIComponent(ppaname)}`,
+    );
+    if (resp.ok) {
+      proxyData = (await resp.json()) as typeof proxyData;
+    }
+  } catch {
+    // Server unreachable — fall through with empty data.
+  }
+
+  const uri = proxyData.uri ?? `https://ppa.launchpadcontent.net/${owner}/${ppaname}/ubuntu`;
+
+  const base: RepoEntry = {
+    id,
+    name: `PPA ${owner}/${ppaname}`,
+    type: "REPOSITORY_TYPE_APT_DEB822",
+    enabled: true,
+    aptUri: uri,
+    aptSuites: suite,
+    aptComponents: "main",
+    gpgCheck: !!proxyData.gpgKeyData,
+    gpgKeyData: proxyData.gpgKeyData,
+  };
+
+  return { repo: base, warning: proxyData.warning };
+}
 
 /* ── helpers ── */
 
@@ -512,6 +592,169 @@ const PkgRow: React.FC<PkgRowProps> = ({ pkg, idx, onUpdate, onRemove, isDisable
   );
 };
 
+/* ── AddPPAModal sub-component ── */
+
+interface AddPPAModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (repo: RepoEntry, warning?: string) => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+}
+
+type FetchState = "idle" | "fetching" | "done";
+
+const AddPPAModal: React.FC<AddPPAModalProps> = ({ isOpen, onClose, onAdd, triggerRef }) => {
+  const idPrefix = useId();
+  const [ppaAddress, setPPAAddress] = useState("");
+  const [suiteOpen, setSuiteOpen] = useState(false);
+  const [suite, setSuite] = useState("noble");
+  const [customSuite, setCustomSuite] = useState("");
+  const [fetchState, setFetchState] = useState<FetchState>("idle");
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const parsed = parsePPAAddress(ppaAddress);
+  const effectiveSuite = suite === "_custom" ? customSuite.trim() : suite;
+  const canSubmit = parsed !== null && effectiveSuite !== "" && fetchState !== "fetching";
+
+  const currentSuiteLabel =
+    suite === "_custom"
+      ? `Custom: ${customSuite || "…"}`
+      : (UBUNTU_CODENAMES.find(c => c.value === suite)?.label ?? suite);
+
+  const handleClose = () => {
+    setPPAAddress("");
+    setSuite("noble");
+    setCustomSuite("");
+    setFetchState("idle");
+    setFetchError(null);
+    onClose();
+    triggerRef.current?.focus();
+  };
+
+  const handleSubmit = async () => {
+    if (!parsed || !effectiveSuite) return;
+    setFetchState("fetching");
+    setFetchError(null);
+    try {
+      const result = await fetchPPAInfo(parsed.owner, parsed.ppaname, effectiveSuite);
+      setFetchState("done");
+      onAdd(result.repo, result.warning);
+      handleClose();
+    } catch (e) {
+      setFetchState("idle");
+      setFetchError(e instanceof Error ? e.message : "Unexpected error");
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      aria-labelledby={`${idPrefix}-ppa-title`}
+      variant="small"
+    >
+      <ModalHeader title="Add Ubuntu PPA" labelId={`${idPrefix}-ppa-title`} />
+      <ModalBody>
+        <Form>
+          <FormGroup label="PPA address" fieldId={`${idPrefix}-ppa-addr`} isRequired>
+            <TextInput
+              id={`${idPrefix}-ppa-addr`}
+              value={ppaAddress}
+              onChange={(_ev, v) => { setPPAAddress(v); setFetchState("idle"); setFetchError(null); }}
+              placeholder="ppa:owner/name"
+              aria-label="PPA address"
+              aria-invalid={ppaAddress !== "" && parsed === null ? true : undefined}
+              aria-describedby={ppaAddress !== "" && parsed === null ? `${idPrefix}-ppa-addr-err` : undefined}
+              autoFocus
+            />
+            <FormHelperText>
+              <HelperText>
+                {ppaAddress !== "" && parsed === null ? (
+                  <HelperTextItem
+                    id={`${idPrefix}-ppa-addr-err`}
+                    variant="error"
+                  >
+                    Enter a PPA address in the format <code>ppa:owner/name</code>
+                  </HelperTextItem>
+                ) : (
+                  <HelperTextItem>
+                    E.g. <code>ppa:graphics-drivers/ppa</code> or <code>ppa:ondrej/php</code>
+                  </HelperTextItem>
+                )}
+              </HelperText>
+            </FormHelperText>
+          </FormGroup>
+
+          <FormGroup label="Ubuntu codename" fieldId={`${idPrefix}-ppa-suite`} isRequired>
+            <Select
+              id={`${idPrefix}-ppa-suite`}
+              isOpen={suiteOpen}
+              onOpenChange={setSuiteOpen}
+              selected={suite}
+              onSelect={(_ev, val) => { setSuite(val as string); setSuiteOpen(false); }}
+              toggle={(ref: React.Ref<MenuToggleElement>) => (
+                <MenuToggle
+                  ref={ref}
+                  onClick={() => setSuiteOpen(v => !v)}
+                  isExpanded={suiteOpen}
+                  aria-label="Select Ubuntu codename"
+                  style={{ width: "100%" }}
+                >
+                  {currentSuiteLabel}
+                </MenuToggle>
+              )}
+            >
+              <SelectList>
+                {UBUNTU_CODENAMES.map(c => (
+                  <SelectOption key={c.value} value={c.value}>{c.label}</SelectOption>
+                ))}
+                <SelectOption key="_custom" value="_custom">Custom…</SelectOption>
+              </SelectList>
+            </Select>
+            {suite === "_custom" && (
+              <TextInput
+                id={`${idPrefix}-ppa-suite-custom`}
+                value={customSuite}
+                onChange={(_ev, v) => setCustomSuite(v)}
+                placeholder="e.g. mantic"
+                aria-label="Custom Ubuntu codename"
+                style={{ marginTop: "0.4rem" }}
+              />
+            )}
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem>
+                  The Ubuntu release codename installed on target nodes.
+                </HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          </FormGroup>
+
+          <LiveAlert
+            message={fetchError}
+            variant="danger"
+            style={{ marginTop: "0.25rem" }}
+          />
+        </Form>
+      </ModalBody>
+      <ModalFooter>
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          isDisabled={!canSubmit}
+          isLoading={fetchState === "fetching"}
+          icon={fetchState === "fetching" ? <Spinner size="sm" aria-label="Fetching PPA info" /> : undefined}
+        >
+          {fetchState === "fetching" ? "Fetching…" : "Add PPA"}
+        </Button>
+        <Button variant="link" onClick={handleClose} isDisabled={fetchState === "fetching"}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+};
+
 /* ── main component ── */
 
 export interface PackagePolicyEditorProps {
@@ -528,6 +771,9 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
   const idPrefix = useId();
   const [activeTab, setActiveTab] = useState<string | number>(0);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [ppaModalOpen, setPPAModalOpen] = useState(false);
+  const [ppaWarning, setPPAWarning] = useState<string | null>(null);
+  const ppaButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const content = (() => {
     try {
@@ -556,6 +802,11 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
   const updateRepo = (idx: number, patch: Partial<RepoEntry>) =>
     pushChange({ ...content, repositories: repos.map((r, i) => (i === idx ? { ...r, ...patch } : r)) });
 
+  const handlePPAAdd = (repo: RepoEntry, warning?: string) => {
+    pushChange({ ...content, repositories: [...repos, repo] });
+    setPPAWarning(warning ?? null);
+  };
+
   /* ── pkg handlers ── */
 
   const addPkg = () => pushChange({ ...content, packages: [...pkgs, { ...DEFAULT_PKG }] });
@@ -576,6 +827,11 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
         {/* ── Repositories tab ── */}
         <Tab eventKey={0} title={<TabTitleText>Repositories ({repos.length})</TabTitleText>}>
           <div style={{ paddingTop: "1rem" }}>
+            <LiveAlert
+              message={ppaWarning}
+              variant="warning"
+              style={{ marginBottom: "1rem" }}
+            />
             {repos.length === 0 && (
               <p style={{ color: "var(--pf-t--global--text--color--subtle)", marginBottom: "1rem" }}>
                 No repositories defined. Packages will be installed from the node&apos;s existing package sources.
@@ -592,14 +848,32 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
                 idPrefix={`${idPrefix}-repo-${idx}`}
               />
             ))}
-            <Button
-              variant="secondary"
-              icon={<PlusCircleIcon />}
-              onClick={addRepo}
-              isDisabled={isDisabled}
-            >
-              Add Repository
-            </Button>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <Button
+                variant="secondary"
+                icon={<PlusCircleIcon />}
+                onClick={addRepo}
+                isDisabled={isDisabled}
+              >
+                Add Repository
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => { setPPAWarning(null); setPPAModalOpen(true); }}
+                isDisabled={isDisabled}
+                ref={ppaButtonRef}
+                aria-haspopup="dialog"
+              >
+                Add Ubuntu PPA…
+              </Button>
+            </div>
+
+            <AddPPAModal
+              isOpen={ppaModalOpen}
+              onClose={() => setPPAModalOpen(false)}
+              onAdd={handlePPAAdd}
+              triggerRef={ppaButtonRef}
+            />
           </div>
         </Tab>
 
