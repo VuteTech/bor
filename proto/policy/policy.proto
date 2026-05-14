@@ -9,6 +9,7 @@ import "chrome.proto";
 import "dconf.proto";
 import "firefox.proto";
 import "kconfig.proto";
+import "package.proto";
 import "polkit.proto";
 
 // PolicyService manages desktop policies
@@ -80,11 +81,12 @@ message Policy {
   // Typed policy content — populated by the server for gRPC transport.
   // The string content field (5) is kept for REST API compatibility.
   oneof typed_content {
-    FirefoxPolicy firefox_policy = 10;
-    KConfigPolicy kconfig_policy = 11;
-    ChromePolicy  chrome_policy  = 12;
-    DConfPolicy   dconf_policy   = 13;
-    PolkitPolicy  polkit_policy  = 15;
+    FirefoxPolicy  firefox_policy  = 10;
+    KConfigPolicy  kconfig_policy  = 11;
+    ChromePolicy   chrome_policy   = 12;
+    DConfPolicy    dconf_policy    = 13;
+    PolkitPolicy   polkit_policy   = 15;
+    PackagePolicy  package_policy  = 16;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

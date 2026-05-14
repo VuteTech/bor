@@ -43,6 +43,7 @@ import type { Policy, CreatePolicyRequest, UpdatePolicyRequest } from "../../api
 import { createPolicy, updatePolicy, setPolicyState, deletePolicy } from "../../apiClient/policiesApi";
 import type { FirefoxPolicy } from "../../generated/proto/firefox";
 import { DConfPolicyEditor } from "./DConfPolicyEditor";
+import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
 
 /* ── Known policy types and their config schemas ── */
@@ -53,6 +54,7 @@ const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Firefox", label: "Firefox" },
   { value: "Polkit", label: "Polkit" },
   { value: "Chrome", label: "Chrome" },
+  { value: "Package", label: "Package" },
 ];
 
 interface PolicyTypeConfig {
@@ -1202,6 +1204,26 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
     return rows;
   }
 
+  if (policyType === "Package") {
+    const pkgContent = raw as { repositories?: { id?: string; type?: string; enabled?: boolean }[]; packages?: { name?: string; state?: string; version?: string }[]; updateCache?: boolean; allowDowngrade?: boolean };
+    const pkgRepos = Array.isArray(pkgContent?.repositories) ? pkgContent.repositories : [];
+    const pkgPkgs  = Array.isArray(pkgContent?.packages)     ? pkgContent.packages     : [];
+    rows.push({ setting: "Repositories", value: `${pkgRepos.length} defined`, locked: null });
+    for (const repo of pkgRepos) {
+      const typeShort = (repo.type ?? "").replace("REPOSITORY_TYPE_", "");
+      rows.push({ setting: `  Repo › ${repo.id ?? "(unnamed)"}`, value: `${typeShort}${repo.enabled === false ? " (disabled)" : ""}`, locked: null });
+    }
+    for (const pkg of pkgPkgs) {
+      const stateShort = (pkg.state ?? "").replace("PACKAGE_STATE_", "").toLowerCase();
+      const versionPart = pkg.version ? ` @ ${pkg.version}` : "";
+      rows.push({ setting: `Package › ${pkg.name ?? "(unnamed)"}`, value: stateShort + versionPart, locked: null });
+    }
+    if (pkgContent.updateCache !== undefined) {
+      rows.push({ setting: "Options › Refresh cache", value: pkgContent.updateCache ? "yes" : "no", locked: null });
+    }
+    return rows;
+  }
+
   // Known structured types (Polkit, Chrome)
   const config = TYPE_CONFIGS[policyType];
   if (config) {
@@ -1478,6 +1500,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setChromeExpandedGroups(new Set());
     } else if (newType === "Dconf") {
       setContentRaw(JSON.stringify({ entries: [], db_name: "local" }, null, 2));
+    } else if (newType === "Package") {
+      setContentRaw(JSON.stringify({ repositories: [], packages: [], updateCache: true, allowDowngrade: false }, null, 2));
     } else {
       setStructuredFieldsList([{}]);
       setContentRaw(JSON.stringify([{}], null, 2));
@@ -3111,6 +3135,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       return (
         <div style={{ padding: "1rem 0" }}>
           <PolkitPolicyEditor
+            contentRaw={contentRaw}
+            onChange={(newRaw) => { setContentRaw(newRaw); }}
+            isDisabled={!isEditable}
+          />
+        </div>
+      );
+    }
+    if (policyType === "Package") {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          <PackagePolicyEditor
             contentRaw={contentRaw}
             onChange={(newRaw) => { setContentRaw(newRaw); }}
             isDisabled={!isEditable}

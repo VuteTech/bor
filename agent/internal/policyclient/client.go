@@ -110,6 +110,7 @@ type PolicyInfo struct {
 	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
 	DConfPolicy   *pb.DConfPolicy   // populated from typed_content for Dconf type
 	PolkitPolicy  *pb.PolkitPolicy  // populated from typed_content for Polkit type
+	PackagePolicy *pb.PackagePolicy // populated from typed_content for Package type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -297,6 +298,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if pkp := p.GetPolkitPolicy(); pkp != nil {
 				pi.PolkitPolicy = pkp
+			}
+			if pkgp := p.GetPackagePolicy(); pkgp != nil {
+				pi.PackagePolicy = pkgp
 			}
 		}
 

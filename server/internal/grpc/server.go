@@ -545,6 +545,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		} else {
 			pol.TypedContent = &pb.Policy_PolkitPolicy{PolkitPolicy: &pkPol}
 		}
+	case "Package":
+		var pkgPol pb.PackagePolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &pkgPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Package typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_PackagePolicy{PackagePolicy: &pkgPol}
+		}
 	}
 
 	return pol

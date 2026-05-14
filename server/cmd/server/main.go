@@ -325,6 +325,9 @@ func main() {
 	dconfHandler := api.NewDConfHandler(dconfRepo)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
+	ppaHandler := api.NewPPAInfoHandler()
+	ympHandler := api.NewYMPImportHandler()
+	coprHandler := api.NewCOPRInfoHandler()
 
 	// Wire policy and binding change notifications to the hub.
 	// Only agents whose node groups are affected by the change are signalled.
@@ -473,6 +476,15 @@ func main() {
 
 	// Polkit action catalogue — readable by anyone with policy:view
 	mux.Handle("/api/v1/polkit/actions", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(polkitHandler.ListActions))))
+
+	// Ubuntu PPA info proxy — avoids browser CORS when fetching from Launchpad/keyserver
+	mux.Handle("/api/v1/ppa-info", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(ppaHandler.ServeHTTP))))
+
+	// OpenSUSE .ymp (1-click install) parser — extracts repos/packages from uploaded file
+	mux.Handle("/api/v1/ymp-import", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(ympHandler.ServeHTTP))))
+
+	// Fedora COPR proxy — resolves chroot baseurl and signing key server-side
+	mux.Handle("/api/v1/copr-info", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(coprHandler.ServeHTTP))))
 
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))

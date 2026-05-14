@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/VuteTech/Bor/agent/internal/procinfo"
 	"github.com/VuteTech/Bor/agent/internal/sysinfo"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"github.com/godbus/dbus/v5"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -124,6 +126,43 @@ var polkitSnapshotStaging map[string]polkitCacheEntry
 // polkitActionsReported tracks whether the polkit action catalogue has been
 // reported to the server in this agent session.
 var polkitActionsReported bool
+
+// packageNotifier handles desktop notifications for Package policy changes.
+var packageNotifier = notify.New()
+
+// packageNotifyConfig holds Package-specific notification settings.
+var packageNotifyConfig = notify.Config{
+	Enabled:  true,
+	Cooldown: 5 * time.Minute,
+	Message:  "Package policies have been updated. Some system packages may have been installed, removed, or updated.",
+}
+
+// packageCacheEntry holds a PackagePolicy alongside its binding priority and name.
+type packageCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.PackagePolicy
+}
+
+// packageCache maps policy ID → PackagePolicy + priority for all active Package policies.
+var packageCache = make(map[string]packageCacheEntry)
+
+// packageSnapshotStaging accumulates Package policies during a SNAPSHOT.
+var packageSnapshotStaging map[string]packageCacheEntry
+
+// pkgSyncMu ensures only one package sync (which may invoke PackageKit installs)
+// runs at a time. Package operations can take minutes; we must not block the
+// gRPC stream goroutine.
+var pkgSyncMu sync.Mutex
+
+// pkDBusConn is the system D-Bus connection used for all PackageKit calls.
+// Opened once at startup; nil when D-Bus is not available.
+var pkDBusConn *dbus.Conn
+
+// repoFormat is the detected package manager's repository file format.
+// Detected once at startup from /etc/os-release + binary presence.
+var repoFormat policy.RepoFormat
 
 // fileWatcher monitors Bor-managed files and restores them when modified externally.
 var fileWatcher *filewatcher.FileWatcher
@@ -309,6 +348,26 @@ To follow the agent logs:
 		log.Println("File watcher started")
 	}
 
+	// Detect package manager repo format once at startup.
+	repoFormat = policy.DetectRepoFormat()
+	if repoFormat == policy.RepoFormatUnknown {
+		log.Println("Warning: no supported package manager detected; Package policies will be INAPPLICABLE on this node")
+	}
+
+	// Open D-Bus system connection for PackageKit operations.
+	var dbusErr error
+	pkDBusConn, dbusErr = dbus.ConnectSystemBus()
+	if dbusErr != nil {
+		log.Printf("Warning: failed to connect to D-Bus system bus (%v); Package policies will be INAPPLICABLE", dbusErr)
+	} else {
+		defer func() { _ = pkDBusConn.Close() }()
+		if !policy.IsPackageKitAvailable(pkDBusConn) {
+			log.Println("Warning: PackageKit service not available on D-Bus; Package policies will be INAPPLICABLE")
+		} else {
+			log.Println("PackageKit available on D-Bus")
+		}
+	}
+
 	// Run the policy enforcement loop — prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
@@ -351,6 +410,11 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 				Enabled:  agentCfg.NotifyUsers,
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  agentCfg.NotifyMessageChrome,
+			}
+			packageNotifyConfig = notify.Config{
+				Enabled:  agentCfg.NotifyUsers,
+				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
+				Message:  packageNotifyConfig.Message,
 			}
 		}
 
@@ -459,11 +523,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				dconfSnapshotStaging = nil
 				polkitCache = make(map[string]polkitCacheEntry)
 				polkitSnapshotStaging = nil
+				packageCache = make(map[string]packageCacheEntry)
+				packageSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
 				syncAllChrome(ctx, client, cfg)
 				syncAllDConf(ctx, client, cfg)
 				syncAllPolkit(ctx, client, cfg)
+				go triggerPackageSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -509,6 +576,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				polkitSnapshotStaging = make(map[string]polkitCacheEntry)
 			}
 			polkitSnapshotStaging[pi.ID] = polkitCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PolkitPolicy}
+		case "Package":
+			if packageSnapshotStaging == nil {
+				packageSnapshotStaging = make(map[string]packageCacheEntry)
+			}
+			packageSnapshotStaging[pi.ID] = packageCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PackagePolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -560,11 +632,20 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			polkitSnapshotStaging = nil
 
+			// Swap Package staging into cache.
+			if packageSnapshotStaging != nil {
+				packageCache = packageSnapshotStaging
+			} else {
+				packageCache = make(map[string]packageCacheEntry)
+			}
+			packageSnapshotStaging = nil
+
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
 			syncAllChrome(ctx, client, cfg)
 			syncAllDConf(ctx, client, cfg)
 			syncAllPolkit(ctx, client, cfg)
+			go triggerPackageSync(ctx, client, cfg)
 
 			if *postInitialSync {
 				// Resync from a live admin change — notify if content changed.
@@ -610,6 +691,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "Polkit":
 			polkitCache[pi.ID] = polkitCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PolkitPolicy}
 			syncAllPolkit(ctx, client, cfg)
+		case "Package":
+			packageCache[pi.ID] = packageCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PackagePolicy}
+			go triggerPackageSync(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -644,6 +728,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := polkitCache[pi.ID]; ok {
 			delete(polkitCache, pi.ID)
 			syncAllPolkit(ctx, client, cfg)
+		} else if _, ok := packageCache[pi.ID]; ok {
+			delete(packageCache, pi.ID)
+			go triggerPackageSync(ctx, client, cfg)
 		} else {
 			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
 		}
@@ -1107,6 +1194,116 @@ func syncAllPolkit(ctx context.Context, client *policyclient.Client, cfg *config
 	}
 }
 
+// triggerPackageSync serialises concurrent package sync requests. Because
+// package operations (installs/removals) can take minutes, they must not
+// block the gRPC stream goroutine. Multiple concurrent triggers are coalesced:
+// if a sync is already running, the mutex will queue the next caller, and
+// that caller will pick up the latest cache state when it acquires the lock.
+func triggerPackageSync(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	pkgSyncMu.Lock()
+	defer pkgSyncMu.Unlock()
+	syncAllPackages(ctx, client, cfg)
+}
+
+// syncAllPackages enforces all active PackagePolicy entries in two phases:
+//  1. Repository files (fast, file I/O) — written and compliance-reported immediately.
+//  2. Package state via PackageKit D-Bus (slow) — reported after operations complete.
+func syncAllPackages(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	// Snapshot the cache under a short-lived read — the global maps are only
+	// mutated by the stream goroutine, which never blocks on pkgSyncMu.
+	entries := make([]packageCacheEntry, 0, len(packageCache))
+	for _, e := range packageCache {
+		entries = append(entries, e)
+	}
+	// Sort ascending by priority so higher-priority entries overwrite lower
+	// during merge (last-writer-wins semantics).
+	slices.SortStableFunc(entries, func(a, b packageCacheEntry) int {
+		return cmp.Compare(a.priority, b.priority)
+	})
+
+	policies := make([]*pb.PackagePolicy, 0, len(entries))
+	for _, e := range entries {
+		policies = append(policies, e.policy)
+	}
+
+	// ── Phase 1: Repositories ────────────────────────────────────────────
+	repoEntries := policy.MergePackageRepos(policies)
+	existingRepoPaths, _ := policy.ListBorManagedRepoFiles(repoFormat)
+	desiredRepoPaths := policy.DesiredRepoPaths(repoFormat, repoEntries)
+
+	allRepoPaths := append(desiredRepoPaths, existingRepoPaths...) //nolint:gocritic // append to new slice is correct
+	suppressManagedWrites(cfg, allRepoPaths...)
+	defer updateWatcher(cfg)
+
+	updateCache := len(policies) > 0 && policies[len(policies)-1].GetUpdateCache()
+	_, repoItems, repoErr := policy.SyncAllRepos(ctx, pkDBusConn, repoFormat, repoEntries, updateCache)
+
+	// Report repo compliance immediately (packages may take a while).
+	repoProtoItems := packageItemsToProto(repoItems)
+	repoStatus, repoMsg := policy.RollupPackageCompliance(repoItems)
+	if repoErr != nil {
+		repoStatus = pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR
+		repoMsg = repoErr.Error()
+	}
+	for _, e := range entries {
+		_ = client.ReportComplianceWithStatus(ctx, e.id, repoStatus, repoMsg, repoProtoItems)
+	}
+
+	// ── Phase 2: Packages via PackageKit ─────────────────────────────────
+	if pkDBusConn == nil || !policy.IsPackageKitAvailable(pkDBusConn) {
+		msg := "PackageKit service not available on this node"
+		pkgItems := []*pb.ComplianceItemResult{{
+			SchemaId: "package:packagekit",
+			Key:      "availability",
+			Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+			Message:  msg,
+		}}
+		for _, e := range entries {
+			_ = client.ReportComplianceWithStatus(ctx, e.id,
+				pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, msg, pkgItems)
+		}
+		return
+	}
+
+	pkgEntries := policy.MergePackageEntries(policies)
+	pkgOpts := policy.PackageOptions{
+		AllowDowngrade: len(policies) > 0 && policies[len(policies)-1].GetAllowDowngrade(),
+	}
+
+	pkgCtx, pkgCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer pkgCancel()
+	pkgItems := policy.ApplyPackages(pkgCtx, pkDBusConn, pkgEntries, pkgOpts)
+
+	// Combine repo + package items for the final compliance report.
+	allItems := make([]policy.ComplianceItem, 0, len(repoItems)+len(pkgItems))
+	allItems = append(allItems, repoItems...)
+	allItems = append(allItems, pkgItems...)
+	allProtoItems := packageItemsToProto(allItems)
+	overallStatus, overallMsg := policy.RollupPackageCompliance(allItems)
+	log.Printf("Package policies synced (%d policies, %d repos, %d packages)", len(entries), len(repoEntries), len(pkgEntries))
+	for _, e := range entries {
+		_ = client.ReportComplianceWithStatus(ctx, e.id, overallStatus, overallMsg, allProtoItems)
+	}
+
+	if len(entries) > 0 {
+		packageNotifier.ScheduleNotification(packageNotifyConfig, map[string]bool{"packages": true})
+	}
+}
+
+// packageItemsToProto converts ComplianceItem slice to proto ComplianceItemResult slice.
+func packageItemsToProto(items []policy.ComplianceItem) []*pb.ComplianceItemResult {
+	result := make([]*pb.ComplianceItemResult, 0, len(items))
+	for _, it := range items {
+		result = append(result, &pb.ComplianceItemResult{
+			SchemaId: it.Key,
+			Key:      it.Key,
+			Status:   it.Status,
+			Message:  it.Message,
+		})
+	}
+	return result
+}
+
 // polkitRuleKey returns a short, stable key for a rule description
 // suitable for use in the schema_id field of a ComplianceItemResult.
 func polkitRuleKey(desc string) string {
@@ -1158,6 +1355,25 @@ func rollupProtoItems(items []*pb.ComplianceItemResult, fallbackStatus pb.Compli
 	default:
 		return pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, ""
 	}
+}
+
+// isBorManagedRepoPath returns true when path is a Bor-managed repository or
+// GPG key file in one of the known package manager directories.
+func isBorManagedRepoPath(path string) bool {
+	base := filepath.Base(path)
+	if !strings.HasPrefix(base, "bor-") {
+		return false
+	}
+	dir := filepath.Dir(path)
+	switch dir {
+	case "/etc/apt/sources.list.d",
+		"/etc/apt/trusted.gpg.d",
+		"/etc/yum.repos.d",
+		"/etc/zypp/repos.d",
+		"/etc/pki/rpm-gpg":
+		return true
+	}
+	return false
 }
 
 // detectGNOMEVersion tries to determine the installed GNOME version.
@@ -1265,6 +1481,11 @@ func getManagedPaths(cfg *config.Config) []string {
 		paths = append(paths, polkitFiles...)
 	}
 
+	// Package repos: all bor-* files in the package manager's repo directories.
+	if repoPaths, err := policy.ListBorManagedRepoFiles(repoFormat); err == nil {
+		paths = append(paths, repoPaths...)
+	}
+
 	return paths
 }
 
@@ -1315,6 +1536,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllPolkit(ctx, client, cfg)
 	case filepath.Base(path) == policy.ChromeManagedFilename:
 		syncAllChrome(ctx, client, cfg)
+	case isBorManagedRepoPath(path):
+		go triggerPackageSync(ctx, client, cfg)
 	default:
 		log.Printf("Tamper protection: unrecognised managed path %s — no restore action taken", path)
 	}
