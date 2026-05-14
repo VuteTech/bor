@@ -1,0 +1,138 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// RepositoryType selects the target file format and directory on the agent node.
+enum RepositoryType {
+  REPOSITORY_TYPE_UNSPECIFIED = 0;
+  // APT deb822 format → /etc/apt/sources.list.d/bor-<id>.sources
+  REPOSITORY_TYPE_APT_DEB822  = 1;
+  // DNF/YUM INI format → /etc/yum.repos.d/bor-<id>.repo
+  REPOSITORY_TYPE_DNF         = 2;
+  // Zypper INI format → /etc/zypp/repos.d/bor-<id>.repo
+  REPOSITORY_TYPE_ZYPPER      = 3;
+}
+
+// PackageState mirrors Ansible's state field for idempotent package management.
+enum PackageState {
+  PACKAGE_STATE_UNSPECIFIED = 0;
+  // Package must be installed at any version (or the pinned version if set).
+  PACKAGE_STATE_PRESENT     = 1;
+  // Package must not be installed.
+  PACKAGE_STATE_ABSENT      = 2;
+  // Package must be installed at the latest available version.
+  PACKAGE_STATE_LATEST      = 3;
+}
+
+// RepositoryEntry describes one package repository source to be managed on
+// the agent node. Repository files are named bor-<id>.{sources,repo} and
+// written by the agent; the file watcher restores them if tampered.
+message RepositoryEntry {
+  // Unique identifier within the policy — used as the filename stem.
+  // Must match ^[a-z0-9][a-z0-9_-]*$
+  string id = 1;
+
+  // Human-readable label written as a comment in the generated file.
+  string name = 2;
+
+  // Target file format and package manager.
+  RepositoryType type = 3;
+
+  // Whether the repository is active. false writes enabled=0 / Enabled: no
+  // rather than deleting the file, so the admin can re-enable it easily.
+  bool enabled = 4;
+
+  // ── APT (deb822) fields ────────────────────────────────────────────────
+
+  // Repository URI, e.g. "https://packages.example.com/apt"
+  string apt_uri = 10;
+
+  // Distribution suite, e.g. "bookworm" or "jammy"
+  string apt_suites = 11;
+
+  // Space-separated components, e.g. "main contrib non-free"
+  string apt_components = 12;
+
+  // Comma-separated architecture restriction, e.g. "amd64,arm64". Empty = all.
+  string apt_architectures = 13;
+
+  // ── DNF / Zypper fields ────────────────────────────────────────────────
+
+  // Base URL. For DNF this may be multiple newline-separated mirrors.
+  string baseurl = 20;
+
+  // DNF mirrorlist URL. Mutually exclusive with baseurl.
+  string mirrorlist = 21;
+
+  // DNF: metadata expiry in seconds. 0 uses the backend default (21600).
+  int32 metadata_expire = 22;
+
+  // Zypper: repository priority (1=highest … 99=lowest). 0 uses default (99).
+  int32 zypper_priority = 23;
+
+  // ── GPG / signing fields (all types) ──────────────────────────────────
+
+  // Require package signature verification. Strongly recommended; set to
+  // false only when the upstream repo does not sign packages. Setting false
+  // generates a NON_COMPLIANT compliance item as a persistent reminder.
+  bool gpg_check = 30;
+
+  // Full 40-character hex fingerprint of the signing key, used to verify
+  // the imported key matches what the admin intended. Fingerprints shorter
+  // than 40 chars (MD5/SHA-1) are rejected server-side (FIPS 140-3).
+  string gpg_key_id = 31;
+
+  // Binary GPG public key (base64-encoded in JSON transport).
+  //   APT:         written to /etc/apt/trusted.gpg.d/bor-<id>.gpg
+  //   DNF/Zypper:  written to /etc/pki/rpm-gpg/bor-<id>.gpg and
+  //                referenced via gpgkey=file:// in the .repo file.
+  bytes gpg_key_data = 32;
+}
+
+// PackageEntry declares the desired installation state of a single package.
+// The name is resolved by PackageKit on each node — a single policy covers
+// all supported package managers (APT, DNF, Zypper) without per-distro variants.
+message PackageEntry {
+  // Package name as recognised by the local package database.
+  string name = 1;
+
+  // Desired installation state.
+  PackageState state = 2;
+
+  // Optional version pin. Only meaningful with state=PRESENT; ignored for
+  // ABSENT and LATEST. The agent checks the installed version against this
+  // value and reports NON_COMPLIANT if they differ.
+  string version = 3;
+
+  // When true, a package that cannot be found in any enabled repository
+  // maps to INAPPLICABLE rather than NON_COMPLIANT. Use for optional
+  // software that may not be available on all distributions.
+  bool optional = 4;
+}
+
+// PackagePolicy manages package repositories and package installation state.
+// Repositories are always applied before packages. Both sections are
+// optional — a policy may contain only repositories, only packages, or both.
+message PackagePolicy {
+  // Repository entries to manage. Applied and written as files before
+  // package operations begin. Deduplicated by id when merging.
+  repeated RepositoryEntry repositories = 1;
+
+  // Package entries to manage via PackageKit D-Bus. Deduplicated by name
+  // when merging; higher-priority policy wins for state and version.
+  repeated PackageEntry packages = 2;
+
+  // Call PackageKit RefreshCache after writing repository files so that
+  // newly added repos are immediately available for package resolution.
+  // Default true; set false only when cache is managed externally.
+  bool update_cache = 3;
+
+  // Allow PackageKit to downgrade an installed package to meet a version pin.
+  bool allow_downgrade = 4;
+}

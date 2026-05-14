@@ -248,6 +248,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateChromeContent(content)
 	case "Dconf":
 		return ValidateDConfPolicy(content)
+	case "Package":
+		return ValidatePackagePolicy(content)
 	}
 	return nil
 }
