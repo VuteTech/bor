@@ -42,6 +42,7 @@ import { Table, Thead, Tbody, Tr, Th, Td } from "@patternfly/react-table";
 import type { Policy, CreatePolicyRequest, UpdatePolicyRequest } from "../../apiClient/policiesApi";
 import { createPolicy, updatePolicy, setPolicyState, deletePolicy } from "../../apiClient/policiesApi";
 import type { FirefoxPolicy } from "../../generated/proto/firefox";
+import type { ThunderbirdPolicy } from "../../generated/proto/thunderbird";
 import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
@@ -52,6 +53,7 @@ const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Kconfig", label: "Kconfig" },
   { value: "Dconf", label: "Dconf" },
   { value: "Firefox", label: "Firefox" },
+  { value: "Thunderbird", label: "Thunderbird" },
   { value: "Polkit", label: "Polkit" },
   { value: "Chrome", label: "Chrome" },
   { value: "Package", label: "Package" },
@@ -192,6 +194,101 @@ const FIREFOX_ALL_POLICIES: FirefoxPolicyDef[] = [
 function buildFirefoxTree(): Map<string, FirefoxPolicyDef[]> {
   const groups = new Map<string, FirefoxPolicyDef[]>();
   for (const p of FIREFOX_ALL_POLICIES) {
+    const arr = groups.get(p.group) || [];
+    arr.push(p);
+    groups.set(p.group, arr);
+  }
+  return groups;
+}
+
+/* ── Thunderbird policy model (matches Protobuf schema) ── */
+
+interface ThunderbirdPolicyDef {
+  key: keyof ThunderbirdPolicy;
+  label: string;
+  group: string;
+  type: "boolean" | "string" | "select" | "object" | "stringlist";
+  selectOptions?: string[];
+  objectFields?: { key: string; label: string; fieldType: "boolean" | "string" | "select" | "stringlist"; selectOptions?: string[] }[];
+}
+
+const THUNDERBIRD_ALL_POLICIES: ThunderbirdPolicyDef[] = [
+  // Updates
+  { key: "DisableAppUpdate", label: "Disable App Update", group: "Updates", type: "boolean" },
+  { key: "AppAutoUpdate", label: "App Auto Update", group: "Updates", type: "boolean" },
+  { key: "BackgroundAppUpdate", label: "Background App Update", group: "Updates", type: "boolean" },
+  { key: "ManualAppUpdateOnly", label: "Manual App Update Only", group: "Updates", type: "boolean" },
+  { key: "AppUpdatePin", label: "App Update Pin Version", group: "Updates", type: "string" },
+  { key: "AppUpdateURL", label: "App Update URL", group: "Updates", type: "string" },
+  // Privacy & Telemetry
+  { key: "DisableTelemetry", label: "Disable Telemetry", group: "Privacy & Telemetry", type: "boolean" },
+  // Security
+  { key: "DisablePasswordReveal", label: "Disable Password Reveal", group: "Security", type: "boolean" },
+  { key: "DisableMasterPasswordCreation", label: "Disable Master Password Creation", group: "Security", type: "boolean" },
+  { key: "PrimaryPassword", label: "Require Primary Password", group: "Security", type: "boolean" },
+  { key: "PasswordManagerEnabled", label: "Enable Password Manager", group: "Security", type: "boolean" },
+  { key: "OfferToSaveLogins", label: "Offer to Save Logins", group: "Security", type: "boolean" },
+  { key: "OfferToSaveLoginsDefault", label: "Offer to Save Logins (Default)", group: "Security", type: "boolean" },
+  { key: "DisableSecurityBypass", label: "Disable Security Bypass", group: "Security", type: "boolean" },
+  { key: "SSLVersionMin", label: "SSL Version Minimum", group: "Security", type: "select", selectOptions: ["tls1", "tls1.1", "tls1.2", "tls1.3"] },
+  { key: "SSLVersionMax", label: "SSL Version Maximum", group: "Security", type: "select", selectOptions: ["tls1", "tls1.1", "tls1.2", "tls1.3"] },
+  // Restrictions
+  { key: "BlockAboutAddons", label: "Block about:addons", group: "Restrictions", type: "boolean" },
+  { key: "BlockAboutConfig", label: "Block about:config", group: "Restrictions", type: "boolean" },
+  { key: "BlockAboutProfiles", label: "Block about:profiles", group: "Restrictions", type: "boolean" },
+  { key: "BlockAboutSupport", label: "Block about:support", group: "Restrictions", type: "boolean" },
+  { key: "DisableSafeMode", label: "Disable Safe Mode", group: "Restrictions", type: "boolean" },
+  // Developer Tools
+  { key: "DisableDeveloperTools", label: "Disable Developer Tools", group: "Developer Tools", type: "boolean" },
+  // Add-ons
+  { key: "DisableSystemAddonUpdate", label: "Disable System Add-on Updates", group: "Add-ons", type: "boolean" },
+  { key: "ExtensionUpdate", label: "Allow Extension Updates", group: "Add-ons", type: "boolean" },
+  { key: "Extensions", label: "Extensions", group: "Add-ons", type: "object", objectFields: [
+    { key: "Install", label: "Install (URLs or extension IDs)", fieldType: "stringlist" },
+    { key: "Uninstall", label: "Uninstall (extension IDs)", fieldType: "stringlist" },
+    { key: "Locked", label: "Locked (extension IDs)", fieldType: "stringlist" },
+  ]},
+  // Network
+  { key: "HardwareAcceleration", label: "Enable Hardware Acceleration", group: "Network", type: "boolean" },
+  { key: "NetworkPrediction", label: "Enable Network Prediction", group: "Network", type: "boolean" },
+  { key: "CaptivePortal", label: "Enable Captive Portal Detection", group: "Network", type: "boolean" },
+  { key: "DNSOverHTTPS", label: "DNS over HTTPS", group: "Network", type: "object", objectFields: [
+    { key: "Enabled", label: "Enabled", fieldType: "boolean" },
+    { key: "ProviderURL", label: "Provider URL", fieldType: "string" },
+    { key: "Locked", label: "Locked", fieldType: "boolean" },
+    { key: "Fallback", label: "Fallback", fieldType: "boolean" },
+    { key: "ExcludedDomains", label: "Excluded Domains", fieldType: "stringlist" },
+  ]},
+  // General
+  { key: "PromptForDownloadLocation", label: "Prompt for Download Location", group: "General", type: "boolean" },
+  { key: "DefaultDownloadDirectory", label: "Default Download Directory", group: "General", type: "string" },
+  { key: "DownloadDirectory", label: "Download Directory", group: "General", type: "string" },
+  { key: "DisableBuiltinPDFViewer", label: "Disable Built-in PDF Viewer", group: "General", type: "boolean" },
+  { key: "RequestedLocales", label: "Requested Locales", group: "General", type: "stringlist" },
+  // Cookies
+  { key: "Cookies", label: "Cookies", group: "Cookies", type: "object", objectFields: [
+    { key: "Behavior", label: "Behavior", fieldType: "select", selectOptions: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"] },
+    { key: "BehaviorPrivateBrowsing", label: "Behavior (Private Browsing)", fieldType: "select", selectOptions: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"] },
+    { key: "Allow", label: "Allow Origins", fieldType: "stringlist" },
+    { key: "Block", label: "Block Origins", fieldType: "stringlist" },
+    { key: "AllowSession", label: "Allow Session Origins", fieldType: "stringlist" },
+    { key: "Locked", label: "Locked", fieldType: "boolean" },
+  ]},
+  // Authentication
+  { key: "Authentication", label: "Authentication", group: "Authentication", type: "object", objectFields: [
+    { key: "SPNEGO", label: "SPNEGO Hosts", fieldType: "stringlist" },
+    { key: "Delegated", label: "Delegated Hosts", fieldType: "stringlist" },
+    { key: "NTLM", label: "NTLM Hosts", fieldType: "stringlist" },
+    { key: "AllowNonFQDN", label: "Allow Non-FQDN", fieldType: "boolean" },
+    { key: "AllowProxies", label: "Allow Proxies", fieldType: "boolean" },
+    { key: "Locked", label: "Locked", fieldType: "boolean" },
+  ]},
+];
+
+// Build category groups for the Thunderbird tree view.
+function buildThunderbirdTree(): Map<string, ThunderbirdPolicyDef[]> {
+  const groups = new Map<string, ThunderbirdPolicyDef[]>();
+  for (const p of THUNDERBIRD_ALL_POLICIES) {
     const arr = groups.get(p.group) || [];
     arr.push(p);
     groups.set(p.group, arr);
@@ -1110,6 +1207,36 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
     return rows;
   }
 
+  if (policyType === "Thunderbird") {
+    const parsed = raw as Record<string, unknown>;
+    for (const policyDef of THUNDERBIRD_ALL_POLICIES) {
+      if (!(policyDef.key in parsed)) continue;
+      const val = parsed[policyDef.key];
+
+      if (policyDef.type === "object" && typeof val === "object" && val !== null) {
+        const objVal = val as Record<string, unknown>;
+        const lockedVal = "Locked" in objVal
+          ? (objVal["Locked"] === true ? "Yes" : "No")
+          : null;
+        for (const field of policyDef.objectFields || []) {
+          if (field.key === "Locked") continue;
+          rows.push({
+            setting: `${policyDef.label} › ${field.label}`,
+            value: formatDisplayValue(objVal[field.key]),
+            locked: lockedVal,
+          });
+        }
+      } else {
+        rows.push({
+          setting: policyDef.label,
+          value: formatDisplayValue(val),
+          locked: null,
+        });
+      }
+    }
+    return rows;
+  }
+
   if (policyType === "Chrome") {
     const parsed = raw as Record<string, unknown>;
     for (const policyDef of CHROME_ALL_POLICIES) {
@@ -1333,6 +1460,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const [firefoxValue, setFirefoxValue] = useState<unknown>(undefined);
   const [firefoxExpandedGroups, setFirefoxExpandedGroups] = useState<Set<string>>(new Set());
 
+  // Thunderbird-specific state: selected policy key + its value
+  const [thunderbirdSelectedKey, setThunderbirdSelectedKey] = useState<string | null>(null);
+  const [thunderbirdValue, setThunderbirdValue] = useState<unknown>(undefined);
+  const [thunderbirdExpandedGroups, setThunderbirdExpandedGroups] = useState<Set<string>>(new Set());
+
   // KConfig-specific state: selected policy key, value + enforced
   const [kconfigSelectedKey, setKconfigSelectedKey] = useState<string | null>(null);
   const [kconfigValue, setKconfigValue] = useState<string>("");
@@ -1429,6 +1561,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           setChromeValue(undefined);
           setChromeExpandedGroups(new Set());
         }
+      } else if (policy.type === "Thunderbird") {
+        const configuredKeys = detectFirefoxConfiguredKeys(policy.content);
+        if (configuredKeys.length > 0) {
+          setThunderbirdSelectedKey(configuredKeys[0]);
+          setThunderbirdValue(extractFirefoxValue(policy.content, configuredKeys[0]));
+          const groups = new Set<string>();
+          for (const key of configuredKeys) {
+            const def = THUNDERBIRD_ALL_POLICIES.find(p => p.key === key);
+            if (def) groups.add(def.group);
+          }
+          setThunderbirdExpandedGroups(groups);
+        } else {
+          setThunderbirdSelectedKey(null);
+          setThunderbirdValue(undefined);
+          setThunderbirdExpandedGroups(new Set());
+        }
       } else if (policy.type === "Dconf") {
         // Dconf editor reads contentRaw directly — nothing extra to initialise.
       } else if (policy.type === "Polkit") {
@@ -1455,6 +1603,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setFirefoxSelectedKey(null);
       setFirefoxValue(undefined);
       setFirefoxExpandedGroups(new Set());
+      setThunderbirdSelectedKey(null);
+      setThunderbirdValue(undefined);
+      setThunderbirdExpandedGroups(new Set());
       setKconfigSelectedKey(null);
       setKconfigValue("");
       setKconfigEnforced(false);
@@ -1483,6 +1634,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setFirefoxValue(undefined);
       setContentRaw("{}");
       setFirefoxExpandedGroups(new Set());
+    } else if (newType === "Thunderbird") {
+      setThunderbirdSelectedKey(null);
+      setThunderbirdValue(undefined);
+      setContentRaw("{}");
+      setThunderbirdExpandedGroups(new Set());
     } else if (newType === "Kconfig") {
       setKconfigSelectedKey(null);
       setKconfigValue("");
@@ -1519,7 +1675,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     setContentRaw(raw);
     try {
       const parsed = JSON.parse(raw);
-      if (policyType !== "Firefox") {
+      if (policyType !== "Firefox" && policyType !== "Thunderbird") {
         if (Array.isArray(parsed)) {
           setStructuredFieldsList(parsed.map(flattenForForm));
         } else {
@@ -1603,6 +1759,64 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Firefox: toggle a group in the tree
   const toggleFirefoxGroup = (group: string) => {
     setFirefoxExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
+
+  // Thunderbird: select a policy from the tree and set its default value
+  const handleThunderbirdSelectPolicy = (policyDef: ThunderbirdPolicyDef) => {
+    setThunderbirdSelectedKey(policyDef.key);
+    const existing = extractFirefoxValue(contentRaw, policyDef.key);
+    if (existing !== undefined) {
+      setThunderbirdValue(existing);
+    } else {
+      let defaultValue: unknown;
+      if (policyDef.type === "boolean") {
+        defaultValue = true;
+      } else if (policyDef.type === "string") {
+        defaultValue = "";
+      } else if (policyDef.type === "select") {
+        defaultValue = policyDef.selectOptions?.[0] || "";
+      } else if (policyDef.type === "stringlist") {
+        defaultValue = [];
+      } else if (policyDef.type === "object") {
+        const obj: Record<string, unknown> = {};
+        for (const f of policyDef.objectFields || []) {
+          if (f.fieldType === "boolean") obj[f.key] = false;
+          else if (f.fieldType === "string" || f.fieldType === "select") obj[f.key] = "";
+          else if (f.fieldType === "stringlist") obj[f.key] = [];
+        }
+        defaultValue = obj;
+      }
+      setThunderbirdValue(defaultValue);
+      setContentRaw(buildFirefoxContent(policyDef.key, defaultValue, contentRaw));
+    }
+  };
+
+  // Thunderbird: remove a policy from the content
+  const handleThunderbirdRemovePolicy = (key: string) => {
+    const newContent = removeFirefoxContentKey(key, contentRaw);
+    setContentRaw(newContent);
+    if (thunderbirdSelectedKey === key) {
+      setThunderbirdSelectedKey(null);
+      setThunderbirdValue(undefined);
+    }
+  };
+
+  // Thunderbird: update the value for the currently selected policy
+  const updateThunderbirdValue = (newValue: unknown) => {
+    setThunderbirdValue(newValue);
+    if (thunderbirdSelectedKey) {
+      setContentRaw(buildFirefoxContent(thunderbirdSelectedKey, newValue, contentRaw));
+    }
+  };
+
+  // Thunderbird: toggle a group in the tree
+  const toggleThunderbirdGroup = (group: string) => {
+    setThunderbirdExpandedGroups(prev => {
       const next = new Set(prev);
       if (next.has(group)) next.delete(group);
       else next.add(group);
@@ -1760,6 +1974,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           }
         } catch {
           setError("Firefox policy content is not valid JSON");
+          setSaving(false);
+          return;
+        }
+      } else if (policyType === "Thunderbird") {
+        if (thunderbirdSelectedKey) {
+          finalContent = buildFirefoxContent(thunderbirdSelectedKey, thunderbirdValue, contentRaw);
+        }
+        try {
+          const parsed = JSON.parse(finalContent);
+          if (Object.keys(parsed).length === 0) {
+            setError("At least one Thunderbird policy setting must be selected and configured before saving");
+            setSaving(false);
+            return;
+          }
+        } catch {
+          setError("Thunderbird policy content is not valid JSON");
           setSaving(false);
           return;
         }
@@ -2118,6 +2348,230 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderFirefoxPropertyEditor()}
+        </div>
+      </div>
+    );
+  };
+
+  /* ── Thunderbird: property editor for selected policy ── */
+  const renderThunderbirdPropertyEditor = () => {
+    if (!thunderbirdSelectedKey) {
+      return (
+        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+          <Title headingLevel="h3" size="lg">Select a Thunderbird policy</Title>
+          <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
+        </div>
+      );
+    }
+
+    const policyDef = THUNDERBIRD_ALL_POLICIES.find(p => p.key === thunderbirdSelectedKey);
+    if (!policyDef) return null;
+
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "1rem" }}>{policyDef.label}</Title>
+        <Form>
+          {policyDef.type === "boolean" && (
+            <FormGroup label="Value" fieldId="tb-prop-bool">
+              <Switch
+                id="tb-prop-bool"
+                isChecked={thunderbirdValue === true}
+                onChange={(_ev, checked) => updateThunderbirdValue(checked)}
+                label="Enabled"
+                labelOff="Disabled"
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "string" && (
+            <FormGroup label="Value" fieldId="tb-prop-string">
+              <TextInput
+                id="tb-prop-string"
+                value={(thunderbirdValue as string) || ""}
+                onChange={(_ev, val) => updateThunderbirdValue(val)}
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "select" && (
+            <FormGroup label="Value" fieldId="tb-prop-select">
+              <FormSelect
+                id="tb-prop-select"
+                value={(thunderbirdValue as string) || ""}
+                onChange={(_ev, val) => updateThunderbirdValue(val)}
+              >
+                <FormSelectOption key="" value="" label="(not set)" />
+                {(policyDef.selectOptions || []).map(v => (
+                  <FormSelectOption key={v} value={v} label={v} />
+                ))}
+              </FormSelect>
+            </FormGroup>
+          )}
+          {policyDef.type === "stringlist" && (
+            <FormGroup label="Values (one per line)" fieldId="tb-prop-stringlist">
+              <TextArea
+                id="tb-prop-stringlist"
+                value={((thunderbirdValue as string[]) || []).join("\n")}
+                onChange={(_ev, val) => updateThunderbirdValue(val.split("\n").filter(Boolean))}
+                rows={4}
+                placeholder="One item per line"
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "object" && policyDef.objectFields && (
+            <>
+              {policyDef.objectFields.map(field => {
+                const objVal = (thunderbirdValue as Record<string, unknown>) || {};
+                return (
+                  <FormGroup key={field.key} label={field.label} fieldId={`tb-prop-${field.key}`}>
+                    {field.fieldType === "boolean" && (
+                      <Switch
+                        id={`tb-prop-${field.key}`}
+                        isChecked={objVal[field.key] === true}
+                        onChange={(_ev, checked) => updateThunderbirdValue({ ...objVal, [field.key]: checked })}
+                        label="Yes"
+                        labelOff="No"
+                      />
+                    )}
+                    {field.fieldType === "string" && (
+                      <TextInput
+                        id={`tb-prop-${field.key}`}
+                        value={(objVal[field.key] as string) || ""}
+                        onChange={(_ev, val) => updateThunderbirdValue({ ...objVal, [field.key]: val })}
+                      />
+                    )}
+                    {field.fieldType === "select" && (
+                      <FormSelect
+                        id={`tb-prop-${field.key}`}
+                        value={(objVal[field.key] as string) || ""}
+                        onChange={(_ev, val) => updateThunderbirdValue({ ...objVal, [field.key]: val })}
+                      >
+                        <FormSelectOption key="" value="" label="(not set)" />
+                        {(field.selectOptions || []).map(v => (
+                          <FormSelectOption key={v} value={v} label={v} />
+                        ))}
+                      </FormSelect>
+                    )}
+                    {field.fieldType === "stringlist" && (
+                      <TextArea
+                        id={`tb-prop-${field.key}`}
+                        value={((objVal[field.key] as string[]) || []).join("\n")}
+                        onChange={(_ev, val) => updateThunderbirdValue({ ...objVal, [field.key]: val.split("\n").filter(Boolean) })}
+                        rows={3}
+                        placeholder="One item per line"
+                      />
+                    )}
+                  </FormGroup>
+                );
+              })}
+            </>
+          )}
+        </Form>
+      </div>
+    );
+  };
+
+  /* ── Thunderbird: tree view + property editor layout ── */
+  const renderThunderbirdForm = () => {
+    const tree = buildThunderbirdTree();
+    const configuredKeys = detectFirefoxConfiguredKeys(contentRaw);
+
+    return (
+      <div style={{ display: "flex", minHeight: "400px" }}>
+        {/* Left panel: tree view */}
+        <div style={{
+          width: "260px",
+          minWidth: "260px",
+          borderRight: "1px solid var(--pf-t--global--border--color--default)",
+          overflowY: "auto",
+          paddingRight: "0",
+        }}>
+          {Array.from(tree.entries()).map(([group, policies]) => (
+            <div key={group} style={{ marginBottom: "2px" }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleThunderbirdGroup(group)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleThunderbirdGroup(group); } }}
+                style={{
+                  padding: "0.4rem 0.75rem",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "0.8rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.03em",
+                  color: "var(--pf-t--global--text--color--regular)",
+                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
+                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
+                  userSelect: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                <span style={{
+                  display: "inline-block",
+                  width: 0,
+                  height: 0,
+                  borderStyle: "solid",
+                  ...(thunderbirdExpandedGroups.has(group)
+                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
+                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
+                }} />
+                {group}
+              </div>
+              {thunderbirdExpandedGroups.has(group) && policies.map(p => {
+                const isSelected = thunderbirdSelectedKey === p.key;
+                const isConfigured = configuredKeys.includes(p.key);
+                return (
+                  <div
+                    key={p.key}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleThunderbirdSelectPolicy(p)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleThunderbirdSelectPolicy(p); } }}
+                    style={{
+                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
+                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
+                      fontWeight: isSelected || isConfigured ? 600 : 400,
+                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
+                      userSelect: "none",
+                      transition: "background-color 0.1s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
+                  >
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
+                      {p.label}
+                    </span>
+                    {isConfigured && (
+                      <Button
+                        variant="plain"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handleThunderbirdRemovePolicy(p.key); }}
+                        style={{
+                          fontSize: "0.75rem",
+                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
+                          padding: "0 0.25rem",
+                          minWidth: "auto",
+                        }}
+                        aria-label={`Remove ${p.label}`}
+                      >✕</Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        {/* Right panel: property editor */}
+        <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
+          {renderThunderbirdPropertyEditor()}
         </div>
       </div>
     );
@@ -3095,14 +3549,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   /* ── Configuration tab ── */
   const renderConfigurationTab = () => {
     const isFirefox = policyType === "Firefox";
+    const isThunderbird = policyType === "Thunderbird";
     const isKconfig = policyType === "Kconfig";
     const isChrome = policyType === "Chrome";
 
-    // For Firefox / KConfig / Chrome: render the tree view directly (they have their own split layout)
+    // For Firefox / Thunderbird / KConfig / Chrome: render the tree view directly (they have their own split layout)
     if (isFirefox) {
       return (
         <div style={{ padding: "1rem 0" }}>
           {renderFirefoxForm()}
+        </div>
+      );
+    }
+    if (isThunderbird) {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          {renderThunderbirdForm()}
         </div>
       );
     }

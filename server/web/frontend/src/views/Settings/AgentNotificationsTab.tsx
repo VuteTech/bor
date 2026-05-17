@@ -34,6 +34,7 @@ export const AgentNotificationsTab: React.FC = () => {
   const [notifyMessage, setNotifyMessage] = useState("");
   const [notifyMessageFirefox, setNotifyMessageFirefox] = useState("");
   const [notifyMessageChrome, setNotifyMessageChrome] = useState("");
+  const [notifyMessageThunderbird, setNotifyMessageThunderbird] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -45,6 +46,7 @@ export const AgentNotificationsTab: React.FC = () => {
         setNotifyMessage(s.notify_message);
         setNotifyMessageFirefox(s.notify_message_firefox ?? "");
         setNotifyMessageChrome(s.notify_message_chrome ?? "");
+        setNotifyMessageThunderbird(s.notify_message_thunderbird ?? "");
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -65,19 +67,21 @@ export const AgentNotificationsTab: React.FC = () => {
         notify_message: notifyMessage,
         notify_message_firefox: notifyMessageFirefox,
         notify_message_chrome: notifyMessageChrome,
+        notify_message_thunderbird: notifyMessageThunderbird,
       });
       setNotifyUsers(updated.notify_users);
       setNotifyCooldown(updated.notify_cooldown);
       setNotifyMessage(updated.notify_message);
       setNotifyMessageFirefox(updated.notify_message_firefox);
       setNotifyMessageChrome(updated.notify_message_chrome ?? "");
+      setNotifyMessageThunderbird(updated.notify_message_thunderbird ?? "");
       setSuccess("Agent notification settings saved successfully.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }
-  }, [notifyUsers, notifyCooldown, notifyMessage, notifyMessageFirefox, notifyMessageChrome]);
+  }, [notifyUsers, notifyCooldown, notifyMessage, notifyMessageFirefox, notifyMessageChrome, notifyMessageThunderbird]);
 
   if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
@@ -179,6 +183,23 @@ export const AgentNotificationsTab: React.FC = () => {
             <HelperText>
               <HelperTextItem>
                 Message shown to users when Firefox browser policies are updated
+              </HelperTextItem>
+            </HelperText>
+          </FormHelperText>
+        </FormGroup>
+
+        <FormGroup label="Thunderbird policy notification message" fieldId="an-message-thunderbird">
+          <TextArea
+            id="an-message-thunderbird"
+            value={notifyMessageThunderbird}
+            onChange={(_ev, v) => setNotifyMessageThunderbird(v)}
+            rows={3}
+            resizeOrientation="vertical"
+          />
+          <FormHelperText>
+            <HelperText>
+              <HelperTextItem>
+                Message shown to users when Thunderbird email client policies are updated
               </HelperTextItem>
             </HelperText>
           </FormHelperText>

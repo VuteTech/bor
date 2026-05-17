@@ -15,13 +15,14 @@ import (
 
 // Config holds the agent configuration.
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Agent      AgentConfig      `yaml:"agent"`
-	Firefox    FirefoxConfig    `yaml:"firefox"`
-	Chrome     ChromeConfig     `yaml:"chrome"`
-	KConfig    KConfigConfig    `yaml:"kconfig"`
-	Enrollment EnrollmentConfig `yaml:"enrollment"`
-	Kerberos   KerberosConfig   `yaml:"kerberos"`
+	Server      ServerConfig      `yaml:"server"`
+	Agent       AgentConfig       `yaml:"agent"`
+	Firefox     FirefoxConfig     `yaml:"firefox"`
+	Thunderbird ThunderbirdConfig `yaml:"thunderbird"`
+	Chrome      ChromeConfig      `yaml:"chrome"`
+	KConfig     KConfigConfig     `yaml:"kconfig"`
+	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
+	Kerberos    KerberosConfig    `yaml:"kerberos"`
 }
 
 // ServerConfig holds server connection settings.
@@ -53,6 +54,12 @@ type AgentConfig struct {
 
 // FirefoxConfig holds Firefox policy file settings.
 type FirefoxConfig struct {
+	PoliciesPath        string `yaml:"policies_path"`
+	FlatpakPoliciesPath string `yaml:"flatpak_policies_path"`
+}
+
+// ThunderbirdConfig holds Thunderbird policy file settings.
+type ThunderbirdConfig struct {
 	PoliciesPath        string `yaml:"policies_path"`
 	FlatpakPoliciesPath string `yaml:"flatpak_policies_path"`
 }
@@ -129,6 +136,10 @@ func DefaultConfig() *Config {
 		Firefox: FirefoxConfig{
 			PoliciesPath:        "/etc/firefox/policies/policies.json",
 			FlatpakPoliciesPath: "/var/lib/flatpak/extension/org.mozilla.firefox.systemconfig/" + flatpakArch() + "/stable/policies/policies.json",
+		},
+		Thunderbird: ThunderbirdConfig{
+			PoliciesPath:        "/etc/thunderbird/policies/policies.json",
+			FlatpakPoliciesPath: "/var/lib/flatpak/extension/net.thunderbird.Thunderbird.systemconfig/" + flatpakArch() + "/stable/policies/policies.json",
 		},
 		Chrome: ChromeConfig{
 			ChromePoliciesPath:          "/etc/opt/chrome/policies/managed",

@@ -25,6 +25,7 @@ export interface AgentNotificationSettings {
   notify_message: string;
   notify_message_firefox: string;
   notify_message_chrome: string;
+  notify_message_thunderbird: string;
 }
 
 export async function fetchAgentNotificationSettings(): Promise<AgentNotificationSettings> {

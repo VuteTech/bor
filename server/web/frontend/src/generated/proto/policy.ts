@@ -11,6 +11,7 @@ import type { FirefoxPolicy } from "./firefox";
 import type { KConfigPolicy } from "./kconfig";
 import type { PackagePolicy } from "./package";
 import type { PolkitPolicy } from "./polkit";
+import type { ThunderbirdPolicy } from "./thunderbird";
 
 export const protobufPackage = "bor.policy.v1";
 
@@ -58,8 +59,9 @@ export interface Policy {
   chrome_policy?: ChromePolicy | undefined;
   dconf_policy?: DConfPolicy | undefined;
   polkit_policy?: PolkitPolicy | undefined;
-  package_policy?:
-    | PackagePolicy
+  package_policy?: PackagePolicy | undefined;
+  thunderbird_policy?:
+    | ThunderbirdPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority
@@ -201,6 +203,7 @@ export interface AgentConfig {
   notify_message: string;
   notify_message_firefox: string;
   notify_message_chrome: string;
+  notify_message_thunderbird: string;
 }
 
 /** NodeInfo contains metadata reported by an agent node. */

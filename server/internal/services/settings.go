@@ -41,6 +41,9 @@ func (s *SettingsService) UpdateAgentNotificationSettings(ctx context.Context, s
 	if settings.NotifyMessageChrome == "" {
 		return fmt.Errorf("notify_message_chrome must not be empty")
 	}
+	if settings.NotifyMessageThunderbird == "" {
+		return fmt.Errorf("notify_message_thunderbird must not be empty")
+	}
 
 	return s.repo.UpdateAgentNotificationSettings(ctx, settings)
 }

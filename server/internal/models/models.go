@@ -346,11 +346,12 @@ type EnrollmentToken struct {
 
 // AgentNotificationSettings holds the notification configuration for agents
 type AgentNotificationSettings struct {
-	NotifyUsers          bool   `json:"notify_users"`
-	NotifyCooldown       int    `json:"notify_cooldown"`
-	NotifyMessage        string `json:"notify_message"`
-	NotifyMessageFirefox string `json:"notify_message_firefox"`
-	NotifyMessageChrome  string `json:"notify_message_chrome"`
+	NotifyUsers              bool   `json:"notify_users"`
+	NotifyCooldown           int    `json:"notify_cooldown"`
+	NotifyMessage            string `json:"notify_message"`
+	NotifyMessageFirefox     string `json:"notify_message_firefox"`
+	NotifyMessageChrome      string `json:"notify_message_chrome"`
+	NotifyMessageThunderbird string `json:"notify_message_thunderbird"`
 }
 
 // AuditLog represents an audit log entry
