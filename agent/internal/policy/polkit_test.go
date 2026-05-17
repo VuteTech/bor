@@ -187,7 +187,7 @@ func TestPolkitPoliciesToJS_ManagedHeader(t *testing.T) {
 }
 
 // TestPolkitPoliciesToJS_MultipleActionsOR verifies that multiple action IDs
-// and prefixes are combined with &&-separated conditions.
+// and prefixes are combined with || (OR), not && (AND).
 func TestPolkitPoliciesToJS_MultipleActionsOR(t *testing.T) {
 	pol := &pb.PolkitPolicy{
 		Rules: []*pb.PolkitRule{
@@ -208,6 +208,38 @@ func TestPolkitPoliciesToJS_MultipleActionsOR(t *testing.T) {
 	}
 	if !strings.Contains(js, `action.id.indexOf("org.example.prefix.") === 0`) {
 		t.Errorf("expected prefix match; got:\n%s", js)
+	}
+	if strings.Contains(js, `action.id === "org.example.a" &&`) {
+		t.Errorf("action IDs must be joined with ||, not &&; got:\n%s", js)
+	}
+	if !strings.Contains(js, `action.id === "org.example.a" ||`) {
+		t.Errorf("expected action IDs joined with ||; got:\n%s", js)
+	}
+}
+
+// TestPolkitPoliciesToJS_MultipleActionsWithSubject verifies that multiple
+// action IDs are wrapped in parentheses before being AND'd with subject
+// conditions so operator precedence is preserved.
+func TestPolkitPoliciesToJS_MultipleActionsWithSubject(t *testing.T) {
+	pol := &pb.PolkitPolicy{
+		Rules: []*pb.PolkitRule{
+			{
+				Description: "multi action with subject",
+				ActionIds:   []string{"org.example.a", "org.example.b"},
+				Subject:     &pb.PolkitSubjectFilter{InGroup: "wheel"},
+				Result:      pb.PolkitResult_POLKIT_RESULT_YES,
+			},
+		},
+	}
+	js := mustJS(t, pol)
+	if !strings.Contains(js, "(") {
+		t.Errorf("expected parentheses around OR action group; got:\n%s", js)
+	}
+	if !strings.Contains(js, `subject.isInGroup("wheel")`) {
+		t.Errorf("expected group check; got:\n%s", js)
+	}
+	if strings.Contains(js, `action.id === "org.example.a" &&`) {
+		t.Errorf("action IDs must be ORed inside parens, not ANDed; got:\n%s", js)
 	}
 }
 

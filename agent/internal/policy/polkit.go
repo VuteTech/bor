@@ -96,43 +96,56 @@ func writeRuleJS(buf *bytes.Buffer, rule *pb.PolkitRule) error {
 	buf.WriteString("polkit.addRule(function(action, subject) {\n")
 	buf.WriteString("  if (\n")
 
-	// Build action conditions.
-	var actionConds []string
+	// Collect action parts — any one must match (OR).
+	var actionParts []string
 	for _, id := range rule.GetActionIds() {
-		actionConds = append(actionConds, fmt.Sprintf("    action.id === %q", id))
+		actionParts = append(actionParts, fmt.Sprintf("action.id === %q", id))
 	}
 	for _, prefix := range rule.GetActionPrefixes() {
-		actionConds = append(actionConds, fmt.Sprintf("    action.id.indexOf(%q) === 0", prefix))
+		actionParts = append(actionParts, fmt.Sprintf("action.id.indexOf(%q) === 0", prefix))
 	}
 
-	// Build subject conditions.
+	// Collect subject conditions — all must match (AND).
 	var subjectConds []string
 	if subj := rule.GetSubject(); subj != nil {
 		if subj.GetInGroup() != "" {
 			if subj.GetNegateGroup() {
-				subjectConds = append(subjectConds, fmt.Sprintf("    !subject.isInGroup(%q)", subj.GetInGroup()))
+				subjectConds = append(subjectConds, fmt.Sprintf("!subject.isInGroup(%q)", subj.GetInGroup()))
 			} else {
-				subjectConds = append(subjectConds, fmt.Sprintf("    subject.isInGroup(%q)", subj.GetInGroup()))
+				subjectConds = append(subjectConds, fmt.Sprintf("subject.isInGroup(%q)", subj.GetInGroup()))
 			}
 		}
 		if subj.GetIsUser() != "" {
-			subjectConds = append(subjectConds, fmt.Sprintf("    subject.user === %q", subj.GetIsUser()))
+			subjectConds = append(subjectConds, fmt.Sprintf("subject.user === %q", subj.GetIsUser()))
 		}
 		if subj.GetRequireLocal() {
-			subjectConds = append(subjectConds, "    subject.local === true")
+			subjectConds = append(subjectConds, "subject.local === true")
 		}
 		if subj.GetRequireActive() {
-			subjectConds = append(subjectConds, "    subject.active === true")
+			subjectConds = append(subjectConds, "subject.active === true")
 		}
 		if subj.GetSystemUnit() != "" {
-			subjectConds = append(subjectConds, fmt.Sprintf("    subject.system_unit === %q", subj.GetSystemUnit()))
+			subjectConds = append(subjectConds, fmt.Sprintf("subject.system_unit === %q", subj.GetSystemUnit()))
 		}
 	}
 
-	allConds := make([]string, 0, len(actionConds)+len(subjectConds))
-	allConds = append(allConds, actionConds...)
-	allConds = append(allConds, subjectConds...)
-	buf.WriteString(strings.Join(allConds, " &&\n"))
+	// Build the outer if condition.
+	// Multiple action parts are wrapped in parens so || binds before && with subject.
+	var outerParts []string
+	if len(actionParts) == 1 {
+		outerParts = append(outerParts, "    "+actionParts[0])
+	} else {
+		var orLines []string
+		for _, p := range actionParts {
+			orLines = append(orLines, "      "+p)
+		}
+		outerParts = append(outerParts, "    (\n"+strings.Join(orLines, " ||\n")+"\n    )")
+	}
+	for _, sc := range subjectConds {
+		outerParts = append(outerParts, "    "+sc)
+	}
+
+	buf.WriteString(strings.Join(outerParts, " &&\n"))
 	buf.WriteString("\n  ) {\n")
 	fmt.Fprintf(buf, "    return polkit.Result.%s;\n", polkitResultJS(rule.GetResult()))
 	buf.WriteString("  }\n")

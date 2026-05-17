@@ -2822,6 +2822,15 @@
     "default_active": "auth_admin"
   },
   {
+    "action_id": "org.kde.filesharing.samba.enableservice",
+    "description": "Enable Samba",
+    "message": "Enable the Samba file sharing service",
+    "vendor": "KIO Samba Sharing",
+    "default_any": "no",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
+  },
+  {
     "action_id": "org.kde.filesharing.samba.isuserknown",
     "description": "Is Samba User Known",
     "message": "Checking if Samba user exists",
@@ -2829,6 +2838,15 @@
     "default_any": "no",
     "default_inactive": "yes",
     "default_active": "yes"
+  },
+  {
+    "action_id": "org.kde.filesharing.samba.startservice",
+    "description": "Start Samba",
+    "message": "Start the Samba file sharing service",
+    "vendor": "KIO Samba Sharing",
+    "default_any": "no",
+    "default_inactive": "auth_admin",
+    "default_active": "auth_admin"
   },
   {
     "action_id": "org.kde.fontinst.manage",

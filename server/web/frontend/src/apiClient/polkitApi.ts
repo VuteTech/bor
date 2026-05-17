@@ -98,9 +98,11 @@ const RESULT_JS_MAP: Record<PolkitResultValue, string> = {
 };
 
 export function polkitContentToJS(content: PolkitPolicyContent): string {
+  // Header matches the agent's polkitManagedHeader (timestamp added at apply time).
   const lines: string[] = [
     "// This file is managed by Bor. Do not edit manually.",
-    "// Changes will be overwritten on next policy apply.",
+    "// Changes will be overwritten by policy enforcement.",
+    "// Generated: <timestamp added by agent>",
     "",
   ];
 
@@ -109,66 +111,50 @@ export function polkitContentToJS(content: PolkitPolicyContent): string {
       lines.push(`// ${rule.description}`);
     }
 
-    // Build action match condition
-    const matchParts: string[] = [];
-
-    if (rule.action_ids && rule.action_ids.length > 0) {
-      const ids = rule.action_ids.filter(Boolean).map(id => JSON.stringify(id));
-      if (ids.length === 1) {
-        matchParts.push(`action.id == ${ids[0]}`);
-      } else if (ids.length > 1) {
-        matchParts.push(`[${ids.join(", ")}].indexOf(action.id) >= 0`);
-      }
+    // Collect action parts — any one must match (OR).
+    const actionParts: string[] = [];
+    for (const id of (rule.action_ids ?? []).filter(Boolean)) {
+      actionParts.push(`action.id === ${JSON.stringify(id)}`);
+    }
+    for (const prefix of (rule.action_prefixes ?? []).filter(Boolean)) {
+      actionParts.push(`action.id.indexOf(${JSON.stringify(prefix)}) === 0`);
     }
 
-    if (rule.action_prefixes && rule.action_prefixes.length > 0) {
-      for (const prefix of rule.action_prefixes.filter(Boolean)) {
-        matchParts.push(`action.id.startsWith(${JSON.stringify(prefix)})`);
-      }
-    }
-
-    const actionMatch = matchParts.length > 0
-      ? matchParts.join(" ||\n        ")
-      : "true /* no action filter */";
-
-    // Build subject condition
-    const subjectParts: string[] = [];
+    // Collect subject conditions — all must match (AND).
+    const subjectConds: string[] = [];
     const s = rule.subject;
     if (s) {
       if (s.in_group) {
         const check = `subject.isInGroup(${JSON.stringify(s.in_group)})`;
-        subjectParts.push(s.negate_group ? `!${check}` : check);
+        subjectConds.push(s.negate_group ? `!${check}` : check);
       }
-      if (s.is_user) {
-        subjectParts.push(`subject.user == ${JSON.stringify(s.is_user)}`);
-      }
-      if (s.require_local) {
-        subjectParts.push("subject.local");
-      }
-      if (s.require_active) {
-        subjectParts.push("subject.active");
-      }
-      if (s.system_unit) {
-        subjectParts.push(`subject.systemUnit == ${JSON.stringify(s.system_unit)}`);
-      }
+      if (s.is_user)       { subjectConds.push(`subject.user === ${JSON.stringify(s.is_user)}`); }
+      if (s.require_local)  { subjectConds.push("subject.local === true"); }
+      if (s.require_active) { subjectConds.push("subject.active === true"); }
+      if (s.system_unit)   { subjectConds.push(`subject.system_unit === ${JSON.stringify(s.system_unit)}`); }
     }
 
-    const subjectMatch = subjectParts.length > 0
-      ? subjectParts.join(" &&\n        ")
-      : null;
+    // Build outer if condition — mirrors Go writeRuleJS exactly.
+    // Multiple action parts are wrapped in parens so || binds before && with subject.
+    const outerParts: string[] = [];
+    if (actionParts.length === 0) {
+      outerParts.push("    true /* no action filter */");
+    } else if (actionParts.length === 1) {
+      outerParts.push(`    ${actionParts[0]}`);
+    } else {
+      const orLines = actionParts.map(p => `      ${p}`).join(" ||\n");
+      outerParts.push(`    (\n${orLines}\n    )`);
+    }
+    for (const sc of subjectConds) {
+      outerParts.push(`    ${sc}`);
+    }
 
     const resultVal = RESULT_JS_MAP[rule.result] ?? "polkit.Result.NOT_SET";
 
     lines.push("polkit.addRule(function(action, subject) {");
-    lines.push(`    if (${actionMatch}) {`);
-    if (subjectMatch) {
-      lines.push(`        if (${subjectMatch}) {`);
-      lines.push(`            return ${resultVal};`);
-      lines.push("        }");
-    } else {
-      lines.push(`        return ${resultVal};`);
-    }
-    lines.push("    }");
+    lines.push(`  if (\n${outerParts.join(" &&\n")}\n  ) {`);
+    lines.push(`    return ${resultVal};`);
+    lines.push("  }");
     lines.push("});");
     lines.push("");
   }
