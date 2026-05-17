@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// ThunderbirdPolicy is the canonical schema for a Thunderbird enterprise
+// policy on Linux.  It maps directly to the "policies" key in policies.json.
+// Field json_name annotations preserve PascalCase so protojson round-trips
+// with the key names Thunderbird expects.
+message ThunderbirdPolicy {
+  // ── Updates ───────────────────────────────────────────────────────────────
+  optional bool   DisableAppUpdate    = 1  [json_name = "DisableAppUpdate"];
+  optional bool   AppAutoUpdate       = 2  [json_name = "AppAutoUpdate"];
+  optional bool   BackgroundAppUpdate = 3  [json_name = "BackgroundAppUpdate"];
+  optional bool   ManualAppUpdateOnly = 4  [json_name = "ManualAppUpdateOnly"];
+  optional string AppUpdatePin        = 5  [json_name = "AppUpdatePin"];
+  optional string AppUpdateURL        = 6  [json_name = "AppUpdateURL"];
+
+  // ── Privacy & Telemetry ───────────────────────────────────────────────────
+  optional bool DisableTelemetry = 10 [json_name = "DisableTelemetry"];
+
+  // ── Security ──────────────────────────────────────────────────────────────
+  optional bool   DisablePasswordReveal         = 20 [json_name = "DisablePasswordReveal"];
+  optional bool   DisableMasterPasswordCreation = 21 [json_name = "DisableMasterPasswordCreation"];
+  optional bool   PrimaryPassword               = 22 [json_name = "PrimaryPassword"];
+  optional bool   PasswordManagerEnabled        = 23 [json_name = "PasswordManagerEnabled"];
+  optional bool   OfferToSaveLogins             = 24 [json_name = "OfferToSaveLogins"];
+  optional bool   OfferToSaveLoginsDefault      = 25 [json_name = "OfferToSaveLoginsDefault"];
+  optional bool   DisableSecurityBypass         = 26 [json_name = "DisableSecurityBypass"];
+  optional string SSLVersionMin                 = 27 [json_name = "SSLVersionMin"];
+  optional string SSLVersionMax                 = 28 [json_name = "SSLVersionMax"];
+
+  // ── Restrictions ──────────────────────────────────────────────────────────
+  optional bool BlockAboutAddons   = 30 [json_name = "BlockAboutAddons"];
+  optional bool BlockAboutConfig   = 31 [json_name = "BlockAboutConfig"];
+  optional bool BlockAboutProfiles = 32 [json_name = "BlockAboutProfiles"];
+  optional bool BlockAboutSupport  = 33 [json_name = "BlockAboutSupport"];
+  optional bool DisableSafeMode    = 34 [json_name = "DisableSafeMode"];
+
+  // ── Developer Tools ───────────────────────────────────────────────────────
+  optional bool DisableDeveloperTools = 40 [json_name = "DisableDeveloperTools"];
+
+  // ── Add-ons / Extensions ──────────────────────────────────────────────────
+  optional bool DisableSystemAddonUpdate = 50 [json_name = "DisableSystemAddonUpdate"];
+  optional bool ExtensionUpdate          = 51 [json_name = "ExtensionUpdate"];
+
+  // ── Network ───────────────────────────────────────────────────────────────
+  optional bool HardwareAcceleration = 60 [json_name = "HardwareAcceleration"];
+  optional bool NetworkPrediction    = 61 [json_name = "NetworkPrediction"];
+  optional bool CaptivePortal        = 62 [json_name = "CaptivePortal"];
+
+  // ── General ───────────────────────────────────────────────────────────────
+  optional bool   PromptForDownloadLocation = 70 [json_name = "PromptForDownloadLocation"];
+  optional string DefaultDownloadDirectory  = 71 [json_name = "DefaultDownloadDirectory"];
+  optional string DownloadDirectory         = 72 [json_name = "DownloadDirectory"];
+  optional bool   DisableBuiltinPDFViewer   = 73 [json_name = "DisableBuiltinPDFViewer"];
+
+  // ── Locale ────────────────────────────────────────────────────────────────
+  repeated string RequestedLocales = 80 [json_name = "RequestedLocales"];
+
+  // ── Object / composite policies ───────────────────────────────────────────
+  optional ThunderbirdDNSOverHTTPS   DNSOverHTTPS   = 90 [json_name = "DNSOverHTTPS"];
+  optional ThunderbirdCookies        Cookies        = 91 [json_name = "Cookies"];
+  optional ThunderbirdExtensions     Extensions     = 92 [json_name = "Extensions"];
+  optional ThunderbirdProxy          Proxy          = 93 [json_name = "Proxy"];
+  optional ThunderbirdAuthentication Authentication = 94 [json_name = "Authentication"];
+  optional ThunderbirdSearchEngines  SearchEngines  = 95 [json_name = "SearchEngines"];
+}
+
+// ThunderbirdDNSOverHTTPS configures DNS-over-HTTPS settings.
+message ThunderbirdDNSOverHTTPS {
+  bool            Enabled         = 1 [json_name = "Enabled"];
+  string          ProviderURL     = 2 [json_name = "ProviderURL"];
+  bool            Locked          = 3 [json_name = "Locked"];
+  repeated string ExcludedDomains = 4 [json_name = "ExcludedDomains"];
+  bool            Fallback        = 5 [json_name = "Fallback"];
+}
+
+// ThunderbirdCookies configures cookie behaviour.
+message ThunderbirdCookies {
+  repeated string Allow                   = 1 [json_name = "Allow"];
+  repeated string Block                   = 2 [json_name = "Block"];
+  repeated string AllowSession            = 3 [json_name = "AllowSession"];
+  string          Behavior                = 4 [json_name = "Behavior"];
+  string          BehaviorPrivateBrowsing = 5 [json_name = "BehaviorPrivateBrowsing"];
+  bool            Locked                  = 6 [json_name = "Locked"];
+}
+
+// ThunderbirdExtensions manages extension install/uninstall/lock lists.
+message ThunderbirdExtensions {
+  repeated string Install   = 1 [json_name = "Install"];
+  repeated string Uninstall = 2 [json_name = "Uninstall"];
+  repeated string Locked    = 3 [json_name = "Locked"];
+}
+
+// ThunderbirdProxy configures proxy settings.
+message ThunderbirdProxy {
+  string Mode                        = 1  [json_name = "Mode"];
+  bool   Locked                      = 2  [json_name = "Locked"];
+  string HTTPProxy                   = 3  [json_name = "HTTPProxy"];
+  int32  HTTPPort                    = 4  [json_name = "HTTPPort"];
+  bool   UseHTTPProxyForAllProtocols = 5  [json_name = "UseHTTPProxyForAllProtocols"];
+  string SSLProxy                    = 6  [json_name = "SSLProxy"];
+  int32  SSLPort                     = 7  [json_name = "SSLPort"];
+  string SOCKSProxy                  = 8  [json_name = "SOCKSProxy"];
+  int32  SOCKSPort                   = 9  [json_name = "SOCKSPort"];
+  int32  SOCKSVersion                = 10 [json_name = "SOCKSVersion"];
+  string Passthrough                 = 11 [json_name = "Passthrough"];
+  string AutoConfigURL               = 12 [json_name = "AutoConfigURL"];
+  bool   AutoLogin                   = 13 [json_name = "AutoLogin"];
+  bool   UseProxyForDNS              = 14 [json_name = "UseProxyForDNS"];
+}
+
+// ThunderbirdAuthentication configures SPNEGO / NTLM authentication.
+message ThunderbirdAuthentication {
+  repeated string SPNEGO       = 1 [json_name = "SPNEGO"];
+  repeated string Delegated    = 2 [json_name = "Delegated"];
+  repeated string NTLM         = 3 [json_name = "NTLM"];
+  bool            AllowNonFQDN = 4 [json_name = "AllowNonFQDN"];
+  bool            AllowProxies = 5 [json_name = "AllowProxies"];
+  bool            Locked       = 6 [json_name = "Locked"];
+}
+
+// ThunderbirdSearchEngine describes a search engine to add.
+message ThunderbirdSearchEngine {
+  string Name        = 1 [json_name = "Name"];
+  string IconURL     = 2 [json_name = "IconURL"];
+  string Alias       = 3 [json_name = "Alias"];
+  string Description = 4 [json_name = "Description"];
+  string Method      = 5 [json_name = "Method"];
+  string URL         = 6 [json_name = "URL"];
+}
+
+// ThunderbirdSearchEngines configures search engine management.
+message ThunderbirdSearchEngines {
+  repeated ThunderbirdSearchEngine Add             = 1 [json_name = "Add"];
+  string                           Default         = 2 [json_name = "Default"];
+  bool                             PreventInstalls = 3 [json_name = "PreventInstalls"];
+  repeated string                  Remove          = 4 [json_name = "Remove"];
+}
