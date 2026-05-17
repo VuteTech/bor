@@ -50,6 +50,7 @@ import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-i
 import { LiveAlert } from "../../components/LiveAlert";
 import {
   PolkitAction,
+  PolkitActionCondition,
   PolkitPolicyContent,
   PolkitRule,
   PolkitResultValue,
@@ -76,7 +77,10 @@ const DEFAULT_RULE: PolkitRule = {
   action_prefixes: [],
   subject: {},
   result: "POLKIT_RESULT_NO",
+  action_conditions: [],
 };
+
+const DEFAULT_ACTION_CONDITION: PolkitActionCondition = { key: "", value: "", negate: false };
 
 // Note: file naming is driven by the binding priority set in the Node Group
 // page. There is no per-policy file_prefix setting.
@@ -389,6 +393,119 @@ const ResultSelect: React.FC<ResultSelectProps> = ({ value, onChange, isDisabled
   );
 };
 
+/* ── sub-component: operator select for a single action condition row ── */
+
+interface ConditionOpSelectProps {
+  id: string;
+  negate: boolean;
+  onChange: (negate: boolean) => void;
+  isDisabled?: boolean;
+}
+
+const ConditionOpSelect: React.FC<ConditionOpSelectProps> = ({ id, negate, onChange, isDisabled }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <Select
+      id={id}
+      isOpen={open}
+      onOpenChange={setOpen}
+      selected={negate ? "!=" : "=="}
+      onSelect={(_ev, val) => { onChange(val === "!="); setOpen(false); }}
+      toggle={(ref: React.Ref<MenuToggleElement>) => (
+        <MenuToggle
+          ref={ref}
+          onClick={() => setOpen(v => !v)}
+          isExpanded={open}
+          isDisabled={isDisabled}
+          aria-label="Condition operator"
+          style={{ minWidth: "6rem" }}
+        >
+          {negate ? "!=" : "=="}
+        </MenuToggle>
+      )}
+    >
+      <SelectList>
+        <SelectOption value="==">== (equals)</SelectOption>
+        <SelectOption value="!=">!= (not equals)</SelectOption>
+      </SelectList>
+    </Select>
+  );
+};
+
+/* ── sub-component: action variable conditions (action.lookup() guards) ── */
+
+interface ActionConditionEditorProps {
+  conditions: PolkitActionCondition[];
+  onChange: (conditions: PolkitActionCondition[]) => void;
+  isDisabled?: boolean;
+  idPrefix: string;
+}
+
+const ActionConditionEditor: React.FC<ActionConditionEditorProps> = ({
+  conditions, onChange, isDisabled, idPrefix,
+}) => {
+  const add = () => onChange([...conditions, { ...DEFAULT_ACTION_CONDITION }]);
+  const remove = (idx: number) => onChange(conditions.filter((_, i) => i !== idx));
+  const update = (idx: number, patch: Partial<PolkitActionCondition>) =>
+    onChange(conditions.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+
+  return (
+    <div>
+      {conditions.length === 0 && (
+        <p style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle)", marginBottom: "0.4rem" }}>
+          None — add one to filter on action.lookup() values.
+        </p>
+      )}
+      {conditions.map((cond, idx) => (
+        <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <TextInput
+            id={`${idPrefix}-${idx}-key`}
+            value={cond.key}
+            onChange={(_ev, v) => update(idx, { key: v })}
+            placeholder="variable name, e.g. drive_removable"
+            isDisabled={isDisabled}
+            aria-label="Action variable name"
+            style={{ flex: "1 1 14rem", minWidth: "10rem" }}
+          />
+          <ConditionOpSelect
+            id={`${idPrefix}-${idx}-op`}
+            negate={!!cond.negate}
+            onChange={negate => update(idx, { negate })}
+            isDisabled={isDisabled}
+          />
+          <TextInput
+            id={`${idPrefix}-${idx}-value`}
+            value={cond.value ?? ""}
+            onChange={(_ev, v) => update(idx, { value: v })}
+            placeholder="expected value, e.g. true"
+            isDisabled={isDisabled}
+            aria-label="Action variable expected value"
+            style={{ flex: "1 1 10rem", minWidth: "7rem" }}
+          />
+          <Button
+            variant="plain"
+            onClick={() => remove(idx)}
+            isDisabled={isDisabled}
+            aria-label={`Remove action condition ${idx + 1}`}
+            style={{ color: "var(--pf-t--global--color--status--danger--100)" }}
+          >
+            <TrashIcon />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="link"
+        icon={<PlusCircleIcon />}
+        onClick={add}
+        isDisabled={isDisabled}
+        style={{ paddingLeft: 0 }}
+      >
+        Add condition
+      </Button>
+    </div>
+  );
+};
+
 /* ── main component ── */
 
 interface PolkitPolicyEditorProps {
@@ -550,6 +667,24 @@ export const PolkitPolicyEditor: React.FC<PolkitPolicyEditorProps> = ({
                     isDisabled={isDisabled}
                     idPrefix={`${ruleId}-action-prefixes`}
                     placeholder="Search or type a prefix…"
+                  />
+                </FormGroup>
+
+                {/* Action variable conditions */}
+                <FormGroup
+                  label="Action variable conditions"
+                  fieldId={`${ruleId}-action-conditions`}
+                  labelHelp={
+                    <span style={{ fontSize: "0.8rem", color: "var(--pf-t--global--text--color--subtle)" }}>
+                      Filter on action.lookup() values (e.g. drive_removable == true). All conditions must match.
+                    </span>
+                  }
+                >
+                  <ActionConditionEditor
+                    conditions={rule.action_conditions ?? []}
+                    onChange={conds => updateRule(idx, { action_conditions: conds })}
+                    isDisabled={isDisabled}
+                    idPrefix={`${ruleId}-action-conditions`}
                   />
                 </FormGroup>
 
