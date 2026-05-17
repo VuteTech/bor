@@ -25,7 +25,7 @@ func NewSettingsRepository(db *DB) *SettingsRepository {
 
 // GetAgentNotificationSettings retrieves the current agent notification settings
 func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (*models.AgentNotificationSettings, error) {
-	query := `SELECT key, value FROM agent_settings WHERE key IN ('notify_users', 'notify_cooldown', 'notify_message', 'notify_message_firefox', 'notify_message_chrome')`
+	query := `SELECT key, value FROM agent_settings WHERE key IN ('notify_users', 'notify_cooldown', 'notify_message', 'notify_message_firefox', 'notify_message_chrome', 'notify_message_thunderbird')`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -34,11 +34,12 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 	defer func() { _ = rows.Close() }()
 
 	settings := &models.AgentNotificationSettings{
-		NotifyUsers:          true,
-		NotifyCooldown:       300,
-		NotifyMessage:        "Desktop policies have been updated. Please log out and log back in for all changes to take effect.",
-		NotifyMessageFirefox: "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
-		NotifyMessageChrome:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
+		NotifyUsers:              true,
+		NotifyCooldown:           300,
+		NotifyMessage:            "Desktop policies have been updated. Please log out and log back in for all changes to take effect.",
+		NotifyMessageFirefox:     "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
+		NotifyMessageChrome:      "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
+		NotifyMessageThunderbird: "Thunderbird policies have been updated. Please restart Thunderbird for all changes to take effect.",
 	}
 
 	for rows.Next() {
@@ -60,6 +61,8 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 			settings.NotifyMessageFirefox = value
 		case "notify_message_chrome":
 			settings.NotifyMessageChrome = value
+		case "notify_message_thunderbird":
+			settings.NotifyMessageThunderbird = value
 		}
 	}
 
@@ -106,6 +109,7 @@ func (r *SettingsRepository) UpdateAgentNotificationSettings(ctx context.Context
 		{"notify_message", settings.NotifyMessage},
 		{"notify_message_firefox", settings.NotifyMessageFirefox},
 		{"notify_message_chrome", settings.NotifyMessageChrome},
+		{"notify_message_thunderbird", settings.NotifyMessageThunderbird},
 	}
 
 	for _, p := range pairs {

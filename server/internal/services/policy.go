@@ -250,6 +250,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateDConfPolicy(content)
 	case "Package":
 		return ValidatePackagePolicy(content)
+	case "Thunderbird":
+		return ValidateThunderbirdContent(content)
 	}
 	return nil
 }

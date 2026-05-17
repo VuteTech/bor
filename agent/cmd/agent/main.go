@@ -74,6 +74,22 @@ var firefoxNotifyConfig = notify.Config{
 	Message:  "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
 }
 
+// thunderbirdCache maps policy ID → proto policy for all active Thunderbird policies.
+var thunderbirdCache = make(map[string]*pb.ThunderbirdPolicy)
+
+// thunderbirdSnapshotStaging accumulates Thunderbird proto policies during a SNAPSHOT.
+var thunderbirdSnapshotStaging map[string]*pb.ThunderbirdPolicy
+
+// thunderbirdNotifier handles desktop notifications for Thunderbird policy changes.
+var thunderbirdNotifier = notify.New()
+
+// thunderbirdNotifyConfig holds Thunderbird-specific notification settings.
+var thunderbirdNotifyConfig = notify.Config{
+	Enabled:  true,
+	Cooldown: 5 * time.Minute,
+	Message:  "Thunderbird policies have been updated. Please restart Thunderbird for all changes to take effect.",
+}
+
 // chromeCache maps policy ID → proto policy for all active Chrome policies.
 var chromeCache = make(map[string]*pb.ChromePolicy)
 
@@ -411,6 +427,11 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  agentCfg.NotifyMessageChrome,
 			}
+			thunderbirdNotifyConfig = notify.Config{
+				Enabled:  agentCfg.NotifyUsers,
+				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
+				Message:  agentCfg.NotifyMessageThunderbird,
+			}
 			packageNotifyConfig = notify.Config{
 				Enabled:  agentCfg.NotifyUsers,
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
@@ -511,12 +532,15 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if snapshotComplete {
 				log.Println("Received empty snapshot (no policies assigned)")
 				firefoxChanged := len(firefoxCache) > 0
+				thunderbirdChanged := len(thunderbirdCache) > 0
 				hadKconfigPolicies := len(kconfigCache) > 0
 				chromeChanged := len(chromeCache) > 0
 				kconfigCache = make(map[string]*pb.KConfigPolicy)
 				kconfigSnapshotStaging = nil
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
 				firefoxSnapshotStaging = nil
+				thunderbirdCache = make(map[string]*pb.ThunderbirdPolicy)
+				thunderbirdSnapshotStaging = nil
 				chromeCache = make(map[string]*pb.ChromePolicy)
 				chromeSnapshotStaging = nil
 				dconfCache = make(map[string]dconfCacheEntry)
@@ -527,6 +551,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				packageSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
+				syncAllThunderbird(ctx, client, cfg)
 				syncAllChrome(ctx, client, cfg)
 				syncAllDConf(ctx, client, cfg)
 				syncAllPolkit(ctx, client, cfg)
@@ -537,6 +562,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 					}
 					if firefoxChanged {
 						firefoxNotifier.ScheduleNotification(firefoxNotifyConfig, map[string]bool{"policies.json": true})
+					}
+					if thunderbirdChanged {
+						thunderbirdNotifier.ScheduleNotification(thunderbirdNotifyConfig, map[string]bool{"policies.json": true})
 					}
 					if chromeChanged {
 						chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
@@ -556,6 +584,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firefoxSnapshotStaging = make(map[string]*pb.FirefoxPolicy)
 			}
 			firefoxSnapshotStaging[pi.ID] = pi.FirefoxPolicy
+		case "Thunderbird":
+			if thunderbirdSnapshotStaging == nil {
+				thunderbirdSnapshotStaging = make(map[string]*pb.ThunderbirdPolicy)
+			}
+			thunderbirdSnapshotStaging[pi.ID] = pi.ThunderbirdPolicy
 		case "Chrome":
 			if chromeSnapshotStaging == nil {
 				chromeSnapshotStaging = make(map[string]*pb.ChromePolicy)
@@ -588,8 +621,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		}
 
 		if snapshotComplete {
-			// Compare Firefox and Chrome content before swapping to detect changes.
+			// Compare Firefox, Thunderbird and Chrome content before swapping to detect changes.
 			firefoxChanged := !firefoxCachesEqual(firefoxCache, firefoxSnapshotStaging)
+			thunderbirdChanged := !thunderbirdCachesEqual(thunderbirdCache, thunderbirdSnapshotStaging)
 			chromeChanged := !chromeCachesEqual(chromeCache, chromeSnapshotStaging)
 
 			// Swap KConfig staging into cache.
@@ -607,6 +641,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
 			}
 			firefoxSnapshotStaging = nil
+
+			// Swap Thunderbird staging into cache.
+			if thunderbirdSnapshotStaging != nil {
+				thunderbirdCache = thunderbirdSnapshotStaging
+			} else {
+				thunderbirdCache = make(map[string]*pb.ThunderbirdPolicy)
+			}
+			thunderbirdSnapshotStaging = nil
 
 			// Swap Chrome staging into cache.
 			if chromeSnapshotStaging != nil {
@@ -642,6 +684,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
+			syncAllThunderbird(ctx, client, cfg)
 			syncAllChrome(ctx, client, cfg)
 			syncAllDConf(ctx, client, cfg)
 			syncAllPolkit(ctx, client, cfg)
@@ -654,6 +697,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				}
 				if firefoxChanged {
 					firefoxNotifier.ScheduleNotification(firefoxNotifyConfig, map[string]bool{"policies.json": true})
+				}
+				if thunderbirdChanged {
+					thunderbirdNotifier.ScheduleNotification(thunderbirdNotifyConfig, map[string]bool{"policies.json": true})
 				}
 				if chromeChanged {
 					chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
@@ -674,6 +720,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			firefoxCache[pi.ID] = pi.FirefoxPolicy
 			if syncAllFirefox(ctx, client, cfg) {
 				firefoxNotifier.ScheduleNotification(firefoxNotifyConfig, map[string]bool{"policies.json": true})
+			}
+		case "Thunderbird":
+			thunderbirdCache[pi.ID] = pi.ThunderbirdPolicy
+			if syncAllThunderbird(ctx, client, cfg) {
+				thunderbirdNotifier.ScheduleNotification(thunderbirdNotifyConfig, map[string]bool{"policies.json": true})
 			}
 		case "Chrome":
 			chromeCache[pi.ID] = pi.ChromePolicy
@@ -716,6 +767,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			delete(firefoxCache, pi.ID)
 			if syncAllFirefox(ctx, client, cfg) {
 				firefoxNotifier.ScheduleNotification(firefoxNotifyConfig, map[string]bool{"policies.json": true})
+			}
+		} else if _, ok := thunderbirdCache[pi.ID]; ok {
+			delete(thunderbirdCache, pi.ID)
+			if syncAllThunderbird(ctx, client, cfg) {
+				thunderbirdNotifier.ScheduleNotification(thunderbirdNotifyConfig, map[string]bool{"policies.json": true})
 			}
 		} else if _, ok := chromeCache[pi.ID]; ok {
 			delete(chromeCache, pi.ID)
@@ -904,6 +960,66 @@ func syncAllFirefox(ctx context.Context, client *policyclient.Client, cfg *confi
 	}
 
 	log.Printf("Firefox policies synced to %s (%d policies)", cfg.Firefox.PoliciesPath, len(ids))
+	for _, id := range ids {
+		_ = client.ReportCompliance(ctx, id, true, "Deployed")
+	}
+	return true
+}
+
+// thunderbirdCachesEqual returns true when two Thunderbird policy caches contain
+// identical policy IDs and proto content. Used to detect whether a SNAPSHOT
+// resync actually changed the Thunderbird policy set.
+func thunderbirdCachesEqual(a, b map[string]*pb.ThunderbirdPolicy) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id, pa := range a {
+		pb2, ok := b[id]
+		if !ok {
+			return false
+		}
+		if !proto.Equal(pa, pb2) {
+			return false
+		}
+	}
+	return true
+}
+
+// syncAllThunderbird re-merges all cached Thunderbird proto policies and syncs
+// the resulting policies.json to disk. When the cache is empty,
+// SyncThunderbirdPoliciesFromProto restores the original file from backup.
+//
+// Returns true when the sync succeeded (for notification scheduling).
+func syncAllThunderbird(ctx context.Context, client *policyclient.Client, cfg *config.Config) bool {
+	var policies []*pb.ThunderbirdPolicy
+	var ids []string
+	for id, pol := range thunderbirdCache {
+		policies = append(policies, pol)
+		ids = append(ids, id)
+	}
+
+	suppressManagedWrites(cfg, cfg.Thunderbird.PoliciesPath, cfg.Thunderbird.FlatpakPoliciesPath)
+	defer updateWatcher(cfg)
+
+	if err := policy.SyncThunderbirdPoliciesFromProto(cfg.Thunderbird.PoliciesPath, policies); err != nil {
+		log.Printf("Error syncing Thunderbird policies: %v", err)
+		for _, id := range ids {
+			_ = client.ReportCompliance(ctx, id, false, "failed to sync Thunderbird policies: "+err.Error())
+		}
+		return false
+	}
+
+	// Flatpak Thunderbird: write to the system-wide extension directory.
+	// This is best-effort — Flatpak Thunderbird may not be installed.
+	if cfg.Thunderbird.FlatpakPoliciesPath != "" {
+		if err := policy.SyncThunderbirdFlatpakPoliciesFromProto(cfg.Thunderbird.FlatpakPoliciesPath, policies); err != nil {
+			log.Printf("Warning: failed to sync Flatpak Thunderbird policies: %v", err)
+		} else {
+			log.Printf("Flatpak Thunderbird policies synced to %s", cfg.Thunderbird.FlatpakPoliciesPath)
+		}
+	}
+
+	log.Printf("Thunderbird policies synced to %s (%d policies)", cfg.Thunderbird.PoliciesPath, len(ids))
 	for _, id := range ids {
 		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
@@ -1430,6 +1546,16 @@ func getManagedPaths(cfg *config.Config) []string {
 		}
 	}
 
+	// Thunderbird.
+	if len(thunderbirdCache) > 0 {
+		if cfg.Thunderbird.PoliciesPath != "" {
+			paths = append(paths, cfg.Thunderbird.PoliciesPath)
+		}
+		if cfg.Thunderbird.FlatpakPoliciesPath != "" {
+			paths = append(paths, cfg.Thunderbird.FlatpakPoliciesPath)
+		}
+	}
+
 	// Chrome.
 	if len(chromeCache) > 0 {
 		for _, dir := range []string{
@@ -1530,6 +1656,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllKConfig(ctx, client, cfg)
 	case path == cfg.Firefox.PoliciesPath || path == cfg.Firefox.FlatpakPoliciesPath:
 		syncAllFirefox(ctx, client, cfg)
+	case path == cfg.Thunderbird.PoliciesPath || path == cfg.Thunderbird.FlatpakPoliciesPath:
+		syncAllThunderbird(ctx, client, cfg)
 	case strings.HasPrefix(path, "/etc/dconf/"):
 		syncAllDConf(ctx, client, cfg)
 	case strings.HasPrefix(path, policy.PolkitRulesDir+string(filepath.Separator)):

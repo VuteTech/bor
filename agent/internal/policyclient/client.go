@@ -99,18 +99,19 @@ func (c *Client) Close() error {
 
 // PolicyInfo holds the policy data returned from the server.
 type PolicyInfo struct {
-	ID            string
-	Name          string
-	Type          string
-	Content       string // kept for compatibility / fallback
-	Version       int32
-	Priority      int32             // max binding priority across enabled bindings for this node
-	KConfigPolicy *pb.KConfigPolicy // populated from typed_content for Kconfig type
-	FirefoxPolicy *pb.FirefoxPolicy // populated from typed_content for Firefox type
-	ChromePolicy  *pb.ChromePolicy  // populated from typed_content for Chrome type
-	DConfPolicy   *pb.DConfPolicy   // populated from typed_content for Dconf type
-	PolkitPolicy  *pb.PolkitPolicy  // populated from typed_content for Polkit type
-	PackagePolicy *pb.PackagePolicy // populated from typed_content for Package type
+	ID                string
+	Name              string
+	Type              string
+	Content           string // kept for compatibility / fallback
+	Version           int32
+	Priority          int32                 // max binding priority across enabled bindings for this node
+	KConfigPolicy     *pb.KConfigPolicy     // populated from typed_content for Kconfig type
+	FirefoxPolicy     *pb.FirefoxPolicy     // populated from typed_content for Firefox type
+	ChromePolicy      *pb.ChromePolicy      // populated from typed_content for Chrome type
+	DConfPolicy       *pb.DConfPolicy       // populated from typed_content for Dconf type
+	PolkitPolicy      *pb.PolkitPolicy      // populated from typed_content for Polkit type
+	PackagePolicy     *pb.PackagePolicy     // populated from typed_content for Package type
+	ThunderbirdPolicy *pb.ThunderbirdPolicy // populated from typed_content for Thunderbird type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -138,11 +139,12 @@ func (c *Client) ReportCompliance(ctx context.Context, policyID string, complian
 
 // AgentConfig holds agent configuration retrieved from the server.
 type AgentConfig struct {
-	NotifyUsers          bool
-	NotifyCooldown       int32
-	NotifyMessage        string
-	NotifyMessageFirefox string
-	NotifyMessageChrome  string
+	NotifyUsers              bool
+	NotifyCooldown           int32
+	NotifyMessage            string
+	NotifyMessageFirefox     string
+	NotifyMessageChrome      string
+	NotifyMessageThunderbird string
 }
 
 // GetAgentConfig fetches agent configuration (notification settings)
@@ -162,11 +164,12 @@ func (c *Client) GetAgentConfig(ctx context.Context) (*AgentConfig, error) {
 	}
 
 	return &AgentConfig{
-		NotifyUsers:          cfg.GetNotifyUsers(),
-		NotifyCooldown:       cfg.GetNotifyCooldownSeconds(),
-		NotifyMessage:        cfg.GetNotifyMessage(),
-		NotifyMessageFirefox: cfg.GetNotifyMessageFirefox(),
-		NotifyMessageChrome:  cfg.GetNotifyMessageChrome(),
+		NotifyUsers:              cfg.GetNotifyUsers(),
+		NotifyCooldown:           cfg.GetNotifyCooldownSeconds(),
+		NotifyMessage:            cfg.GetNotifyMessage(),
+		NotifyMessageFirefox:     cfg.GetNotifyMessageFirefox(),
+		NotifyMessageChrome:      cfg.GetNotifyMessageChrome(),
+		NotifyMessageThunderbird: cfg.GetNotifyMessageThunderbird(),
 	}, nil
 }
 
@@ -301,6 +304,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if pkgp := p.GetPackagePolicy(); pkgp != nil {
 				pi.PackagePolicy = pkgp
+			}
+			if tbp := p.GetThunderbirdPolicy(); tbp != nil {
+				pi.ThunderbirdPolicy = tbp
 			}
 		}
 

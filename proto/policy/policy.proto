@@ -11,6 +11,7 @@ import "firefox.proto";
 import "kconfig.proto";
 import "package.proto";
 import "polkit.proto";
+import "thunderbird.proto";
 
 // PolicyService manages desktop policies
 service PolicyService {
@@ -85,8 +86,9 @@ message Policy {
     KConfigPolicy  kconfig_policy  = 11;
     ChromePolicy   chrome_policy   = 12;
     DConfPolicy    dconf_policy    = 13;
-    PolkitPolicy   polkit_policy   = 15;
-    PackagePolicy  package_policy  = 16;
+    PolkitPolicy       polkit_policy       = 15;
+    PackagePolicy      package_policy      = 16;
+    ThunderbirdPolicy  thunderbird_policy  = 17;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority
@@ -235,8 +237,9 @@ message AgentConfig {
   bool notify_users = 1;
   int32 notify_cooldown_seconds = 2;
   string notify_message = 3;
-  string notify_message_firefox = 4;
-  string notify_message_chrome = 5;
+  string notify_message_firefox     = 4;
+  string notify_message_chrome      = 5;
+  string notify_message_thunderbird = 6;
 }
 
 // ─── Heartbeat messages ─────────────────────────────────────────────────────
