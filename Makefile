@@ -98,14 +98,19 @@ update-polkit-actions:
 	@echo "Done. Commit server/assets/polkit_builtin_actions.json."
 
 # Generate Protocol Buffers (Go + TypeScript)
-proto: proto-go proto-ts
+proto: proto-go proto-ts proto-ui
 
 proto-go:
 	@echo "Generating Go protobuf code..."
+	mkdir -p server/pkg/grpc/borui
+	protoc --go_out=server/pkg/grpc/borui --go_opt=paths=source_relative \
+		-I proto/bor \
+		proto/bor/ui.proto
 	mkdir -p server/pkg/grpc/policy
 	protoc --go_out=server/pkg/grpc/policy --go_opt=paths=source_relative \
 		--go-grpc_out=server/pkg/grpc/policy --go-grpc_opt=paths=source_relative \
-		-I proto/policy proto/policy/*.proto
+		-I proto/policy -I proto/bor \
+		proto/policy/*.proto
 	mkdir -p server/pkg/grpc/audit
 	protoc --go_out=server/pkg/grpc/audit --go_opt=paths=source_relative \
 		-I proto/audit proto/audit/audit.proto
@@ -118,7 +123,17 @@ proto-ts:
 		--plugin=node_modules/.bin/protoc-gen-ts_proto \
 		--ts_proto_out=src/generated/proto \
 		--ts_proto_opt=onlyTypes=true,snakeToCamel=false,outputServices=false \
-		-I ../../../proto/policy \
+		-I ../../../proto/policy -I ../../../proto/bor \
+		../../../proto/policy/*.proto
+
+proto-ui:
+	@echo "Generating policy UI metadata (TypeScript)..."
+	mkdir -p server/web/frontend/src/generated/proto
+	cd server/web/frontend && \
+	protoc \
+		--plugin=$(shell which protoc-gen-bor-ui) \
+		--bor-ui_out=src/generated/proto \
+		-I ../../../proto/policy -I ../../../proto/bor \
 		../../../proto/policy/*.proto
 
 # Run all tests
@@ -174,6 +189,7 @@ clean:
 	rm -rf server/server
 	rm -rf agent/bor-agent
 	rm -rf server/pkg/grpc/policy/*.pb.go
+	rm -rf server/pkg/grpc/borui/*.pb.go
 	rm -rf server/web/frontend/src/generated/proto/
 	rm -rf builds/
 
@@ -185,6 +201,8 @@ install-deps:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+	@echo "Installing protoc-gen-bor-ui plugin..."
+	cd server && go install ./cmd/protoc-gen-bor-ui
 	@echo "Installing TypeScript proto plugin..."
 	cd server/web/frontend && npm install
 	@echo ""
