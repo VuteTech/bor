@@ -147,6 +147,18 @@ func writeRuleJS(buf *bytes.Buffer, rule *pb.PolkitRule) error {
 
 	buf.WriteString(strings.Join(outerParts, " &&\n"))
 	buf.WriteString("\n  ) {\n")
+
+	// Action variable guards: emitted as inner early-return statements.
+	// Non-negated: skip rule when lookup(key) !== value.
+	// Negated:     skip rule when lookup(key) === value.
+	for _, cond := range rule.GetActionConditions() {
+		if cond.GetNegate() {
+			fmt.Fprintf(buf, "    if (action.lookup(%q) === %q) { return; }\n", cond.GetKey(), cond.GetValue())
+		} else {
+			fmt.Fprintf(buf, "    if (action.lookup(%q) !== %q) { return; }\n", cond.GetKey(), cond.GetValue())
+		}
+	}
+
 	fmt.Fprintf(buf, "    return polkit.Result.%s;\n", polkitResultJS(rule.GetResult()))
 	buf.WriteString("  }\n")
 	buf.WriteString("});\n")

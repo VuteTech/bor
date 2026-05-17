@@ -243,6 +243,57 @@ func TestPolkitPoliciesToJS_MultipleActionsWithSubject(t *testing.T) {
 	}
 }
 
+// TestPolkitPoliciesToJS_ActionConditions verifies that action.lookup() guards
+// are emitted as inner early-return statements inside the rule body.
+func TestPolkitPoliciesToJS_ActionConditions(t *testing.T) {
+	pol := &pb.PolkitPolicy{
+		Rules: []*pb.PolkitRule{
+			{
+				Description: "block removable drive mounting",
+				ActionIds: []string{
+					"org.freedesktop.UDisks2.filesystem-mount",
+					"org.freedesktop.UDisks2.filesystem-mount-system",
+					"org.freedesktop.UDisks2.encrypted-unlock",
+				},
+				ActionConditions: []*pb.PolkitActionCondition{
+					{Key: "drive_removable", Value: "true"},
+				},
+				Result: pb.PolkitResult_POLKIT_RESULT_NO,
+			},
+		},
+	}
+	js := mustJS(t, pol)
+
+	if !strings.Contains(js, `if (action.lookup("drive_removable") !== "true") { return; }`) {
+		t.Errorf("expected early-return guard; got:\n%s", js)
+	}
+	if !strings.Contains(js, "return polkit.Result.NO;") {
+		t.Errorf("expected NO result; got:\n%s", js)
+	}
+}
+
+// TestPolkitPoliciesToJS_ActionConditions_Negated verifies that negate=true
+// flips the guard so it skips when the lookup matches the value.
+func TestPolkitPoliciesToJS_ActionConditions_Negated(t *testing.T) {
+	pol := &pb.PolkitPolicy{
+		Rules: []*pb.PolkitRule{
+			{
+				Description: "allow only non-removable drives",
+				ActionIds:   []string{"org.freedesktop.UDisks2.filesystem-mount"},
+				ActionConditions: []*pb.PolkitActionCondition{
+					{Key: "drive_removable", Value: "true", Negate: true},
+				},
+				Result: pb.PolkitResult_POLKIT_RESULT_YES,
+			},
+		},
+	}
+	js := mustJS(t, pol)
+
+	if !strings.Contains(js, `if (action.lookup("drive_removable") === "true") { return; }`) {
+		t.Errorf("expected negated early-return guard; got:\n%s", js)
+	}
+}
+
 // TestRollupPolkitCompliance_AllCompliant verifies COMPLIANT when all rules pass.
 func TestRollupPolkitCompliance_AllCompliant(t *testing.T) {
 	results := []policy.PolkitRuleResult{

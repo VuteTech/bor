@@ -44,6 +44,11 @@ message PolkitRule {
 
   // Authorization result to return when the rule matches.
   PolkitResult result = 5;
+
+  // Action variable conditions (action.lookup() guards).
+  // All conditions must pass (AND) before result is returned.
+  // Evaluated after the action ID / prefix and subject checks.
+  repeated PolkitActionCondition action_conditions = 6;
 }
 
 // PolkitSubjectFilter restricts a rule to subjects that satisfy all set fields.
@@ -66,6 +71,18 @@ message PolkitSubjectFilter {
 
   // Subject process must belong to this systemd unit.
   string system_unit = 6;
+}
+
+// PolkitActionCondition guards a rule on an action variable read via
+// action.lookup(). All conditions on a rule must pass (AND logic) before the
+// result is returned.
+//
+// When negate is false: the guard passes when action.lookup(key) === value.
+// When negate is true:  the guard passes when action.lookup(key) !== value.
+message PolkitActionCondition {
+  string key   = 1; // action variable name, e.g. "drive_removable"
+  string value = 2; // expected value, e.g. "true"
+  bool negate  = 3; // if true, passes when lookup(key) !== value
 }
 
 // PolkitResult is the authorization result returned by a matched rule.

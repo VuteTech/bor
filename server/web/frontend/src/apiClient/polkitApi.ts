@@ -47,12 +47,19 @@ export type PolkitResultValue =
   | "POLKIT_RESULT_AUTH_ADMIN"
   | "POLKIT_RESULT_AUTH_ADMIN_KEEP";
 
+export interface PolkitActionCondition {
+  key: string;
+  value: string;
+  negate?: boolean;
+}
+
 export interface PolkitRule {
   description: string;
   action_ids: string[];
   action_prefixes: string[];
   subject?: PolkitSubjectFilter;
   result: PolkitResultValue;
+  action_conditions?: PolkitActionCondition[];
 }
 
 export interface PolkitPolicyContent {
@@ -153,6 +160,19 @@ export function polkitContentToJS(content: PolkitPolicyContent): string {
 
     lines.push("polkit.addRule(function(action, subject) {");
     lines.push(`  if (\n${outerParts.join(" &&\n")}\n  ) {`);
+
+    // Action variable guards — early-return statements matching Go generator output.
+    for (const cond of (rule.action_conditions ?? [])) {
+      if (!cond.key) continue;
+      const k = JSON.stringify(cond.key);
+      const v = JSON.stringify(cond.value ?? "");
+      if (cond.negate) {
+        lines.push(`    if (action.lookup(${k}) === ${v}) { return; }`);
+      } else {
+        lines.push(`    if (action.lookup(${k}) !== ${v}) { return; }`);
+      }
+    }
+
     lines.push(`    return ${resultVal};`);
     lines.push("  }");
     lines.push("});");
