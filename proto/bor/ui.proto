@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.ui;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/borui;borui";
+
+// Policy protos import this file as:  import "ui.proto"
+// Include path for policy compilation: -I proto/bor
+
+// FieldUi carries display metadata for policy editor UI generation.
+// Attach it to any field in a *Policy message via (bor.ui.field).
+// The protoc-gen-bor-ui plugin reads these options and generates
+// *_ui.ts files consumed by PolicyDetailsModal.tsx.
+message FieldUi {
+  // group is the section name shown in the tree-view editor (required on
+  // top-level *Policy fields; omitted on sub-message fields).
+  string group = 1;
+
+  // label is the human-readable field name shown in the UI.
+  // If empty the generator derives a label from the proto field name by
+  // splitting on camelCase/PascalCase word boundaries.
+  string label = 2;
+
+  // description overrides the proto field's leading comment as the
+  // tooltip/helper text.  Usually omitted — the field comment is used.
+  string description = 3;
+
+  // chrome_only marks policies that depend on Google cloud services and
+  // are no-ops in open-source Chromium builds.  Has no effect on other
+  // policy message types.
+  bool chrome_only = 4;
+
+  // int_options lists allowed integer values for integer-enum fields.
+  // When set, the generator emits type "integer-enum" and an intOptions
+  // array.  Mutually exclusive with string_options.
+  repeated IntOption int_options = 5;
+
+  // string_options lists allowed string values for string-enum/select
+  // fields.  When set, the generator emits type "string-enum".
+  // Mutually exclusive with int_options.
+  repeated string string_options = 6;
+}
+
+// IntOption is one allowed value for an integer-enum policy field.
+message IntOption {
+  int32  value = 1;
+  string label = 2;
+}
+
+extend google.protobuf.FieldOptions {
+  // field carries UI display metadata for the protoc-gen-bor-ui generator.
+  FieldUi field = 50000;
+}

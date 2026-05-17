@@ -8,68 +8,82 @@ package bor.policy.v1;
 
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
+import "ui.proto";
+
 // ThunderbirdPolicy is the canonical schema for a Thunderbird enterprise
 // policy on Linux.  It maps directly to the "policies" key in policies.json.
 // Field json_name annotations preserve PascalCase so protojson round-trips
 // with the key names Thunderbird expects.
 message ThunderbirdPolicy {
   // ── Updates ───────────────────────────────────────────────────────────────
-  optional bool   DisableAppUpdate    = 1  [json_name = "DisableAppUpdate"];
-  optional bool   AppAutoUpdate       = 2  [json_name = "AppAutoUpdate"];
-  optional bool   BackgroundAppUpdate = 3  [json_name = "BackgroundAppUpdate"];
-  optional bool   ManualAppUpdateOnly = 4  [json_name = "ManualAppUpdateOnly"];
-  optional string AppUpdatePin        = 5  [json_name = "AppUpdatePin"];
-  optional string AppUpdateURL        = 6  [json_name = "AppUpdateURL"];
+  optional bool   DisableAppUpdate    = 1  [json_name = "DisableAppUpdate",    (bor.ui.field) = {group: "Updates"}];
+  optional bool   AppAutoUpdate       = 2  [json_name = "AppAutoUpdate",       (bor.ui.field) = {group: "Updates"}];
+  optional bool   BackgroundAppUpdate = 3  [json_name = "BackgroundAppUpdate", (bor.ui.field) = {group: "Updates"}];
+  optional bool   ManualAppUpdateOnly = 4  [json_name = "ManualAppUpdateOnly", (bor.ui.field) = {group: "Updates"}];
+  optional string AppUpdatePin        = 5  [json_name = "AppUpdatePin",        (bor.ui.field) = {group: "Updates"}];
+  optional string AppUpdateURL        = 6  [json_name = "AppUpdateURL",        (bor.ui.field) = {group: "Updates"}];
 
   // ── Privacy & Telemetry ───────────────────────────────────────────────────
-  optional bool DisableTelemetry = 10 [json_name = "DisableTelemetry"];
+  optional bool DisableTelemetry = 10 [json_name = "DisableTelemetry", (bor.ui.field) = {group: "Privacy & Telemetry"}];
 
   // ── Security ──────────────────────────────────────────────────────────────
-  optional bool   DisablePasswordReveal         = 20 [json_name = "DisablePasswordReveal"];
-  optional bool   DisableMasterPasswordCreation = 21 [json_name = "DisableMasterPasswordCreation"];
-  optional bool   PrimaryPassword               = 22 [json_name = "PrimaryPassword"];
-  optional bool   PasswordManagerEnabled        = 23 [json_name = "PasswordManagerEnabled"];
-  optional bool   OfferToSaveLogins             = 24 [json_name = "OfferToSaveLogins"];
-  optional bool   OfferToSaveLoginsDefault      = 25 [json_name = "OfferToSaveLoginsDefault"];
-  optional bool   DisableSecurityBypass         = 26 [json_name = "DisableSecurityBypass"];
-  optional string SSLVersionMin                 = 27 [json_name = "SSLVersionMin"];
-  optional string SSLVersionMax                 = 28 [json_name = "SSLVersionMax"];
+  optional bool   DisablePasswordReveal         = 20 [json_name = "DisablePasswordReveal",         (bor.ui.field) = {group: "Security"}];
+  optional bool   DisableMasterPasswordCreation = 21 [json_name = "DisableMasterPasswordCreation", (bor.ui.field) = {group: "Security"}];
+  optional bool   PrimaryPassword               = 22 [json_name = "PrimaryPassword",               (bor.ui.field) = {group: "Security"}];
+  optional bool   PasswordManagerEnabled        = 23 [json_name = "PasswordManagerEnabled",        (bor.ui.field) = {group: "Security"}];
+  optional bool   OfferToSaveLogins             = 24 [json_name = "OfferToSaveLogins",             (bor.ui.field) = {group: "Security"}];
+  optional bool   OfferToSaveLoginsDefault      = 25 [json_name = "OfferToSaveLoginsDefault",      (bor.ui.field) = {group: "Security"}];
+  optional bool   DisableSecurityBypass         = 26 [json_name = "DisableSecurityBypass",         (bor.ui.field) = {group: "Security"}];
+  optional string SSLVersionMin                 = 27 [
+    json_name = "SSLVersionMin",
+    (bor.ui.field) = {
+      group: "Security",
+      string_options: ["tls1", "tls1.1", "tls1.2", "tls1.3"]
+    }
+  ];
+  optional string SSLVersionMax                 = 28 [
+    json_name = "SSLVersionMax",
+    (bor.ui.field) = {
+      group: "Security",
+      string_options: ["tls1", "tls1.1", "tls1.2", "tls1.3"]
+    }
+  ];
 
   // ── Restrictions ──────────────────────────────────────────────────────────
-  optional bool BlockAboutAddons   = 30 [json_name = "BlockAboutAddons"];
-  optional bool BlockAboutConfig   = 31 [json_name = "BlockAboutConfig"];
-  optional bool BlockAboutProfiles = 32 [json_name = "BlockAboutProfiles"];
-  optional bool BlockAboutSupport  = 33 [json_name = "BlockAboutSupport"];
-  optional bool DisableSafeMode    = 34 [json_name = "DisableSafeMode"];
+  optional bool BlockAboutAddons   = 30 [json_name = "BlockAboutAddons",   (bor.ui.field) = {group: "Restrictions"}];
+  optional bool BlockAboutConfig   = 31 [json_name = "BlockAboutConfig",   (bor.ui.field) = {group: "Restrictions"}];
+  optional bool BlockAboutProfiles = 32 [json_name = "BlockAboutProfiles", (bor.ui.field) = {group: "Restrictions"}];
+  optional bool BlockAboutSupport  = 33 [json_name = "BlockAboutSupport",  (bor.ui.field) = {group: "Restrictions"}];
+  optional bool DisableSafeMode    = 34 [json_name = "DisableSafeMode",    (bor.ui.field) = {group: "Restrictions"}];
 
   // ── Developer Tools ───────────────────────────────────────────────────────
-  optional bool DisableDeveloperTools = 40 [json_name = "DisableDeveloperTools"];
+  optional bool DisableDeveloperTools = 40 [json_name = "DisableDeveloperTools", (bor.ui.field) = {group: "Developer Tools"}];
 
   // ── Add-ons / Extensions ──────────────────────────────────────────────────
-  optional bool DisableSystemAddonUpdate = 50 [json_name = "DisableSystemAddonUpdate"];
-  optional bool ExtensionUpdate          = 51 [json_name = "ExtensionUpdate"];
+  optional bool DisableSystemAddonUpdate = 50 [json_name = "DisableSystemAddonUpdate", (bor.ui.field) = {group: "Add-ons"}];
+  optional bool ExtensionUpdate          = 51 [json_name = "ExtensionUpdate",          (bor.ui.field) = {group: "Add-ons"}];
 
   // ── Network ───────────────────────────────────────────────────────────────
-  optional bool HardwareAcceleration = 60 [json_name = "HardwareAcceleration"];
-  optional bool NetworkPrediction    = 61 [json_name = "NetworkPrediction"];
-  optional bool CaptivePortal        = 62 [json_name = "CaptivePortal"];
+  optional bool HardwareAcceleration = 60 [json_name = "HardwareAcceleration", (bor.ui.field) = {group: "Network"}];
+  optional bool NetworkPrediction    = 61 [json_name = "NetworkPrediction",    (bor.ui.field) = {group: "Network"}];
+  optional bool CaptivePortal        = 62 [json_name = "CaptivePortal",        (bor.ui.field) = {group: "Network"}];
 
   // ── General ───────────────────────────────────────────────────────────────
-  optional bool   PromptForDownloadLocation = 70 [json_name = "PromptForDownloadLocation"];
-  optional string DefaultDownloadDirectory  = 71 [json_name = "DefaultDownloadDirectory"];
-  optional string DownloadDirectory         = 72 [json_name = "DownloadDirectory"];
-  optional bool   DisableBuiltinPDFViewer   = 73 [json_name = "DisableBuiltinPDFViewer"];
+  optional bool   PromptForDownloadLocation = 70 [json_name = "PromptForDownloadLocation", (bor.ui.field) = {group: "General"}];
+  optional string DefaultDownloadDirectory  = 71 [json_name = "DefaultDownloadDirectory",  (bor.ui.field) = {group: "General"}];
+  optional string DownloadDirectory         = 72 [json_name = "DownloadDirectory",         (bor.ui.field) = {group: "General"}];
+  optional bool   DisableBuiltinPDFViewer   = 73 [json_name = "DisableBuiltinPDFViewer",   (bor.ui.field) = {group: "General"}];
 
   // ── Locale ────────────────────────────────────────────────────────────────
-  repeated string RequestedLocales = 80 [json_name = "RequestedLocales"];
+  repeated string RequestedLocales = 80 [json_name = "RequestedLocales", (bor.ui.field) = {group: "General"}];
 
   // ── Object / composite policies ───────────────────────────────────────────
-  optional ThunderbirdDNSOverHTTPS   DNSOverHTTPS   = 90 [json_name = "DNSOverHTTPS"];
-  optional ThunderbirdCookies        Cookies        = 91 [json_name = "Cookies"];
-  optional ThunderbirdExtensions     Extensions     = 92 [json_name = "Extensions"];
-  optional ThunderbirdProxy          Proxy          = 93 [json_name = "Proxy"];
-  optional ThunderbirdAuthentication Authentication = 94 [json_name = "Authentication"];
-  optional ThunderbirdSearchEngines  SearchEngines  = 95 [json_name = "SearchEngines"];
+  optional ThunderbirdDNSOverHTTPS   DNSOverHTTPS   = 90 [json_name = "DNSOverHTTPS",   (bor.ui.field) = {group: "Network"}];
+  optional ThunderbirdCookies        Cookies        = 91 [json_name = "Cookies",        (bor.ui.field) = {group: "Cookies"}];
+  optional ThunderbirdExtensions     Extensions     = 92 [json_name = "Extensions",     (bor.ui.field) = {group: "Add-ons"}];
+  optional ThunderbirdProxy          Proxy          = 93 [json_name = "Proxy",          (bor.ui.field) = {group: "Network"}];
+  optional ThunderbirdAuthentication Authentication = 94 [json_name = "Authentication", (bor.ui.field) = {group: "Authentication"}];
+  optional ThunderbirdSearchEngines  SearchEngines  = 95 [json_name = "SearchEngines",  (bor.ui.field) = {group: "Search"}];
 }
 
 // ThunderbirdDNSOverHTTPS configures DNS-over-HTTPS settings.
@@ -86,8 +100,18 @@ message ThunderbirdCookies {
   repeated string Allow                   = 1 [json_name = "Allow"];
   repeated string Block                   = 2 [json_name = "Block"];
   repeated string AllowSession            = 3 [json_name = "AllowSession"];
-  string          Behavior                = 4 [json_name = "Behavior"];
-  string          BehaviorPrivateBrowsing = 5 [json_name = "BehaviorPrivateBrowsing"];
+  string          Behavior                = 4 [
+    json_name = "Behavior",
+    (bor.ui.field) = {
+      string_options: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"]
+    }
+  ];
+  string          BehaviorPrivateBrowsing = 5 [
+    json_name = "BehaviorPrivateBrowsing",
+    (bor.ui.field) = {
+      string_options: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"]
+    }
+  ];
   bool            Locked                  = 6 [json_name = "Locked"];
 }
 

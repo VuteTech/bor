@@ -7,6 +7,7 @@ syntax = "proto3";
 package bor.policy.v1;
 
 import "google/protobuf/struct.proto";
+import "ui.proto";
 
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
@@ -22,766 +23,1016 @@ message ChromePolicy {
   // =========================================================================
 
   // Sets the browser home page URL.
-  optional string HomepageLocation = 1 [json_name = "HomepageLocation"];
+  optional string HomepageLocation = 1 [json_name = "HomepageLocation", (bor.ui.field) = {group: "Homepage & Startup"}];
 
   // Use the New Tab Page as the home page.
-  optional bool HomepageIsNewTabPage = 2 [json_name = "HomepageIsNewTabPage"];
+  optional bool HomepageIsNewTabPage = 2 [json_name = "HomepageIsNewTabPage", (bor.ui.field) = {group: "Homepage & Startup"}];
 
   // Sets the New Tab Page URL.
-  optional string NewTabPageLocation = 3 [json_name = "NewTabPageLocation"];
+  optional string NewTabPageLocation = 3 [json_name = "NewTabPageLocation", (bor.ui.field) = {group: "Homepage & Startup"}];
 
   // Action on startup: 1=open new tab, 4=open last session, 5=open list of URLs.
-  optional int32 RestoreOnStartup = 4 [json_name = "RestoreOnStartup"];
+  optional int32 RestoreOnStartup = 4 [
+    json_name = "RestoreOnStartup",
+    (bor.ui.field) = {
+      group: "Homepage & Startup",
+      int_options: [
+        {value: 1, label: "1 – Open the New Tab page"},
+        {value: 4, label: "4 – Open a list of URLs"},
+        {value: 5, label: "5 – Open the last session"}
+      ]
+    }
+  ];
 
   // List of URLs to open on startup (requires RestoreOnStartup=5).
-  repeated string RestoreOnStartupURLs = 5 [json_name = "RestoreOnStartupURLs"];
+  repeated string RestoreOnStartupURLs = 5 [json_name = "RestoreOnStartupURLs", (bor.ui.field) = {group: "Homepage & Startup"}];
 
   // Show the Home button in the toolbar.
-  optional bool ShowHomeButton = 6 [json_name = "ShowHomeButton"];
+  optional bool ShowHomeButton = 6 [json_name = "ShowHomeButton", (bor.ui.field) = {group: "Homepage & Startup"}];
 
   // Whether to set Chrome as the default browser.
-  optional bool DefaultBrowserSettingEnabled = 7 [json_name = "DefaultBrowserSettingEnabled"];
+  optional bool DefaultBrowserSettingEnabled = 7 [json_name = "DefaultBrowserSettingEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Show the bookmark bar.
-  optional bool BookmarkBarEnabled = 8 [json_name = "BookmarkBarEnabled"];
+  optional bool BookmarkBarEnabled = 8 [json_name = "BookmarkBarEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Allow users to edit bookmarks.
-  optional bool EditBookmarksEnabled = 9 [json_name = "EditBookmarksEnabled"];
+  optional bool EditBookmarksEnabled = 9 [json_name = "EditBookmarksEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Managed bookmarks that cannot be deleted or edited by the user.
   // Value is a JSON array of bookmark objects with "name" and "url" (or "children").
-  optional google.protobuf.Value ManagedBookmarks = 10 [json_name = "ManagedBookmarks"];
+  optional google.protobuf.Value ManagedBookmarks = 10 [json_name = "ManagedBookmarks", (bor.ui.field) = {group: "Browser UI"}];
 
   // =========================================================================
   // Extensions (51–100)
   // =========================================================================
 
   // Force-install extensions. List of "<extensionID>;<updateURL>" strings.
-  repeated string ExtensionInstallForcelist = 51 [json_name = "ExtensionInstallForcelist"];
+  repeated string ExtensionInstallForcelist = 51 [json_name = "ExtensionInstallForcelist", (bor.ui.field) = {group: "Extensions"}];
 
   // Block installation of listed extensions (use "*" to block all).
-  repeated string ExtensionInstallBlocklist = 52 [json_name = "ExtensionInstallBlocklist"];
+  repeated string ExtensionInstallBlocklist = 52 [json_name = "ExtensionInstallBlocklist", (bor.ui.field) = {group: "Extensions"}];
 
   // Allow installation of listed extensions even if they are in the blocklist.
-  repeated string ExtensionInstallAllowlist = 53 [json_name = "ExtensionInstallAllowlist"];
+  repeated string ExtensionInstallAllowlist = 53 [json_name = "ExtensionInstallAllowlist", (bor.ui.field) = {group: "Extensions"}];
 
   // Allow extensions to be installed from these URLs.
-  repeated string ExtensionInstallSources = 54 [json_name = "ExtensionInstallSources"];
+  repeated string ExtensionInstallSources = 54 [json_name = "ExtensionInstallSources", (bor.ui.field) = {group: "Extensions"}];
 
   // Allowed extension/app types: "extension", "theme", "user_script", "hosted_app", "legacy_packaged_app", "platform_app".
-  repeated string ExtensionAllowedTypes = 55 [json_name = "ExtensionAllowedTypes"];
+  repeated string ExtensionAllowedTypes = 55 [json_name = "ExtensionAllowedTypes", (bor.ui.field) = {group: "Extensions"}];
 
   // Fine-grained extension management settings (dictionary keyed by extension ID or "*").
-  optional google.protobuf.Value ExtensionSettings = 56 [json_name = "ExtensionSettings"];
+  optional google.protobuf.Value ExtensionSettings = 56 [json_name = "ExtensionSettings", (bor.ui.field) = {group: "Extensions"}];
 
   // Deprecated: use ExtensionInstallBlocklist.
-  repeated string ExtensionInstallBlacklist = 57 [json_name = "ExtensionInstallBlacklist"];
+  repeated string ExtensionInstallBlacklist = 57 [json_name = "ExtensionInstallBlacklist", (bor.ui.field) = {group: "Extensions"}];
 
   // Deprecated: use ExtensionInstallAllowlist.
-  repeated string ExtensionInstallWhitelist = 58 [json_name = "ExtensionInstallWhitelist"];
+  repeated string ExtensionInstallWhitelist = 58 [json_name = "ExtensionInstallWhitelist", (bor.ui.field) = {group: "Extensions"}];
 
   // =========================================================================
   // Privacy & Security (101–150)
   // =========================================================================
 
   // Safe Browsing protection level: 0=off, 1=standard, 2=enhanced.
-  optional int32 SafeBrowsingProtectionLevel = 101 [json_name = "SafeBrowsingProtectionLevel"];
+  optional int32 SafeBrowsingProtectionLevel = 101 [
+    json_name = "SafeBrowsingProtectionLevel",
+    (bor.ui.field) = {
+      group: "Safe Browsing",
+      chrome_only: true,
+      int_options: [
+        {value: 0, label: "0 – Safe Browsing off"},
+        {value: 1, label: "1 – Standard protection"},
+        {value: 2, label: "2 – Enhanced protection"}
+      ]
+    }
+  ];
 
   // Enable Safe Browsing (deprecated; use SafeBrowsingProtectionLevel).
-  optional bool SafeBrowsingEnabled = 102 [json_name = "SafeBrowsingEnabled"];
+  optional bool SafeBrowsingEnabled = 102 [
+    json_name = "SafeBrowsingEnabled",
+    (bor.ui.field) = {group: "Safe Browsing", chrome_only: true}
+  ];
 
   // Report Safe Browsing data to Google.
-  optional bool SafeBrowsingExtendedReportingEnabled = 103 [json_name = "SafeBrowsingExtendedReportingEnabled"];
+  optional bool SafeBrowsingExtendedReportingEnabled = 103 [
+    json_name = "SafeBrowsingExtendedReportingEnabled",
+    (bor.ui.field) = {group: "Safe Browsing", chrome_only: true}
+  ];
 
   // URLs exempted from Safe Browsing checks.
-  repeated string SafeBrowsingAllowlistDomains = 104 [json_name = "SafeBrowsingAllowlistDomains"];
+  repeated string SafeBrowsingAllowlistDomains = 104 [
+    json_name = "SafeBrowsingAllowlistDomains",
+    (bor.ui.field) = {group: "Safe Browsing", chrome_only: true}
+  ];
 
   // Block access to a list of URLs.
-  repeated string URLBlocklist = 105 [json_name = "URLBlocklist"];
+  repeated string URLBlocklist = 105 [json_name = "URLBlocklist", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Allow access to listed URLs (overrides URLBlocklist).
-  repeated string URLAllowlist = 106 [json_name = "URLAllowlist"];
+  repeated string URLAllowlist = 106 [json_name = "URLAllowlist", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Report Chrome usage and crash data to Google.
-  optional bool MetricsReportingEnabled = 107 [json_name = "MetricsReportingEnabled"];
+  optional bool MetricsReportingEnabled = 107 [
+    json_name = "MetricsReportingEnabled",
+    (bor.ui.field) = {group: "Privacy & Security", chrome_only: true}
+  ];
 
   // Enable alternate error pages (Google web service when a page is not found).
-  optional bool AlternateErrorPagesEnabled = 108 [json_name = "AlternateErrorPagesEnabled"];
+  optional bool AlternateErrorPagesEnabled = 108 [json_name = "AlternateErrorPagesEnabled", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Block third-party cookies.
-  optional bool BlockThirdPartyCookies = 109 [json_name = "BlockThirdPartyCookies"];
+  optional bool BlockThirdPartyCookies = 109 [json_name = "BlockThirdPartyCookies", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Clear browsing data on exit.
-  optional bool ClearSiteDataOnExit = 110 [json_name = "ClearSiteDataOnExit"];
+  optional bool ClearSiteDataOnExit = 110 [json_name = "ClearSiteDataOnExit", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Disable saving browsing history.
-  optional bool SavingBrowserHistoryDisabled = 111 [json_name = "SavingBrowserHistoryDisabled"];
+  optional bool SavingBrowserHistoryDisabled = 111 [json_name = "SavingBrowserHistoryDisabled", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Allow users to delete browser history and download history.
-  optional bool AllowDeletingBrowserHistory = 112 [json_name = "AllowDeletingBrowserHistory"];
+  optional bool AllowDeletingBrowserHistory = 112 [json_name = "AllowDeletingBrowserHistory", (bor.ui.field) = {group: "Browser UI"}];
 
   // Disable 3D graphics APIs (WebGL).
-  optional bool Disable3DAPIs = 113 [json_name = "Disable3DAPIs"];
+  optional bool Disable3DAPIs = 113 [json_name = "Disable3DAPIs", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Disable SPDY protocol.
-  optional bool DisableSpdy = 114 [json_name = "DisableSpdy"];
+  optional bool DisableSpdy = 114 [json_name = "DisableSpdy", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Disable schemes (protocols); e.g. ["javascript"].
-  repeated string DisabledSchemes = 115 [json_name = "DisabledSchemes"];
+  repeated string DisabledSchemes = 115 [json_name = "DisabledSchemes", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Enable JavaScript.
-  optional bool JavascriptEnabled = 116 [json_name = "JavascriptEnabled"];
+  optional bool JavascriptEnabled = 116 [json_name = "JavascriptEnabled", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow or block access to file:// URLs for extensions.
-  optional bool AllowFileSelectionDialogs = 117 [json_name = "AllowFileSelectionDialogs"];
+  optional bool AllowFileSelectionDialogs = 117 [json_name = "AllowFileSelectionDialogs", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Enable DNS prefetching.
-  optional bool DnsPrefetchingEnabled = 118 [json_name = "DnsPrefetchingEnabled"];
+  optional bool DnsPrefetchingEnabled = 118 [json_name = "DnsPrefetchingEnabled", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // DNS-over-HTTPS mode: "off", "automatic", "secure".
-  optional string DnsOverHttpsMode = 119 [json_name = "DnsOverHttpsMode"];
+  optional string DnsOverHttpsMode = 119 [
+    json_name = "DnsOverHttpsMode",
+    (bor.ui.field) = {
+      group: "Network & Proxy",
+      string_options: ["off", "automatic", "secure"]
+    }
+  ];
 
   // URI template of the desired DNS-over-HTTPS resolver.
-  optional string DnsOverHttpsTemplates = 120 [json_name = "DnsOverHttpsTemplates"];
+  optional string DnsOverHttpsTemplates = 120 [json_name = "DnsOverHttpsTemplates", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Control network prediction (preloading): 0=always, 2=WiFi-only, 4=never.
-  optional int32 NetworkPredictionOptions = 121 [json_name = "NetworkPredictionOptions"];
+  optional int32 NetworkPredictionOptions = 121 [
+    json_name = "NetworkPredictionOptions",
+    (bor.ui.field) = {
+      group: "Network & Proxy",
+      int_options: [
+        {value: 0, label: "0 – Predict on all networks"},
+        {value: 2, label: "2 – Predict on Wi-Fi and Ethernet only"},
+        {value: 3, label: "3 – Never predict"}
+      ]
+    }
+  ];
 
   // SSL version min: "tls1", "tls1.1", "tls1.2", "tls1.3".
-  optional string SSLVersionMin = 122 [json_name = "SSLVersionMin"];
+  optional string SSLVersionMin = 122 [
+    json_name = "SSLVersionMin",
+    (bor.ui.field) = {
+      group: "Privacy & Security",
+      string_options: ["tls1", "tls1.1", "tls1.2", "tls1.3"]
+    }
+  ];
 
   // Enable QUIC protocol.
-  optional bool QuicAllowed = 123 [json_name = "QuicAllowed"];
+  optional bool QuicAllowed = 123 [json_name = "QuicAllowed", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Maximum number of simultaneous connections to a proxy server.
-  optional int32 MaxConnectionsPerProxy = 124 [json_name = "MaxConnectionsPerProxy"];
+  optional int32 MaxConnectionsPerProxy = 124 [json_name = "MaxConnectionsPerProxy", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Allow HTTP/0.9 on non-standard ports.
-  optional bool Http09OnNonDefaultPortsEnabled = 125 [json_name = "Http09OnNonDefaultPortsEnabled"];
+  optional bool Http09OnNonDefaultPortsEnabled = 125 [json_name = "Http09OnNonDefaultPortsEnabled", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Incognito mode: 0=available, 1=disabled, 2=forced.
-  optional int32 IncognitoModeAvailability = 126 [json_name = "IncognitoModeAvailability"];
+  optional int32 IncognitoModeAvailability = 126 [
+    json_name = "IncognitoModeAvailability",
+    (bor.ui.field) = {
+      group: "Privacy & Security",
+      int_options: [
+        {value: 0, label: "0 – Incognito available"},
+        {value: 1, label: "1 – Incognito disabled"},
+        {value: 2, label: "2 – Incognito forced"}
+      ]
+    }
+  ];
 
   // Enable incognito mode (deprecated; use IncognitoModeAvailability).
-  optional bool IncognitoEnabled = 127 [json_name = "IncognitoEnabled"];
+  optional bool IncognitoEnabled = 127 [json_name = "IncognitoEnabled", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Enable the dinosaur Easter egg game (offline page).
-  optional bool AllowDinosaurEasterEgg = 128 [json_name = "AllowDinosaurEasterEgg"];
+  optional bool AllowDinosaurEasterEgg = 128 [json_name = "AllowDinosaurEasterEgg", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // HSTS preload list: 0=enabled, 1=disabled.
-  optional bool HSTSPolicyBypassList = 129 [json_name = "HSTSPolicyBypassList"];
+  optional bool HSTSPolicyBypassList = 129 [json_name = "HSTSPolicyBypassList", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Certificate Transparency enforcement: list of URLs to exclude.
-  repeated string CertificateTransparencyEnforcementDisabledForUrls = 130 [json_name = "CertificateTransparencyEnforcementDisabledForUrls"];
+  repeated string CertificateTransparencyEnforcementDisabledForUrls = 130 [json_name = "CertificateTransparencyEnforcementDisabledForUrls", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Certificate Transparency enforcement: list of certificate hashes to exclude.
-  repeated string CertificateTransparencyEnforcementDisabledForCas = 131 [json_name = "CertificateTransparencyEnforcementDisabledForCas"];
+  repeated string CertificateTransparencyEnforcementDisabledForCas = 131 [json_name = "CertificateTransparencyEnforcementDisabledForCas", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Certificate Transparency enforcement: list of legacy certificate hashes.
-  repeated string CertificateTransparencyEnforcementDisabledForLegacyCas = 132 [json_name = "CertificateTransparencyEnforcementDisabledForLegacyCas"];
+  repeated string CertificateTransparencyEnforcementDisabledForLegacyCas = 132 [json_name = "CertificateTransparencyEnforcementDisabledForLegacyCas", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Require online OCSP/CRL checks for local trust anchors.
-  optional bool RequireOnlineRevocationChecksForLocalAnchors = 133 [json_name = "RequireOnlineRevocationChecksForLocalAnchors"];
+  optional bool RequireOnlineRevocationChecksForLocalAnchors = 133 [json_name = "RequireOnlineRevocationChecksForLocalAnchors", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Additional CA certificates to trust (list of base64-encoded DER certs).
-  optional google.protobuf.Value PolicyCertificateAuthorities = 134 [json_name = "PolicyCertificateAuthorities"];
+  optional google.protobuf.Value PolicyCertificateAuthorities = 134 [json_name = "PolicyCertificateAuthorities", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // =========================================================================
   // Network & Proxy (151–200)
   // =========================================================================
 
   // Proxy settings dictionary (mode, server, pac url, bypass list).
-  optional google.protobuf.Value ProxySettings = 151 [json_name = "ProxySettings"];
+  optional google.protobuf.Value ProxySettings = 151 [json_name = "ProxySettings", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Proxy mode: "direct", "auto_detect", "pac_script", "fixed_servers", "system".
-  optional string ProxyMode = 152 [json_name = "ProxyMode"];
+  optional string ProxyMode = 152 [
+    json_name = "ProxyMode",
+    (bor.ui.field) = {
+      group: "Network & Proxy",
+      string_options: ["direct", "auto_detect", "pac_script", "fixed_servers", "system"]
+    }
+  ];
 
   // Proxy server mode (integer, deprecated; prefer ProxyMode).
-  optional int32 ProxyServerMode = 153 [json_name = "ProxyServerMode"];
+  optional int32 ProxyServerMode = 153 [json_name = "ProxyServerMode", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Proxy server address ("host:port").
-  optional string ProxyServer = 154 [json_name = "ProxyServer"];
+  optional string ProxyServer = 154 [json_name = "ProxyServer", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // URL for the proxy auto-config (PAC) script.
-  optional string ProxyPacUrl = 155 [json_name = "ProxyPacUrl"];
+  optional string ProxyPacUrl = 155 [json_name = "ProxyPacUrl", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // Semicolon-separated list of hosts that bypass the proxy.
-  optional string ProxyBypassList = 156 [json_name = "ProxyBypassList"];
+  optional string ProxyBypassList = 156 [json_name = "ProxyBypassList", (bor.ui.field) = {group: "Network & Proxy"}];
 
   // HTTP authentication schemes to support (comma-separated).
-  optional string AuthSchemes = 157 [json_name = "AuthSchemes"];
+  optional string AuthSchemes = 157 [json_name = "AuthSchemes", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Disable CNAME lookup when negotiating Kerberos/NTLM auth.
-  optional bool DisableAuthNegotiateCnameLookup = 158 [json_name = "DisableAuthNegotiateCnameLookup"];
+  optional bool DisableAuthNegotiateCnameLookup = 158 [json_name = "DisableAuthNegotiateCnameLookup", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Include port in Kerberos SPN when negotiating auth.
-  optional bool EnableAuthNegotiatePort = 159 [json_name = "EnableAuthNegotiatePort"];
+  optional bool EnableAuthNegotiatePort = 159 [json_name = "EnableAuthNegotiatePort", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Allowlist of servers for integrated Windows authentication.
-  optional string AuthServerAllowlist = 160 [json_name = "AuthServerAllowlist"];
+  optional string AuthServerAllowlist = 160 [json_name = "AuthServerAllowlist", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Servers to which Kerberos credentials can be delegated.
-  optional string AuthNegotiateDelegateAllowlist = 161 [json_name = "AuthNegotiateDelegateAllowlist"];
+  optional string AuthNegotiateDelegateAllowlist = 161 [json_name = "AuthNegotiateDelegateAllowlist", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Deprecated form of AuthServerAllowlist.
-  optional string AuthServerWhitelist = 162 [json_name = "AuthServerWhitelist"];
+  optional string AuthServerWhitelist = 162 [json_name = "AuthServerWhitelist", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Deprecated form of AuthNegotiateDelegateAllowlist.
-  optional string AuthNegotiateDelegateWhitelist = 163 [json_name = "AuthNegotiateDelegateWhitelist"];
+  optional string AuthNegotiateDelegateWhitelist = 163 [json_name = "AuthNegotiateDelegateWhitelist", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Path to the GSSAPI library (Linux only).
-  optional string GSSAPILibraryName = 164 [json_name = "GSSAPILibraryName"];
+  optional string GSSAPILibraryName = 164 [json_name = "GSSAPILibraryName", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Allow cross-origin authentication prompts.
-  optional bool AllowCrossOriginAuthPrompt = 165 [json_name = "AllowCrossOriginAuthPrompt"];
+  optional bool AllowCrossOriginAuthPrompt = 165 [json_name = "AllowCrossOriginAuthPrompt", (bor.ui.field) = {group: "HTTP Authentication"}];
 
   // Disable WPAD optimisation (Quick-check).
-  optional bool WPADQuickCheckEnabled = 166 [json_name = "WPADQuickCheckEnabled"];
+  optional bool WPADQuickCheckEnabled = 166 [json_name = "WPADQuickCheckEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Force network traffic through HTTPS.
-  optional bool HttpsOnlyMode = 167 [json_name = "HttpsOnlyMode"];
+  optional bool HttpsOnlyMode = 167 [json_name = "HttpsOnlyMode", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Upgrade insecure requests to HTTPS.
-  optional bool UpgradeHttpRequests = 168 [json_name = "UpgradeHttpRequests"];
+  optional bool UpgradeHttpRequests = 168 [json_name = "UpgradeHttpRequests", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // =========================================================================
   // Content Settings (201–250)
   // =========================================================================
 
   // Default cookies setting: 1=allow, 2=block, 4=session-only.
-  optional int32 DefaultCookiesSetting = 201 [json_name = "DefaultCookiesSetting"];
+  optional int32 DefaultCookiesSetting = 201 [
+    json_name = "DefaultCookiesSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow all cookies"},
+        {value: 2, label: "2 – Block all cookies"},
+        {value: 4, label: "4 – Session only cookies"}
+      ]
+    }
+  ];
 
   // Default images setting: 1=allow, 2=block.
-  optional int32 DefaultImagesSetting = 202 [json_name = "DefaultImagesSetting"];
+  optional int32 DefaultImagesSetting = 202 [
+    json_name = "DefaultImagesSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow all images"},
+        {value: 2, label: "2 – Block all images"}
+      ]
+    }
+  ];
 
   // Default JavaScript setting: 1=allow, 2=block.
-  optional int32 DefaultJavaScriptSetting = 203 [json_name = "DefaultJavaScriptSetting"];
+  optional int32 DefaultJavaScriptSetting = 203 [
+    json_name = "DefaultJavaScriptSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow JavaScript"},
+        {value: 2, label: "2 – Block JavaScript"}
+      ]
+    }
+  ];
 
   // Default pop-ups setting: 1=allow, 2=block.
-  optional int32 DefaultPopupsSetting = 204 [json_name = "DefaultPopupsSetting"];
+  optional int32 DefaultPopupsSetting = 204 [
+    json_name = "DefaultPopupsSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow popups"},
+        {value: 2, label: "2 – Block popups"}
+      ]
+    }
+  ];
 
   // Default notifications setting: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultNotificationsSetting = 205 [json_name = "DefaultNotificationsSetting"];
+  optional int32 DefaultNotificationsSetting = 205 [
+    json_name = "DefaultNotificationsSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow notifications"},
+        {value: 2, label: "2 – Block notifications"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Default geolocation setting: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultGeolocationSetting = 206 [json_name = "DefaultGeolocationSetting"];
+  optional int32 DefaultGeolocationSetting = 206 [
+    json_name = "DefaultGeolocationSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow geolocation"},
+        {value: 2, label: "2 – Block geolocation"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Default WebUSB setting: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultWebUsbGuardSetting = 207 [json_name = "DefaultWebUsbGuardSetting"];
+  optional int32 DefaultWebUsbGuardSetting = 207 [
+    json_name = "DefaultWebUsbGuardSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 2, label: "2 – Block access"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Default file system read access: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultFileSystemReadGuardSetting = 208 [json_name = "DefaultFileSystemReadGuardSetting"];
+  optional int32 DefaultFileSystemReadGuardSetting = 208 [
+    json_name = "DefaultFileSystemReadGuardSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 2, label: "2 – Block access"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Default file system write access: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultFileSystemWriteGuardSetting = 209 [json_name = "DefaultFileSystemWriteGuardSetting"];
+  optional int32 DefaultFileSystemWriteGuardSetting = 209 [
+    json_name = "DefaultFileSystemWriteGuardSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 2, label: "2 – Block access"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Default sensors access (device motion/orientation): 1=allow, 2=block.
-  optional int32 DefaultSensorsSetting = 210 [json_name = "DefaultSensorsSetting"];
+  optional int32 DefaultSensorsSetting = 210 [
+    json_name = "DefaultSensorsSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 1, label: "1 – Allow access"},
+        {value: 2, label: "2 – Block access"}
+      ]
+    }
+  ];
 
   // Default serial port access: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultSerialGuardSetting = 211 [json_name = "DefaultSerialGuardSetting"];
+  optional int32 DefaultSerialGuardSetting = 211 [
+    json_name = "DefaultSerialGuardSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 2, label: "2 – Block access"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Automatically select certificates matching these filters.
-  repeated string AutoSelectCertificateForUrls = 212 [json_name = "AutoSelectCertificateForUrls"];
+  repeated string AutoSelectCertificateForUrls = 212 [json_name = "AutoSelectCertificateForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow cookies for these URL patterns.
-  repeated string CookiesAllowedForUrls = 213 [json_name = "CookiesAllowedForUrls"];
+  repeated string CookiesAllowedForUrls = 213 [json_name = "CookiesAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block cookies for these URL patterns.
-  repeated string CookiesBlockedForUrls = 214 [json_name = "CookiesBlockedForUrls"];
+  repeated string CookiesBlockedForUrls = 214 [json_name = "CookiesBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow session-only cookies for these URL patterns.
-  repeated string CookiesSessionOnlyForUrls = 215 [json_name = "CookiesSessionOnlyForUrls"];
+  repeated string CookiesSessionOnlyForUrls = 215 [json_name = "CookiesSessionOnlyForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow images for these URL patterns.
-  repeated string ImagesAllowedForUrls = 216 [json_name = "ImagesAllowedForUrls"];
+  repeated string ImagesAllowedForUrls = 216 [json_name = "ImagesAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block images for these URL patterns.
-  repeated string ImagesBlockedForUrls = 217 [json_name = "ImagesBlockedForUrls"];
+  repeated string ImagesBlockedForUrls = 217 [json_name = "ImagesBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow JavaScript for these URL patterns.
-  repeated string JavaScriptAllowedForUrls = 218 [json_name = "JavaScriptAllowedForUrls"];
+  repeated string JavaScriptAllowedForUrls = 218 [json_name = "JavaScriptAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block JavaScript for these URL patterns.
-  repeated string JavaScriptBlockedForUrls = 219 [json_name = "JavaScriptBlockedForUrls"];
+  repeated string JavaScriptBlockedForUrls = 219 [json_name = "JavaScriptBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow pop-ups for these URL patterns.
-  repeated string PopupsAllowedForUrls = 220 [json_name = "PopupsAllowedForUrls"];
+  repeated string PopupsAllowedForUrls = 220 [json_name = "PopupsAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block pop-ups for these URL patterns.
-  repeated string PopupsBlockedForUrls = 221 [json_name = "PopupsBlockedForUrls"];
+  repeated string PopupsBlockedForUrls = 221 [json_name = "PopupsBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow notifications for these URL patterns.
-  repeated string NotificationsAllowedForUrls = 222 [json_name = "NotificationsAllowedForUrls"];
+  repeated string NotificationsAllowedForUrls = 222 [json_name = "NotificationsAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block notifications for these URL patterns.
-  repeated string NotificationsBlockedForUrls = 223 [json_name = "NotificationsBlockedForUrls"];
+  repeated string NotificationsBlockedForUrls = 223 [json_name = "NotificationsBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow WebUSB for these URL patterns.
-  repeated string WebUsbAllowDevicesForUrls = 224 [json_name = "WebUsbAllowDevicesForUrls"];
+  repeated string WebUsbAllowDevicesForUrls = 224 [json_name = "WebUsbAllowDevicesForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block WebUSB for these URL patterns.
-  repeated string WebUsbAskForUrls = 225 [json_name = "WebUsbAskForUrls"];
+  repeated string WebUsbAskForUrls = 225 [json_name = "WebUsbAskForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block WebUSB for these URL patterns.
-  repeated string WebUsbBlockedForUrls = 226 [json_name = "WebUsbBlockedForUrls"];
+  repeated string WebUsbBlockedForUrls = 226 [json_name = "WebUsbBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Allow geolocation for these URL patterns.
-  repeated string DefaultGeolocationAllowedForUrls = 227 [json_name = "DefaultGeolocationAllowedForUrls"];
+  repeated string DefaultGeolocationAllowedForUrls = 227 [json_name = "DefaultGeolocationAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block geolocation for these URL patterns.
-  repeated string DefaultGeolocationBlockedForUrls = 228 [json_name = "DefaultGeolocationBlockedForUrls"];
+  repeated string DefaultGeolocationBlockedForUrls = 228 [json_name = "DefaultGeolocationBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // JIT compiler for JavaScript: list of URLs where JIT is disabled.
-  repeated string JavaScriptJitBlockedForSites = 229 [json_name = "JavaScriptJitBlockedForSites"];
+  repeated string JavaScriptJitBlockedForSites = 229 [json_name = "JavaScriptJitBlockedForSites", (bor.ui.field) = {group: "Content Settings"}];
 
   // JIT compiler for JavaScript: list of URLs where JIT is allowed.
-  repeated string JavaScriptJitAllowedForSites = 230 [json_name = "JavaScriptJitAllowedForSites"];
+  repeated string JavaScriptJitAllowedForSites = 230 [json_name = "JavaScriptJitAllowedForSites", (bor.ui.field) = {group: "Content Settings"}];
 
   // Default legacy SameSite cookie behaviour (deprecated).
-  optional int32 LegacySameSiteCookieBehaviorEnabled = 231 [json_name = "LegacySameSiteCookieBehaviorEnabled"];
+  optional int32 LegacySameSiteCookieBehaviorEnabled = 231 [
+    json_name = "LegacySameSiteCookieBehaviorEnabled",
+    (bor.ui.field) = {
+      group: "Miscellaneous",
+      int_options: [
+        {value: 0, label: "0 – Use default behavior for all cookies"},
+        {value: 1, label: "1 – Revert to legacy behavior for all cookies"},
+        {value: 2, label: "2 – Use default behavior for cookies on all sites"}
+      ]
+    }
+  ];
 
   // Override legacy cookie behaviour for these URL patterns.
-  repeated string LegacySameSiteCookieBehaviorEnabledForDomainList = 232 [json_name = "LegacySameSiteCookieBehaviorEnabledForDomainList"];
+  repeated string LegacySameSiteCookieBehaviorEnabledForDomainList = 232 [json_name = "LegacySameSiteCookieBehaviorEnabledForDomainList", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Allow third-party storage partitioning for these origins.
-  repeated string StorageAccessAPIAllowlistBypassedForOrigins = 233 [json_name = "StorageAccessAPIAllowlistBypassedForOrigins"];
+  repeated string StorageAccessAPIAllowlistBypassedForOrigins = 233 [json_name = "StorageAccessAPIAllowlistBypassedForOrigins", (bor.ui.field) = {group: "Content Settings"}];
 
   // Default WebBluetooth setting: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultWebBluetoothGuardSetting = 234 [json_name = "DefaultWebBluetoothGuardSetting"];
+  optional int32 DefaultWebBluetoothGuardSetting = 234 [
+    json_name = "DefaultWebBluetoothGuardSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 2, label: "2 – Block access"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // =========================================================================
   // Safe Browsing (251–300)
   // =========================================================================
 
   // Enable downloading of malicious file type warnings.
-  optional bool SafeBrowsingForTrustedSourcesEnabled = 251 [json_name = "SafeBrowsingForTrustedSourcesEnabled"];
+  optional bool SafeBrowsingForTrustedSourcesEnabled = 251 [json_name = "SafeBrowsingForTrustedSourcesEnabled", (bor.ui.field) = {group: "Safe Browsing"}];
 
   // Disable Safe Browsing bypass prompts for listed domains.
-  repeated string SafeBrowsingAllowlistForDomains = 252 [json_name = "SafeBrowsingAllowlistForDomains"];
+  repeated string SafeBrowsingAllowlistForDomains = 252 [json_name = "SafeBrowsingAllowlistForDomains", (bor.ui.field) = {group: "Safe Browsing"}];
 
   // Enable real-time Safe Browsing checks.
-  optional bool SafeBrowsingRealTimeLookupsEnabled = 253 [json_name = "SafeBrowsingRealTimeLookupsEnabled"];
+  optional bool SafeBrowsingRealTimeLookupsEnabled = 253 [json_name = "SafeBrowsingRealTimeLookupsEnabled", (bor.ui.field) = {group: "Safe Browsing"}];
 
   // Allow bypassing Safe Browsing warnings for malicious downloads.
-  optional bool SafeBrowsingDeepScanningEnabled = 254 [json_name = "SafeBrowsingDeepScanningEnabled"];
+  optional bool SafeBrowsingDeepScanningEnabled = 254 [json_name = "SafeBrowsingDeepScanningEnabled", (bor.ui.field) = {group: "Safe Browsing"}];
 
   // =========================================================================
   // Password & Autofill (301–350)
   // =========================================================================
 
   // Enable the password manager.
-  optional bool PasswordManagerEnabled = 301 [json_name = "PasswordManagerEnabled"];
+  optional bool PasswordManagerEnabled = 301 [json_name = "PasswordManagerEnabled", (bor.ui.field) = {group: "Passwords & Autofill"}];
 
   // Allow users to show stored passwords.
-  optional bool PasswordManagerAllowShowPasswords = 302 [json_name = "PasswordManagerAllowShowPasswords"];
+  optional bool PasswordManagerAllowShowPasswords = 302 [json_name = "PasswordManagerAllowShowPasswords", (bor.ui.field) = {group: "Passwords & Autofill"}];
 
   // Enable autofill for addresses and credit cards.
-  optional bool AutofillAddressEnabled = 303 [json_name = "AutofillAddressEnabled"];
+  optional bool AutofillAddressEnabled = 303 [json_name = "AutofillAddressEnabled", (bor.ui.field) = {group: "Passwords & Autofill"}];
 
   // Enable autofill for credit cards.
-  optional bool AutofillCreditCardEnabled = 304 [json_name = "AutofillCreditCardEnabled"];
+  optional bool AutofillCreditCardEnabled = 304 [json_name = "AutofillCreditCardEnabled", (bor.ui.field) = {group: "Passwords & Autofill"}];
 
   // Deprecated: enable autofill (use AutofillAddressEnabled and AutofillCreditCardEnabled).
-  optional bool AutoFillEnabled = 305 [json_name = "AutoFillEnabled"];
+  optional bool AutoFillEnabled = 305 [json_name = "AutoFillEnabled", (bor.ui.field) = {group: "Passwords & Autofill"}];
 
   // Import autofill form data from default browser on first run.
-  optional bool ImportAutofillFormData = 306 [json_name = "ImportAutofillFormData"];
+  optional bool ImportAutofillFormData = 306 [json_name = "ImportAutofillFormData", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // =========================================================================
   // Downloads (351–400)
   // =========================================================================
 
   // Default download directory.
-  optional string DownloadDirectory = 351 [json_name = "DownloadDirectory"];
+  optional string DownloadDirectory = 351 [json_name = "DownloadDirectory", (bor.ui.field) = {group: "Downloads"}];
 
   // Prompt user for the download location.
-  optional bool PromptForDownloadLocation = 352 [json_name = "PromptForDownloadLocation"];
+  optional bool PromptForDownloadLocation = 352 [json_name = "PromptForDownloadLocation", (bor.ui.field) = {group: "Downloads"}];
 
   // Allow downloading files of these types.
-  repeated string DownloadRestrictions = 353 [json_name = "DownloadRestrictions"];
+  repeated string DownloadRestrictions = 353 [json_name = "DownloadRestrictions", (bor.ui.field) = {group: "Downloads"}];
 
   // Disk cache directory.
-  optional string DiskCacheDir = 354 [json_name = "DiskCacheDir"];
+  optional string DiskCacheDir = 354 [json_name = "DiskCacheDir", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Disk cache size in bytes.
-  optional int32 DiskCacheSize = 355 [json_name = "DiskCacheSize"];
+  optional int32 DiskCacheSize = 355 [json_name = "DiskCacheSize", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Media cache size in bytes (deprecated).
-  optional int32 MediaCacheSize = 356 [json_name = "MediaCacheSize"];
+  optional int32 MediaCacheSize = 356 [json_name = "MediaCacheSize", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // =========================================================================
   // Printing (401–450)
   // =========================================================================
 
   // Enable printing.
-  optional bool PrintingEnabled = 401 [json_name = "PrintingEnabled"];
+  optional bool PrintingEnabled = 401 [json_name = "PrintingEnabled", (bor.ui.field) = {group: "Printing"}];
 
   // Allowed color modes: "color", "monochrome", "any".
-  optional string PrintingAllowedColorModes = 402 [json_name = "PrintingAllowedColorModes"];
+  optional string PrintingAllowedColorModes = 402 [json_name = "PrintingAllowedColorModes", (bor.ui.field) = {group: "Printing"}];
 
   // Allowed duplex modes: "simplex", "short_edge", "long_edge", "any".
-  optional string PrintingAllowedDuplexModes = 403 [json_name = "PrintingAllowedDuplexModes"];
+  optional string PrintingAllowedDuplexModes = 403 [json_name = "PrintingAllowedDuplexModes", (bor.ui.field) = {group: "Printing"}];
 
   // Allowed background graphics modes: "enabled", "disabled", "any".
-  optional string PrintingAllowedBackgroundGraphicsModes = 404 [json_name = "PrintingAllowedBackgroundGraphicsModes"];
+  optional string PrintingAllowedBackgroundGraphicsModes = 404 [
+    json_name = "PrintingAllowedBackgroundGraphicsModes",
+    (bor.ui.field) = {
+      group: "Printing",
+      string_options: ["any", "enabled", "disabled"]
+    }
+  ];
 
   // Default color mode: "color" or "monochrome".
-  optional string PrintingColorDefault = 405 [json_name = "PrintingColorDefault"];
+  optional string PrintingColorDefault = 405 [json_name = "PrintingColorDefault", (bor.ui.field) = {group: "Printing"}];
 
   // Default duplex mode: "simplex", "short_edge", "long_edge".
-  optional string PrintingDuplexDefault = 406 [json_name = "PrintingDuplexDefault"];
+  optional string PrintingDuplexDefault = 406 [json_name = "PrintingDuplexDefault", (bor.ui.field) = {group: "Printing"}];
 
   // Default background graphics mode: "enabled" or "disabled".
-  optional string PrintingBackgroundGraphicsDefault = 407 [json_name = "PrintingBackgroundGraphicsDefault"];
+  optional string PrintingBackgroundGraphicsDefault = 407 [json_name = "PrintingBackgroundGraphicsDefault", (bor.ui.field) = {group: "Printing"}];
 
   // Default page size: dict with width/height in micrometers.
-  optional google.protobuf.Value PrintingSizeDefault = 408 [json_name = "PrintingSizeDefault"];
+  optional google.protobuf.Value PrintingSizeDefault = 408 [json_name = "PrintingSizeDefault", (bor.ui.field) = {group: "Printing"}];
 
   // Maximum number of sheets that can be printed.
-  optional int32 PrintingMaxSheetsAllowed = 409 [json_name = "PrintingMaxSheetsAllowed"];
+  optional int32 PrintingMaxSheetsAllowed = 409 [json_name = "PrintingMaxSheetsAllowed", (bor.ui.field) = {group: "Printing"}];
 
   // Allowed print page sizes (list of dicts).
-  optional google.protobuf.Value PrintingAllowedPageSizes = 410 [json_name = "PrintingAllowedPageSizes"];
+  optional google.protobuf.Value PrintingAllowedPageSizes = 410 [json_name = "PrintingAllowedPageSizes", (bor.ui.field) = {group: "Printing"}];
 
   // Default paper size name.
-  optional string DefaultPrinterSelection = 411 [json_name = "DefaultPrinterSelection"];
+  optional string DefaultPrinterSelection = 411 [json_name = "DefaultPrinterSelection", (bor.ui.field) = {group: "Printing"}];
 
   // Enable Cloud Print proxy (deprecated).
-  optional bool CloudPrintProxyEnabled = 412 [json_name = "CloudPrintProxyEnabled"];
+  optional bool CloudPrintProxyEnabled = 412 [json_name = "CloudPrintProxyEnabled", (bor.ui.field) = {group: "Printing"}];
 
   // =========================================================================
   // Browser UI & Display (451–500)
   // =========================================================================
 
   // Disable developer tools.
-  optional bool DeveloperToolsDisabled = 451 [json_name = "DeveloperToolsDisabled"];
+  optional bool DeveloperToolsDisabled = 451 [json_name = "DeveloperToolsDisabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Availability of developer tools: 0=always, 1=never, 2=not for extensions.
-  optional int32 DeveloperToolsAvailability = 452 [json_name = "DeveloperToolsAvailability"];
+  optional int32 DeveloperToolsAvailability = 452 [
+    json_name = "DeveloperToolsAvailability",
+    (bor.ui.field) = {
+      group: "Browser UI",
+      int_options: [
+        {value: 0, label: "0 – Disallow usage"},
+        {value: 1, label: "1 – Always allow"},
+        {value: 2, label: "2 – Allow except in force-installed extensions"}
+      ]
+    }
+  ];
 
   // Enable translate.
-  optional bool TranslateEnabled = 453 [json_name = "TranslateEnabled"];
+  optional bool TranslateEnabled = 453 [
+    json_name = "TranslateEnabled",
+    (bor.ui.field) = {group: "Browser UI", chrome_only: true}
+  ];
 
   // Allow outdated plugins to run.
-  optional bool AllowOutdatedPlugins = 454 [json_name = "AllowOutdatedPlugins"];
+  optional bool AllowOutdatedPlugins = 454 [json_name = "AllowOutdatedPlugins", (bor.ui.field) = {group: "Browser UI"}];
 
   // Always authorize plugins to run.
-  optional bool AlwaysAuthorizePlugins = 455 [json_name = "AlwaysAuthorizePlugins"];
+  optional bool AlwaysAuthorizePlugins = 455 [json_name = "AlwaysAuthorizePlugins", (bor.ui.field) = {group: "Browser UI"}];
 
   // Enable instant (deprecated).
-  optional bool InstantEnabled = 456 [json_name = "InstantEnabled"];
+  optional bool InstantEnabled = 456 [json_name = "InstantEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Disable plugin finder (deprecated).
-  optional bool DisablePluginFinder = 457 [json_name = "DisablePluginFinder"];
+  optional bool DisablePluginFinder = 457 [json_name = "DisablePluginFinder", (bor.ui.field) = {group: "Browser UI"}];
 
   // Disable screenshot capture.
-  optional bool DisableScreenshots = 458 [json_name = "DisableScreenshots"];
+  optional bool DisableScreenshots = 458 [json_name = "DisableScreenshots", (bor.ui.field) = {group: "Browser UI"}];
 
   // Enable full-screen mode.
-  optional bool FullscreenAllowed = 459 [json_name = "FullscreenAllowed"];
+  optional bool FullscreenAllowed = 459 [json_name = "FullscreenAllowed", (bor.ui.field) = {group: "Browser UI"}];
 
   // Allow browser to be used in kiosk mode without admin controls.
-  optional bool KioskModeEnabled = 460 [json_name = "KioskModeEnabled"];
+  optional bool KioskModeEnabled = 460 [json_name = "KioskModeEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Disable showing the browser error page.
-  optional bool SuppressUnsupportedOSWarning = 461 [json_name = "SuppressUnsupportedOSWarning"];
+  optional bool SuppressUnsupportedOSWarning = 461 [json_name = "SuppressUnsupportedOSWarning", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Task manager availability: 0=available, 1=disallow end process.
-  optional int32 TaskManagerEndProcessEnabled = 462 [json_name = "TaskManagerEndProcessEnabled"];
+  optional int32 TaskManagerEndProcessEnabled = 462 [json_name = "TaskManagerEndProcessEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Enable accessibility features.
-  optional bool AccessibilityImageLabelsEnabled = 463 [json_name = "AccessibilityImageLabelsEnabled"];
+  optional bool AccessibilityImageLabelsEnabled = 463 [json_name = "AccessibilityImageLabelsEnabled", (bor.ui.field) = {group: "Browser UI"}];
 
   // Show the apps shortcut in the bookmark bar.
-  optional bool ShowAppsShortcutInBookmarkBar = 464 [json_name = "ShowAppsShortcutInBookmarkBar"];
+  optional bool ShowAppsShortcutInBookmarkBar = 464 [json_name = "ShowAppsShortcutInBookmarkBar", (bor.ui.field) = {group: "Browser UI"}];
 
   // Suppress default browser check.
-  optional bool SuppressLocalCancelDeferredTask = 465 [json_name = "SuppressLocalCancelDeferredTask"];
+  optional bool SuppressLocalCancelDeferredTask = 465 [json_name = "SuppressLocalCancelDeferredTask", (bor.ui.field) = {group: "Browser UI"}];
 
   // =========================================================================
   // User & Sync (501–550)
   // =========================================================================
 
   // Disable Chrome Sync.
-  optional bool SyncDisabled = 501 [json_name = "SyncDisabled"];
+  optional bool SyncDisabled = 501 [
+    json_name = "SyncDisabled",
+    (bor.ui.field) = {group: "User & Sync", chrome_only: true}
+  ];
 
   // List of sync data types to disable.
-  repeated string SyncTypesListDisabled = 502 [json_name = "SyncTypesListDisabled"];
+  repeated string SyncTypesListDisabled = 502 [json_name = "SyncTypesListDisabled", (bor.ui.field) = {group: "User & Sync"}];
 
   // Enable or disable sign-in to Chrome.
-  optional int32 BrowserSignin = 503 [json_name = "BrowserSignin"];
+  optional int32 BrowserSignin = 503 [
+    json_name = "BrowserSignin",
+    (bor.ui.field) = {
+      group: "User & Sync",
+      chrome_only: true,
+      int_options: [
+        {value: 0, label: "0 – Disable browser sign-in"},
+        {value: 1, label: "1 – Enable browser sign-in"},
+        {value: 2, label: "2 – Force browser sign-in"}
+      ]
+    }
+  ];
 
   // List of Google accounts allowed to sign in to Chrome (email patterns).
-  repeated string RestrictSigninToPattern = 504 [json_name = "RestrictSigninToPattern"];
+  repeated string RestrictSigninToPattern = 504 [json_name = "RestrictSigninToPattern", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Force sign-in.
-  optional bool ForceGoogleSafeSearch = 505 [json_name = "ForceGoogleSafeSearch"];
+  optional bool ForceGoogleSafeSearch = 505 [json_name = "ForceGoogleSafeSearch", (bor.ui.field) = {group: "User & Sync"}];
 
   // Force YouTube Restricted Mode: 0=off, 1=moderate, 2=strict.
-  optional int32 ForceYouTubeRestrict = 506 [json_name = "ForceYouTubeRestrict"];
+  optional int32 ForceYouTubeRestrict = 506 [
+    json_name = "ForceYouTubeRestrict",
+    (bor.ui.field) = {
+      group: "User & Sync",
+      int_options: [
+        {value: 0, label: "0 – Off"},
+        {value: 1, label: "1 – Moderate"},
+        {value: 2, label: "2 – Strict"}
+      ]
+    }
+  ];
 
   // Allowed domains for sign-in.
-  repeated string SigninAllowedOnUrls = 507 [json_name = "SigninAllowedOnUrls"];
+  repeated string SigninAllowedOnUrls = 507 [json_name = "SigninAllowedOnUrls", (bor.ui.field) = {group: "User & Sync"}];
 
   // =========================================================================
   // Search (551–600)
   // =========================================================================
 
   // Enable the default search provider.
-  optional bool DefaultSearchProviderEnabled = 551 [json_name = "DefaultSearchProviderEnabled"];
+  optional bool DefaultSearchProviderEnabled = 551 [json_name = "DefaultSearchProviderEnabled", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider name.
-  optional string DefaultSearchProviderName = 552 [json_name = "DefaultSearchProviderName"];
+  optional string DefaultSearchProviderName = 552 [json_name = "DefaultSearchProviderName", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider keyword.
-  optional string DefaultSearchProviderKeyword = 553 [json_name = "DefaultSearchProviderKeyword"];
+  optional string DefaultSearchProviderKeyword = 553 [json_name = "DefaultSearchProviderKeyword", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider search URL template.
-  optional string DefaultSearchProviderSearchURL = 554 [json_name = "DefaultSearchProviderSearchURL"];
+  optional string DefaultSearchProviderSearchURL = 554 [json_name = "DefaultSearchProviderSearchURL", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider suggest URL template.
-  optional string DefaultSearchProviderSuggestURL = 555 [json_name = "DefaultSearchProviderSuggestURL"];
+  optional string DefaultSearchProviderSuggestURL = 555 [json_name = "DefaultSearchProviderSuggestURL", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider icon URL.
-  optional string DefaultSearchProviderIconURL = 556 [json_name = "DefaultSearchProviderIconURL"];
+  optional string DefaultSearchProviderIconURL = 556 [json_name = "DefaultSearchProviderIconURL", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider supported encodings.
-  repeated string DefaultSearchProviderEncodings = 557 [json_name = "DefaultSearchProviderEncodings"];
+  repeated string DefaultSearchProviderEncodings = 557 [json_name = "DefaultSearchProviderEncodings", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider new tab URL.
-  optional string DefaultSearchProviderNewTabURL = 558 [json_name = "DefaultSearchProviderNewTabURL"];
+  optional string DefaultSearchProviderNewTabURL = 558 [json_name = "DefaultSearchProviderNewTabURL", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider image search URL.
-  optional string DefaultSearchProviderImageURL = 559 [json_name = "DefaultSearchProviderImageURL"];
+  optional string DefaultSearchProviderImageURL = 559 [json_name = "DefaultSearchProviderImageURL", (bor.ui.field) = {group: "Search"}];
 
   // Default search provider image search post params.
-  optional string DefaultSearchProviderImageURLPostParams = 560 [json_name = "DefaultSearchProviderImageURLPostParams"];
+  optional string DefaultSearchProviderImageURLPostParams = 560 [json_name = "DefaultSearchProviderImageURLPostParams", (bor.ui.field) = {group: "Search"}];
 
   // Enable search suggestions.
-  optional bool SearchSuggestEnabled = 561 [json_name = "SearchSuggestEnabled"];
+  optional bool SearchSuggestEnabled = 561 [json_name = "SearchSuggestEnabled", (bor.ui.field) = {group: "Search"}];
 
   // =========================================================================
   // Updates & Cloud Management (601–650)
   // =========================================================================
 
   // Cloud enrollment token for Chrome Browser Cloud Management.
-  optional string CloudManagementEnrollmentToken = 601 [json_name = "CloudManagementEnrollmentToken"];
+  optional string CloudManagementEnrollmentToken = 601 [
+    json_name = "CloudManagementEnrollmentToken",
+    (bor.ui.field) = {group: "Updates & Management", chrome_only: true}
+  ];
 
   // Enrollment mandatory (force enrollment).
-  optional bool CloudManagementEnrollmentMandatory = 602 [json_name = "CloudManagementEnrollmentMandatory"];
+  optional bool CloudManagementEnrollmentMandatory = 602 [json_name = "CloudManagementEnrollmentMandatory", (bor.ui.field) = {group: "Updates & Management"}];
 
   // Report machine info to cloud management.
-  optional bool DeviceReportingEnabled = 603 [json_name = "DeviceReportingEnabled"];
+  optional bool DeviceReportingEnabled = 603 [json_name = "DeviceReportingEnabled", (bor.ui.field) = {group: "Updates & Management"}];
 
   // =========================================================================
   // HTTP Authentication & Kerberos (651–700)
   // =========================================================================
 
   // Kerberos tickets (list of Kerberos account dictionaries).
-  optional google.protobuf.Value KerberosAccounts = 651 [json_name = "KerberosAccounts"];
+  optional google.protobuf.Value KerberosAccounts = 651 [json_name = "KerberosAccounts", (bor.ui.field) = {group: "Kerberos"}];
 
   // Use Kerberos service tickets for HTTP authentication.
-  optional bool KerberosEnabled = 652 [json_name = "KerberosEnabled"];
+  optional bool KerberosEnabled = 652 [json_name = "KerberosEnabled", (bor.ui.field) = {group: "Kerberos"}];
 
   // Remember last Kerberos accounts.
-  optional bool KerberosRememberPasswordEnabled = 653 [json_name = "KerberosRememberPasswordEnabled"];
+  optional bool KerberosRememberPasswordEnabled = 653 [json_name = "KerberosRememberPasswordEnabled", (bor.ui.field) = {group: "Kerberos"}];
 
   // Kerberos principal (username@REALM).
-  optional string KerberosPrincipal = 654 [json_name = "KerberosPrincipal"];
+  optional string KerberosPrincipal = 654 [json_name = "KerberosPrincipal", (bor.ui.field) = {group: "Kerberos"}];
 
   // =========================================================================
   // Miscellaneous & Advanced (701–800)
   // =========================================================================
 
   // Allow running of outdated plugins.
-  optional bool PluginsAllowedForUrls = 701 [json_name = "PluginsAllowedForUrls"];
+  optional bool PluginsAllowedForUrls = 701 [json_name = "PluginsAllowedForUrls", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Application locale (overrides system locale). Linux: not usually enforced.
-  optional string ApplicationLocaleValue = 702 [json_name = "ApplicationLocaleValue"];
+  optional string ApplicationLocaleValue = 702 [json_name = "ApplicationLocaleValue", (bor.ui.field) = {group: "Browser UI"}];
 
   // Enable spell-check.
-  optional bool SpellCheckServiceEnabled = 703 [json_name = "SpellCheckServiceEnabled"];
+  optional bool SpellCheckServiceEnabled = 703 [
+    json_name = "SpellCheckServiceEnabled",
+    (bor.ui.field) = {group: "Browser UI", chrome_only: true}
+  ];
 
   // List of languages for spell-check.
-  repeated string SpellcheckLanguage = 704 [json_name = "SpellcheckLanguage"];
+  repeated string SpellcheckLanguage = 704 [json_name = "SpellcheckLanguage", (bor.ui.field) = {group: "Browser UI"}];
 
   // Disable spell-check for these languages.
-  repeated string SpellcheckLanguageBlocklist = 705 [json_name = "SpellcheckLanguageBlocklist"];
+  repeated string SpellcheckLanguageBlocklist = 705 [json_name = "SpellcheckLanguageBlocklist", (bor.ui.field) = {group: "Browser UI"}];
 
   // Number of hours (0=auto) between background policy refreshes.
-  optional int32 PolicyRefreshRate = 706 [json_name = "PolicyRefreshRate"];
+  optional int32 PolicyRefreshRate = 706 [json_name = "PolicyRefreshRate", (bor.ui.field) = {group: "Updates & Management"}];
 
   // Path for user data (profile) directory.
-  optional string UserDataDir = 707 [json_name = "UserDataDir"];
+  optional string UserDataDir = 707 [json_name = "UserDataDir", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // List of command-line flags to suppress (security/compatibility).
-  repeated string CommandLineFlagSecurityWarningsEnabled = 708 [json_name = "CommandLineFlagSecurityWarningsEnabled"];
+  repeated string CommandLineFlagSecurityWarningsEnabled = 708 [json_name = "CommandLineFlagSecurityWarningsEnabled", (bor.ui.field) = {group: "Updates & Management"}];
 
   // Enable media router (Cast).
-  optional bool EnableMediaRouter = 709 [json_name = "EnableMediaRouter"];
+  optional bool EnableMediaRouter = 709 [json_name = "EnableMediaRouter", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Show Cast icon in toolbar.
-  optional bool ShowCastIconInToolbar = 710 [json_name = "ShowCastIconInToolbar"];
+  optional bool ShowCastIconInToolbar = 710 [json_name = "ShowCastIconInToolbar", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Disable certificate error overrides.
-  optional bool SSLErrorOverrideAllowed = 711 [json_name = "SSLErrorOverrideAllowed"];
+  optional bool SSLErrorOverrideAllowed = 711 [json_name = "SSLErrorOverrideAllowed", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Allow SSL errors for these URL patterns.
-  repeated string SSLErrorOverrideAllowedForOrigins = 712 [json_name = "SSLErrorOverrideAllowedForOrigins"];
+  repeated string SSLErrorOverrideAllowedForOrigins = 712 [json_name = "SSLErrorOverrideAllowedForOrigins", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop access: allow client firewall traversal.
-  optional bool RemoteAccessClientFirewallTraversal = 713 [json_name = "RemoteAccessClientFirewallTraversal"];
+  optional bool RemoteAccessClientFirewallTraversal = 713 [json_name = "RemoteAccessClientFirewallTraversal", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop access: allow host firewall traversal.
-  optional bool RemoteAccessHostFirewallTraversal = 714 [json_name = "RemoteAccessHostFirewallTraversal"];
+  optional bool RemoteAccessHostFirewallTraversal = 714 [json_name = "RemoteAccessHostFirewallTraversal", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop: allowed client domain.
-  optional string RemoteAccessHostDomain = 715 [json_name = "RemoteAccessHostDomain"];
+  optional string RemoteAccessHostDomain = 715 [json_name = "RemoteAccessHostDomain", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop: allowed client domain list.
-  repeated string RemoteAccessHostDomainList = 716 [json_name = "RemoteAccessHostDomainList"];
+  repeated string RemoteAccessHostDomainList = 716 [json_name = "RemoteAccessHostDomainList", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop: allow file transfers.
-  optional bool RemoteAccessHostAllowFileTransfer = 717 [json_name = "RemoteAccessHostAllowFileTransfer"];
+  optional bool RemoteAccessHostAllowFileTransfer = 717 [json_name = "RemoteAccessHostAllowFileTransfer", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop: allow relayed connections.
-  optional bool RemoteAccessHostAllowRelayedConnection = 718 [json_name = "RemoteAccessHostAllowRelayedConnection"];
+  optional bool RemoteAccessHostAllowRelayedConnection = 718 [json_name = "RemoteAccessHostAllowRelayedConnection", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Remote Desktop: UDP port range.
-  optional string RemoteAccessHostUdpPortRange = 719 [json_name = "RemoteAccessHostUdpPortRange"];
+  optional string RemoteAccessHostUdpPortRange = 719 [json_name = "RemoteAccessHostUdpPortRange", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Suppress automatic app updates.
-  optional bool ComponentUpdatesEnabled = 720 [json_name = "ComponentUpdatesEnabled"];
+  optional bool ComponentUpdatesEnabled = 720 [json_name = "ComponentUpdatesEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Enable background processing when browser is closed.
-  optional bool BackgroundModeEnabled = 721 [json_name = "BackgroundModeEnabled"];
+  optional bool BackgroundModeEnabled = 721 [json_name = "BackgroundModeEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Enable hardware acceleration.
-  optional bool HardwareAccelerationModeEnabled = 722 [json_name = "HardwareAccelerationModeEnabled"];
+  optional bool HardwareAccelerationModeEnabled = 722 [json_name = "HardwareAccelerationModeEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Force enable / disable specific features.
-  repeated string EnabledLabsExperiments = 723 [json_name = "EnabledLabsExperiments"];
+  repeated string EnabledLabsExperiments = 723 [json_name = "EnabledLabsExperiments", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Disable safe browsing bypass.
-  optional bool DisableSafeBrowsingProceedAnyway = 724 [json_name = "DisableSafeBrowsingProceedAnyway"];
+  optional bool DisableSafeBrowsingProceedAnyway = 724 [json_name = "DisableSafeBrowsingProceedAnyway", (bor.ui.field) = {group: "Safe Browsing"}];
 
   // Control browser sign-in.
-  optional bool SigninAllowed = 725 [json_name = "SigninAllowed"];
+  optional bool SigninAllowed = 725 [json_name = "SigninAllowed", (bor.ui.field) = {group: "User & Sync"}];
 
   // Session length in minutes (0=unlimited).
-  optional int32 SessionLength = 726 [json_name = "SessionLength"];
+  optional int32 SessionLength = 726 [json_name = "SessionLength", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // User feedback allowed.
-  optional bool UserFeedbackAllowed = 727 [json_name = "UserFeedbackAllowed"];
+  optional bool UserFeedbackAllowed = 727 [json_name = "UserFeedbackAllowed", (bor.ui.field) = {group: "User & Sync"}];
 
   // Disable plugin list.
-  repeated string DisabledPlugins = 728 [json_name = "DisabledPlugins"];
+  repeated string DisabledPlugins = 728 [json_name = "DisabledPlugins", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Force-enable plugin list.
-  repeated string EnabledPlugins = 729 [json_name = "EnabledPlugins"];
+  repeated string EnabledPlugins = 729 [json_name = "EnabledPlugins", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Plugins exception list (allowed even if in DisabledPlugins).
-  repeated string DisabledPluginsExceptions = 730 [json_name = "DisabledPluginsExceptions"];
+  repeated string DisabledPluginsExceptions = 730 [json_name = "DisabledPluginsExceptions", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Allow external protocol handlers.
-  optional google.protobuf.Value AutoOpenAllowedForURLs = 731 [json_name = "AutoOpenAllowedForURLs"];
+  optional google.protobuf.Value AutoOpenAllowedForURLs = 731 [json_name = "AutoOpenAllowedForURLs", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Protocols and applications allowed to open external handlers.
-  optional google.protobuf.Value AutoOpenFileTypes = 732 [json_name = "AutoOpenFileTypes"];
+  optional google.protobuf.Value AutoOpenFileTypes = 732 [json_name = "AutoOpenFileTypes", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Enrollment token for Google Admin Console.
-  optional string EnrollmentToken = 733 [json_name = "EnrollmentToken"];
+  optional string EnrollmentToken = 733 [json_name = "EnrollmentToken", (bor.ui.field) = {group: "Updates & Management"}];
 
   // Browser switch service URL.
-  optional string BrowserSwitcherEnabled = 734 [json_name = "BrowserSwitcherEnabled"];
+  optional string BrowserSwitcherEnabled = 734 [json_name = "BrowserSwitcherEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Policy for controlling browser network service sandbox.
-  optional bool NetworkServiceSandboxEnabled = 735 [json_name = "NetworkServiceSandboxEnabled"];
+  optional bool NetworkServiceSandboxEnabled = 735 [json_name = "NetworkServiceSandboxEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Allow or block insecure private network requests.
-  optional bool InsecurePrivateNetworkRequestsAllowed = 736 [json_name = "InsecurePrivateNetworkRequestsAllowed"];
+  optional bool InsecurePrivateNetworkRequestsAllowed = 736 [json_name = "InsecurePrivateNetworkRequestsAllowed", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Origins for which insecure private network requests are allowed.
-  repeated string InsecurePrivateNetworkRequestsAllowedForUrls = 737 [json_name = "InsecurePrivateNetworkRequestsAllowedForUrls"];
+  repeated string InsecurePrivateNetworkRequestsAllowedForUrls = 737 [json_name = "InsecurePrivateNetworkRequestsAllowedForUrls", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Control private network access checks.
-  optional bool PrivateNetworkAccessRestrictionsEnabled = 738 [json_name = "PrivateNetworkAccessRestrictionsEnabled"];
+  optional bool PrivateNetworkAccessRestrictionsEnabled = 738 [json_name = "PrivateNetworkAccessRestrictionsEnabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // URL patterns for which private network access checks are bypassed.
-  repeated string PrivateNetworkAccessRestrictionsForUrls = 739 [json_name = "PrivateNetworkAccessRestrictionsForUrls"];
+  repeated string PrivateNetworkAccessRestrictionsForUrls = 739 [json_name = "PrivateNetworkAccessRestrictionsForUrls", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Report extensions/app info to cloud management.
-  optional bool ExtensionReportingEnabled = 740 [json_name = "ExtensionReportingEnabled"];
+  optional bool ExtensionReportingEnabled = 740 [json_name = "ExtensionReportingEnabled", (bor.ui.field) = {group: "Updates & Management"}];
 
   // Force-enable Lookalike URL warnings.
-  optional bool LookalikeWarningAllowlistDomains = 741 [json_name = "LookalikeWarningAllowlistDomains"];
+  optional bool LookalikeWarningAllowlistDomains = 741 [json_name = "LookalikeWarningAllowlistDomains", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Suppress first-run/OOBE page for enterprise.
-  optional bool SuppressFirstRunBubble = 742 [json_name = "SuppressFirstRunBubble"];
+  optional bool SuppressFirstRunBubble = 742 [json_name = "SuppressFirstRunBubble", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Import bookmarks from default browser on first run.
-  optional bool ImportBookmarks = 743 [json_name = "ImportBookmarks"];
+  optional bool ImportBookmarks = 743 [json_name = "ImportBookmarks", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Import browsing history from default browser on first run.
-  optional bool ImportHistory = 744 [json_name = "ImportHistory"];
+  optional bool ImportHistory = 744 [json_name = "ImportHistory", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Import homepage from default browser on first run.
-  optional bool ImportHomepage = 745 [json_name = "ImportHomepage"];
+  optional bool ImportHomepage = 745 [json_name = "ImportHomepage", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Import saved passwords from default browser on first run.
-  optional bool ImportSavedPasswords = 746 [json_name = "ImportSavedPasswords"];
+  optional bool ImportSavedPasswords = 746 [json_name = "ImportSavedPasswords", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Import search engines from default browser on first run.
-  optional bool ImportSearchEngine = 747 [json_name = "ImportSearchEngine"];
+  optional bool ImportSearchEngine = 747 [json_name = "ImportSearchEngine", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // Enable OCSP/CRL checks.
-  optional bool EnableOnlineRevocationChecks = 748 [json_name = "EnableOnlineRevocationChecks"];
+  optional bool EnableOnlineRevocationChecks = 748 [json_name = "EnableOnlineRevocationChecks", (bor.ui.field) = {group: "Privacy & Security"}];
 
   // Allow users to bypass certificate error pages.
-  optional bool CertificateTransparencyEnforcementDisabled = 749 [json_name = "CertificateTransparencyEnforcementDisabled"];
+  optional bool CertificateTransparencyEnforcementDisabled = 749 [json_name = "CertificateTransparencyEnforcementDisabled", (bor.ui.field) = {group: "Miscellaneous"}];
 
   // =========================================================================
   // Screen Capture & Media (801–850)
   // =========================================================================
 
   // Allow screen capture.
-  optional int32 DefaultScreenCaptureSetting = 801 [json_name = "DefaultScreenCaptureSetting"];
+  optional int32 DefaultScreenCaptureSetting = 801 [json_name = "DefaultScreenCaptureSetting", (bor.ui.field) = {group: "Browser UI"}];
 
   // Allow screen capture for these origins.
-  repeated string ScreenCaptureAllowedByOrigins = 802 [json_name = "ScreenCaptureAllowedByOrigins"];
+  repeated string ScreenCaptureAllowedByOrigins = 802 [json_name = "ScreenCaptureAllowedByOrigins", (bor.ui.field) = {group: "Browser UI"}];
 
   // Block screen capture for these origins.
-  repeated string ScreenCaptureBlockedByOrigins = 803 [json_name = "ScreenCaptureBlockedByOrigins"];
+  repeated string ScreenCaptureBlockedByOrigins = 803 [json_name = "ScreenCaptureBlockedByOrigins", (bor.ui.field) = {group: "Browser UI"}];
 
   // Window capture allowed by origins.
-  repeated string WindowCaptureAllowedByOrigins = 804 [json_name = "WindowCaptureAllowedByOrigins"];
+  repeated string WindowCaptureAllowedByOrigins = 804 [json_name = "WindowCaptureAllowedByOrigins", (bor.ui.field) = {group: "Browser UI"}];
 
   // Tab capture allowed by origins.
-  repeated string TabCaptureAllowedByOrigins = 805 [json_name = "TabCaptureAllowedByOrigins"];
+  repeated string TabCaptureAllowedByOrigins = 805 [json_name = "TabCaptureAllowedByOrigins", (bor.ui.field) = {group: "Browser UI"}];
 
   // Audio capture allowed (bool).
-  optional bool AudioCaptureAllowed = 806 [json_name = "AudioCaptureAllowed"];
+  optional bool AudioCaptureAllowed = 806 [json_name = "AudioCaptureAllowed", (bor.ui.field) = {group: "Content Settings"}];
 
   // Audio capture allowed for these URLs.
-  repeated string AudioCaptureAllowedUrls = 807 [json_name = "AudioCaptureAllowedUrls"];
+  repeated string AudioCaptureAllowedUrls = 807 [json_name = "AudioCaptureAllowedUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Video capture allowed (bool).
-  optional bool VideoCaptureAllowed = 808 [json_name = "VideoCaptureAllowed"];
+  optional bool VideoCaptureAllowed = 808 [json_name = "VideoCaptureAllowed", (bor.ui.field) = {group: "Content Settings"}];
 
   // Video capture allowed for these URLs.
-  repeated string VideoCaptureAllowedUrls = 809 [json_name = "VideoCaptureAllowedUrls"];
+  repeated string VideoCaptureAllowedUrls = 809 [json_name = "VideoCaptureAllowedUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // =========================================================================
   // Clipboard & Sharing (851–900)
   // =========================================================================
 
   // Default clipboard setting: 1=allow, 2=block, 3=ask.
-  optional int32 DefaultClipboardSetting = 851 [json_name = "DefaultClipboardSetting"];
+  optional int32 DefaultClipboardSetting = 851 [
+    json_name = "DefaultClipboardSetting",
+    (bor.ui.field) = {
+      group: "Content Settings",
+      int_options: [
+        {value: 2, label: "2 – Block clipboard access"},
+        {value: 3, label: "3 – Ask each time"}
+      ]
+    }
+  ];
 
   // Allow clipboard for these origins.
-  repeated string ClipboardAllowedForUrls = 852 [json_name = "ClipboardAllowedForUrls"];
+  repeated string ClipboardAllowedForUrls = 852 [json_name = "ClipboardAllowedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 
   // Block clipboard for these origins.
-  repeated string ClipboardBlockedForUrls = 853 [json_name = "ClipboardBlockedForUrls"];
+  repeated string ClipboardBlockedForUrls = 853 [json_name = "ClipboardBlockedForUrls", (bor.ui.field) = {group: "Content Settings"}];
 }

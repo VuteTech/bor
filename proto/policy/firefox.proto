@@ -4,64 +4,78 @@ package bor.policy.v1;
 
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
+import "ui.proto";
+
 // FirefoxPolicy is the canonical schema for a Firefox enterprise policy
 // on Linux. It maps directly to the "policies" key in policies.json.
 // Field json_name annotations preserve PascalCase so protojson round-trips
 // with the key names Firefox expects.
 message FirefoxPolicy {
   // Simple boolean policies
-  optional bool DisableAppUpdate              = 1  [json_name = "DisableAppUpdate"];
-  optional bool AppAutoUpdate                 = 2  [json_name = "AppAutoUpdate"];
-  optional bool DisableFirefoxStudies         = 3  [json_name = "DisableFirefoxStudies"];
-  optional bool DisablePocket                 = 4  [json_name = "DisablePocket"];
-  optional bool DisableTelemetry              = 5  [json_name = "DisableTelemetry"];
-  optional bool DisableFirefoxAccounts        = 6  [json_name = "DisableFirefoxAccounts"];
-  optional bool DisableFormHistory            = 7  [json_name = "DisableFormHistory"];
-  optional bool DisablePasswordReveal         = 8  [json_name = "DisablePasswordReveal"];
-  optional bool DisableMasterPasswordCreation = 9  [json_name = "DisableMasterPasswordCreation"];
-  optional bool BlockAboutAddons              = 10 [json_name = "BlockAboutAddons"];
-  optional bool BlockAboutConfig              = 11 [json_name = "BlockAboutConfig"];
-  optional bool BlockAboutProfiles            = 12 [json_name = "BlockAboutProfiles"];
-  optional bool BlockAboutSupport             = 13 [json_name = "BlockAboutSupport"];
-  optional bool DontCheckDefaultBrowser       = 14 [json_name = "DontCheckDefaultBrowser"];
-  optional bool OfferToSaveLogins             = 15 [json_name = "OfferToSaveLogins"];
-  optional bool PasswordManagerEnabled        = 16 [json_name = "PasswordManagerEnabled"];
-  optional bool PromptForDownloadLocation     = 17 [json_name = "PromptForDownloadLocation"];
-  optional bool HardwareAcceleration          = 18 [json_name = "HardwareAcceleration"];
-  optional bool NetworkPrediction             = 19 [json_name = "NetworkPrediction"];
-  optional bool CaptivePortal                 = 20 [json_name = "CaptivePortal"];
-  optional bool DisableSetDesktopBackground   = 21 [json_name = "DisableSetDesktopBackground"];
-  optional bool NoDefaultBookmarks            = 22 [json_name = "NoDefaultBookmarks"];
-  optional bool OverrideFirstRunPage          = 23 [json_name = "OverrideFirstRunPage"];
-  optional bool OverridePostUpdatePage        = 24 [json_name = "OverridePostUpdatePage"];
-  optional bool DisableProfileImport          = 25 [json_name = "DisableProfileImport"];
-  optional bool DisableFeedbackCommands       = 26 [json_name = "DisableFeedbackCommands"];
-  optional bool DisableSafeMode               = 27 [json_name = "DisableSafeMode"];
-  optional bool DisableSecurityBypass         = 28 [json_name = "DisableSecurityBypass"];
-  optional bool SearchSuggestEnabled          = 29 [json_name = "SearchSuggestEnabled"];
-  optional bool DisplayBookmarksToolbar       = 30 [json_name = "DisplayBookmarksToolbar"];
-  optional bool DisplayMenuBar                = 31 [json_name = "DisplayMenuBar"];
+  optional bool DisableAppUpdate              = 1  [json_name = "DisableAppUpdate",              (bor.ui.field) = {group: "Updates"}];
+  optional bool AppAutoUpdate                 = 2  [json_name = "AppAutoUpdate",                 (bor.ui.field) = {group: "Updates"}];
+  optional bool DisableFirefoxStudies         = 3  [json_name = "DisableFirefoxStudies",         (bor.ui.field) = {group: "Privacy & Telemetry"}];
+  optional bool DisablePocket                 = 4  [json_name = "DisablePocket",                 (bor.ui.field) = {group: "Privacy & Telemetry"}];
+  optional bool DisableTelemetry              = 5  [json_name = "DisableTelemetry",              (bor.ui.field) = {group: "Privacy & Telemetry"}];
+  optional bool DisableFirefoxAccounts        = 6  [json_name = "DisableFirefoxAccounts",        (bor.ui.field) = {group: "Privacy & Telemetry"}];
+  optional bool DisableFormHistory            = 7  [json_name = "DisableFormHistory",            (bor.ui.field) = {group: "Privacy & Telemetry"}];
+  optional bool DisablePasswordReveal         = 8  [json_name = "DisablePasswordReveal",         (bor.ui.field) = {group: "Security"}];
+  optional bool DisableMasterPasswordCreation = 9  [json_name = "DisableMasterPasswordCreation", (bor.ui.field) = {group: "Security"}];
+  optional bool BlockAboutAddons              = 10 [json_name = "BlockAboutAddons",              (bor.ui.field) = {group: "Restrictions"}];
+  optional bool BlockAboutConfig              = 11 [json_name = "BlockAboutConfig",              (bor.ui.field) = {group: "Restrictions"}];
+  optional bool BlockAboutProfiles            = 12 [json_name = "BlockAboutProfiles",            (bor.ui.field) = {group: "Restrictions"}];
+  optional bool BlockAboutSupport             = 13 [json_name = "BlockAboutSupport",             (bor.ui.field) = {group: "Restrictions"}];
+  optional bool DontCheckDefaultBrowser       = 14 [json_name = "DontCheckDefaultBrowser",       (bor.ui.field) = {group: "General"}];
+  optional bool OfferToSaveLogins             = 15 [json_name = "OfferToSaveLogins",             (bor.ui.field) = {group: "Security"}];
+  optional bool PasswordManagerEnabled        = 16 [json_name = "PasswordManagerEnabled",        (bor.ui.field) = {group: "Security"}];
+  optional bool PromptForDownloadLocation     = 17 [json_name = "PromptForDownloadLocation",     (bor.ui.field) = {group: "General"}];
+  optional bool HardwareAcceleration          = 18 [json_name = "HardwareAcceleration",          (bor.ui.field) = {group: "General"}];
+  optional bool NetworkPrediction             = 19 [json_name = "NetworkPrediction",             (bor.ui.field) = {group: "Network"}];
+  optional bool CaptivePortal                 = 20 [json_name = "CaptivePortal",                 (bor.ui.field) = {group: "Network"}];
+  optional bool DisableSetDesktopBackground   = 21 [json_name = "DisableSetDesktopBackground",   (bor.ui.field) = {group: "Appearance"}];
+  optional bool NoDefaultBookmarks            = 22 [json_name = "NoDefaultBookmarks",            (bor.ui.field) = {group: "General"}];
+  optional bool OverrideFirstRunPage          = 23 [json_name = "OverrideFirstRunPage",          (bor.ui.field) = {group: "General"}];
+  optional bool OverridePostUpdatePage        = 24 [json_name = "OverridePostUpdatePage",        (bor.ui.field) = {group: "General"}];
+  optional bool DisableProfileImport          = 25 [json_name = "DisableProfileImport",          (bor.ui.field) = {group: "Restrictions"}];
+  optional bool DisableFeedbackCommands       = 26 [json_name = "DisableFeedbackCommands",       (bor.ui.field) = {group: "Restrictions"}];
+  optional bool DisableSafeMode               = 27 [json_name = "DisableSafeMode",               (bor.ui.field) = {group: "Restrictions"}];
+  optional bool DisableSecurityBypass         = 28 [json_name = "DisableSecurityBypass",         (bor.ui.field) = {group: "Security"}];
+  optional bool SearchSuggestEnabled          = 29 [json_name = "SearchSuggestEnabled",          (bor.ui.field) = {group: "General"}];
+  optional bool DisplayBookmarksToolbar       = 30 [json_name = "DisplayBookmarksToolbar",       (bor.ui.field) = {group: "Appearance"}];
+  optional bool DisplayMenuBar                = 31 [json_name = "DisplayMenuBar",                (bor.ui.field) = {group: "Appearance"}];
 
   // String policies
-  optional string DefaultDownloadDirectory = 32 [json_name = "DefaultDownloadDirectory"];
-  optional string SSLVersionMin            = 33 [json_name = "SSLVersionMin"];
-  optional string SSLVersionMax            = 34 [json_name = "SSLVersionMax"];
-  optional string AppUpdatePin             = 35 [json_name = "AppUpdatePin"];
+  optional string DefaultDownloadDirectory = 32 [json_name = "DefaultDownloadDirectory", (bor.ui.field) = {group: "General"}];
+  optional string SSLVersionMin            = 33 [
+    json_name = "SSLVersionMin",
+    (bor.ui.field) = {
+      group: "Security",
+      string_options: ["tls1", "tls1.1", "tls1.2", "tls1.3"]
+    }
+  ];
+  optional string SSLVersionMax            = 34 [
+    json_name = "SSLVersionMax",
+    (bor.ui.field) = {
+      group: "Security",
+      string_options: ["tls1", "tls1.1", "tls1.2", "tls1.3"]
+    }
+  ];
+  optional string AppUpdatePin             = 35 [json_name = "AppUpdatePin", (bor.ui.field) = {group: "Updates"}];
 
   // Integer policies
-  optional int32 NewTabPage = 36 [json_name = "NewTabPage"];
+  optional int32 NewTabPage = 36 [json_name = "NewTabPage", (bor.ui.field) = {group: "Homepage & New Tab"}];
 
   // Object/composite policies
-  optional FirefoxHomepage           Homepage                 = 37 [json_name = "Homepage"];
-  optional FirefoxTrackingProtection EnableTrackingProtection = 38 [json_name = "EnableTrackingProtection"];
-  optional FirefoxDNSOverHTTPS       DNSOverHTTPS             = 39 [json_name = "DNSOverHTTPS"];
-  optional FirefoxFirefoxHome        FirefoxHome              = 40 [json_name = "FirefoxHome"];
-  optional FirefoxCookies            Cookies                  = 41 [json_name = "Cookies"];
-  optional FirefoxExtensions         Extensions               = 42 [json_name = "Extensions"];
-  repeated FirefoxBookmark           Bookmarks                = 43 [json_name = "Bookmarks"];
-  optional FirefoxProxy              Proxy                    = 44 [json_name = "Proxy"];
-  optional FirefoxPopupBlocking      PopupBlocking            = 45 [json_name = "PopupBlocking"];
-  optional FirefoxPermissions        Permissions              = 46 [json_name = "Permissions"];
+  optional FirefoxHomepage           Homepage                 = 37 [json_name = "Homepage",                 (bor.ui.field) = {group: "Homepage & New Tab"}];
+  optional FirefoxTrackingProtection EnableTrackingProtection = 38 [json_name = "EnableTrackingProtection", (bor.ui.field) = {group: "Tracking Protection"}];
+  optional FirefoxDNSOverHTTPS       DNSOverHTTPS             = 39 [json_name = "DNSOverHTTPS",             (bor.ui.field) = {group: "Network"}];
+  optional FirefoxFirefoxHome        FirefoxHome              = 40 [json_name = "FirefoxHome",              (bor.ui.field) = {group: "Homepage & New Tab"}];
+  optional FirefoxCookies            Cookies                  = 41 [json_name = "Cookies",                  (bor.ui.field) = {group: "Cookies & Popups"}];
+  optional FirefoxExtensions         Extensions               = 42 [json_name = "Extensions",               (bor.ui.field) = {group: "Extensions"}];
+  repeated FirefoxBookmark           Bookmarks                = 43 [json_name = "Bookmarks",                (bor.ui.field) = {group: "Bookmarks"}];
+  optional FirefoxProxy              Proxy                    = 44 [json_name = "Proxy",                    (bor.ui.field) = {group: "Network"}];
+  optional FirefoxPopupBlocking      PopupBlocking            = 45 [json_name = "PopupBlocking",            (bor.ui.field) = {group: "Cookies & Popups"}];
+  optional FirefoxPermissions        Permissions              = 46 [json_name = "Permissions",              (bor.ui.field) = {group: "Permissions"}];
 }
 
 // FirefoxHomepage configures the browser homepage
@@ -70,7 +84,12 @@ message FirefoxHomepage {
   bool            Locked     = 2 [json_name = "Locked"];
   repeated string Additional = 3 [json_name = "Additional"];
   // "none", "homepage", "previous-session", "homepage-locked"
-  string StartPage = 4 [json_name = "StartPage"];
+  string StartPage = 4 [
+    json_name = "StartPage",
+    (bor.ui.field) = {
+      string_options: ["none", "homepage", "previous-session", "homepage-locked"]
+    }
+  ];
 }
 
 // FirefoxTrackingProtection configures Enhanced Tracking Protection
@@ -110,8 +129,18 @@ message FirefoxCookies {
   repeated string Block                  = 2 [json_name = "Block"];
   repeated string AllowSession           = 3 [json_name = "AllowSession"];
   // "accept", "reject-foreign", "reject-all", etc.
-  string          Behavior               = 4 [json_name = "Behavior"];
-  string          BehaviorPrivateBrowsing = 5 [json_name = "BehaviorPrivateBrowsing"];
+  string          Behavior               = 4 [
+    json_name = "Behavior",
+    (bor.ui.field) = {
+      string_options: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"]
+    }
+  ];
+  string          BehaviorPrivateBrowsing = 5 [
+    json_name = "BehaviorPrivateBrowsing",
+    (bor.ui.field) = {
+      string_options: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"]
+    }
+  ];
   bool            Locked                 = 6 [json_name = "Locked"];
 }
 

@@ -41,8 +41,10 @@ import { Table, Thead, Tbody, Tr, Th, Td } from "@patternfly/react-table";
 
 import type { Policy, CreatePolicyRequest, UpdatePolicyRequest } from "../../apiClient/policiesApi";
 import { createPolicy, updatePolicy, setPolicyState, deletePolicy } from "../../apiClient/policiesApi";
-import type { FirefoxPolicy } from "../../generated/proto/firefox";
-import type { ThunderbirdPolicy } from "../../generated/proto/thunderbird";
+import type { PolicyFieldDef } from "../../generated/proto/policy_ui_types";
+import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
+import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
+import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
 import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
@@ -87,112 +89,9 @@ const TYPE_CONFIGS: Record<string, PolicyTypeConfig> = {
 
 /* ── Firefox policy model (matches Protobuf schema) ── */
 
-// Each Firefox policy definition: the tree will show these grouped by category.
-// One defined policy contains exactly ONE Firefox policy setting.
-interface FirefoxPolicyDef {
-  key: keyof FirefoxPolicy;
-  label: string;
-  group: string;
-  type: "boolean" | "string" | "select" | "object";
-  selectOptions?: string[];
-  objectFields?: { key: string; label: string; fieldType: "boolean" | "string" | "select" | "stringlist"; selectOptions?: string[] }[];
-}
-
-const FIREFOX_ALL_POLICIES: FirefoxPolicyDef[] = [
-  // Updates
-  { key: "DisableAppUpdate", label: "Disable App Update", group: "Updates", type: "boolean" },
-  { key: "AppAutoUpdate", label: "App Auto Update", group: "Updates", type: "boolean" },
-  { key: "AppUpdatePin", label: "App Update Pin Version", group: "Updates", type: "string" },
-  // Privacy & Telemetry
-  { key: "DisableFirefoxStudies", label: "Disable Firefox Studies", group: "Privacy & Telemetry", type: "boolean" },
-  { key: "DisablePocket", label: "Disable Pocket", group: "Privacy & Telemetry", type: "boolean" },
-  { key: "DisableTelemetry", label: "Disable Telemetry", group: "Privacy & Telemetry", type: "boolean" },
-  { key: "DisableFirefoxAccounts", label: "Disable Firefox Accounts", group: "Privacy & Telemetry", type: "boolean" },
-  { key: "DisableFormHistory", label: "Disable Form History", group: "Privacy & Telemetry", type: "boolean" },
-  // Network
-  { key: "CaptivePortal", label: "Enable Captive Portal Detection", group: "Network", type: "boolean" },
-  { key: "NetworkPrediction", label: "Enable Network Prediction", group: "Network", type: "boolean" },
-  { key: "DNSOverHTTPS", label: "DNS over HTTPS", group: "Network", type: "object", objectFields: [
-    { key: "Enabled", label: "Enabled", fieldType: "boolean" },
-    { key: "ProviderURL", label: "Provider URL", fieldType: "string" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-    { key: "Fallback", label: "Fallback", fieldType: "boolean" },
-    { key: "ExcludedDomains", label: "Excluded Domains", fieldType: "stringlist" },
-  ]},
-  // Security
-  { key: "DisablePasswordReveal", label: "Disable Password Reveal", group: "Security", type: "boolean" },
-  { key: "DisableMasterPasswordCreation", label: "Disable Master Password Creation", group: "Security", type: "boolean" },
-  { key: "PasswordManagerEnabled", label: "Enable Password Manager", group: "Security", type: "boolean" },
-  { key: "OfferToSaveLogins", label: "Offer to Save Logins", group: "Security", type: "boolean" },
-  { key: "SSLVersionMin", label: "SSL Version Minimum", group: "Security", type: "select", selectOptions: ["tls1", "tls1.1", "tls1.2", "tls1.3"] },
-  { key: "SSLVersionMax", label: "SSL Version Maximum", group: "Security", type: "select", selectOptions: ["tls1", "tls1.1", "tls1.2", "tls1.3"] },
-  // Restrictions
-  { key: "BlockAboutAddons", label: "Block about:addons", group: "Restrictions", type: "boolean" },
-  { key: "BlockAboutConfig", label: "Block about:config", group: "Restrictions", type: "boolean" },
-  { key: "BlockAboutProfiles", label: "Block about:profiles", group: "Restrictions", type: "boolean" },
-  { key: "BlockAboutSupport", label: "Block about:support", group: "Restrictions", type: "boolean" },
-  // General
-  { key: "DontCheckDefaultBrowser", label: "Don't Check Default Browser", group: "General", type: "boolean" },
-  { key: "PromptForDownloadLocation", label: "Prompt for Download Location", group: "General", type: "boolean" },
-  { key: "HardwareAcceleration", label: "Enable Hardware Acceleration", group: "General", type: "boolean" },
-  { key: "NoDefaultBookmarks", label: "No Default Bookmarks", group: "General", type: "boolean" },
-  { key: "SearchSuggestEnabled", label: "Enable Search Suggestions", group: "General", type: "boolean" },
-  { key: "DefaultDownloadDirectory", label: "Default Download Directory", group: "General", type: "string" },
-  // Appearance
-  { key: "DisplayBookmarksToolbar", label: "Display Bookmarks Toolbar", group: "Appearance", type: "boolean" },
-  { key: "DisplayMenuBar", label: "Display Menu Bar", group: "Appearance", type: "boolean" },
-  // Homepage
-  { key: "Homepage", label: "Homepage", group: "Homepage & New Tab", type: "object", objectFields: [
-    { key: "URL", label: "URL", fieldType: "string" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-    { key: "StartPage", label: "Start Page", fieldType: "select", selectOptions: ["none", "homepage", "previous-session", "homepage-locked"] },
-    { key: "Additional", label: "Additional Homepage URLs", fieldType: "stringlist" },
-  ]},
-  { key: "FirefoxHome", label: "Firefox Home (New Tab)", group: "Homepage & New Tab", type: "object", objectFields: [
-    { key: "Search", label: "Show Search", fieldType: "boolean" },
-    { key: "TopSites", label: "Show Top Sites", fieldType: "boolean" },
-    { key: "SponsoredTopSites", label: "Show Sponsored Top Sites", fieldType: "boolean" },
-    { key: "Highlights", label: "Show Highlights", fieldType: "boolean" },
-    { key: "Pocket", label: "Show Pocket", fieldType: "boolean" },
-    { key: "SponsoredPocket", label: "Show Sponsored Pocket", fieldType: "boolean" },
-    { key: "Snippets", label: "Show Snippets", fieldType: "boolean" },
-    { key: "Locked", label: "Lock Settings", fieldType: "boolean" },
-  ]},
-  // Tracking Protection
-  { key: "EnableTrackingProtection", label: "Enhanced Tracking Protection", group: "Tracking Protection", type: "object", objectFields: [
-    { key: "Value", label: "Enable", fieldType: "boolean" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-    { key: "Cryptomining", label: "Block Cryptomining", fieldType: "boolean" },
-    { key: "Fingerprinting", label: "Block Fingerprinting", fieldType: "boolean" },
-    { key: "EmailTracking", label: "Block Email Tracking", fieldType: "boolean" },
-    { key: "Exceptions", label: "Exceptions", fieldType: "stringlist" },
-  ]},
-  // Extensions
-  { key: "Extensions", label: "Extensions", group: "Extensions", type: "object", objectFields: [
-    { key: "Install", label: "Install (URLs or extension IDs)", fieldType: "stringlist" },
-    { key: "Uninstall", label: "Uninstall (extension IDs)", fieldType: "stringlist" },
-    { key: "Locked", label: "Locked (extension IDs)", fieldType: "stringlist" },
-  ]},
-  // Cookies
-  { key: "Cookies", label: "Cookies", group: "Cookies & Popups", type: "object", objectFields: [
-    { key: "Behavior", label: "Behavior", fieldType: "select", selectOptions: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"] },
-    { key: "BehaviorPrivateBrowsing", label: "Behavior (Private Browsing)", fieldType: "select", selectOptions: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"] },
-    { key: "Allow", label: "Allow Origins", fieldType: "stringlist" },
-    { key: "Block", label: "Block Origins", fieldType: "stringlist" },
-    { key: "AllowSession", label: "Allow Session Origins", fieldType: "stringlist" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-  ]},
-  // Popup Blocking
-  { key: "PopupBlocking", label: "Popup Blocking", group: "Cookies & Popups", type: "object", objectFields: [
-    { key: "Default", label: "Block Popups by Default", fieldType: "boolean" },
-    { key: "Allow", label: "Allow Exceptions", fieldType: "stringlist" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-  ]},
-];
-
 // Build category groups for the tree view
-function buildFirefoxTree(): Map<string, FirefoxPolicyDef[]> {
-  const groups = new Map<string, FirefoxPolicyDef[]>();
+function buildFirefoxTree(): Map<string, PolicyFieldDef[]> {
+  const groups = new Map<string, PolicyFieldDef[]>();
   for (const p of FIREFOX_ALL_POLICIES) {
     const arr = groups.get(p.group) || [];
     arr.push(p);
@@ -203,91 +102,9 @@ function buildFirefoxTree(): Map<string, FirefoxPolicyDef[]> {
 
 /* ── Thunderbird policy model (matches Protobuf schema) ── */
 
-interface ThunderbirdPolicyDef {
-  key: keyof ThunderbirdPolicy;
-  label: string;
-  group: string;
-  type: "boolean" | "string" | "select" | "object" | "stringlist";
-  selectOptions?: string[];
-  objectFields?: { key: string; label: string; fieldType: "boolean" | "string" | "select" | "stringlist"; selectOptions?: string[] }[];
-}
-
-const THUNDERBIRD_ALL_POLICIES: ThunderbirdPolicyDef[] = [
-  // Updates
-  { key: "DisableAppUpdate", label: "Disable App Update", group: "Updates", type: "boolean" },
-  { key: "AppAutoUpdate", label: "App Auto Update", group: "Updates", type: "boolean" },
-  { key: "BackgroundAppUpdate", label: "Background App Update", group: "Updates", type: "boolean" },
-  { key: "ManualAppUpdateOnly", label: "Manual App Update Only", group: "Updates", type: "boolean" },
-  { key: "AppUpdatePin", label: "App Update Pin Version", group: "Updates", type: "string" },
-  { key: "AppUpdateURL", label: "App Update URL", group: "Updates", type: "string" },
-  // Privacy & Telemetry
-  { key: "DisableTelemetry", label: "Disable Telemetry", group: "Privacy & Telemetry", type: "boolean" },
-  // Security
-  { key: "DisablePasswordReveal", label: "Disable Password Reveal", group: "Security", type: "boolean" },
-  { key: "DisableMasterPasswordCreation", label: "Disable Master Password Creation", group: "Security", type: "boolean" },
-  { key: "PrimaryPassword", label: "Require Primary Password", group: "Security", type: "boolean" },
-  { key: "PasswordManagerEnabled", label: "Enable Password Manager", group: "Security", type: "boolean" },
-  { key: "OfferToSaveLogins", label: "Offer to Save Logins", group: "Security", type: "boolean" },
-  { key: "OfferToSaveLoginsDefault", label: "Offer to Save Logins (Default)", group: "Security", type: "boolean" },
-  { key: "DisableSecurityBypass", label: "Disable Security Bypass", group: "Security", type: "boolean" },
-  { key: "SSLVersionMin", label: "SSL Version Minimum", group: "Security", type: "select", selectOptions: ["tls1", "tls1.1", "tls1.2", "tls1.3"] },
-  { key: "SSLVersionMax", label: "SSL Version Maximum", group: "Security", type: "select", selectOptions: ["tls1", "tls1.1", "tls1.2", "tls1.3"] },
-  // Restrictions
-  { key: "BlockAboutAddons", label: "Block about:addons", group: "Restrictions", type: "boolean" },
-  { key: "BlockAboutConfig", label: "Block about:config", group: "Restrictions", type: "boolean" },
-  { key: "BlockAboutProfiles", label: "Block about:profiles", group: "Restrictions", type: "boolean" },
-  { key: "BlockAboutSupport", label: "Block about:support", group: "Restrictions", type: "boolean" },
-  { key: "DisableSafeMode", label: "Disable Safe Mode", group: "Restrictions", type: "boolean" },
-  // Developer Tools
-  { key: "DisableDeveloperTools", label: "Disable Developer Tools", group: "Developer Tools", type: "boolean" },
-  // Add-ons
-  { key: "DisableSystemAddonUpdate", label: "Disable System Add-on Updates", group: "Add-ons", type: "boolean" },
-  { key: "ExtensionUpdate", label: "Allow Extension Updates", group: "Add-ons", type: "boolean" },
-  { key: "Extensions", label: "Extensions", group: "Add-ons", type: "object", objectFields: [
-    { key: "Install", label: "Install (URLs or extension IDs)", fieldType: "stringlist" },
-    { key: "Uninstall", label: "Uninstall (extension IDs)", fieldType: "stringlist" },
-    { key: "Locked", label: "Locked (extension IDs)", fieldType: "stringlist" },
-  ]},
-  // Network
-  { key: "HardwareAcceleration", label: "Enable Hardware Acceleration", group: "Network", type: "boolean" },
-  { key: "NetworkPrediction", label: "Enable Network Prediction", group: "Network", type: "boolean" },
-  { key: "CaptivePortal", label: "Enable Captive Portal Detection", group: "Network", type: "boolean" },
-  { key: "DNSOverHTTPS", label: "DNS over HTTPS", group: "Network", type: "object", objectFields: [
-    { key: "Enabled", label: "Enabled", fieldType: "boolean" },
-    { key: "ProviderURL", label: "Provider URL", fieldType: "string" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-    { key: "Fallback", label: "Fallback", fieldType: "boolean" },
-    { key: "ExcludedDomains", label: "Excluded Domains", fieldType: "stringlist" },
-  ]},
-  // General
-  { key: "PromptForDownloadLocation", label: "Prompt for Download Location", group: "General", type: "boolean" },
-  { key: "DefaultDownloadDirectory", label: "Default Download Directory", group: "General", type: "string" },
-  { key: "DownloadDirectory", label: "Download Directory", group: "General", type: "string" },
-  { key: "DisableBuiltinPDFViewer", label: "Disable Built-in PDF Viewer", group: "General", type: "boolean" },
-  { key: "RequestedLocales", label: "Requested Locales", group: "General", type: "stringlist" },
-  // Cookies
-  { key: "Cookies", label: "Cookies", group: "Cookies", type: "object", objectFields: [
-    { key: "Behavior", label: "Behavior", fieldType: "select", selectOptions: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"] },
-    { key: "BehaviorPrivateBrowsing", label: "Behavior (Private Browsing)", fieldType: "select", selectOptions: ["accept", "reject-foreign", "reject-all", "limit-foreign", "reject-tracker", "reject-tracker-and-partition-foreign"] },
-    { key: "Allow", label: "Allow Origins", fieldType: "stringlist" },
-    { key: "Block", label: "Block Origins", fieldType: "stringlist" },
-    { key: "AllowSession", label: "Allow Session Origins", fieldType: "stringlist" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-  ]},
-  // Authentication
-  { key: "Authentication", label: "Authentication", group: "Authentication", type: "object", objectFields: [
-    { key: "SPNEGO", label: "SPNEGO Hosts", fieldType: "stringlist" },
-    { key: "Delegated", label: "Delegated Hosts", fieldType: "stringlist" },
-    { key: "NTLM", label: "NTLM Hosts", fieldType: "stringlist" },
-    { key: "AllowNonFQDN", label: "Allow Non-FQDN", fieldType: "boolean" },
-    { key: "AllowProxies", label: "Allow Proxies", fieldType: "boolean" },
-    { key: "Locked", label: "Locked", fieldType: "boolean" },
-  ]},
-];
-
 // Build category groups for the Thunderbird tree view.
-function buildThunderbirdTree(): Map<string, ThunderbirdPolicyDef[]> {
-  const groups = new Map<string, ThunderbirdPolicyDef[]>();
+function buildThunderbirdTree(): Map<string, PolicyFieldDef[]> {
+  const groups = new Map<string, PolicyFieldDef[]>();
   for (const p of THUNDERBIRD_ALL_POLICIES) {
     const arr = groups.get(p.group) || [];
     arr.push(p);
@@ -298,457 +115,8 @@ function buildThunderbirdTree(): Map<string, ThunderbirdPolicyDef[]> {
 
 /* ── Chrome/Chromium policy model ── */
 
-interface ChromePolicyDef {
-  key: string;
-  label: string;
-  group: string;
-  type: "boolean" | "string" | "integer" | "string-enum" | "integer-enum" | "list" | "json";
-  description: string;
-  enumOptions?: { value: number | string; label: string }[];
-}
-
-const CHROME_ALL_POLICIES: ChromePolicyDef[] = [
-  // ── Homepage & Startup ──────────────────────────────────────────────────────
-  { key: "HomepageLocation", label: "Home Page URL", group: "Homepage & Startup", type: "string", description: "Set the URL that is used as the browser home page." },
-  { key: "HomepageIsNewTabPage", label: "Use New Tab as Home Page", group: "Homepage & Startup", type: "boolean", description: "Use the New Tab page as the home page instead of a custom URL." },
-  { key: "RestoreOnStartup", label: "Action on Startup", group: "Homepage & Startup", type: "integer-enum", description: "Specifies the action to take on startup.", enumOptions: [
-    { value: 1, label: "1 – Open the New Tab page" },
-    { value: 4, label: "4 – Open a list of URLs" },
-    { value: 5, label: "5 – Open the last session" },
-  ]},
-  { key: "RestoreOnStartupURLs", label: "Startup URLs", group: "Homepage & Startup", type: "list", description: "List of URLs to open on startup when RestoreOnStartup is 4." },
-  { key: "ShowHomeButton", label: "Show Home Button", group: "Homepage & Startup", type: "boolean", description: "Show the Home button on the toolbar." },
-  { key: "NewTabPageLocation", label: "New Tab Page URL", group: "Homepage & Startup", type: "string", description: "Configure the URL for the New Tab page." },
-  { key: "NewTabPageManagedNewTabUrl", label: "Managed New Tab URL", group: "Homepage & Startup", type: "string", description: "Open a specific URL in a new tab created via managed shortcut." },
-
-  // ── Extensions ──────────────────────────────────────────────────────────────
-  { key: "ExtensionInstallForcelist", label: "Force-Install Extensions", group: "Extensions", type: "list", description: "Force-install extensions and apps. Each entry: extensionID;updateURL." },
-  { key: "ExtensionInstallAllowlist", label: "Allowed Extensions", group: "Extensions", type: "list", description: "Allow specific extension IDs to be installed." },
-  { key: "ExtensionInstallBlocklist", label: "Blocked Extensions", group: "Extensions", type: "list", description: "Block specific extension IDs (use [\"*\"] to block all)." },
-  { key: "ExtensionInstallSources", label: "Extension Install Sources", group: "Extensions", type: "list", description: "URL patterns from which extensions can be installed." },
-  { key: "ExtensionManifestV2Availability", label: "Manifest V2 Availability", group: "Extensions", type: "integer-enum", description: "Control availability of Manifest V2 extensions.", enumOptions: [
-    { value: 0, label: "0 – Default browser behavior" },
-    { value: 1, label: "1 – Disable Manifest V2 extensions" },
-    { value: 2, label: "2 – Enable Manifest V2 extensions" },
-    { value: 3, label: "3 – Enable Manifest V2 only for force-installed" },
-  ]},
-  { key: "ExtensionSettings", label: "Extension Settings", group: "Extensions", type: "json", description: "Comprehensive extension management settings (JSON object keyed by extension ID or wildcard)." },
-  { key: "ExtensionAllowedTypes", label: "Allowed Extension Types", group: "Extensions", type: "list", description: "Restrict which extension types can be installed (e.g. extension, theme, app, hosted_app)." },
-  { key: "ExtensionUnpublishedAvailability", label: "Unpublished Extension Availability", group: "Extensions", type: "integer-enum", description: "Control availability of extensions removed from the Chrome Web Store.", enumOptions: [
-    { value: 0, label: "0 – Allow unpublished extensions" },
-    { value: 1, label: "1 – Disable unpublished extensions" },
-  ]},
-  { key: "BlockExternalExtensions", label: "Block External Extensions", group: "Extensions", type: "boolean", description: "Block external extensions from being installed." },
-
-  // ── Privacy & Security ───────────────────────────────────────────────────────
-  { key: "IncognitoModeAvailability", label: "Incognito Mode Availability", group: "Privacy & Security", type: "integer-enum", description: "Control whether the user can open pages in incognito mode.", enumOptions: [
-    { value: 0, label: "0 – Incognito available" },
-    { value: 1, label: "1 – Incognito disabled" },
-    { value: 2, label: "2 – Incognito forced" },
-  ]},
-  { key: "SitePerProcess", label: "Enable Site Isolation", group: "Privacy & Security", type: "boolean", description: "Require site isolation (strict origin) for every site." },
-  { key: "DNSInterceptionChecksEnabled", label: "DNS Interception Checks", group: "Privacy & Security", type: "boolean", description: "Enable DNS interception checks to detect captive portals." },
-  { key: "BuiltInDnsClientEnabled", label: "Built-in DNS Client", group: "Privacy & Security", type: "boolean", description: "Use Chrome's built-in DNS client instead of the OS resolver." },
-  { key: "BlockThirdPartyCookies", label: "Block Third-Party Cookies", group: "Privacy & Security", type: "boolean", description: "Block third-party cookies and site data from being set." },
-  { key: "SSLVersionMin", label: "Minimum SSL Version", group: "Privacy & Security", type: "string-enum", description: "Minimum TLS/SSL version accepted.", enumOptions: [
-    { value: "tls1", label: "TLS 1.0" },
-    { value: "tls1.1", label: "TLS 1.1" },
-    { value: "tls1.2", label: "TLS 1.2" },
-    { value: "tls1.3", label: "TLS 1.3" },
-  ]},
-  { key: "CipherSuiteBlacklist", label: "Disabled TLS Cipher Suites", group: "Privacy & Security", type: "list", description: "List of hex-encoded TLS cipher suites to disable." },
-  { key: "NTLMv2Enabled", label: "NTLMv2 Authentication", group: "Privacy & Security", type: "boolean", description: "Enable NTLMv2 authentication." },
-  { key: "AllowDinosaurEasterEgg", label: "Allow Dinosaur Easter Egg", group: "Privacy & Security", type: "boolean", description: "Allow users to play the dinosaur game when offline." },
-  { key: "MetricsReportingEnabled", label: "Metrics Reporting", group: "Privacy & Security", type: "boolean", description: "Enable sending usage and crash-related data to Google." },
-  { key: "ChromeVariations", label: "Chrome Variations", group: "Privacy & Security", type: "integer-enum", description: "Control which Chrome variations (field trials) are applied.", enumOptions: [
-    { value: 0, label: "0 – Enable all variations" },
-    { value: 1, label: "1 – Enable critical fix variations only" },
-    { value: 2, label: "2 – Disable all variations" },
-  ]},
-  { key: "SuppressUnsupportedOSWarning", label: "Suppress Unsupported OS Warning", group: "Privacy & Security", type: "boolean", description: "Suppress the warning when Chrome is run on an unsupported OS." },
-  { key: "BrowserNetworkTimeQueriesEnabled", label: "Network Time Queries", group: "Privacy & Security", type: "boolean", description: "Allow Chrome to make requests to a time service to detect clock skew." },
-  { key: "PrivacySandboxPromptEnabled", label: "Privacy Sandbox Prompt", group: "Privacy & Security", type: "boolean", description: "Allow Chrome to show the Privacy Sandbox prompt to users." },
-  { key: "PrivacySandboxAdTopicsEnabled", label: "Privacy Sandbox Ad Topics", group: "Privacy & Security", type: "boolean", description: "Enable the Privacy Sandbox Ad Topics API." },
-  { key: "PrivacySandboxSiteEnabledAdsEnabled", label: "Privacy Sandbox Site-Enabled Ads", group: "Privacy & Security", type: "boolean", description: "Enable the Privacy Sandbox Site-Enabled Ads API." },
-  { key: "PrivacySandboxAdMeasurementEnabled", label: "Privacy Sandbox Ad Measurement", group: "Privacy & Security", type: "boolean", description: "Enable the Privacy Sandbox Ad Measurement API." },
-  { key: "HttpsOnlyMode", label: "HTTPS-Only Mode", group: "Privacy & Security", type: "string-enum", description: "Control HTTPS-Only Mode for navigation.", enumOptions: [
-    { value: "allowed", label: "allowed – User can enable HTTPS-Only Mode" },
-    { value: "disallowed", label: "disallowed – User cannot enable HTTPS-Only Mode" },
-    { value: "force_enabled", label: "force_enabled – HTTPS-Only Mode is always enabled" },
-  ]},
-  { key: "HttpsUpgradesEnabled", label: "HTTPS Upgrades", group: "Privacy & Security", type: "boolean", description: "Automatically upgrade navigations to HTTPS where possible." },
-
-  // ── Network & Proxy ──────────────────────────────────────────────────────────
-  { key: "ProxyMode", label: "Proxy Mode", group: "Network & Proxy", type: "string-enum", description: "Choose how Chrome determines the proxy.", enumOptions: [
-    { value: "direct", label: "direct – Never use a proxy" },
-    { value: "auto_detect", label: "auto_detect – Auto-detect proxy settings" },
-    { value: "pac_script", label: "pac_script – Use a .pac script URL" },
-    { value: "fixed_servers", label: "fixed_servers – Use fixed proxy server" },
-    { value: "system", label: "system – Use system proxy settings" },
-  ]},
-  { key: "ProxyServer", label: "Proxy Server", group: "Network & Proxy", type: "string", description: "Address or URL of the proxy server (host:port)." },
-  { key: "ProxyPacUrl", label: "Proxy PAC URL", group: "Network & Proxy", type: "string", description: "URL of the proxy auto-config (.pac) file." },
-  { key: "ProxyBypassList", label: "Proxy Bypass List", group: "Network & Proxy", type: "string", description: "Semicolon-separated list of hosts that bypass the proxy." },
-  { key: "DnsOverHttpsMode", label: "DNS-over-HTTPS Mode", group: "Network & Proxy", type: "string-enum", description: "Control DNS-over-HTTPS mode.", enumOptions: [
-    { value: "off", label: "off – Disable DNS-over-HTTPS" },
-    { value: "automatic", label: "automatic – Use DoH with insecure fallback" },
-    { value: "secure", label: "secure – Use DoH only, no fallback" },
-  ]},
-  { key: "DnsOverHttpsTemplates", label: "DNS-over-HTTPS Templates", group: "Network & Proxy", type: "string", description: "URI template(s) for the DNS-over-HTTPS resolver." },
-  { key: "DnsOverHttpsSalt", label: "DNS-over-HTTPS Salt", group: "Network & Proxy", type: "string", description: "Salt value to use in privacy-preserving DNS-over-HTTPS identifiers." },
-  { key: "NetworkPredictionOptions", label: "Network Prediction", group: "Network & Proxy", type: "integer-enum", description: "Enable or disable network prediction (preloading).", enumOptions: [
-    { value: 0, label: "0 – Predict on all networks" },
-    { value: 2, label: "2 – Predict on Wi-Fi and Ethernet only" },
-    { value: 3, label: "3 – Never predict" },
-  ]},
-  { key: "MaxConnectionsPerProxy", label: "Max Connections Per Proxy", group: "Network & Proxy", type: "integer", description: "Maximum number of simultaneous connections to the proxy server." },
-  { key: "URLBlocklist", label: "URL Blocklist", group: "Network & Proxy", type: "list", description: "Block access to a list of URL patterns." },
-  { key: "URLAllowlist", label: "URL Allowlist", group: "Network & Proxy", type: "list", description: "Allow access to a list of URL patterns, overriding the blocklist." },
-  { key: "BrowsingDataLifetime", label: "Browsing Data Lifetime", group: "Network & Proxy", type: "json", description: "Configure scheduled deletion of browsing data by type and TTL (JSON array)." },
-  { key: "DataLeakPreventionRulesList", label: "Data Leak Prevention Rules", group: "Network & Proxy", type: "json", description: "List of data leak prevention rules (JSON array)." },
-
-  // ── Content Settings ─────────────────────────────────────────────────────────
-  { key: "DefaultCookiesSetting", label: "Default Cookies Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for cookies.", enumOptions: [
-    { value: 1, label: "1 – Allow all cookies" },
-    { value: 2, label: "2 – Block all cookies" },
-    { value: 4, label: "4 – Session only cookies" },
-  ]},
-  { key: "CookiesAllowedForUrls", label: "Cookies Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where cookies are always allowed." },
-  { key: "CookiesBlockedForUrls", label: "Cookies Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where cookies are always blocked." },
-  { key: "CookiesSessionOnlyForUrls", label: "Cookies Session-Only For URLs", group: "Content Settings", type: "list", description: "URL patterns where cookies expire when the session ends." },
-  { key: "DefaultJavaScriptSetting", label: "Default JavaScript Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for JavaScript.", enumOptions: [
-    { value: 1, label: "1 – Allow JavaScript" },
-    { value: 2, label: "2 – Block JavaScript" },
-  ]},
-  { key: "JavaScriptAllowedForUrls", label: "JavaScript Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where JavaScript is always allowed." },
-  { key: "JavaScriptBlockedForUrls", label: "JavaScript Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where JavaScript is always blocked." },
-  { key: "DefaultPopupsSetting", label: "Default Pop-ups Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for pop-up windows.", enumOptions: [
-    { value: 1, label: "1 – Allow popups" },
-    { value: 2, label: "2 – Block popups" },
-  ]},
-  { key: "PopupsAllowedForUrls", label: "Popups Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where pop-ups are always allowed." },
-  { key: "PopupsBlockedForUrls", label: "Popups Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where pop-ups are always blocked." },
-  { key: "DefaultGeolocationSetting", label: "Default Geolocation Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for geolocation access.", enumOptions: [
-    { value: 1, label: "1 – Allow geolocation" },
-    { value: 2, label: "2 – Block geolocation" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "DefaultNotificationsSetting", label: "Default Notifications Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for desktop notifications.", enumOptions: [
-    { value: 1, label: "1 – Allow notifications" },
-    { value: 2, label: "2 – Block notifications" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "NotificationsAllowedForUrls", label: "Notifications Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where notifications are always allowed." },
-  { key: "NotificationsBlockedForUrls", label: "Notifications Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where notifications are always blocked." },
-  { key: "DefaultImagesSetting", label: "Default Images Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for image loading.", enumOptions: [
-    { value: 1, label: "1 – Allow all images" },
-    { value: 2, label: "2 – Block all images" },
-  ]},
-  { key: "ImagesAllowedForUrls", label: "Images Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where images are always shown." },
-  { key: "ImagesBlockedForUrls", label: "Images Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where images are always blocked." },
-  { key: "DefaultWebBluetoothGuardSetting", label: "Default Web Bluetooth Setting", group: "Content Settings", type: "integer-enum", description: "Control Web Bluetooth API access.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "DefaultWebUsbGuardSetting", label: "Default WebUSB Setting", group: "Content Settings", type: "integer-enum", description: "Control WebUSB API access.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "WebUsbAllowDevicesForUrls", label: "WebUSB Allowed Devices For URLs", group: "Content Settings", type: "json", description: "Automatically grant permission to access specified USB devices for URLs (JSON array)." },
-  { key: "DefaultSensorsSetting", label: "Default Sensors Setting", group: "Content Settings", type: "integer-enum", description: "Control access to sensors like accelerometer and gyroscope.", enumOptions: [
-    { value: 1, label: "1 – Allow access" },
-    { value: 2, label: "2 – Block access" },
-  ]},
-  { key: "SensorsAllowedForUrls", label: "Sensors Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where sensor access is always allowed." },
-  { key: "SensorsBlockedForUrls", label: "Sensors Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where sensor access is always blocked." },
-  { key: "DefaultSerialGuardSetting", label: "Default Serial API Setting", group: "Content Settings", type: "integer-enum", description: "Control Web Serial API access.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "DefaultFileSystemReadGuardSetting", label: "Default File System Read Setting", group: "Content Settings", type: "integer-enum", description: "Control read access to the local file system via the File System API.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "DefaultFileSystemWriteGuardSetting", label: "Default File System Write Setting", group: "Content Settings", type: "integer-enum", description: "Control write access to the local file system via the File System API.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "DefaultInsecureContentSetting", label: "Default Insecure Content Setting", group: "Content Settings", type: "integer-enum", description: "Control display of insecure mixed content.", enumOptions: [
-    { value: 2, label: "2 – Block mixed content" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "InsecureContentAllowedForUrls", label: "Insecure Content Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns where insecure mixed content is always allowed." },
-  { key: "InsecureContentBlockedForUrls", label: "Insecure Content Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns where insecure mixed content is always blocked." },
-  { key: "DefaultMediaStreamSetting", label: "Default Camera/Mic Setting", group: "Content Settings", type: "integer-enum", description: "Default setting for webcam/microphone access.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "VideoCaptureAllowedUrls", label: "Camera Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns granted camera access without a prompt." },
-  { key: "VideoCaptureAllowed", label: "Video Capture Allowed", group: "Content Settings", type: "boolean", description: "Allow sites to access the camera." },
-  { key: "AudioCaptureAllowed", label: "Audio Capture Allowed", group: "Content Settings", type: "boolean", description: "Allow sites to access the microphone." },
-  { key: "AudioCaptureAllowedUrls", label: "Microphone Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns granted microphone access without a prompt." },
-  { key: "DefaultClipboardSetting", label: "Default Clipboard Setting", group: "Content Settings", type: "integer-enum", description: "Control clipboard read/write access.", enumOptions: [
-    { value: 2, label: "2 – Block clipboard access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-  { key: "ClipboardAllowedForUrls", label: "Clipboard Allowed For URLs", group: "Content Settings", type: "list", description: "URL patterns allowed to use the clipboard API." },
-  { key: "ClipboardBlockedForUrls", label: "Clipboard Blocked For URLs", group: "Content Settings", type: "list", description: "URL patterns blocked from using the clipboard API." },
-  { key: "DefaultLocalFontsSetting", label: "Default Local Fonts Setting", group: "Content Settings", type: "integer-enum", description: "Control access to local fonts via the Local Font Access API.", enumOptions: [
-    { value: 2, label: "2 – Block access" },
-    { value: 3, label: "3 – Ask each time" },
-  ]},
-
-  // ── Safe Browsing ────────────────────────────────────────────────────────────
-  { key: "SafeBrowsingEnabled", label: "Enable Safe Browsing", group: "Safe Browsing", type: "boolean", description: "Enable Google Safe Browsing protection." },
-  { key: "SafeBrowsingProtectionLevel", label: "Safe Browsing Protection Level", group: "Safe Browsing", type: "integer-enum", description: "Set the Safe Browsing protection level.", enumOptions: [
-    { value: 0, label: "0 – Safe Browsing off" },
-    { value: 1, label: "1 – Standard protection" },
-    { value: 2, label: "2 – Enhanced protection" },
-  ]},
-  { key: "SafeBrowsingExtendedReportingEnabled", label: "Safe Browsing Extended Reporting", group: "Safe Browsing", type: "boolean", description: "Enable Safe Browsing extended reporting (sends data to Google)." },
-  { key: "DisableSafeBrowsingProceedAnyway", label: "Disable Safe Browsing Proceed", group: "Safe Browsing", type: "boolean", description: "Prevent users from proceeding past Safe Browsing warning pages." },
-  { key: "SafeBrowsingAllowlistDomains", label: "Safe Browsing Allowlist Domains", group: "Safe Browsing", type: "list", description: "Domains where Safe Browsing checks are not performed." },
-  { key: "SafeSitesFilterBehavior", label: "Safe Sites Filter", group: "Safe Browsing", type: "integer-enum", description: "Control Safe Sites adult content filtering.", enumOptions: [
-    { value: 0, label: "0 – Do not filter" },
-    { value: 1, label: "1 – Filter top-level sites" },
-  ]},
-  { key: "PasswordProtectionWarningTrigger", label: "Password Protection Warning Trigger", group: "Safe Browsing", type: "integer-enum", description: "When to show password protection warnings.", enumOptions: [
-    { value: 0, label: "0 – Password protection off" },
-    { value: 1, label: "1 – Warn on password reuse on phishing page" },
-    { value: 2, label: "2 – Warn on password reuse on any site" },
-  ]},
-  { key: "PasswordProtectionLoginURLs", label: "Password Protection Login URLs", group: "Safe Browsing", type: "list", description: "List of enterprise login URLs where password protection checks are performed." },
-  { key: "PasswordProtectionChangePasswordURL", label: "Password Change URL", group: "Safe Browsing", type: "string", description: "URL where users can change their enterprise password." },
-  { key: "SafeBrowsingDeepScanningEnabled", label: "Safe Browsing Deep Scanning", group: "Safe Browsing", type: "boolean", description: "Enable deep scanning of suspicious downloads in Safe Browsing." },
-
-  // ── Passwords & Autofill ─────────────────────────────────────────────────────
-  { key: "PasswordManagerEnabled", label: "Enable Password Manager", group: "Passwords & Autofill", type: "boolean", description: "Enable Chrome's built-in password manager." },
-  { key: "PasswordLeakDetectionEnabled", label: "Password Leak Detection", group: "Passwords & Autofill", type: "boolean", description: "Enable password leak detection against Google's database of breached credentials." },
-  { key: "PasswordSharingEnabled", label: "Password Sharing", group: "Passwords & Autofill", type: "boolean", description: "Allow sharing passwords with contacts via Family Link." },
-  { key: "AutofillAddressEnabled", label: "Address Autofill", group: "Passwords & Autofill", type: "boolean", description: "Enable autofill for addresses." },
-  { key: "AutofillCreditCardEnabled", label: "Credit Card Autofill", group: "Passwords & Autofill", type: "boolean", description: "Enable autofill for credit card information." },
-  { key: "AutofillPredictionImprovementsEnabled", label: "Autofill Prediction Improvements", group: "Passwords & Autofill", type: "boolean", description: "Enable AI-powered autofill prediction improvements." },
-
-  // ── Downloads ────────────────────────────────────────────────────────────────
-  { key: "DownloadDirectory", label: "Download Directory", group: "Downloads", type: "string", description: "Default directory for file downloads." },
-  { key: "PromptForDownloadLocation", label: "Prompt for Download Location", group: "Downloads", type: "boolean", description: "Ask where to save each file before downloading." },
-  { key: "DownloadRestrictions", label: "Download Restrictions", group: "Downloads", type: "integer-enum", description: "Restrict which downloads are allowed.", enumOptions: [
-    { value: 0, label: "0 – No special restrictions" },
-    { value: 1, label: "1 – Block dangerous downloads" },
-    { value: 2, label: "2 – Block dangerous and unwanted downloads" },
-    { value: 3, label: "3 – Block all downloads" },
-    { value: 4, label: "4 – Block malicious downloads" },
-  ]},
-  { key: "AllowedDownloadTypes", label: "Allowed Download Types", group: "Downloads", type: "list", description: "Allowlist of MIME types or file extensions that can be downloaded." },
-
-  // ── Printing ─────────────────────────────────────────────────────────────────
-  { key: "PrintingEnabled", label: "Enable Printing", group: "Printing", type: "boolean", description: "Enable printing in Chrome." },
-  { key: "PrintPreviewUseSystemDefaultPrinter", label: "Use System Default Printer", group: "Printing", type: "boolean", description: "Use the system default printer as the default in Print Preview." },
-  { key: "DefaultPrinterSelection", label: "Default Printer Selection", group: "Printing", type: "string", description: "Rules for selecting the default printer (JSON string)." },
-  { key: "PrinterTypeDenyList", label: "Printer Type Deny List", group: "Printing", type: "list", description: "Disable printer types (e.g. cloud, local, extension)." },
-  { key: "PrintRasterizationMode", label: "Print Rasterization Mode", group: "Printing", type: "integer-enum", description: "Control print rasterization.", enumOptions: [
-    { value: 0, label: "0 – Full rasterization" },
-    { value: 1, label: "1 – Fast rasterization" },
-  ]},
-  { key: "BackgroundGraphicsModeEnabled", label: "Background Graphics in Print", group: "Printing", type: "boolean", description: "Enable background graphics in print output by default." },
-  { key: "PrintingAllowedBackgroundGraphicsModes", label: "Allowed Background Graphics Modes", group: "Printing", type: "string-enum", description: "Restrict the background graphics printing mode.", enumOptions: [
-    { value: "any", label: "any – Allow any mode" },
-    { value: "enabled", label: "enabled – Force background graphics on" },
-    { value: "disabled", label: "disabled – Force background graphics off" },
-  ]},
-
-  // ── Browser UI ───────────────────────────────────────────────────────────────
-  { key: "BookmarkBarEnabled", label: "Bookmark Bar Enabled", group: "Browser UI", type: "boolean", description: "Enable the bookmarks bar." },
-  { key: "ShowAppsShortcutInBookmarkBar", label: "Show Apps Shortcut in Bookmarks Bar", group: "Browser UI", type: "boolean", description: "Show the Apps shortcut in the bookmarks bar." },
-  { key: "ManagedBookmarks", label: "Managed Bookmarks", group: "Browser UI", type: "json", description: "A list of managed bookmarks provided to the user (JSON array)." },
-  { key: "ManagedBookmarksSupervisedUser", label: "Managed Bookmarks (Supervised)", group: "Browser UI", type: "json", description: "Managed bookmarks for supervised users (JSON array)." },
-  { key: "DeveloperToolsAvailability", label: "Developer Tools Availability", group: "Browser UI", type: "integer-enum", description: "Control when developer tools can be used.", enumOptions: [
-    { value: 0, label: "0 – Disallow usage" },
-    { value: 1, label: "1 – Always allow" },
-    { value: 2, label: "2 – Allow except in force-installed extensions" },
-  ]},
-  { key: "DefaultBrowserSettingEnabled", label: "Default Browser Setting", group: "Browser UI", type: "boolean", description: "Allow Chrome to prompt the user to set it as the default browser." },
-  { key: "FullscreenAllowed", label: "Fullscreen Allowed", group: "Browser UI", type: "boolean", description: "Allow the browser window to enter fullscreen mode." },
-  { key: "TaskManagerEndProcessEnabled", label: "Task Manager End Process", group: "Browser UI", type: "boolean", description: "Allow users to terminate processes in the Task Manager." },
-  { key: "AllowDeletingBrowserHistory", label: "Allow Deleting Browser History", group: "Browser UI", type: "boolean", description: "Allow users to delete browser and download history." },
-  { key: "HideWebStoreIcon", label: "Hide Web Store Icon", group: "Browser UI", type: "boolean", description: "Hide the Chrome Web Store icon from the New Tab page and app launcher." },
-  { key: "ShowFullUrlsInAddressBar", label: "Show Full URLs in Address Bar", group: "Browser UI", type: "boolean", description: "Display the full URL including scheme and subdomain in the address bar." },
-  { key: "AllowedLanguages", label: "Allowed Browser Languages", group: "Browser UI", type: "list", description: "Restrict the languages users can set as the browser language." },
-  { key: "ApplicationLocaleValue", label: "Application Locale", group: "Browser UI", type: "string", description: "Set the browser application locale (language code, e.g. en-US)." },
-  { key: "SpellCheckServiceEnabled", label: "Spell Check Service", group: "Browser UI", type: "boolean", description: "Enable the web-based spell check service." },
-  { key: "SpellcheckEnabled", label: "Spellcheck Enabled", group: "Browser UI", type: "boolean", description: "Enable spellcheck in Chrome." },
-  { key: "SpellcheckLanguage", label: "Spellcheck Language", group: "Browser UI", type: "list", description: "Force-enable specific spellcheck languages." },
-  { key: "SpellcheckLanguageBlocklist", label: "Spellcheck Language Blocklist", group: "Browser UI", type: "list", description: "Force-disable specific spellcheck languages." },
-  { key: "TranslateEnabled", label: "Translation Enabled", group: "Browser UI", type: "boolean", description: "Enable the integrated Google Translate feature." },
-  { key: "AutoplayAllowed", label: "Autoplay Allowed", group: "Browser UI", type: "boolean", description: "Allow websites to autoplay media." },
-  { key: "AutoplayAllowlist", label: "Autoplay Allowlist", group: "Browser UI", type: "list", description: "URL patterns where autoplay is always allowed." },
-  { key: "AccessibilityImageLabelsEnabled", label: "Accessibility Image Labels", group: "Browser UI", type: "boolean", description: "Allow Chrome to provide automatic image descriptions using Google servers." },
-  { key: "ScreenCaptureAllowed", label: "Screen Capture Allowed", group: "Browser UI", type: "boolean", description: "Allow websites to prompt the user for screen capture." },
-  { key: "ScreenCaptureAllowedByOrigins", label: "Screen Capture Allowed By Origins", group: "Browser UI", type: "list", description: "Origins where screen capture is allowed without restriction." },
-  { key: "ScrollToTextFragmentEnabled", label: "Scroll-to-Text Fragment", group: "Browser UI", type: "boolean", description: "Allow navigations to scroll directly to text on a page via URL fragments." },
-  { key: "BrowserAddPersonEnabled", label: "Add Person in Profile Manager", group: "Browser UI", type: "boolean", description: "Allow users to add a new profile using the profile manager." },
-  { key: "BrowserGuestModeEnabled", label: "Guest Mode", group: "Browser UI", type: "boolean", description: "Allow users to use Chrome in guest mode." },
-  { key: "BrowserGuestModeEnforced", label: "Force Guest Mode", group: "Browser UI", type: "boolean", description: "Force Chrome to use guest mode (all other sessions are blocked)." },
-  { key: "ProfilePickerOnStartupAvailability", label: "Profile Picker on Startup", group: "Browser UI", type: "integer-enum", description: "Control profile picker display on startup.", enumOptions: [
-    { value: 0, label: "0 – Default behavior" },
-    { value: 1, label: "1 – Always show" },
-    { value: 2, label: "2 – Never show" },
-  ]},
-
-  // ── User & Sync ──────────────────────────────────────────────────────────────
-  { key: "BrowserSignin", label: "Browser Sign-in Policy", group: "User & Sync", type: "integer-enum", description: "Configure browser sign-in behavior.", enumOptions: [
-    { value: 0, label: "0 – Disable browser sign-in" },
-    { value: 1, label: "1 – Enable browser sign-in" },
-    { value: 2, label: "2 – Force browser sign-in" },
-  ]},
-  { key: "SyncDisabled", label: "Disable Chrome Sync", group: "User & Sync", type: "boolean", description: "Disable Chrome Sync and prevent the user from enabling it." },
-  { key: "SyncTypesListDisabled", label: "Disabled Sync Types", group: "User & Sync", type: "list", description: "Disable specific sync data types (e.g. bookmarks, passwords, extensions)." },
-  { key: "UserFeedbackAllowed", label: "User Feedback Allowed", group: "User & Sync", type: "boolean", description: "Allow users to submit feedback to Google." },
-  { key: "AllowedDomainsForApps", label: "Allowed Domains for Google Apps", group: "User & Sync", type: "string", description: "Define domains allowed for Google Workspace apps (comma-separated)." },
-  { key: "SigninInterceptionEnabled", label: "Sign-in Interception", group: "User & Sync", type: "boolean", description: "Enable sign-in interception when a user signs in to a Google account in Chrome." },
-  { key: "ForceSyncTypes", label: "Force Sync Types", group: "User & Sync", type: "list", description: "Force specific sync data types to always be synced." },
-
-  // ── Search ───────────────────────────────────────────────────────────────────
-  { key: "DefaultSearchProviderEnabled", label: "Default Search Provider Enabled", group: "Search", type: "boolean", description: "Enable the default search provider feature." },
-  { key: "DefaultSearchProviderName", label: "Search Provider Name", group: "Search", type: "string", description: "The name of the default search provider." },
-  { key: "DefaultSearchProviderSearchURL", label: "Search Provider Search URL", group: "Search", type: "string", description: "Search URL for the default search provider (use {searchTerms})." },
-  { key: "DefaultSearchProviderSuggestURL", label: "Search Provider Suggest URL", group: "Search", type: "string", description: "URL for search suggestions from the default search provider." },
-  { key: "DefaultSearchProviderIconURL", label: "Search Provider Icon URL", group: "Search", type: "string", description: "Favicon URL for the default search provider." },
-  { key: "DefaultSearchProviderKeyword", label: "Search Provider Keyword", group: "Search", type: "string", description: "Keyword to trigger the default search provider in the address bar." },
-  { key: "DefaultSearchProviderEncodings", label: "Search Provider Encodings", group: "Search", type: "list", description: "Character encodings supported by the default search provider." },
-  { key: "DefaultSearchProviderNewTabURL", label: "Search Provider New Tab URL", group: "Search", type: "string", description: "New tab page URL provided by the default search provider." },
-  { key: "DefaultSearchProviderImageURL", label: "Search Provider Image URL", group: "Search", type: "string", description: "URL for image search on the default search provider." },
-  { key: "SearchSuggestEnabled", label: "Search Suggestions", group: "Search", type: "boolean", description: "Enable search suggestions in the address bar." },
-  { key: "ContextualSearchEnabled", label: "Contextual Search", group: "Search", type: "boolean", description: "Enable contextual search via tap/select on desktop." },
-
-  // ── Updates & Management ─────────────────────────────────────────────────────
-  { key: "CloudManagementEnrollmentToken", label: "Cloud Management Enrollment Token", group: "Updates & Management", type: "string", description: "Enrollment token for Chrome Browser Cloud Management." },
-  { key: "CloudManagementEnrollmentMandatory", label: "Mandatory Cloud Management", group: "Updates & Management", type: "boolean", description: "Make Chrome Browser Cloud Management enrollment mandatory." },
-  { key: "CloudPolicyOverridesPlatformPolicy", label: "Cloud Policy Overrides Platform Policy", group: "Updates & Management", type: "boolean", description: "Give cloud policy higher priority than platform (machine-level) policy." },
-  { key: "CloudUserPolicyOverridesCloudMachinePolicy", label: "Cloud User Policy Overrides Machine Policy", group: "Updates & Management", type: "boolean", description: "Give user-level cloud policy higher priority than machine-level cloud policy." },
-  { key: "CommandLineFlagSecurityWarningsEnabled", label: "Command-Line Security Warnings", group: "Updates & Management", type: "boolean", description: "Show security warnings when Chrome is started with dangerous command-line flags." },
-  { key: "RelaunchNotification", label: "Relaunch Notification", group: "Updates & Management", type: "integer-enum", description: "Notify or force users to relaunch Chrome for pending updates.", enumOptions: [
-    { value: 1, label: "1 – Show relaunch recommendation" },
-    { value: 2, label: "2 – Force relaunch" },
-  ]},
-  { key: "RelaunchNotificationPeriod", label: "Relaunch Notification Period (ms)", group: "Updates & Management", type: "integer", description: "Time in milliseconds before showing the relaunch notification." },
-  { key: "RelaunchWindow", label: "Relaunch Window", group: "Updates & Management", type: "json", description: "Set a preferred time window for browser relaunches (JSON object with entries)." },
-  { key: "EnterpriseRealTimeUrlCheckMode", label: "Real-Time URL Check Mode", group: "Updates & Management", type: "integer-enum", description: "Enable real-time enterprise URL checking.", enumOptions: [
-    { value: 0, label: "0 – Disabled" },
-    { value: 1, label: "1 – Enable for main frame URLs" },
-  ]},
-  { key: "PolicyDictionaryMultipleSourceMergeList", label: "Policy Dictionary Merge List", group: "Updates & Management", type: "list", description: "List of policies for which dictionary values are merged from multiple sources." },
-  { key: "PolicyListMultipleSourceMergeList", label: "Policy List Merge List", group: "Updates & Management", type: "list", description: "List of policies for which list values are merged from multiple sources." },
-
-  // ── HTTP Authentication ──────────────────────────────────────────────────────
-  { key: "AuthSchemes", label: "Allowed Auth Schemes", group: "HTTP Authentication", type: "string", description: "Comma-separated list of supported HTTP authentication schemes (e.g. basic,digest,ntlm,negotiate)." },
-  { key: "DisableAuthNegotiateCnameLookup", label: "Disable Auth Negotiate CNAME Lookup", group: "HTTP Authentication", type: "boolean", description: "Disable CNAME lookup when generating the Kerberos SPN." },
-  { key: "EnableAuthNegotiatePort", label: "Enable Auth Negotiate Port", group: "HTTP Authentication", type: "boolean", description: "Include a non-standard port in the Kerberos SPN." },
-  { key: "AuthServerAllowlist", label: "Auth Server Allowlist", group: "HTTP Authentication", type: "string", description: "Allowlist of servers for integrated Windows authentication (comma-separated patterns)." },
-  { key: "AuthNegotiateDelegateAllowlist", label: "Auth Negotiate Delegate Allowlist", group: "HTTP Authentication", type: "string", description: "Servers that Chrome may delegate credentials to (comma-separated)." },
-  { key: "AuthNegotiateDelegateByKdcPolicy", label: "Delegate Auth by KDC Policy", group: "HTTP Authentication", type: "boolean", description: "Trust the KDC policy to determine whether delegation is allowed." },
-  { key: "NtlmV2Enabled", label: "NTLMv2 Enabled", group: "HTTP Authentication", type: "boolean", description: "Enable NTLMv2 when negotiating with NTLM challenge." },
-  { key: "AllowCrossOriginAuthPrompt", label: "Allow Cross-Origin Auth Prompts", group: "HTTP Authentication", type: "boolean", description: "Allow cross-origin images to show HTTP Basic Auth prompts." },
-  { key: "BasicAuthOverHttpEnabled", label: "HTTP Basic Auth over HTTP", group: "HTTP Authentication", type: "boolean", description: "Allow HTTP Basic Auth challenges over non-HTTPS connections." },
-
-  // ── Kerberos ─────────────────────────────────────────────────────────────────
-  { key: "KerberosEnabled", label: "Kerberos Enabled", group: "Kerberos", type: "boolean", description: "Enable Kerberos authentication support in Chrome." },
-  { key: "KerberosAccounts", label: "Kerberos Accounts", group: "Kerberos", type: "json", description: "Pre-configured Kerberos accounts (JSON array of account objects)." },
-  { key: "KerberosUseCustomPrevalidatedConfig", label: "Kerberos Use Custom Config", group: "Kerberos", type: "boolean", description: "Use a custom krb5 configuration for Kerberos authentication." },
-  { key: "KerberosCustomPrevalidatedConfig", label: "Kerberos Custom Config Content", group: "Kerberos", type: "string", description: "Content of the custom krb5 configuration file." },
-  { key: "KerberosAddAccountsAllowed", label: "Kerberos Add Accounts Allowed", group: "Kerberos", type: "boolean", description: "Allow users to add Kerberos accounts manually." },
-
-  // ── Miscellaneous ────────────────────────────────────────────────────────────
-  { key: "UserDataDir", label: "User Data Directory", group: "Miscellaneous", type: "string", description: "Set the directory that Chrome uses to store user data." },
-  { key: "DiskCacheDir", label: "Disk Cache Directory", group: "Miscellaneous", type: "string", description: "Set the directory used to store the disk cache." },
-  { key: "DiskCacheSize", label: "Disk Cache Size (bytes)", group: "Miscellaneous", type: "integer", description: "Set the disk cache size in bytes (0 = use default)." },
-  { key: "MediaCacheSize", label: "Media Cache Size (bytes)", group: "Miscellaneous", type: "integer", description: "Set the media disk cache size in bytes (0 = use default)." },
-  { key: "ProxySettings", label: "Proxy Settings", group: "Miscellaneous", type: "json", description: "Complete proxy settings as a JSON object (mode, server, pacUrl, bypassList)." },
-  { key: "CertificateTransparencyEnforcementDisabledForUrls", label: "CT Enforcement Disabled For URLs", group: "Miscellaneous", type: "list", description: "URL patterns where Certificate Transparency enforcement is disabled." },
-  { key: "CertificateTransparencyEnforcementDisabledForCas", label: "CT Enforcement Disabled For CAs", group: "Miscellaneous", type: "list", description: "CA certificates for which Certificate Transparency enforcement is disabled." },
-  { key: "AdditionalDnsQueryTypesEnabled", label: "Additional DNS Query Types", group: "Miscellaneous", type: "boolean", description: "Allow additional DNS query types such as HTTPS when performing DNS lookups." },
-  { key: "HardwareAccelerationModeEnabled", label: "Hardware Acceleration", group: "Miscellaneous", type: "boolean", description: "Enable hardware acceleration (GPU compositing)." },
-  { key: "ThrottleNonVisibleCrossOriginIframesAllowed", label: "Throttle Non-Visible Iframes", group: "Miscellaneous", type: "boolean", description: "Allow throttling of non-visible cross-origin iframes." },
-  { key: "OriginAgentClusterDefaultEnabled", label: "Origin-keyed Agent Cluster Default", group: "Miscellaneous", type: "boolean", description: "Enable origin-keyed agent clusters by default." },
-  { key: "InsecurePrivateNetworkRequestsAllowed", label: "Insecure Private Network Requests", group: "Miscellaneous", type: "boolean", description: "Allow insecure requests from public sites to private network resources." },
-  { key: "InsecurePrivateNetworkRequestsAllowedForUrls", label: "Insecure Private Network Requests Allowed For URLs", group: "Miscellaneous", type: "list", description: "URL patterns allowed to make insecure requests to private network resources." },
-  { key: "PrivateNetworkAccessRestrictionsEnabled", label: "Private Network Access Restrictions", group: "Miscellaneous", type: "boolean", description: "Enable restrictions on requests from public sites to private network endpoints." },
-  { key: "LegacySameSiteCookieBehaviorEnabled", label: "Legacy SameSite Cookie Behavior", group: "Miscellaneous", type: "integer-enum", description: "Revert to legacy SameSite=None cookie behavior for compatibility.", enumOptions: [
-    { value: 0, label: "0 – Use default behavior for all cookies" },
-    { value: 1, label: "1 – Revert to legacy behavior for all cookies" },
-    { value: 2, label: "2 – Use default behavior for cookies on all sites" },
-  ]},
-  { key: "LegacySameSiteCookieBehaviorEnabledForDomainList", label: "Legacy SameSite Cookie Domains", group: "Miscellaneous", type: "list", description: "Domains where legacy SameSite=None cookie behavior is reverted." },
-  { key: "TabFreezingEnabled", label: "Tab Freezing", group: "Miscellaneous", type: "boolean", description: "Allow freezing of background tabs to save memory and CPU." },
-  { key: "BackForwardCacheEnabled", label: "Back/Forward Cache", group: "Miscellaneous", type: "boolean", description: "Enable the back/forward cache for instant back and forward navigation." },
-  { key: "WebRtcAllowLegacyTLSProtocols", label: "WebRTC Legacy TLS", group: "Miscellaneous", type: "boolean", description: "Allow WebRTC connections to servers using deprecated TLS versions." },
-  { key: "WebRtcEventLogCollectionAllowed", label: "WebRTC Event Log Collection", group: "Miscellaneous", type: "boolean", description: "Allow Google to collect WebRTC event logs from connected users." },
-  { key: "WebRtcIPHandling", label: "WebRTC IP Handling", group: "Miscellaneous", type: "string-enum", description: "Control which network interfaces WebRTC uses to find the best path.", enumOptions: [
-    { value: "default", label: "default – Use all network interfaces" },
-    { value: "default_public_and_private_interfaces", label: "default_public_and_private_interfaces" },
-    { value: "default_public_interface_only", label: "default_public_interface_only" },
-    { value: "disable_non_proxied_udp", label: "disable_non_proxied_udp – Only use TCP or proxied UDP" },
-  ]},
-  { key: "WebRtcLocalIpsAllowedUrls", label: "WebRTC Local IPs Allowed For URLs", group: "Miscellaneous", type: "list", description: "Origins that can expose local IP addresses in WebRTC ICE candidates." },
-  { key: "ForceEphemeralProfiles", label: "Force Ephemeral Profiles", group: "Miscellaneous", type: "boolean", description: "Use ephemeral (temporary) profiles that are erased when the browser closes." },
-  { key: "BrowserThemeColor", label: "Browser Theme Color", group: "Miscellaneous", type: "string", description: "Set the browser theme color (hex color string, e.g. #FF0000)." },
-  { key: "NativeMessagingAllowlist", label: "Native Messaging Allowlist", group: "Miscellaneous", type: "list", description: "Native messaging hosts that are not subject to the deny list." },
-  { key: "NativeMessagingBlocklist", label: "Native Messaging Blocklist", group: "Miscellaneous", type: "list", description: "Native messaging hosts that are blocked (use [\"*\"] to block all)." },
-  { key: "NativeMessagingUserLevelHosts", label: "Native Messaging User-Level Hosts", group: "Miscellaneous", type: "boolean", description: "Allow user-level native messaging hosts not installed at the system level." },
-  { key: "TotalMemoryLimitMb", label: "Total Memory Limit (MB)", group: "Miscellaneous", type: "integer", description: "Set a soft memory limit in MB; Chrome will discard tabs when exceeded." },
-  { key: "SharedArrayBufferUnrestrictedAccessAllowed", label: "SharedArrayBuffer Unrestricted", group: "Miscellaneous", type: "boolean", description: "Allow SharedArrayBuffer to be used without cross-origin isolation." },
-  { key: "SharedArrayBufferAccessAllowed", label: "SharedArrayBuffer Access", group: "Miscellaneous", type: "boolean", description: "Allow access to SharedArrayBuffer API." },
-  { key: "UserAgentClientHintsEnabled", label: "User-Agent Client Hints", group: "Miscellaneous", type: "boolean", description: "Enable User-Agent Client Hints feature." },
-  { key: "UserAgentClientHintsGREASEUpdateEnabled", label: "User-Agent Client Hints GREASE", group: "Miscellaneous", type: "boolean", description: "Enable the GREASE update for User-Agent Client Hints." },
-  { key: "IsolateOrigins", label: "Isolated Origins", group: "Miscellaneous", type: "string", description: "Comma-separated list of origins that require dedicated processes (site isolation)." },
-  { key: "SiteIsolationEnabled", label: "Site Isolation Enabled", group: "Miscellaneous", type: "boolean", description: "Enable site isolation; each site runs in a separate process." },
-  { key: "RendererCodeIntegrityEnabled", label: "Renderer Code Integrity", group: "Miscellaneous", type: "boolean", description: "Enable Renderer Code Integrity protection (blocks unauthorized code from being injected)." },
-  { key: "LookalikeWarningAllowlistDomains", label: "Lookalike Warning Allowlist Domains", group: "Miscellaneous", type: "list", description: "Domains that are exempt from lookalike URL safety warnings." },
-  { key: "ManagedConfigurationPerOrigin", label: "Managed Configuration Per Origin", group: "Miscellaneous", type: "json", description: "Key-value configuration delivered to specific origins via the Managed Configuration API (JSON array)." },
-  { key: "DeviceLoginScreenSecondFactorAuthentication", label: "Second Factor Authentication", group: "Miscellaneous", type: "integer-enum", description: "Configure second factor authentication on the login screen.", enumOptions: [
-    { value: 0, label: "0 – Disabled" },
-    { value: 1, label: "1 – U2F" },
-  ]},
-  { key: "RestrictSigninToPattern", label: "Restrict Sign-In to Pattern", group: "Miscellaneous", type: "string", description: "Restrict Chrome sign-in to accounts matching a username pattern (regex)." },
-  { key: "SSLErrorOverrideAllowed", label: "SSL Error Override Allowed", group: "Miscellaneous", type: "boolean", description: "Allow users to click through SSL warning pages." },
-  { key: "SSLErrorOverrideAllowedForOrigins", label: "SSL Error Override Allowed For Origins", group: "Miscellaneous", type: "list", description: "Origins where users may click through SSL error pages." },
-  { key: "OverrideSecurityRestrictionsOnInsecureOrigin", label: "Override Security on Insecure Origins", group: "Miscellaneous", type: "list", description: "Origins or hostname patterns treated as secure for development purposes." },
-  { key: "EnterpriseAuthenticationAppLinkPolicy", label: "Enterprise Auth App Link Policy", group: "Miscellaneous", type: "json", description: "Redirect authentication URLs to an enterprise SSO app (JSON array)." },
-  { key: "GaiaLockScreenOfflineSigninTimeLimitDays", label: "Offline Sign-in Time Limit (days)", group: "Miscellaneous", type: "integer", description: "Number of days a user can sign in without connecting to Google (-1 = no limit)." },
-  { key: "ChromeOsLockOnIdleSuspend", label: "Lock on Idle/Suspend", group: "Miscellaneous", type: "boolean", description: "Lock the screen when the device is idle or suspended." },
-  { key: "ExternalProtocolDialogShowAlwaysOpenCheckbox", label: "External Protocol Dialog Checkbox", group: "Miscellaneous", type: "boolean", description: "Show the 'Always open' checkbox in external protocol dialog." },
-  { key: "ExternalProtocolDialogShowDefaultBrowserCheckbox", label: "External Protocol Dialog Browser Checkbox", group: "Miscellaneous", type: "boolean", description: "Show the default browser checkbox in external protocol dialog." },
-  { key: "FetchKeepAliveDurationSecondsOnShutdown", label: "Fetch Keep-Alive Duration on Shutdown (s)", group: "Miscellaneous", type: "integer", description: "Seconds to keep fetch keepalive requests active on browser shutdown." },
-  { key: "TabDiscardingExceptions", label: "Tab Discarding Exceptions", group: "Miscellaneous", type: "list", description: "URL patterns exempt from tab discarding (never discarded)." },
-  { key: "AbusiveExperienceInterventionEnforce", label: "Abusive Experience Intervention", group: "Miscellaneous", type: "boolean", description: "Enforce abusive experience interventions for sites with abusive experiences." },
-  { key: "AdsSettingForIntrusiveAdsSites", label: "Ads Setting for Intrusive Ad Sites", group: "Miscellaneous", type: "integer-enum", description: "Control ad behavior on sites known for intrusive ads.", enumOptions: [
-    { value: 1, label: "1 – Allow ads on all sites" },
-    { value: 2, label: "2 – Block ads on intrusive sites" },
-  ]},
-  { key: "AllowFileSelectionDialogs", label: "Allow File Selection Dialogs", group: "Miscellaneous", type: "boolean", description: "Allow Chrome to open file selection dialogs." },
-  { key: "AlwaysOpenPdfExternally", label: "Always Open PDF Externally", group: "Miscellaneous", type: "boolean", description: "Always download and open PDF files in an external application." },
-  { key: "PrintHeaderFooter", label: "Print Header and Footer", group: "Miscellaneous", type: "boolean", description: "Include headers and footers in printed pages." },
-  { key: "ShowCastIconInToolbar", label: "Show Cast Icon in Toolbar", group: "Miscellaneous", type: "boolean", description: "Show the cast icon in the toolbar." },
-  { key: "EnableMediaRouter", label: "Enable Media Router (Cast)", group: "Miscellaneous", type: "boolean", description: "Enable the Media Router (Google Cast) feature." },
-  { key: "MediaRouterCastAllowAllIPs", label: "Cast Allow All IPs", group: "Miscellaneous", type: "boolean", description: "Allow casting to all IP addresses, not just private ones." },
-  { key: "ForcedLanguages", label: "Forced Languages", group: "Miscellaneous", type: "list", description: "List of locale codes that will always appear in the language settings." },
-  { key: "ShowManagedUiEnabled", label: "Show Managed UI", group: "Miscellaneous", type: "boolean", description: "Display 'Managed by your organization' UI elements." },
-  { key: "StartupBrowserWindowLaunchSuppressed", label: "Suppress Startup Browser Window", group: "Miscellaneous", type: "boolean", description: "Suppress the browser window from appearing on startup." },
-  { key: "ImportAutofillFormData", label: "Import Autofill Form Data", group: "Miscellaneous", type: "boolean", description: "Import autofill form data when Chrome is run for the first time." },
-  { key: "ImportBookmarks", label: "Import Bookmarks", group: "Miscellaneous", type: "boolean", description: "Import bookmarks when Chrome is run for the first time." },
-  { key: "ImportHistory", label: "Import History", group: "Miscellaneous", type: "boolean", description: "Import browsing history when Chrome is run for the first time." },
-  { key: "ImportHomepage", label: "Import Homepage", group: "Miscellaneous", type: "boolean", description: "Import the homepage setting when Chrome is run for the first time." },
-  { key: "ImportSavedPasswords", label: "Import Saved Passwords", group: "Miscellaneous", type: "boolean", description: "Import saved passwords when Chrome is run for the first time." },
-  { key: "ImportSearchEngine", label: "Import Search Engine", group: "Miscellaneous", type: "boolean", description: "Import the search engine setting when Chrome is run for the first time." },
-  { key: "WPADQuickCheckEnabled", label: "WPAD Quick Check", group: "Miscellaneous", type: "boolean", description: "Enable WPAD optimization (reduces startup delay for auto-proxy detection)." },
-  { key: "ThirdPartyBlockingEnabled", label: "Third-Party Blocking", group: "Miscellaneous", type: "boolean", description: "Block third-party software from injecting executable code into Chrome." },
-  { key: "ComponentUpdatesEnabled", label: "Component Updates", group: "Miscellaneous", type: "boolean", description: "Enable automatic component updates in Chrome." },
-  { key: "RemoteDebuggingAllowed", label: "Remote Debugging Allowed", group: "Miscellaneous", type: "boolean", description: "Allow remote debugging of the Chrome browser via DevTools Protocol." },
-  { key: "TripleDESEnabled", label: "Triple-DES Cipher Suites", group: "Miscellaneous", type: "boolean", description: "Enable Triple-DES cipher suites in TLS (legacy compatibility)." },
-];
-
-function buildChromeTree(): Map<string, ChromePolicyDef[]> {
-  const groups = new Map<string, ChromePolicyDef[]>();
+function buildChromeTree(): Map<string, PolicyFieldDef[]> {
+  const groups = new Map<string, PolicyFieldDef[]>();
   for (const p of CHROME_ALL_POLICIES) {
     const arr = groups.get(p.group) || [];
     arr.push(p);
@@ -1188,7 +556,7 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
         const lockedVal = "Locked" in objVal
           ? (objVal["Locked"] === true ? "Yes" : "No")
           : null;
-        for (const field of policyDef.objectFields || []) {
+        for (const field of policyDef.subFields || []) {
           if (field.key === "Locked") continue;
           rows.push({
             setting: `${policyDef.label} › ${field.label}`,
@@ -1218,7 +586,7 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
         const lockedVal = "Locked" in objVal
           ? (objVal["Locked"] === true ? "Yes" : "No")
           : null;
-        for (const field of policyDef.objectFields || []) {
+        for (const field of policyDef.subFields || []) {
           if (field.key === "Locked") continue;
           rows.push({
             setting: `${policyDef.label} › ${field.label}`,
@@ -1245,12 +613,12 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
       let displayVal: string;
       if (policyDef.type === "list" && Array.isArray(val)) {
         displayVal = val.length > 0 ? val.join(", ") : "(empty)";
-      } else if (policyDef.type === "integer-enum" && policyDef.enumOptions) {
-        const opt = policyDef.enumOptions.find(o => o.value === val);
+      } else if (policyDef.type === "integer-enum" && policyDef.intOptions) {
+        const opt = policyDef.intOptions.find(o => o.value === val);
         displayVal = opt ? opt.label : formatDisplayValue(val);
-      } else if (policyDef.type === "string-enum" && policyDef.enumOptions) {
-        const opt = policyDef.enumOptions.find(o => o.value === val);
-        displayVal = opt ? opt.label : formatDisplayValue(val);
+      } else if (policyDef.type === "string-enum" && policyDef.stringOptions) {
+        const opt = policyDef.stringOptions.find(o => o === val);
+        displayVal = opt ? opt : formatDisplayValue(val);
       } else if (policyDef.type === "json") {
         displayVal = typeof val === "string" ? val : JSON.stringify(val);
       } else {
@@ -1709,7 +1077,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   };
 
   // Firefox: select a policy from the tree and set its default value
-  const handleFirefoxSelectPolicy = (policyDef: FirefoxPolicyDef) => {
+  const handleFirefoxSelectPolicy = (policyDef: PolicyFieldDef) => {
     setFirefoxSelectedKey(policyDef.key);
     // If we already have a value for this key, load it for editing
     const existing = extractFirefoxValue(contentRaw, policyDef.key);
@@ -1722,14 +1090,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = true;
       } else if (policyDef.type === "string") {
         defaultValue = "";
-      } else if (policyDef.type === "select") {
-        defaultValue = policyDef.selectOptions?.[0] || "";
+      } else if (policyDef.type === "string-enum") {
+        defaultValue = policyDef.stringOptions?.[0] || "";
       } else if (policyDef.type === "object") {
         const obj: Record<string, unknown> = {};
-        for (const f of policyDef.objectFields || []) {
-          if (f.fieldType === "boolean") obj[f.key] = false;
-          else if (f.fieldType === "string" || f.fieldType === "select") obj[f.key] = "";
-          else if (f.fieldType === "stringlist") obj[f.key] = [];
+        for (const f of policyDef.subFields || []) {
+          if (f.type === "boolean") obj[f.key] = false;
+          else if (f.type === "string" || f.type === "string-enum") obj[f.key] = "";
+          else if (f.type === "list") obj[f.key] = [];
         }
         defaultValue = obj;
       }
@@ -1767,7 +1135,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   };
 
   // Thunderbird: select a policy from the tree and set its default value
-  const handleThunderbirdSelectPolicy = (policyDef: ThunderbirdPolicyDef) => {
+  const handleThunderbirdSelectPolicy = (policyDef: PolicyFieldDef) => {
     setThunderbirdSelectedKey(policyDef.key);
     const existing = extractFirefoxValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
@@ -1778,16 +1146,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = true;
       } else if (policyDef.type === "string") {
         defaultValue = "";
-      } else if (policyDef.type === "select") {
-        defaultValue = policyDef.selectOptions?.[0] || "";
-      } else if (policyDef.type === "stringlist") {
+      } else if (policyDef.type === "string-enum") {
+        defaultValue = policyDef.stringOptions?.[0] || "";
+      } else if (policyDef.type === "list") {
         defaultValue = [];
       } else if (policyDef.type === "object") {
         const obj: Record<string, unknown> = {};
-        for (const f of policyDef.objectFields || []) {
-          if (f.fieldType === "boolean") obj[f.key] = false;
-          else if (f.fieldType === "string" || f.fieldType === "select") obj[f.key] = "";
-          else if (f.fieldType === "stringlist") obj[f.key] = [];
+        for (const f of policyDef.subFields || []) {
+          if (f.type === "boolean") obj[f.key] = false;
+          else if (f.type === "string" || f.type === "string-enum") obj[f.key] = "";
+          else if (f.type === "list") obj[f.key] = [];
         }
         defaultValue = obj;
       }
@@ -1902,7 +1270,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   };
 
   // Chrome: select a policy from the tree and set its default value
-  const handleChromeSelectPolicy = (policyDef: ChromePolicyDef) => {
+  const handleChromeSelectPolicy = (policyDef: PolicyFieldDef) => {
     setChromeSelectedKey(policyDef.key);
     const existing = extractChromeValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
@@ -1912,9 +1280,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       if (policyDef.type === "boolean") {
         defaultValue = true;
       } else if (policyDef.type === "string" || policyDef.type === "string-enum") {
-        defaultValue = policyDef.enumOptions ? policyDef.enumOptions[0]?.value ?? "" : "";
+        defaultValue = policyDef.stringOptions ? policyDef.stringOptions[0] ?? "" : "";
       } else if (policyDef.type === "integer" || policyDef.type === "integer-enum") {
-        defaultValue = policyDef.enumOptions ? policyDef.enumOptions[0]?.value ?? 0 : 0;
+        defaultValue = policyDef.intOptions ? policyDef.intOptions[0]?.value ?? 0 : 0;
       } else if (policyDef.type === "list") {
         defaultValue = [];
       } else if (policyDef.type === "json") {
@@ -2176,7 +1544,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               />
             </FormGroup>
           )}
-          {policyDef.type === "select" && (
+          {policyDef.type === "string-enum" && (
             <FormGroup label="Value" fieldId="ff-prop-select">
               <FormSelect
                 id="ff-prop-select"
@@ -2184,19 +1552,19 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 onChange={(_ev, val) => updateFirefoxValue(val)}
               >
                 <FormSelectOption key="" value="" label="(not set)" />
-                {(policyDef.selectOptions || []).map(v => (
+                {(policyDef.stringOptions || []).map(v => (
                   <FormSelectOption key={v} value={v} label={v} />
                 ))}
               </FormSelect>
             </FormGroup>
           )}
-          {policyDef.type === "object" && policyDef.objectFields && (
+          {policyDef.type === "object" && policyDef.subFields && (
             <>
-              {policyDef.objectFields.map(field => {
+              {policyDef.subFields.map(field => {
                 const objVal = (firefoxValue as Record<string, unknown>) || {};
                 return (
                   <FormGroup key={field.key} label={field.label} fieldId={`ff-prop-${field.key}`}>
-                    {field.fieldType === "boolean" && (
+                    {field.type === "boolean" && (
                       <Switch
                         id={`ff-prop-${field.key}`}
                         isChecked={objVal[field.key] === true}
@@ -2205,26 +1573,26 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                         labelOff="No"
                       />
                     )}
-                    {field.fieldType === "string" && (
+                    {field.type === "string" && (
                       <TextInput
                         id={`ff-prop-${field.key}`}
                         value={(objVal[field.key] as string) || ""}
                         onChange={(_ev, val) => updateFirefoxValue({ ...objVal, [field.key]: val })}
                       />
                     )}
-                    {field.fieldType === "select" && (
+                    {field.type === "string-enum" && (
                       <FormSelect
                         id={`ff-prop-${field.key}`}
                         value={(objVal[field.key] as string) || ""}
                         onChange={(_ev, val) => updateFirefoxValue({ ...objVal, [field.key]: val })}
                       >
                         <FormSelectOption key="" value="" label="(not set)" />
-                        {(field.selectOptions || []).map(v => (
+                        {(field.stringOptions || []).map(v => (
                           <FormSelectOption key={v} value={v} label={v} />
                         ))}
                       </FormSelect>
                     )}
-                    {field.fieldType === "stringlist" && (
+                    {field.type === "list" && (
                       <TextArea
                         id={`ff-prop-${field.key}`}
                         value={((objVal[field.key] as string[]) || []).join("\n")}
@@ -2391,7 +1759,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               />
             </FormGroup>
           )}
-          {policyDef.type === "select" && (
+          {policyDef.type === "string-enum" && (
             <FormGroup label="Value" fieldId="tb-prop-select">
               <FormSelect
                 id="tb-prop-select"
@@ -2399,13 +1767,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 onChange={(_ev, val) => updateThunderbirdValue(val)}
               >
                 <FormSelectOption key="" value="" label="(not set)" />
-                {(policyDef.selectOptions || []).map(v => (
+                {(policyDef.stringOptions || []).map(v => (
                   <FormSelectOption key={v} value={v} label={v} />
                 ))}
               </FormSelect>
             </FormGroup>
           )}
-          {policyDef.type === "stringlist" && (
+          {policyDef.type === "list" && (
             <FormGroup label="Values (one per line)" fieldId="tb-prop-stringlist">
               <TextArea
                 id="tb-prop-stringlist"
@@ -2416,13 +1784,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               />
             </FormGroup>
           )}
-          {policyDef.type === "object" && policyDef.objectFields && (
+          {policyDef.type === "object" && policyDef.subFields && (
             <>
-              {policyDef.objectFields.map(field => {
+              {policyDef.subFields.map(field => {
                 const objVal = (thunderbirdValue as Record<string, unknown>) || {};
                 return (
                   <FormGroup key={field.key} label={field.label} fieldId={`tb-prop-${field.key}`}>
-                    {field.fieldType === "boolean" && (
+                    {field.type === "boolean" && (
                       <Switch
                         id={`tb-prop-${field.key}`}
                         isChecked={objVal[field.key] === true}
@@ -2431,26 +1799,26 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                         labelOff="No"
                       />
                     )}
-                    {field.fieldType === "string" && (
+                    {field.type === "string" && (
                       <TextInput
                         id={`tb-prop-${field.key}`}
                         value={(objVal[field.key] as string) || ""}
                         onChange={(_ev, val) => updateThunderbirdValue({ ...objVal, [field.key]: val })}
                       />
                     )}
-                    {field.fieldType === "select" && (
+                    {field.type === "string-enum" && (
                       <FormSelect
                         id={`tb-prop-${field.key}`}
                         value={(objVal[field.key] as string) || ""}
                         onChange={(_ev, val) => updateThunderbirdValue({ ...objVal, [field.key]: val })}
                       >
                         <FormSelectOption key="" value="" label="(not set)" />
-                        {(field.selectOptions || []).map(v => (
+                        {(field.stringOptions || []).map(v => (
                           <FormSelectOption key={v} value={v} label={v} />
                         ))}
                       </FormSelect>
                     )}
-                    {field.fieldType === "stringlist" && (
+                    {field.type === "list" && (
                       <TextArea
                         id={`tb-prop-${field.key}`}
                         value={((objVal[field.key] as string[]) || []).join("\n")}
@@ -3066,28 +2434,28 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               />
             </FormGroup>
           )}
-          {policyDef.type === "integer-enum" && policyDef.enumOptions && (
+          {policyDef.type === "integer-enum" && policyDef.intOptions && (
             <FormGroup label="Value" fieldId="cr-prop-int-enum">
               <FormSelect
                 id="cr-prop-int-enum"
-                value={String(chromeValue ?? policyDef.enumOptions[0]?.value ?? 0)}
+                value={String(chromeValue ?? policyDef.intOptions[0]?.value ?? 0)}
                 onChange={(_ev, val) => updateChromeValue(parseInt(val, 10))}
               >
-                {policyDef.enumOptions.map(opt => (
+                {policyDef.intOptions.map(opt => (
                   <FormSelectOption key={String(opt.value)} value={String(opt.value)} label={opt.label} />
                 ))}
               </FormSelect>
             </FormGroup>
           )}
-          {policyDef.type === "string-enum" && policyDef.enumOptions && (
+          {policyDef.type === "string-enum" && policyDef.stringOptions && (
             <FormGroup label="Value" fieldId="cr-prop-str-enum">
               <FormSelect
                 id="cr-prop-str-enum"
-                value={(chromeValue as string) || String(policyDef.enumOptions[0]?.value ?? "")}
+                value={(chromeValue as string) || (policyDef.stringOptions[0] ?? "")}
                 onChange={(_ev, val) => updateChromeValue(val)}
               >
-                {policyDef.enumOptions.map(opt => (
-                  <FormSelectOption key={String(opt.value)} value={String(opt.value)} label={opt.label} />
+                {policyDef.stringOptions.map(opt => (
+                  <FormSelectOption key={opt} value={opt} label={opt} />
                 ))}
               </FormSelect>
             </FormGroup>
@@ -3220,6 +2588,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                       <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                         {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
                         {p.label}
+                        {p.chromeOnly && (
+                          <Label color="blue" isCompact style={{ marginLeft: 8 }}>
+                            Chrome only
+                          </Label>
+                        )}
                       </span>
                       <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {p.description}
