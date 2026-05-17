@@ -24,11 +24,12 @@ import (
 )
 
 // EnsureServerCert checks for an existing cert/key pair at dir/ui.crt
-// and dir/ui.key. If they exist AND are signed by the provided CA,
-// they are reused. If they do not exist, or were signed by a different
-// CA (e.g. self-signed from a previous run), a new TLS server
-// certificate is generated (ECDSA P-256, 365 days) and signed by the
-// given CA.
+// and dir/ui.key. If they exist, are signed by the provided CA, AND
+// contain all required SANs, they are reused. Otherwise a new TLS
+// server certificate is generated (ECDSA P-256, 365 days) and signed
+// by the given CA. This means changing BOR_HOSTNAMES and restarting
+// the server is sufficient to pick up a new hostname — no manual cert
+// deletion required.
 //
 // ECDSA P-256 satisfies FIPS 140-3, BSI TR-02102-1 (2024), ANSSI RGS,
 // ENISA 2023, and ETSI TS 119 312 recommendations.
@@ -44,17 +45,33 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 	certPath = filepath.Join(dir, "ui.crt")
 	keyPath = filepath.Join(dir, "ui.key")
 
-	if fileExists(certPath) && fileExists(keyPath) {
-		if caCert != nil && !isSignedByCA(certPath, caCert) {
-			// Existing cert is NOT signed by the current CA — regenerate.
-			if err = os.Remove(certPath); err != nil {
-				return "", "", fmt.Errorf("failed to remove old server cert %s: %w", certPath, err)
-			}
-			if err = os.Remove(keyPath); err != nil {
-				return "", "", fmt.Errorf("failed to remove old server key %s: %w", keyPath, err)
-			}
+	// Compute required SANs up front so we can check existing certs for drift.
+	hostname, _ := os.Hostname()
+	dnsNames := []string{"localhost"}
+	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+	if hostname != "" {
+		dnsNames = append(dnsNames, hostname)
+	}
+	for _, h := range extraHostnames {
+		if ip := net.ParseIP(h); ip != nil {
+			ipAddresses = append(ipAddresses, ip)
 		} else {
+			dnsNames = append(dnsNames, h)
+		}
+	}
+
+	if fileExists(certPath) && fileExists(keyPath) {
+		caOK := caCert == nil || isSignedByCA(certPath, caCert)
+		sansOK := certHasAllSANs(certPath, dnsNames, ipAddresses)
+		if caOK && sansOK {
 			return certPath, keyPath, nil
+		}
+		// Stale cert: wrong CA or missing SANs — regenerate.
+		if err = os.Remove(certPath); err != nil {
+			return "", "", fmt.Errorf("failed to remove old server cert %s: %w", certPath, err)
+		}
+		if err = os.Remove(keyPath); err != nil {
+			return "", "", fmt.Errorf("failed to remove old server key %s: %w", keyPath, err)
 		}
 	}
 
@@ -71,23 +88,6 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate serial number: %w", err)
-	}
-
-	hostname, _ := os.Hostname()
-
-	dnsNames := []string{"localhost"}
-	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
-
-	if hostname != "" {
-		dnsNames = append(dnsNames, hostname)
-	}
-
-	for _, h := range extraHostnames {
-		if ip := net.ParseIP(h); ip != nil {
-			ipAddresses = append(ipAddresses, ip)
-		} else {
-			dnsNames = append(dnsNames, h)
-		}
 	}
 
 	tmpl := &x509.Certificate{
@@ -334,6 +334,42 @@ func parsePrivateKey(block *pem.Block) (crypto.Signer, error) {
 	default:
 		return nil, fmt.Errorf("unsupported key type %T", key)
 	}
+}
+
+// certHasAllSANs returns true if the cert at certPath contains every DNS name
+// in requiredDNS and every IP in requiredIPs. Returns false on any parse error.
+func certHasAllSANs(certPath string, requiredDNS []string, requiredIPs []net.IP) bool {
+	certPEM, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	dnsSet := make(map[string]bool, len(cert.DNSNames))
+	for _, d := range cert.DNSNames {
+		dnsSet[d] = true
+	}
+	for _, d := range requiredDNS {
+		if !dnsSet[d] {
+			return false
+		}
+	}
+	ipSet := make(map[string]bool, len(cert.IPAddresses))
+	for _, ip := range cert.IPAddresses {
+		ipSet[ip.String()] = true
+	}
+	for _, ip := range requiredIPs {
+		if !ipSet[ip.String()] {
+			return false
+		}
+	}
+	return true
 }
 
 // isSignedByCA loads a PEM certificate from path and verifies that it
