@@ -10,7 +10,7 @@
   "dependencies": {
     "@patternfly/patternfly": "^6.4.0",
     "@patternfly/react-core": "^6.4.1",
-    "@patternfly/react-icons": "^6.4.0",
+    "@patternfly/react-icons": "^6.5.1",
     "@patternfly/react-table": "^6.4.1",
     "@simplewebauthn/browser": "^13.3.0",
     "react": "^18.3.1",
