@@ -124,6 +124,11 @@ func SyncDConfFiles(dbName string, keyfile, locksfile []byte) error {
 	if dbName == "" {
 		dbName = "local"
 	}
+	// dbName is server-supplied and used as a path component under
+	// /etc/dconf/db — reject anything that could escape the directory.
+	if !isValidPathIdentifier(dbName) {
+		return fmt.Errorf("dconf: invalid db name %q", dbName)
+	}
 
 	dbDir := filepath.Join(DConfDBDir, dbName+".d")
 	locksDir := filepath.Join(dbDir, "locks")

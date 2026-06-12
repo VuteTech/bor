@@ -35,7 +35,26 @@ import (
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"github.com/VuteTech/Bor/server/web"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
+
+// grpcHardeningOptions returns DoS-mitigation server options shared by both
+// gRPC servers: bounded concurrent streams and message size, keepalive
+// enforcement against abusive pings, and idle/dead-connection cleanup.
+func grpcHardeningOptions() []grpc.ServerOption {
+	return []grpc.ServerOption{
+		grpc.MaxConcurrentStreams(256),
+		grpc.MaxRecvMsgSize(8 * 1024 * 1024), // 8 MiB
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    1 * time.Hour,
+			Timeout: 20 * time.Second,
+		}),
+	}
+}
 
 // Version is set at build time via -ldflags "-X main.Version=x.y.z".
 var Version = "dev"
@@ -311,10 +330,11 @@ func main() {
 
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc).
-		WithPrivacyPolicyURL(cfg.UI.PrivacyPolicyURL)
+		WithPrivacyPolicyURL(cfg.UI.PrivacyPolicyURL).
+		WithAuditService(auditSvc)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
-	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo)
+	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo, roleRepo)
 	policyHandler := api.NewPolicyHandler(policySvc)
 	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
@@ -592,17 +612,17 @@ func main() {
 		enrollSrvImpl.WithKerberosService(kerberosvc)
 	}
 
-	enrollGrpcSrv := grpc.NewServer(
+	enrollGrpcSrv := grpc.NewServer(append(grpcHardeningOptions(),
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods, revocationRepo)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods, revocationRepo)),
-	)
+	)...)
 	enrollpb.RegisterEnrollmentServiceServer(enrollGrpcSrv, enrollSrvImpl)
 
 	// ─── Policy gRPC server (mandatory client cert — agents only) ────────
-	policyGrpcSrv := grpc.NewServer(
+	policyGrpcSrv := grpc.NewServer(append(grpcHardeningOptions(),
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(map[string]bool{}, revocationRepo)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(map[string]bool{}, revocationRepo)),
-	)
+	)...)
 	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, polkitRepo, policyHub))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────

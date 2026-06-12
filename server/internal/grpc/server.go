@@ -74,9 +74,11 @@ func (s *PolicyServer) GetPolicy(ctx context.Context, req *pb.GetPolicyRequest) 
 
 // ListPolicies returns policies bound to the calling node's group with enabled bindings.
 func (s *PolicyServer) ListPolicies(ctx context.Context, req *pb.ListPoliciesRequest) (*pb.ListPoliciesResponse, error) {
-	clientID := req.GetClientId()
-	if clientID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	// The authoritative identity is the verified certificate CN, not the
+	// request-supplied client_id (which is only honoured when it matches).
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
 	}
 
 	// Look up the node to determine its node group
@@ -119,12 +121,13 @@ func (s *PolicyServer) ListPolicies(ctx context.Context, req *pb.ListPoliciesReq
 // SubscribePolicyUpdates is a server-streaming RPC for policy change notifications.
 // It implements initial sync (full snapshot or delta) followed by a live watch.
 func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequest, stream pb.PolicyService_SubscribePolicyUpdatesServer) error {
-	clientID := req.GetClientId()
-	if clientID == "" {
-		return status.Errorf(codes.InvalidArgument, "client_id is required")
-	}
-
 	ctx := stream.Context()
+
+	// The authoritative identity is the verified certificate CN.
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return err
+	}
 
 	// Resolve node and its group to scope the snapshot.
 	node, err := s.nodeSvc.GetNodeByName(ctx, clientID)
@@ -276,25 +279,26 @@ func (s *PolicyServer) sendSnapshot(ctx context.Context, stream pb.PolicyService
 
 // ReportCompliance accepts a compliance report from a client.
 func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportComplianceRequest) (*pb.ReportComplianceResponse, error) {
-	if req.GetClientId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
 	}
 	if req.GetPolicyId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "policy_id is required")
 	}
 
 	log.Printf("Compliance report: client=%s policy=%s compliant=%v status=%s message=%q",
-		req.GetClientId(), req.GetPolicyId(), req.GetCompliant(), req.GetStatus(), req.GetMessage())
+		clientID, req.GetPolicyId(), req.GetCompliant(), req.GetStatus(), req.GetMessage())
 
-	// Resolve the node ID from client_id (node name).
-	node, err := s.nodeSvc.GetNodeByName(ctx, req.GetClientId())
+	// Resolve the node ID from the authenticated identity (node name).
+	node, err := s.nodeSvc.GetNodeByName(ctx, clientID)
 	if err != nil {
-		log.Printf("WARNING: ReportCompliance: failed to look up node %s: %v", req.GetClientId(), err)
-		return &pb.ReportComplianceResponse{Success: true}, nil
+		log.Printf("WARNING: ReportCompliance: failed to look up node %s: %v", clientID, err)
+		return nil, status.Errorf(codes.Internal, "failed to look up node")
 	}
 	if node == nil {
-		log.Printf("WARNING: ReportCompliance: unknown node %s", req.GetClientId())
-		return &pb.ReportComplianceResponse{Success: true}, nil
+		log.Printf("WARNING: ReportCompliance: unknown node %s", clientID)
+		return nil, status.Errorf(codes.NotFound, "node not found")
 	}
 
 	// Map protobuf ComplianceStatus to VARCHAR string.
@@ -325,6 +329,7 @@ func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportCompl
 
 	if err := s.dconfRepo.UpsertComplianceResult(ctx, node.ID, req.GetPolicyId(), statusStr, req.GetMessage(), itemsJSON); err != nil {
 		log.Printf("WARNING: ReportCompliance: failed to persist result for node %s policy %s: %v", node.ID, req.GetPolicyId(), err)
+		return nil, status.Errorf(codes.Internal, "failed to persist compliance result")
 	}
 
 	return &pb.ReportComplianceResponse{Success: true}, nil
@@ -373,9 +378,9 @@ func (s *PolicyServer) GetAgentConfig(ctx context.Context, _ *pb.GetAgentConfigR
 
 // Heartbeat records a node heartbeat with updated metadata.
 func (s *PolicyServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	clientID := req.GetClientId()
-	if clientID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
 	}
 
 	node, err := s.nodeSvc.GetNodeByName(ctx, clientID)
@@ -409,9 +414,9 @@ func (s *PolicyServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) 
 
 // ReportTamperEvent records an agent-reported file tamper event in the audit log.
 func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamperEventRequest) (*pb.ReportTamperEventResponse, error) {
-	clientID := req.GetClientId()
-	if clientID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
 	}
 	if req.GetFilePath() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "file_path is required")
@@ -486,7 +491,7 @@ func (s *PolicyServer) RenewCertificate(ctx context.Context, req *pb.RenewCertif
 		return nil, status.Errorf(codes.NotFound, "node not registered: %s", clientCN)
 	}
 
-	certPEM, err := s.enrollSvc.RenewCertificate(ctx, node.ID, req.GetCsrPem())
+	certPEM, err := s.enrollSvc.RenewCertificate(ctx, node.ID, node.Name, req.GetCsrPem())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to renew certificate: %v", err)
 	}

@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/subtle"
 	"log"
 
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -75,17 +76,19 @@ func (s *EnrollmentServer) Enroll(ctx context.Context, req *pb.EnrollRequest) (*
 		return nil, status.Errorf(codes.Unauthenticated, "enrollment failed: %v", err)
 	}
 
-	signedCert, serial, notAfter, err := s.enrollSvc.SignCSR(req.GetCsrPem())
+	nodeName := req.GetNodeName()
+	if nodeName == "" {
+		nodeName = "unnamed-agent"
+	}
+
+	// The issued certificate's CN is forced to the server-assigned node name,
+	// not the CN embedded in the CSR — see EnrollmentService.SignCSR.
+	signedCert, serial, notAfter, err := s.enrollSvc.SignCSR(req.GetCsrPem(), nodeName)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to sign CSR: %v", err)
 	}
 
 	caCertPEM := s.enrollSvc.GetCACertPEM()
-
-	nodeName := req.GetNodeName()
-	if nodeName == "" {
-		nodeName = "unnamed-agent"
-	}
 
 	// Create node record in database
 	nodeID, err := s.enrollSvc.CreateNodeOnEnroll(ctx, nodeName, nodeGroupID)
@@ -136,18 +139,19 @@ func (s *EnrollmentServer) KerberosEnroll(ctx context.Context, req *pb.KerberosE
 			"kerberos_default_node_group not configured; cannot place agent into a node group")
 	}
 
-	signedCert, serial, notAfter, err := s.enrollSvc.SignCSR(req.GetCsrPem())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to sign CSR: %v", err)
-	}
-
-	caCertPEM := s.enrollSvc.GetCACertPEM()
-
 	nodeName := req.GetNodeName()
 	if nodeName == "" {
 		// Fall back to the hostname embedded in the Kerberos principal.
 		nodeName = services.PrincipalToHostname(principal)
 	}
+
+	// CN forced to the server-assigned node name — see EnrollmentService.SignCSR.
+	signedCert, serial, notAfter, err := s.enrollSvc.SignCSR(req.GetCsrPem(), nodeName)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to sign CSR: %v", err)
+	}
+
+	caCertPEM := s.enrollSvc.GetCACertPEM()
 
 	nodeID, err := s.enrollSvc.CreateNodeOnEnroll(ctx, nodeName, nodeGroupID)
 	if err != nil {
@@ -185,7 +189,7 @@ func (s *EnrollmentServer) checkAdminAuth(ctx context.Context) error {
 		return status.Errorf(codes.Unauthenticated, "x-admin-token header required")
 	}
 
-	if tokens[0] != s.adminToken {
+	if subtle.ConstantTimeCompare([]byte(tokens[0]), []byte(s.adminToken)) != 1 {
 		return status.Errorf(codes.PermissionDenied, "invalid admin token")
 	}
 

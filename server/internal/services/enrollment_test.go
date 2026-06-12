@@ -108,7 +108,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 	}
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 
-	certPEM, _, _, err := svc.SignCSR(csrPEM)
+	certPEM, _, _, err := svc.SignCSR(csrPEM, "test-agent")
 	if err != nil {
 		t.Fatalf("SignCSR() error = %v", err)
 	}

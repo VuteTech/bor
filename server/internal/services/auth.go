@@ -12,6 +12,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +29,21 @@ const (
 	pbkdf2Iterations = 600_000
 	pbkdf2KeyLen     = 32 // 256 bits
 	pbkdf2SaltLen    = 16 // 128 bits
+
+	// minPasswordLength is the minimum length for local-account passwords,
+	// aligned with BSI/NIS2 authentication-strength expectations.
+	minPasswordLength = 12
 )
+
+// validatePasswordStrength enforces a minimum-strength policy on a new local
+// password. It is intentionally simple (length only) to avoid composition rules
+// that harm usability, per current NIST guidance.
+func validatePasswordStrength(password string) error {
+	if len([]rune(password)) < minPasswordLength {
+		return fmt.Errorf("password must be at least %d characters long", minPasswordLength)
+	}
+	return nil
+}
 
 // hashPassword hashes a plaintext password with PBKDF2-SHA256 and returns
 // the encoded string: $pbkdf2$sha256$<iterations>$<base64-salt>$<base64-key>
@@ -164,7 +180,101 @@ type AuthSessionClaims struct {
 	jwt.RegisteredClaims
 }
 
-// Login authenticates a user and returns a JWT token
+// errMFARequiredUseStepFlow is returned by the single-shot Login path when a
+// second factor applies. Clients must use the /auth/begin + /auth/step flow so
+// the second factor can be enforced.
+var errMFARequiredUseStepFlow = fmt.Errorf("multi-factor authentication required: use the step authentication flow")
+
+// VerifyPassword authenticates a user's password without issuing a session
+// token. It is used where only credential verification is needed (e.g. before
+// disabling MFA) and must not be used to grant a session, because it does not
+// enforce the second factor.
+func (s *AuthService) VerifyPassword(ctx context.Context, username, password string) (*models.User, error) {
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("username and password are required")
+	}
+	user, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up user: %w", err)
+	}
+	if user != nil && user.Source == models.SourceLocal {
+		if !user.Enabled {
+			return nil, fmt.Errorf("user account is disabled")
+		}
+		if err := verifyPassword(user.PasswordHash, password); err != nil {
+			return nil, fmt.Errorf("invalid username or password")
+		}
+		return user, nil
+	}
+	if s.ldapSvc != nil && s.ldapSvc.IsEnabled() {
+		if _, err := s.ldapSvc.Authenticate(username, password); err != nil {
+			return nil, fmt.Errorf("invalid username or password")
+		}
+		return user, nil
+	}
+	return nil, fmt.Errorf("invalid username or password")
+}
+
+// userHasMFA reports whether the user has any second factor configured (TOTP or
+// a WebAuthn credential).
+func (s *AuthService) userHasMFA(ctx context.Context, userID string) (bool, error) {
+	if userID == "" {
+		return false, nil
+	}
+	if s.mfaSvc != nil {
+		enabled, err := s.mfaSvc.IsMFAEnabled(ctx, userID)
+		if err != nil {
+			return false, fmt.Errorf("failed to check user MFA: %w", err)
+		}
+		if enabled {
+			return true, nil
+		}
+	}
+	if s.webauthnSvc != nil {
+		hasCreds, err := s.webauthnSvc.HasCredentials(ctx, userID)
+		if err != nil {
+			return false, fmt.Errorf("failed to check WebAuthn credentials: %w", err)
+		}
+		if hasCreds {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// globalMFARequired reports whether MFA is required for all accounts by policy.
+func (s *AuthService) globalMFARequired(ctx context.Context) bool {
+	if s.mfaSvc == nil {
+		return false
+	}
+	required, err := s.mfaSvc.IsMFARequired(ctx)
+	return err == nil && required
+}
+
+// enforceMFACompleted ensures that, when a user has a second factor configured
+// (or MFA is required by policy), the factor was satisfied earlier in this
+// multi-step auth flow before a final token is issued.
+func (s *AuthService) enforceMFACompleted(ctx context.Context, userID string, sc *AuthSessionClaims) error {
+	configured, err := s.userHasMFA(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if configured {
+		if sc == nil || !sc.TOTPDone {
+			return errMFARequiredUseStepFlow
+		}
+		return nil
+	}
+	if s.globalMFARequired(ctx) {
+		return fmt.Errorf("multi-factor authentication setup is required for this account; contact your administrator")
+	}
+	return nil
+}
+
+// Login authenticates a user and returns a JWT token.
+// This single-shot path does not run the second-factor step, so it refuses to
+// issue a token when a second factor applies; such clients must use AuthBegin/
+// AuthStep instead.
 func (s *AuthService) Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
 	if req.Username == "" || req.Password == "" {
 		return nil, fmt.Errorf("username and password are required")
@@ -177,15 +287,41 @@ func (s *AuthService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	}
 
 	if user != nil && user.Source == models.SourceLocal {
+		if mfaErr := s.requireSingleShotMFAAllowed(ctx, user.ID); mfaErr != nil {
+			return nil, mfaErr
+		}
 		return s.authenticateLocal(user, req.Password)
 	}
 
 	// Try LDAP authentication if configured
 	if s.ldapSvc != nil && s.ldapSvc.IsEnabled() {
+		// A local record exists only after first LDAP login; if it does and a
+		// second factor is configured, block the single-shot path. For
+		// not-yet-provisioned users, enforce only the global policy.
+		if user != nil {
+			if mfaErr := s.requireSingleShotMFAAllowed(ctx, user.ID); mfaErr != nil {
+				return nil, mfaErr
+			}
+		} else if s.globalMFARequired(ctx) {
+			return nil, errMFARequiredUseStepFlow
+		}
 		return s.authenticateLDAP(ctx, req.Username, req.Password)
 	}
 
 	return nil, fmt.Errorf("invalid username or password")
+}
+
+// requireSingleShotMFAAllowed returns an error when the single-shot Login path
+// must not issue a token because a second factor applies to the user.
+func (s *AuthService) requireSingleShotMFAAllowed(ctx context.Context, userID string) error {
+	configured, err := s.userHasMFA(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if configured || s.globalMFARequired(ctx) {
+		return errMFARequiredUseStepFlow
+	}
+	return nil
 }
 
 // authenticateLocal verifies credentials against local database
@@ -375,7 +511,9 @@ func (s *AuthService) GenerateRefreshToken(user *models.User) (string, error) {
 }
 
 // ValidateRefreshToken validates a refresh JWT and returns its claims.
-func (s *AuthService) ValidateRefreshToken(tokenString string) (*RefreshClaims, error) {
+// It also rejects refresh tokens revoked server-side (issued before the user's
+// tokens_valid_after cut-off).
+func (s *AuthService) ValidateRefreshToken(ctx context.Context, tokenString string) (*RefreshClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &RefreshClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -393,6 +531,9 @@ func (s *AuthService) ValidateRefreshToken(tokenString string) (*RefreshClaims, 
 	if claims.TokenType != "refresh" {
 		return nil, fmt.Errorf("invalid token: not a refresh token")
 	}
+	if err := s.checkTokenNotRevoked(ctx, claims.UserID, claims.IssuedAt); err != nil {
+		return nil, err
+	}
 	return claims, nil
 }
 
@@ -408,8 +549,9 @@ func (s *AuthService) RefreshLifetimeSeconds() int {
 
 // ValidateToken validates a JWT token and returns the claims.
 // It rejects auth session tokens (session_type == "auth_session") so they
-// cannot be used as regular bearer tokens.
-func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
+// cannot be used as regular bearer tokens, and rejects tokens that have been
+// revoked server-side (issued before the user's tokens_valid_after cut-off).
+func (s *AuthService) ValidateToken(ctx context.Context, tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -443,7 +585,42 @@ func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
 		_ = raw
 	}
 
+	// Server-side revocation: reject tokens issued before the user's cut-off.
+	if err := s.checkTokenNotRevoked(ctx, claims.UserID, claims.IssuedAt); err != nil {
+		return nil, err
+	}
+
 	return claims, nil
+}
+
+// checkTokenNotRevoked rejects a token whose issued-at time predates the user's
+// tokens_valid_after cut-off. A nil userRepo or zero cut-off is a no-op.
+func (s *AuthService) checkTokenNotRevoked(ctx context.Context, userID string, issuedAt *jwt.NumericDate) error {
+	if s.userRepo == nil || userID == "" {
+		return nil
+	}
+	validAfter, err := s.userRepo.GetTokensValidAfter(ctx, userID)
+	if err != nil {
+		// Fail closed: if we cannot determine revocation state, reject.
+		return fmt.Errorf("failed to verify token validity: %w", err)
+	}
+	if validAfter.IsZero() {
+		return nil
+	}
+	if issuedAt == nil || issuedAt.Before(validAfter) {
+		return fmt.Errorf("token has been revoked")
+	}
+	return nil
+}
+
+// InvalidateUserTokens revokes all outstanding tokens for a user by advancing
+// their tokens_valid_after cut-off to now. Used on logout, disable, password
+// change, and deletion.
+func (s *AuthService) InvalidateUserTokens(ctx context.Context, userID string) error {
+	if s.userRepo == nil || userID == "" {
+		return nil
+	}
+	return s.userRepo.InvalidateTokens(ctx, userID)
 }
 
 // GenerateSessionToken creates a short-lived (5 min) JWT for the auth flow.
@@ -620,6 +797,12 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 			return nil, fmt.Errorf("user account is disabled")
 		}
 
+		// Enforce the second factor: if the user has MFA configured (or MFA is
+		// required by policy) it must have been completed earlier in this flow.
+		if mfaErr := s.enforceMFACompleted(ctx, user.ID, sessionClaims); mfaErr != nil {
+			return nil, mfaErr
+		}
+
 		var loginResp *models.LoginResponse
 		if sessionClaims.Source == models.SourceLDAP {
 			loginResp, err = s.authenticateLDAP(ctx, user.Username, req.Credential)
@@ -647,6 +830,9 @@ func (s *AuthService) CreateUser(ctx context.Context, req *models.CreateUserRequ
 	}
 	if req.Password == "" {
 		return nil, fmt.Errorf("password is required")
+	}
+	if err := validatePasswordStrength(req.Password); err != nil {
+		return nil, err
 	}
 
 	// Check if user already exists
@@ -686,6 +872,40 @@ func (s *AuthService) CreateUser(ctx context.Context, req *models.CreateUserRequ
 	}
 
 	return user, nil
+}
+
+// EnsureCallerCanAssignRole verifies that the caller holds every permission
+// granted by roleName, so a user cannot assign a role more privileged than
+// themselves (privilege-escalation guard for the user-creation path).
+func (s *AuthService) EnsureCallerCanAssignRole(ctx context.Context, callerUserID, roleName string) error {
+	if roleName == "" {
+		return nil
+	}
+	role, err := s.roleRepo.GetByName(ctx, roleName)
+	if err != nil {
+		return fmt.Errorf("failed to look up role: %w", err)
+	}
+	if role == nil {
+		return fmt.Errorf("role not found: %s", roleName)
+	}
+	callerPerms, err := s.GetUserPermissions(ctx, callerUserID)
+	if err != nil {
+		return fmt.Errorf("failed to load caller permissions: %w", err)
+	}
+	held := make(map[string]struct{}, len(callerPerms))
+	for _, p := range callerPerms {
+		held[p] = struct{}{}
+	}
+	rolePerms, err := s.roleRepo.GetPermissionsByRoleID(ctx, role.ID)
+	if err != nil {
+		return fmt.Errorf("failed to load role permissions: %w", err)
+	}
+	for _, p := range rolePerms {
+		if _, ok := held[p.Resource+":"+p.Action]; !ok {
+			return fmt.Errorf("cannot assign a role that grants permissions you do not hold")
+		}
+	}
+	return nil
 }
 
 // assignRoleToUser creates a global role binding for a user by role name
@@ -754,10 +974,18 @@ func (s *AuthService) ListUsers(ctx context.Context, limit, offset int) ([]*mode
 
 // UpdateUser updates a user
 func (s *AuthService) UpdateUser(ctx context.Context, id string, req *models.UpdateUserRequest) error {
-	return s.userRepo.Update(ctx, id, req)
+	if err := s.userRepo.Update(ctx, id, req); err != nil {
+		return err
+	}
+	// Revoke outstanding sessions when an account is disabled.
+	if req.Enabled != nil && !*req.Enabled {
+		return s.userRepo.InvalidateTokens(ctx, id)
+	}
+	return nil
 }
 
-// DeleteUser deletes a user
+// DeleteUser deletes a user. After deletion, token validation fails closed
+// (the user lookup returns not-found), so outstanding tokens stop working.
 func (s *AuthService) DeleteUser(ctx context.Context, id string) error {
 	return s.userRepo.Delete(ctx, id)
 }
@@ -792,16 +1020,25 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 
 	adminPassword := s.adminPassword
 	if adminPassword == "" {
-		generated, genErr := generateRandomPassword(16)
+		generated, genErr := generateRandomPassword(20)
 		if genErr != nil {
 			return fmt.Errorf("failed to generate admin password: %w", genErr)
 		}
 		adminPassword = generated
+		// Never log the password (it would land in journald/centralized logs).
+		// Persist it to a root-only file the operator can read once, then delete.
+		// If that write fails we abort rather than fall back to logging the
+		// secret — the operator must fix the path or pre-set BOR_ADMIN_PASSWORD.
+		if writeErr := writeInitialAdminPassword(adminPassword); writeErr != nil {
+			return fmt.Errorf("could not persist the generated initial admin password to %s (%w); "+
+				"fix the path permissions or set BOR_ADMIN_PASSWORD / security.admin_password and restart",
+				initialAdminPasswordPath, writeErr)
+		}
 		log.Println("======================================================")
-		log.Printf("  Initial admin password: %s", adminPassword)
+		log.Printf("  Initial admin password written to %s (mode 0600).", initialAdminPasswordPath)
 		log.Println("  Username: admin")
-		log.Println("  Change this immediately or set BOR_ADMIN_PASSWORD")
-		log.Println("  (or security.admin_password in server.yaml).")
+		log.Println("  Read it, log in, change the password, then delete the file.")
+		log.Println("  Or pre-set BOR_ADMIN_PASSWORD / security.admin_password.")
 		log.Println("======================================================")
 	}
 
@@ -825,6 +1062,9 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	if newPassword == "" {
 		return fmt.Errorf("new password must not be empty")
 	}
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
+	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("failed to look up user: %w", err)
@@ -842,7 +1082,11 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
-	return s.userRepo.UpdatePassword(ctx, userID, hash)
+	if err := s.userRepo.UpdatePassword(ctx, userID, hash); err != nil {
+		return err
+	}
+	// Revoke all outstanding sessions after a password change.
+	return s.userRepo.InvalidateTokens(ctx, userID)
 }
 
 // AdminSetPassword sets a new password for a local user without requiring the
@@ -850,6 +1094,9 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 func (s *AuthService) AdminSetPassword(ctx context.Context, userID, newPassword string) error {
 	if newPassword == "" {
 		return fmt.Errorf("new password must not be empty")
+	}
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
 	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -865,19 +1112,47 @@ func (s *AuthService) AdminSetPassword(ctx context.Context, userID, newPassword 
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
-	return s.userRepo.UpdatePassword(ctx, userID, hash)
+	if err := s.userRepo.UpdatePassword(ctx, userID, hash); err != nil {
+		return err
+	}
+	// Revoke all outstanding sessions after an administrative password reset.
+	return s.userRepo.InvalidateTokens(ctx, userID)
+}
+
+// initialAdminPasswordPath is the root-only file the generated bootstrap admin
+// password is written to (instead of being logged).
+const initialAdminPasswordPath = "/var/lib/bor/initial_admin_password" //nolint:gosec // G101: this is a file path, not a credential
+
+// writeInitialAdminPassword writes the generated bootstrap password to a
+// root-only (0600) file so it never appears in logs.
+func writeInitialAdminPassword(password string) error {
+	if err := os.MkdirAll(filepath.Dir(initialAdminPasswordPath), 0o700); err != nil {
+		return fmt.Errorf("create dir: %w", err)
+	}
+	if err := os.WriteFile(initialAdminPasswordPath, []byte(password+"\n"), 0o600); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+	return nil
 }
 
 // generateRandomPassword creates a cryptographically random password of the
 // given length using alphanumeric characters and a small set of symbols.
 func generateRandomPassword(length int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*"
-	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+	out := make([]byte, length)
+	// Rejection sampling to avoid modulo bias: discard bytes in the final
+	// partial block of the 0-255 range so every character is equiprobable.
+	maxByte := byte(256 - (256 % len(charset)))
+	buf := make([]byte, 1)
+	for i := 0; i < length; {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		if buf[0] >= maxByte {
+			continue
+		}
+		out[i] = charset[int(buf[0])%len(charset)]
+		i++
 	}
-	for i := range b {
-		b[i] = charset[int(b[i])%len(charset)]
-	}
-	return string(b), nil
+	return string(out), nil
 }

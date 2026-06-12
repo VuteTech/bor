@@ -96,9 +96,11 @@ func (s *EnrollmentService) ConsumeToken(tokenStr string) (string, error) {
 }
 
 // SignCSR signs a PEM-encoded certificate signing request with the internal CA.
-// Returns the signed cert PEM, serial hex, and notAfter time.
-func (s *EnrollmentService) SignCSR(csrPEM []byte) (certPEM []byte, serial string, notAfter time.Time, err error) {
-	return pki.SignCSR(csrPEM, s.caCert, s.caKey)
+// The issued certificate's Common Name is forced to subjectCN (the
+// server-assigned node name) so an enrolling agent cannot request an arbitrary
+// identity. Returns the signed cert PEM, serial hex, and notAfter time.
+func (s *EnrollmentService) SignCSR(csrPEM []byte, subjectCN string) (certPEM []byte, serial string, notAfter time.Time, err error) {
+	return pki.SignCSR(csrPEM, s.caCert, s.caKey, subjectCN)
 }
 
 // SetNodeCertificate persists the cert serial and notAfter for an enrolled node.
@@ -108,8 +110,10 @@ func (s *EnrollmentService) SetNodeCertificate(ctx context.Context, nodeID, seri
 
 // RenewCertificate signs a new CSR for an existing node (cert renewal).
 // It replaces the node's cert record and clears any prior revocation for that node.
-func (s *EnrollmentService) RenewCertificate(ctx context.Context, nodeID string, csrPEM []byte) ([]byte, error) {
-	certPEM, serial, notAfter, err := pki.SignCSR(csrPEM, s.caCert, s.caKey)
+// nodeName is the authoritative identity (CN) carried over from the node's
+// existing certificate; it is forced onto the renewed certificate.
+func (s *EnrollmentService) RenewCertificate(ctx context.Context, nodeID, nodeName string, csrPEM []byte) ([]byte, error) {
+	certPEM, serial, notAfter, err := pki.SignCSR(csrPEM, s.caCert, s.caKey, nodeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign renewal CSR: %w", err)
 	}
@@ -129,8 +133,18 @@ func (s *EnrollmentService) RevokeCertificate(ctx context.Context, nodeID, seria
 }
 
 // CreateNodeOnEnroll creates a Node record in the database for a newly
-// enrolled agent.
+// enrolled agent. It rejects a name that already belongs to another node,
+// because the node name is the authoritative mTLS identity (CN) and must be
+// unique — otherwise a new enrollment could shadow an existing node's identity.
 func (s *EnrollmentService) CreateNodeOnEnroll(ctx context.Context, nodeName, nodeGroupID string) (string, error) {
+	existing, err := s.nodeSvc.GetNodeByName(ctx, nodeName)
+	if err != nil {
+		return "", fmt.Errorf("failed to check for existing node: %w", err)
+	}
+	if existing != nil {
+		return "", fmt.Errorf("a node named %q already exists; delete it before re-enrolling", nodeName)
+	}
+
 	node := &models.Node{
 		Name: nodeName,
 	}

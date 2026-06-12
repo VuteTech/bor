@@ -16,11 +16,12 @@ import (
 // UserRoleBindingHandler handles user role binding endpoints
 type UserRoleBindingHandler struct {
 	bindingRepo *database.UserRoleBindingRepository
+	roleRepo    *database.RoleRepository
 }
 
 // NewUserRoleBindingHandler creates a new UserRoleBindingHandler
-func NewUserRoleBindingHandler(bindingRepo *database.UserRoleBindingRepository) *UserRoleBindingHandler {
-	return &UserRoleBindingHandler{bindingRepo: bindingRepo}
+func NewUserRoleBindingHandler(bindingRepo *database.UserRoleBindingRepository, roleRepo *database.RoleRepository) *UserRoleBindingHandler {
+	return &UserRoleBindingHandler{bindingRepo: bindingRepo, roleRepo: roleRepo}
 }
 
 // ListByUser handles GET /api/v1/user-role-bindings?user_id={id}
@@ -58,6 +59,34 @@ func (h *UserRoleBindingHandler) Create(w http.ResponseWriter, r *http.Request) 
 
 	if binding.UserID == "" || binding.RoleID == "" || binding.ScopeType == "" {
 		http.Error(w, `{"error":"user_id, role_id, and scope_type are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Privilege-escalation guard: the caller may only assign a role whose
+	// permissions are a subset of the permissions the caller already holds.
+	// This blocks a delegated user administrator from binding "Super Admin"
+	// (or any higher-privileged role) to anyone, including themselves.
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	callerPerms, err := callerEffectivePermissions(r.Context(), h.roleRepo, h.bindingRepo, claims.UserID)
+	if err != nil {
+		log.Printf("role binding: failed to load caller permissions: %v", err)
+		http.Error(w, `{"error":"failed to verify caller permissions"}`, http.StatusInternalServerError)
+		return
+	}
+	subset, missing, err := rolePermissionsSubsetOf(r.Context(), h.roleRepo, binding.RoleID, callerPerms)
+	if err != nil {
+		log.Printf("role binding: failed to check role permissions: %v", err)
+		http.Error(w, `{"error":"failed to verify role permissions"}`, http.StatusInternalServerError)
+		return
+	}
+	if !subset {
+		log.Printf("role binding denied: user %s tried to assign role %s granting unheld permission %q",
+			claims.UserID, binding.RoleID, missing)
+		http.Error(w, `{"error":"cannot assign a role that grants permissions you do not hold"}`, http.StatusForbidden)
 		return
 	}
 

@@ -261,7 +261,7 @@ func TestSignCSR(t *testing.T) {
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 
 	// Sign the CSR
-	certPEM, _, _, err := SignCSR(csrPEM, caCert, caKey)
+	certPEM, _, _, err := SignCSR(csrPEM, caCert, caKey, "test-agent")
 	if err != nil {
 		t.Fatalf("SignCSR() error = %v", err)
 	}
@@ -308,7 +308,7 @@ func TestSignCSR_InvalidPEM(t *testing.T) {
 	caCertPath, caKeyPath, _ := EnsureCA(dir)
 	caCert, caKey, _ := LoadCA(caCertPath, caKeyPath)
 
-	_, _, _, err := SignCSR([]byte("not a PEM"), caCert, caKey)
+	_, _, _, err := SignCSR([]byte("not a PEM"), caCert, caKey, "test-agent")
 	if err == nil {
 		t.Error("SignCSR() should return error for invalid PEM")
 	}

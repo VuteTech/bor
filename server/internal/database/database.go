@@ -12,6 +12,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	_ "github.com/lib/pq" // register postgres driver
 )
@@ -64,6 +65,13 @@ func New(cfg *Config) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Bound the connection pool so a burst of agent reconnects cannot exhaust
+	// PostgreSQL's max_connections (default 100) and take down the server.
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)

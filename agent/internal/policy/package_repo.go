@@ -213,7 +213,11 @@ func ListBorManagedRepoFiles(format RepoFormat) ([]string, error) {
 func DesiredRepoPaths(format RepoFormat, entries []*pb.RepositoryEntry) []string {
 	var paths []string
 	for _, repo := range entries {
-		repoPath, _, gpgPath, _, _ := renderRepo(format, repo)
+		repoPath, _, gpgPath, _, genErr := renderRepo(format, repo)
+		if genErr != nil || repoPath == "" {
+			// Invalid id (e.g. path-traversal attempt) — no managed path.
+			continue
+		}
 		paths = append(paths, repoPath)
 		if gpgPath != "" {
 			paths = append(paths, gpgPath)
@@ -226,6 +230,11 @@ func DesiredRepoPaths(format RepoFormat, entries []*pb.RepositoryEntry) []string
 // in the given format. Also returns the GPG key path and data if applicable.
 func renderRepo(format RepoFormat, repo *pb.RepositoryEntry) (repoPath string, repoContent []byte, gpgPath string, gpgData []byte, err error) {
 	id := repo.GetId()
+	// id is server-supplied and embedded in file paths under the system
+	// repository/keyring directories — reject anything that could escape them.
+	if vErr := validatePathIdentifier("repository id", id); vErr != nil {
+		return "", nil, "", nil, vErr
+	}
 	ts := time.Now().UTC().Format(time.RFC3339)
 	header := fmt.Sprintf(repoManagedComment, ts)
 
