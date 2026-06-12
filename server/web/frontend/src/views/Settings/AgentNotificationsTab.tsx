@@ -35,6 +35,7 @@ export const AgentNotificationsTab: React.FC = () => {
   const [notifyMessageFirefox, setNotifyMessageFirefox] = useState("");
   const [notifyMessageChrome, setNotifyMessageChrome] = useState("");
   const [notifyMessageThunderbird, setNotifyMessageThunderbird] = useState("");
+  const [notifyMessageEdge, setNotifyMessageEdge] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -47,6 +48,7 @@ export const AgentNotificationsTab: React.FC = () => {
         setNotifyMessageFirefox(s.notify_message_firefox ?? "");
         setNotifyMessageChrome(s.notify_message_chrome ?? "");
         setNotifyMessageThunderbird(s.notify_message_thunderbird ?? "");
+        setNotifyMessageEdge(s.notify_message_edge ?? "");
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -68,6 +70,7 @@ export const AgentNotificationsTab: React.FC = () => {
         notify_message_firefox: notifyMessageFirefox,
         notify_message_chrome: notifyMessageChrome,
         notify_message_thunderbird: notifyMessageThunderbird,
+        notify_message_edge: notifyMessageEdge,
       });
       setNotifyUsers(updated.notify_users);
       setNotifyCooldown(updated.notify_cooldown);
@@ -75,13 +78,14 @@ export const AgentNotificationsTab: React.FC = () => {
       setNotifyMessageFirefox(updated.notify_message_firefox);
       setNotifyMessageChrome(updated.notify_message_chrome ?? "");
       setNotifyMessageThunderbird(updated.notify_message_thunderbird ?? "");
+      setNotifyMessageEdge(updated.notify_message_edge ?? "");
       setSuccess("Agent notification settings saved successfully.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }
-  }, [notifyUsers, notifyCooldown, notifyMessage, notifyMessageFirefox, notifyMessageChrome, notifyMessageThunderbird]);
+  }, [notifyUsers, notifyCooldown, notifyMessage, notifyMessageFirefox, notifyMessageChrome, notifyMessageThunderbird, notifyMessageEdge]);
 
   if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
@@ -217,6 +221,23 @@ export const AgentNotificationsTab: React.FC = () => {
             <HelperText>
               <HelperTextItem>
                 Message shown to users when Chrome/Chromium browser policies are updated
+              </HelperTextItem>
+            </HelperText>
+          </FormHelperText>
+        </FormGroup>
+
+        <FormGroup label="Microsoft Edge policy notification message" fieldId="an-message-edge">
+          <TextArea
+            id="an-message-edge"
+            value={notifyMessageEdge}
+            onChange={(_ev, v) => setNotifyMessageEdge(v)}
+            rows={3}
+            resizeOrientation="vertical"
+          />
+          <FormHelperText>
+            <HelperText>
+              <HelperTextItem>
+                Message shown to users when Microsoft Edge browser policies are updated
               </HelperTextItem>
             </HelperText>
           </FormHelperText>

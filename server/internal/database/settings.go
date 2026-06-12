@@ -25,7 +25,7 @@ func NewSettingsRepository(db *DB) *SettingsRepository {
 
 // GetAgentNotificationSettings retrieves the current agent notification settings
 func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (*models.AgentNotificationSettings, error) {
-	query := `SELECT key, value FROM agent_settings WHERE key IN ('notify_users', 'notify_cooldown', 'notify_message', 'notify_message_firefox', 'notify_message_chrome', 'notify_message_thunderbird')`
+	query := `SELECT key, value FROM agent_settings WHERE key IN ('notify_users', 'notify_cooldown', 'notify_message', 'notify_message_firefox', 'notify_message_chrome', 'notify_message_thunderbird', 'notify_message_edge')`
 
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -40,6 +40,7 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 		NotifyMessageFirefox:     "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
 		NotifyMessageChrome:      "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 		NotifyMessageThunderbird: "Thunderbird policies have been updated. Please restart Thunderbird for all changes to take effect.",
+		NotifyMessageEdge:        "Microsoft Edge policies have been updated. Please restart Edge for all changes to take effect.",
 	}
 
 	for rows.Next() {
@@ -63,6 +64,8 @@ func (r *SettingsRepository) GetAgentNotificationSettings(ctx context.Context) (
 			settings.NotifyMessageChrome = value
 		case "notify_message_thunderbird":
 			settings.NotifyMessageThunderbird = value
+		case "notify_message_edge":
+			settings.NotifyMessageEdge = value
 		}
 	}
 
@@ -110,6 +113,7 @@ func (r *SettingsRepository) UpdateAgentNotificationSettings(ctx context.Context
 		{"notify_message_firefox", settings.NotifyMessageFirefox},
 		{"notify_message_chrome", settings.NotifyMessageChrome},
 		{"notify_message_thunderbird", settings.NotifyMessageThunderbird},
+		{"notify_message_edge", settings.NotifyMessageEdge},
 	}
 
 	for _, p := range pairs {

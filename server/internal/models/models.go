@@ -352,6 +352,7 @@ type AgentNotificationSettings struct {
 	NotifyMessageFirefox     string `json:"notify_message_firefox"`
 	NotifyMessageChrome      string `json:"notify_message_chrome"`
 	NotifyMessageThunderbird string `json:"notify_message_thunderbird"`
+	NotifyMessageEdge        string `json:"notify_message_edge"`
 }
 
 // AuditLog represents an audit log entry

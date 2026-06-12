@@ -44,6 +44,9 @@ func (s *SettingsService) UpdateAgentNotificationSettings(ctx context.Context, s
 	if settings.NotifyMessageThunderbird == "" {
 		return fmt.Errorf("notify_message_thunderbird must not be empty")
 	}
+	if settings.NotifyMessageEdge == "" {
+		return fmt.Errorf("notify_message_edge must not be empty")
+	}
 
 	return s.repo.UpdateAgentNotificationSettings(ctx, settings)
 }

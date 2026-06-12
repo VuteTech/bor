@@ -112,6 +112,7 @@ type PolicyInfo struct {
 	PolkitPolicy      *pb.PolkitPolicy      // populated from typed_content for Polkit type
 	PackagePolicy     *pb.PackagePolicy     // populated from typed_content for Package type
 	ThunderbirdPolicy *pb.ThunderbirdPolicy // populated from typed_content for Thunderbird type
+	EdgePolicy        *pb.EdgePolicy        // populated from typed_content for Edge type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -145,6 +146,7 @@ type AgentConfig struct {
 	NotifyMessageFirefox     string
 	NotifyMessageChrome      string
 	NotifyMessageThunderbird string
+	NotifyMessageEdge        string
 }
 
 // GetAgentConfig fetches agent configuration (notification settings)
@@ -170,6 +172,7 @@ func (c *Client) GetAgentConfig(ctx context.Context) (*AgentConfig, error) {
 		NotifyMessageFirefox:     cfg.GetNotifyMessageFirefox(),
 		NotifyMessageChrome:      cfg.GetNotifyMessageChrome(),
 		NotifyMessageThunderbird: cfg.GetNotifyMessageThunderbird(),
+		NotifyMessageEdge:        cfg.GetNotifyMessageEdge(),
 	}, nil
 }
 
@@ -307,6 +310,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if tbp := p.GetThunderbirdPolicy(); tbp != nil {
 				pi.ThunderbirdPolicy = tbp
+			}
+			if edgep := p.GetEdgePolicy(); edgep != nil {
+				pi.EdgePolicy = edgep
 			}
 		}
 

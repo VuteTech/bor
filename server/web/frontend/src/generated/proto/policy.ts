@@ -7,6 +7,7 @@
 /* eslint-disable */
 import type { ChromePolicy } from "./chrome";
 import type { DConfPolicy } from "./dconf";
+import type { EdgePolicy } from "./edge";
 import type { FirefoxPolicy } from "./firefox";
 import type { KConfigPolicy } from "./kconfig";
 import type { PackagePolicy } from "./package";
@@ -60,8 +61,9 @@ export interface Policy {
   dconf_policy?: DConfPolicy | undefined;
   polkit_policy?: PolkitPolicy | undefined;
   package_policy?: PackagePolicy | undefined;
-  thunderbird_policy?:
-    | ThunderbirdPolicy
+  thunderbird_policy?: ThunderbirdPolicy | undefined;
+  edge_policy?:
+    | EdgePolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority
@@ -204,6 +206,7 @@ export interface AgentConfig {
   notify_message_firefox: string;
   notify_message_chrome: string;
   notify_message_thunderbird: string;
+  notify_message_edge: string;
 }
 
 /** NodeInfo contains metadata reported by an agent node. */

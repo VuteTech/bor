@@ -1,0 +1,628 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+import "google/protobuf/struct.proto";
+import "ui.proto";
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// EdgePolicy holds Microsoft Edge enterprise policy settings for Linux.
+// Each field maps to an official Edge policy:
+// https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies
+// Only Linux-compatible policies are included. Windows-only categories
+// (Internet Explorer Mode, Application Guard, Windows Hello, Kiosk Mode)
+// are intentionally omitted.
+// All Edge channels (stable, beta, dev) read from /etc/opt/edge/policies/.
+message EdgePolicy {
+
+  // ── Homepage & Startup ────────────────────────────────────────────────────
+
+  optional string HomepageLocation = 1 [json_name = "HomepageLocation",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool HomepageIsNewTabPage = 2 [json_name = "HomepageIsNewTabPage",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional string NewTabPageLocation = 3 [json_name = "NewTabPageLocation",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional int32 RestoreOnStartup = 4 [json_name = "RestoreOnStartup",
+    (bor.ui.field) = {group: "Homepage & Startup", int_options: [
+      {value: 1, label: "1 – Open the New Tab page"},
+      {value: 4, label: "4 – Open a list of URLs"},
+      {value: 5, label: "5 – Open the last session"}
+    ]}];
+
+  repeated string RestoreOnStartupURLs = 5 [json_name = "RestoreOnStartupURLs",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool ShowHomeButton = 6 [json_name = "ShowHomeButton",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool DefaultBrowserSettingEnabled = 7 [json_name = "DefaultBrowserSettingEnabled",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool BookmarkBarEnabled = 8 [json_name = "BookmarkBarEnabled",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool EditBookmarksEnabled = 9 [json_name = "EditBookmarksEnabled",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional google.protobuf.Value ManagedBookmarks = 10 [json_name = "ManagedBookmarks",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool HideFirstRunExperience = 11 [json_name = "HideFirstRunExperience",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool PromotionalTabsEnabled = 12 [json_name = "PromotionalTabsEnabled",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  optional bool ShowRecommendationsEnabled = 13 [json_name = "ShowRecommendationsEnabled",
+    (bor.ui.field) = {group: "Homepage & Startup"}];
+
+  // ── Extensions ────────────────────────────────────────────────────────────
+
+  repeated string ExtensionInstallForcelist = 51 [json_name = "ExtensionInstallForcelist",
+    (bor.ui.field) = {group: "Extensions"}];
+
+  repeated string ExtensionInstallBlocklist = 52 [json_name = "ExtensionInstallBlocklist",
+    (bor.ui.field) = {group: "Extensions"}];
+
+  repeated string ExtensionInstallAllowlist = 53 [json_name = "ExtensionInstallAllowlist",
+    (bor.ui.field) = {group: "Extensions"}];
+
+  repeated string ExtensionInstallSources = 54 [json_name = "ExtensionInstallSources",
+    (bor.ui.field) = {group: "Extensions"}];
+
+  repeated string ExtensionAllowedTypes = 55 [json_name = "ExtensionAllowedTypes",
+    (bor.ui.field) = {group: "Extensions"}];
+
+  optional google.protobuf.Value ExtensionSettings = 56 [json_name = "ExtensionSettings",
+    (bor.ui.field) = {group: "Extensions"}];
+
+  // ── Privacy & Security ────────────────────────────────────────────────────
+
+  optional bool SafeBrowsingEnabled = 101 [json_name = "SafeBrowsingEnabled",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional int32 SafeBrowsingProtectionLevel = 102 [json_name = "SafeBrowsingProtectionLevel",
+    (bor.ui.field) = {group: "Privacy & Security", int_options: [
+      {value: 0, label: "0 – No protection"},
+      {value: 1, label: "1 – Standard protection"},
+      {value: 2, label: "2 – Enhanced protection"}
+    ]}];
+
+  optional bool SafeBrowsingExtendedReportingEnabled = 103 [json_name = "SafeBrowsingExtendedReportingEnabled",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  repeated string SafeBrowsingAllowlistDomains = 104 [json_name = "SafeBrowsingAllowlistDomains",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  repeated string URLBlocklist = 105 [json_name = "URLBlocklist",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  repeated string URLAllowlist = 106 [json_name = "URLAllowlist",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional string SSLVersionMin = 107 [json_name = "SSLVersionMin",
+    (bor.ui.field) = {group: "Privacy & Security", string_options: ["tls1.2", "tls1.3"]}];
+
+  optional bool InsecurePrivateNetworkRequestsAllowed = 108 [json_name = "InsecurePrivateNetworkRequestsAllowed",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional bool SSLErrorOverrideAllowed = 109 [json_name = "SSLErrorOverrideAllowed",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional int32 EnhancedSecurityMode = 110 [json_name = "EnhancedSecurityMode",
+    (bor.ui.field) = {group: "Privacy & Security", int_options: [
+      {value: 0, label: "0 – Off"},
+      {value: 1, label: "1 – Balanced"},
+      {value: 2, label: "2 – Strict"}
+    ]}];
+
+  optional bool SandboxExternalProtocolBlocked = 111 [json_name = "SandboxExternalProtocolBlocked",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional bool SmartScreenEnabled = 112 [json_name = "SmartScreenEnabled",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional bool PreventSmartScreenPromptOverride = 113 [json_name = "PreventSmartScreenPromptOverride",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  repeated string CertificateTransparencyEnforcementDisabledForUrls = 114 [json_name = "CertificateTransparencyEnforcementDisabledForUrls",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  optional bool ResolveNavigationErrorsUseWebService = 115 [json_name = "ResolveNavigationErrorsUseWebService",
+    (bor.ui.field) = {group: "Privacy & Security"}];
+
+  // ── Content Settings ──────────────────────────────────────────────────────
+
+  optional int32 DefaultCookiesSetting = 151 [json_name = "DefaultCookiesSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow all cookies"},
+      {value: 2, label: "2 – Block cookies for the session"},
+      {value: 4, label: "4 – Block all cookies"}
+    ]}];
+
+  optional bool BlockThirdPartyCookies = 152 [json_name = "BlockThirdPartyCookies",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  repeated string CookiesAllowedForUrls = 153 [json_name = "CookiesAllowedForUrls",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  repeated string CookiesBlockedForUrls = 154 [json_name = "CookiesBlockedForUrls",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  optional int32 DefaultJavaScriptSetting = 155 [json_name = "DefaultJavaScriptSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow JavaScript"},
+      {value: 2, label: "2 – Block JavaScript"}
+    ]}];
+
+  repeated string JavaScriptAllowedForUrls = 156 [json_name = "JavaScriptAllowedForUrls",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  repeated string JavaScriptBlockedForUrls = 157 [json_name = "JavaScriptBlockedForUrls",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  optional int32 DefaultPopupsSetting = 158 [json_name = "DefaultPopupsSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow popups"},
+      {value: 2, label: "2 – Block popups"}
+    ]}];
+
+  repeated string PopupsAllowedForUrls = 159 [json_name = "PopupsAllowedForUrls",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  repeated string PopupsBlockedForUrls = 160 [json_name = "PopupsBlockedForUrls",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  optional int32 DefaultGeolocationSetting = 161 [json_name = "DefaultGeolocationSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow geolocation"},
+      {value: 2, label: "2 – Block geolocation"},
+      {value: 3, label: "3 – Ask on every visit"}
+    ]}];
+
+  optional int32 DefaultNotificationsSetting = 162 [json_name = "DefaultNotificationsSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow notifications"},
+      {value: 2, label: "2 – Block notifications"},
+      {value: 3, label: "3 – Ask on every visit"}
+    ]}];
+
+  optional int32 DefaultImagesSetting = 163 [json_name = "DefaultImagesSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Show all images"},
+      {value: 2, label: "2 – Block all images"}
+    ]}];
+
+  optional int32 DefaultClipboardSetting = 164 [json_name = "DefaultClipboardSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow clipboard access"},
+      {value: 2, label: "2 – Block clipboard access"},
+      {value: 3, label: "3 – Ask on every visit"}
+    ]}];
+
+  optional int32 DefaultSensorsSetting = 165 [json_name = "DefaultSensorsSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow sensors"},
+      {value: 2, label: "2 – Block sensors"}
+    ]}];
+
+  optional int32 DefaultAutomaticDownloadsSetting = 166 [json_name = "DefaultAutomaticDownloadsSetting",
+    (bor.ui.field) = {group: "Content Settings", int_options: [
+      {value: 1, label: "1 – Allow automatic downloads"},
+      {value: 2, label: "2 – Block automatic downloads"},
+      {value: 3, label: "3 – Ask on every visit"}
+    ]}];
+
+  optional bool AutoplayAllowed = 167 [json_name = "AutoplayAllowed",
+    (bor.ui.field) = {group: "Content Settings"}];
+
+  // ── Authentication ────────────────────────────────────────────────────────
+
+  optional string AuthSchemes = 201 [json_name = "AuthSchemes",
+    (bor.ui.field) = {group: "Authentication"}];
+
+  optional string AuthServerAllowlist = 202 [json_name = "AuthServerAllowlist",
+    (bor.ui.field) = {group: "Authentication"}];
+
+  optional string AuthNegotiateDelegateAllowlist = 203 [json_name = "AuthNegotiateDelegateAllowlist",
+    (bor.ui.field) = {group: "Authentication"}];
+
+  optional bool AllowCrossOriginAuthPrompt = 204 [json_name = "AllowCrossOriginAuthPrompt",
+    (bor.ui.field) = {group: "Authentication"}];
+
+  // ── Search ────────────────────────────────────────────────────────────────
+
+  optional bool DefaultSearchProviderEnabled = 251 [json_name = "DefaultSearchProviderEnabled",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional string DefaultSearchProviderName = 252 [json_name = "DefaultSearchProviderName",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional string DefaultSearchProviderSearchURL = 253 [json_name = "DefaultSearchProviderSearchURL",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional string DefaultSearchProviderSuggestURL = 254 [json_name = "DefaultSearchProviderSuggestURL",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional string DefaultSearchProviderImageURL = 255 [json_name = "DefaultSearchProviderImageURL",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional string DefaultSearchProviderKeyword = 256 [json_name = "DefaultSearchProviderKeyword",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional bool SearchSuggestEnabled = 257 [json_name = "SearchSuggestEnabled",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional bool AddressBarMicrosoftSearchInBingProviderEnabled = 258 [json_name = "AddressBarMicrosoftSearchInBingProviderEnabled",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional bool QuickSearchShowMiniMenu = 259 [json_name = "QuickSearchShowMiniMenu",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional bool SearchFiltersEnabled = 260 [json_name = "SearchFiltersEnabled",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional bool DefaultSearchProviderContextMenuAccessAllowed = 261 [json_name = "DefaultSearchProviderContextMenuAccessAllowed",
+    (bor.ui.field) = {group: "Search"}];
+
+  optional int32 SearchInSidebarEnabled = 262 [json_name = "SearchInSidebarEnabled",
+    (bor.ui.field) = {group: "Search", int_options: [
+      {value: 0, label: "0 – Disabled"},
+      {value: 1, label: "1 – Default (user controls)"},
+      {value: 2, label: "2 – Enabled"}
+    ]}];
+
+  // ── Downloads ─────────────────────────────────────────────────────────────
+
+  optional string DownloadDirectory = 301 [json_name = "DownloadDirectory",
+    (bor.ui.field) = {group: "Downloads"}];
+
+  optional int32 DownloadRestrictions = 302 [json_name = "DownloadRestrictions",
+    (bor.ui.field) = {group: "Downloads", int_options: [
+      {value: 0, label: "0 – No restrictions"},
+      {value: 1, label: "1 – Block dangerous downloads"},
+      {value: 2, label: "2 – Block potentially dangerous downloads"},
+      {value: 3, label: "3 – Block all downloads"}
+    ]}];
+
+  optional bool AllowFileSelectionDialogs = 303 [json_name = "AllowFileSelectionDialogs",
+    (bor.ui.field) = {group: "Downloads"}];
+
+  // ── Printing ──────────────────────────────────────────────────────────────
+
+  optional bool PrintingEnabled = 321 [json_name = "PrintingEnabled",
+    (bor.ui.field) = {group: "Printing"}];
+
+  optional string DefaultPrinterSelection = 322 [json_name = "DefaultPrinterSelection",
+    (bor.ui.field) = {group: "Printing"}];
+
+  optional bool PrintPreviewUseSystemDefaultPrinter = 323 [json_name = "PrintPreviewUseSystemDefaultPrinter",
+    (bor.ui.field) = {group: "Printing"}];
+
+  // ── Network & Proxy ───────────────────────────────────────────────────────
+
+  optional google.protobuf.Value ProxySettings = 351 [json_name = "ProxySettings",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional string ProxyMode = 352 [json_name = "ProxyMode",
+    (bor.ui.field) = {group: "Network & Proxy", string_options: [
+      "direct", "auto_detect", "pac_script", "fixed_servers", "system"
+    ]}];
+
+  optional string ProxyServer = 353 [json_name = "ProxyServer",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional string ProxyBypassList = 354 [json_name = "ProxyBypassList",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional string ProxyPacUrl = 355 [json_name = "ProxyPacUrl",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional string DnsOverHttpsMode = 356 [json_name = "DnsOverHttpsMode",
+    (bor.ui.field) = {group: "Network & Proxy", string_options: ["off", "automatic", "secure"]}];
+
+  optional string DnsOverHttpsTemplates = 357 [json_name = "DnsOverHttpsTemplates",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional bool QuicAllowed = 358 [json_name = "QuicAllowed",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional int32 NetworkPredictionOptions = 359 [json_name = "NetworkPredictionOptions",
+    (bor.ui.field) = {group: "Network & Proxy", int_options: [
+      {value: 0, label: "0 – Always predict"},
+      {value: 1, label: "1 – Predict on Wi-Fi only"},
+      {value: 2, label: "2 – Never predict"}
+    ]}];
+
+  optional string WebRtcIPHandlingPolicy = 360 [json_name = "WebRtcIPHandlingPolicy",
+    (bor.ui.field) = {group: "Network & Proxy", string_options: [
+      "default",
+      "default_public_and_private_interfaces",
+      "default_public_interface_only",
+      "disable_non_proxied_udp"
+    ]}];
+
+  optional string WebRtcLocalhostIpHandling = 361 [json_name = "WebRtcLocalhostIpHandling",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional bool BuiltInDnsClientEnabled = 362 [json_name = "BuiltInDnsClientEnabled",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  optional int32 MaxConnectionsPerProxy = 363 [json_name = "MaxConnectionsPerProxy",
+    (bor.ui.field) = {group: "Network & Proxy"}];
+
+  // ── Developer Tools ───────────────────────────────────────────────────────
+
+  optional int32 DeveloperToolsAvailability = 401 [json_name = "DeveloperToolsAvailability",
+    (bor.ui.field) = {group: "Developer Tools", int_options: [
+      {value: 0, label: "0 – Allow DevTools"},
+      {value: 1, label: "1 – Disallow for force-installed extensions"},
+      {value: 2, label: "2 – Disallow DevTools"}
+    ]}];
+
+  optional bool CommandLineFlagSecurityWarningsEnabled = 402 [json_name = "CommandLineFlagSecurityWarningsEnabled",
+    (bor.ui.field) = {group: "Developer Tools"}];
+
+  // ── New Tab Page ──────────────────────────────────────────────────────────
+
+  optional bool NewTabPageContentEnabled = 451 [json_name = "NewTabPageContentEnabled",
+    (bor.ui.field) = {group: "New Tab Page"}];
+
+  optional bool NewTabPageQuickLinksEnabled = 452 [json_name = "NewTabPageQuickLinksEnabled",
+    (bor.ui.field) = {group: "New Tab Page"}];
+
+  optional bool NewTabPageHideDefaultTopSites = 453 [json_name = "NewTabPageHideDefaultTopSites",
+    (bor.ui.field) = {group: "New Tab Page"}];
+
+  optional int32 NewTabPageAllowedBackgroundTypes = 454 [json_name = "NewTabPageAllowedBackgroundTypes",
+    (bor.ui.field) = {group: "New Tab Page", int_options: [
+      {value: 1, label: "1 – Custom image"},
+      {value: 2, label: "2 – Daily image"},
+      {value: 3, label: "3 – Solid colour"}
+    ]}];
+
+  optional bool NewTabPagePrerenderEnabled = 455 [json_name = "NewTabPagePrerenderEnabled",
+    (bor.ui.field) = {group: "New Tab Page"}];
+
+  optional bool SignInCtaOnNtpEnabled = 456 [json_name = "SignInCtaOnNtpEnabled",
+    (bor.ui.field) = {group: "New Tab Page"}];
+
+  optional google.protobuf.Value NewTabPageManagedQuickLinks = 457 [json_name = "NewTabPageManagedQuickLinks",
+    (bor.ui.field) = {group: "New Tab Page"}];
+
+  optional string SetNTPDefaultFeedTab = 458 [json_name = "SetNTPDefaultFeedTab",
+    (bor.ui.field) = {group: "New Tab Page", string_options: ["Work", "Discover"]}];
+
+  // ── Edge Features ─────────────────────────────────────────────────────────
+
+  optional bool AllowSurfGame = 501 [json_name = "AllowSurfGame",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool AllowGamesMenu = 502 [json_name = "AllowGamesMenu",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EdgeWorkspacesEnabled = 503 [json_name = "EdgeWorkspacesEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EdgeCollectionsEnabled = 504 [json_name = "EdgeCollectionsEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EdgeShoppingAssistantEnabled = 505 [json_name = "EdgeShoppingAssistantEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool HubsSidebarEnabled = 506 [json_name = "HubsSidebarEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool InAppSupportEnabled = 507 [json_name = "InAppSupportEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool ShowMicrosoftRewards = 508 [json_name = "ShowMicrosoftRewards",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool SharedLinksEnabled = 509 [json_name = "SharedLinksEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool MicrosoftEdgeInsiderPromotionEnabled = 510 [json_name = "MicrosoftEdgeInsiderPromotionEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool ShowPDFDefaultRecommendationsEnabled = 511 [json_name = "ShowPDFDefaultRecommendationsEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool ShowOfficeShortcutInFavoritesBar = 512 [json_name = "ShowOfficeShortcutInFavoritesBar",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool ShowCastIconInToolbar = 513 [json_name = "ShowCastIconInToolbar",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EnableMediaRouter = 514 [json_name = "EnableMediaRouter",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool MathSolverEnabled = 515 [json_name = "MathSolverEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool TextPredictionEnabled = 516 [json_name = "TextPredictionEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool SpeechRecognitionEnabled = 517 [json_name = "SpeechRecognitionEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool UserFeedbackAllowed = 518 [json_name = "UserFeedbackAllowed",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EdgeFollowEnabled = 519 [json_name = "EdgeFollowEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EdgeEnhanceImagesEnabled = 520 [json_name = "EdgeEnhanceImagesEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool EdgeEDropEnabled = 521 [json_name = "EdgeEDropEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool ImmersiveReaderGrammarToolsEnabled = 522 [json_name = "ImmersiveReaderGrammarToolsEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool ImmersiveReaderPictureDictionaryEnabled = 523 [json_name = "ImmersiveReaderPictureDictionaryEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool RelatedMatchesCloudServiceEnabled = 524 [json_name = "RelatedMatchesCloudServiceEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional bool AdsTransparencyEnabled = 525 [json_name = "AdsTransparencyEnabled",
+    (bor.ui.field) = {group: "Edge Features"}];
+
+  optional int32 AdsSettingForIntrusiveAdsSites = 526 [json_name = "AdsSettingForIntrusiveAdsSites",
+    (bor.ui.field) = {group: "Edge Features", int_options: [
+      {value: 1, label: "1 – Allow ads on all sites"},
+      {value: 2, label: "2 – Block ads on intrusive sites"}
+    ]}];
+
+  // ── Identity & Sign-in ────────────────────────────────────────────────────
+
+  optional int32 BrowserSignin = 551 [json_name = "BrowserSignin",
+    (bor.ui.field) = {group: "Identity & Sign-in", int_options: [
+      {value: 0, label: "0 – Disable browser sign-in"},
+      {value: 1, label: "1 – Enable browser sign-in"},
+      {value: 2, label: "2 – Force browser sign-in"}
+    ]}];
+
+  optional bool SyncDisabled = 552 [json_name = "SyncDisabled",
+    (bor.ui.field) = {group: "Identity & Sign-in"}];
+
+  optional bool PersonalizationReportingEnabled = 553 [json_name = "PersonalizationReportingEnabled",
+    (bor.ui.field) = {group: "Identity & Sign-in"}];
+
+  optional int32 ExperimentationAndConfigurationServiceControl = 554 [json_name = "ExperimentationAndConfigurationServiceControl",
+    (bor.ui.field) = {group: "Identity & Sign-in", int_options: [
+      {value: 0, label: "0 – Disable experiments and configuration"},
+      {value: 1, label: "1 – Configuration only"},
+      {value: 2, label: "2 – Full service (default)"}
+    ]}];
+
+  optional bool EdgeAssetDeliveryServiceEnabled = 555 [json_name = "EdgeAssetDeliveryServiceEnabled",
+    (bor.ui.field) = {group: "Identity & Sign-in"}];
+
+  // ── Sleeping Tabs ─────────────────────────────────────────────────────────
+
+  optional bool SleepingTabsEnabled = 601 [json_name = "SleepingTabsEnabled",
+    (bor.ui.field) = {group: "Sleeping Tabs"}];
+
+  optional int32 SleepingTabsTimeout = 602 [json_name = "SleepingTabsTimeout",
+    (bor.ui.field) = {group: "Sleeping Tabs"}];
+
+  // ── Tracking & Privacy ────────────────────────────────────────────────────
+
+  optional int32 TrackingPrevention = 651 [json_name = "TrackingPrevention",
+    (bor.ui.field) = {group: "Tracking & Privacy", int_options: [
+      {value: 0, label: "0 – Off"},
+      {value: 1, label: "1 – Basic"},
+      {value: 2, label: "2 – Balanced"},
+      {value: 3, label: "3 – Strict"}
+    ]}];
+
+  optional bool BingAdsSuppression = 652 [json_name = "BingAdsSuppression",
+    (bor.ui.field) = {group: "Tracking & Privacy"}];
+
+  optional int32 DefaultShareAdditionalOSRegionSetting = 653 [json_name = "DefaultShareAdditionalOSRegionSetting",
+    (bor.ui.field) = {group: "Tracking & Privacy", int_options: [
+      {value: 0, label: "0 – Do not share"},
+      {value: 1, label: "1 – Share OS region"}
+    ]}];
+
+  // ── Managed Search & Favorites ────────────────────────────────────────────
+
+  optional google.protobuf.Value ManagedFavorites = 701 [json_name = "ManagedFavorites",
+    (bor.ui.field) = {group: "Managed Search & Favorites"}];
+
+  optional google.protobuf.Value ManagedSearchEngines = 702 [json_name = "ManagedSearchEngines",
+    (bor.ui.field) = {group: "Managed Search & Favorites"}];
+
+  optional int32 ForceBingSafeSearch = 703 [json_name = "ForceBingSafeSearch",
+    (bor.ui.field) = {group: "Managed Search & Favorites", int_options: [
+      {value: 0, label: "0 – No safe search"},
+      {value: 1, label: "1 – Moderate safe search"},
+      {value: 2, label: "2 – Strict safe search"}
+    ]}];
+
+  optional bool ForceGoogleSafeSearch = 704 [json_name = "ForceGoogleSafeSearch",
+    (bor.ui.field) = {group: "Managed Search & Favorites"}];
+
+  // ── Password & Autofill ───────────────────────────────────────────────────
+
+  optional bool PasswordManagerEnabled = 751 [json_name = "PasswordManagerEnabled",
+    (bor.ui.field) = {group: "Password & Autofill"}];
+
+  optional bool PasswordGeneratorEnabled = 752 [json_name = "PasswordGeneratorEnabled",
+    (bor.ui.field) = {group: "Password & Autofill"}];
+
+  optional bool PasswordLeakDetectionEnabled = 753 [json_name = "PasswordLeakDetectionEnabled",
+    (bor.ui.field) = {group: "Password & Autofill"}];
+
+  optional bool AutofillAddressEnabled = 754 [json_name = "AutofillAddressEnabled",
+    (bor.ui.field) = {group: "Password & Autofill"}];
+
+  optional bool AutofillCreditCardEnabled = 755 [json_name = "AutofillCreditCardEnabled",
+    (bor.ui.field) = {group: "Password & Autofill"}];
+
+  optional bool PaymentMethodQueryEnabled = 756 [json_name = "PaymentMethodQueryEnabled",
+    (bor.ui.field) = {group: "Password & Autofill"}];
+
+  // ── Miscellaneous ─────────────────────────────────────────────────────────
+
+  optional bool HardwareAccelerationModeEnabled = 771 [json_name = "HardwareAccelerationModeEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool TranslateEnabled = 772 [json_name = "TranslateEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool MetricsReportingEnabled = 773 [json_name = "MetricsReportingEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool ComponentUpdatesEnabled = 774 [json_name = "ComponentUpdatesEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool AllowDeletingBrowserHistory = 775 [json_name = "AllowDeletingBrowserHistory",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional int32 RelaunchNotification = 776 [json_name = "RelaunchNotification",
+    (bor.ui.field) = {group: "Miscellaneous", int_options: [
+      {value: 1, label: "1 – Recommended"},
+      {value: 2, label: "2 – Required"}
+    ]}];
+
+  optional bool AskBeforeCloseEnabled = 777 [json_name = "AskBeforeCloseEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool ClearBrowsingDataOnExit = 778 [json_name = "ClearBrowsingDataOnExit",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool ClearCachedImagesAndFilesOnExit = 779 [json_name = "ClearCachedImagesAndFilesOnExit",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional int32 UserAgentReduction = 780 [json_name = "UserAgentReduction",
+    (bor.ui.field) = {group: "Miscellaneous", int_options: [
+      {value: 0, label: "0 – Default"},
+      {value: 1, label: "1 – Force disabled"},
+      {value: 2, label: "2 – Force enabled"}
+    ]}];
+
+  optional bool SpellcheckEnabled = 781 [json_name = "SpellcheckEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  repeated string SpellcheckLanguage = 782 [json_name = "SpellcheckLanguage",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool AccessibilityImageLabelsEnabled = 783 [json_name = "AccessibilityImageLabelsEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+
+  optional bool AutoLaunchProtocolsComponentEnabled = 784 [json_name = "AutoLaunchProtocolsComponentEnabled",
+    (bor.ui.field) = {group: "Miscellaneous"}];
+}

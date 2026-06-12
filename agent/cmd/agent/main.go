@@ -107,6 +107,23 @@ var chromeNotifyConfig = notify.Config{
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
 
+// edgeCache maps policy ID → proto policy for all active Edge policies.
+var edgeCache = make(map[string]*pb.EdgePolicy)
+
+// edgeSnapshotStaging accumulates Edge proto policies during a SNAPSHOT.
+// It is nil when not inside a snapshot sequence.
+var edgeSnapshotStaging map[string]*pb.EdgePolicy
+
+// edgeNotifier handles desktop notifications for Edge policy changes.
+var edgeNotifier = notify.New()
+
+// edgeNotifyConfig holds Edge-specific notification settings.
+var edgeNotifyConfig = notify.Config{
+	Enabled:  true,
+	Cooldown: 5 * time.Minute,
+	Message:  "Microsoft Edge policies have been updated. Please restart Edge for all changes to take effect.",
+}
+
 // dconfCacheEntry holds a DConf policy alongside its binding priority and name.
 type dconfCacheEntry struct {
 	id       string
@@ -432,6 +449,11 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  agentCfg.NotifyMessageThunderbird,
 			}
+			edgeNotifyConfig = notify.Config{
+				Enabled:  agentCfg.NotifyUsers,
+				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
+				Message:  agentCfg.NotifyMessageEdge,
+			}
 			packageNotifyConfig = notify.Config{
 				Enabled:  agentCfg.NotifyUsers,
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
@@ -535,6 +557,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				thunderbirdChanged := len(thunderbirdCache) > 0
 				hadKconfigPolicies := len(kconfigCache) > 0
 				chromeChanged := len(chromeCache) > 0
+				edgeChanged := len(edgeCache) > 0
 				kconfigCache = make(map[string]*pb.KConfigPolicy)
 				kconfigSnapshotStaging = nil
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
@@ -543,6 +566,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				thunderbirdSnapshotStaging = nil
 				chromeCache = make(map[string]*pb.ChromePolicy)
 				chromeSnapshotStaging = nil
+				edgeCache = make(map[string]*pb.EdgePolicy)
+				edgeSnapshotStaging = nil
 				dconfCache = make(map[string]dconfCacheEntry)
 				dconfSnapshotStaging = nil
 				polkitCache = make(map[string]polkitCacheEntry)
@@ -553,6 +578,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				syncAllFirefox(ctx, client, cfg)
 				syncAllThunderbird(ctx, client, cfg)
 				syncAllChrome(ctx, client, cfg)
+				syncAllEdge(ctx, client, cfg)
 				syncAllDConf(ctx, client, cfg)
 				syncAllPolkit(ctx, client, cfg)
 				go triggerPackageSync(ctx, client, cfg)
@@ -568,6 +594,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 					}
 					if chromeChanged {
 						chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
+					}
+					if edgeChanged {
+						edgeNotifier.ScheduleNotification(edgeNotifyConfig, map[string]bool{"bor_managed.json": true})
 					}
 				}
 				*postInitialSync = true
@@ -594,6 +623,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				chromeSnapshotStaging = make(map[string]*pb.ChromePolicy)
 			}
 			chromeSnapshotStaging[pi.ID] = pi.ChromePolicy
+		case "Edge":
+			if edgeSnapshotStaging == nil {
+				edgeSnapshotStaging = make(map[string]*pb.EdgePolicy)
+			}
+			edgeSnapshotStaging[pi.ID] = pi.EdgePolicy
 		case "Kconfig":
 			if kconfigSnapshotStaging == nil {
 				kconfigSnapshotStaging = make(map[string]*pb.KConfigPolicy)
@@ -621,10 +655,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		}
 
 		if snapshotComplete {
-			// Compare Firefox, Thunderbird and Chrome content before swapping to detect changes.
+			// Compare Firefox, Thunderbird, Chrome and Edge content before swapping to detect changes.
 			firefoxChanged := !firefoxCachesEqual(firefoxCache, firefoxSnapshotStaging)
 			thunderbirdChanged := !thunderbirdCachesEqual(thunderbirdCache, thunderbirdSnapshotStaging)
 			chromeChanged := !chromeCachesEqual(chromeCache, chromeSnapshotStaging)
+			edgeChanged := !edgeCachesEqual(edgeCache, edgeSnapshotStaging)
 
 			// Swap KConfig staging into cache.
 			if kconfigSnapshotStaging != nil {
@@ -658,6 +693,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			chromeSnapshotStaging = nil
 
+			// Swap Edge staging into cache.
+			if edgeSnapshotStaging != nil {
+				edgeCache = edgeSnapshotStaging
+			} else {
+				edgeCache = make(map[string]*pb.EdgePolicy)
+			}
+			edgeSnapshotStaging = nil
+
 			// Swap DConf staging into cache.
 			if dconfSnapshotStaging != nil {
 				dconfCache = dconfSnapshotStaging
@@ -686,6 +729,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			syncAllFirefox(ctx, client, cfg)
 			syncAllThunderbird(ctx, client, cfg)
 			syncAllChrome(ctx, client, cfg)
+			syncAllEdge(ctx, client, cfg)
 			syncAllDConf(ctx, client, cfg)
 			syncAllPolkit(ctx, client, cfg)
 			go triggerPackageSync(ctx, client, cfg)
@@ -703,6 +747,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				}
 				if chromeChanged {
 					chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
+				}
+				if edgeChanged {
+					edgeNotifier.ScheduleNotification(edgeNotifyConfig, map[string]bool{"bor_managed.json": true})
 				}
 			}
 			*postInitialSync = true
@@ -730,6 +777,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			chromeCache[pi.ID] = pi.ChromePolicy
 			if syncAllChrome(ctx, client, cfg) {
 				chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
+			}
+		case "Edge":
+			edgeCache[pi.ID] = pi.EdgePolicy
+			if syncAllEdge(ctx, client, cfg) {
+				edgeNotifier.ScheduleNotification(edgeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
 		case "Kconfig":
 			kconfigCache[pi.ID] = pi.KConfigPolicy
@@ -777,6 +829,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			delete(chromeCache, pi.ID)
 			if syncAllChrome(ctx, client, cfg) {
 				chromeNotifier.ScheduleNotification(chromeNotifyConfig, map[string]bool{"bor_managed.json": true})
+			}
+		} else if _, ok := edgeCache[pi.ID]; ok {
+			delete(edgeCache, pi.ID)
+			if syncAllEdge(ctx, client, cfg) {
+				edgeNotifier.ScheduleNotification(edgeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
 		} else if _, ok := dconfCache[pi.ID]; ok {
 			delete(dconfCache, pi.ID)
@@ -827,6 +884,64 @@ func chromeCachesEqual(a, b map[string]*pb.ChromePolicy) bool {
 		if !proto.Equal(va, vb) {
 			return false
 		}
+	}
+	return true
+}
+
+// edgeCachesEqual returns true when two Edge policy caches contain
+// identical policy IDs and proto content.
+func edgeCachesEqual(a, b map[string]*pb.EdgePolicy) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, va := range a {
+		vb, ok := b[k]
+		if !ok {
+			return false
+		}
+		if !proto.Equal(va, vb) {
+			return false
+		}
+	}
+	return true
+}
+
+// syncAllEdge re-merges all cached Edge proto policies and syncs
+// bor_managed.json to the configured Edge policy directory.
+// Returns true when the sync succeeded (for notification scheduling).
+func syncAllEdge(ctx context.Context, client *policyclient.Client, cfg *config.Config) bool {
+	var policies []*pb.EdgePolicy
+	var ids []string
+	for id, pol := range edgeCache {
+		if pol != nil {
+			policies = append(policies, pol)
+		}
+		ids = append(ids, id)
+	}
+
+	dir := cfg.Edge.EdgePoliciesPath
+	var managedFiles []string
+	if dir != "" {
+		managedFiles = append(managedFiles, filepath.Join(dir, policy.EdgeManagedFilename))
+	}
+	suppressManagedWrites(cfg, managedFiles...)
+	defer updateWatcher(cfg)
+
+	var dirPaths []string
+	if dir != "" {
+		dirPaths = []string{dir}
+	}
+	if err := policy.SyncEdgeFromProto(policies, dirPaths); err != nil {
+		log.Printf("Error syncing Edge policies: %v", err)
+		for _, id := range ids {
+			_ = client.ReportCompliance(ctx, id, false, "failed to sync Edge policies: "+err.Error())
+		}
+		return false
+	}
+
+	log.Printf("Edge policies synced (%d policies)", len(ids))
+	for _, id := range ids {
+		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
 	return true
 }
@@ -1570,6 +1685,11 @@ func getManagedPaths(cfg *config.Config) []string {
 		}
 	}
 
+	// Edge.
+	if len(edgeCache) > 0 && cfg.Edge.EdgePoliciesPath != "" {
+		paths = append(paths, filepath.Join(cfg.Edge.EdgePoliciesPath, policy.EdgeManagedFilename))
+	}
+
 	// KConfig: discover currently managed files from .bor-backup sentinels.
 	if managed, err := policy.ManagedFiles(cfg.KConfig.ConfigPath); err == nil {
 		for _, name := range managed {
@@ -1662,8 +1782,13 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllDConf(ctx, client, cfg)
 	case strings.HasPrefix(path, policy.PolkitRulesDir+string(filepath.Separator)):
 		syncAllPolkit(ctx, client, cfg)
-	case filepath.Base(path) == policy.ChromeManagedFilename:
+	case path == filepath.Join(cfg.Chrome.ChromePoliciesPath, policy.ChromeManagedFilename) ||
+		path == filepath.Join(cfg.Chrome.ChromiumPoliciesPath, policy.ChromeManagedFilename) ||
+		path == filepath.Join(cfg.Chrome.ChromiumBrowserPoliciesPath, policy.ChromeManagedFilename) ||
+		path == filepath.Join(cfg.Chrome.FlatpakChromiumPoliciesPath, policy.ChromeManagedFilename):
 		syncAllChrome(ctx, client, cfg)
+	case cfg.Edge.EdgePoliciesPath != "" && path == filepath.Join(cfg.Edge.EdgePoliciesPath, policy.EdgeManagedFilename):
+		syncAllEdge(ctx, client, cfg)
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
 	default:
