@@ -20,6 +20,7 @@ type Config struct {
 	Firefox     FirefoxConfig     `yaml:"firefox"`
 	Thunderbird ThunderbirdConfig `yaml:"thunderbird"`
 	Chrome      ChromeConfig      `yaml:"chrome"`
+	Edge        EdgeConfig        `yaml:"edge"`
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
@@ -62,6 +63,15 @@ type FirefoxConfig struct {
 type ThunderbirdConfig struct {
 	PoliciesPath        string `yaml:"policies_path"`
 	FlatpakPoliciesPath string `yaml:"flatpak_policies_path"`
+}
+
+// EdgeConfig holds Microsoft Edge policy directory settings.
+// The agent writes bor_managed.json into the configured directory.
+// A single path covers all Edge channels (stable, beta, dev) and the
+// community Edge Flatpak, which uses --filesystem=host-etc to symlink
+// /run/host/etc/opt/edge/policies/ into the sandbox automatically.
+type EdgeConfig struct {
+	EdgePoliciesPath string `yaml:"edge_policies_path"`
 }
 
 // ChromeConfig holds Chrome/Chromium policy directory settings.
@@ -146,6 +156,9 @@ func DefaultConfig() *Config {
 			ChromiumPoliciesPath:        "/etc/chromium/policies/managed",
 			ChromiumBrowserPoliciesPath: "/etc/chromium-browser/policies/managed",
 			FlatpakChromiumPoliciesPath: "/var/lib/flatpak/extension/org.chromium.Chromium.Extension.system-policies/" + flatpakArch() + "/1/policies/managed",
+		},
+		Edge: EdgeConfig{
+			EdgePoliciesPath: "/etc/opt/edge/policies/managed",
 		},
 		KConfig: KConfigConfig{
 			ConfigPath: "/etc/bor/xdg",

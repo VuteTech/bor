@@ -252,6 +252,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidatePackagePolicy(content)
 	case "Thunderbird":
 		return ValidateThunderbirdContent(content)
+	case "Edge":
+		return ValidateEdgeContent(content)
 	}
 	return nil
 }

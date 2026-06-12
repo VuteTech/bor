@@ -45,6 +45,7 @@ import type { PolicyFieldDef } from "../../generated/proto/policy_ui_types";
 import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
 import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
 import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
+import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
 import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
@@ -58,6 +59,7 @@ const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Thunderbird", label: "Thunderbird" },
   { value: "Polkit", label: "Polkit" },
   { value: "Chrome", label: "Chrome" },
+  { value: "Edge", label: "Edge" },
   { value: "Package", label: "Package" },
 ];
 
@@ -151,6 +153,46 @@ function buildChromeContent(key: string, value: unknown, existingContent?: strin
 
 // Remove a single key from the Chrome content JSON
 function removeChromeContentKey(key: string, existingContent: string): string {
+  let parsed: Record<string, unknown> = {};
+  try { parsed = JSON.parse(existingContent || "{}"); } catch { /* ignore */ }
+  delete parsed[key];
+  return JSON.stringify(parsed, null, 2);
+}
+
+/* ── Microsoft Edge policy model ── */
+
+function buildEdgeTree(): Map<string, PolicyFieldDef[]> {
+  const groups = new Map<string, PolicyFieldDef[]>();
+  for (const p of EDGE_ALL_POLICIES) {
+    const arr = groups.get(p.group) || [];
+    arr.push(p);
+    groups.set(p.group, arr);
+  }
+  return groups;
+}
+
+function detectEdgeConfiguredKeys(content: string): string[] {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    return EDGE_ALL_POLICIES.filter(p => p.key in parsed).map(p => p.key);
+  } catch { return []; }
+}
+
+function extractEdgeValue(content: string, key: string): unknown {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    return parsed[key];
+  } catch { return undefined; }
+}
+
+function buildEdgeContent(key: string, value: unknown, existingContent?: string): string {
+  let parsed: Record<string, unknown> = {};
+  try { parsed = JSON.parse(existingContent || "{}"); } catch { /* ignore */ }
+  parsed[key] = value ?? null;
+  return JSON.stringify(parsed, null, 2);
+}
+
+function removeEdgeContentKey(key: string, existingContent: string): string {
   let parsed: Record<string, unknown> = {};
   try { parsed = JSON.parse(existingContent || "{}"); } catch { /* ignore */ }
   delete parsed[key];
@@ -633,6 +675,34 @@ function buildSettingsRows(policyType: string, content: string): SettingsRow[] {
     return rows;
   }
 
+  if (policyType === "Edge") {
+    const parsed = raw as Record<string, unknown>;
+    for (const policyDef of EDGE_ALL_POLICIES) {
+      if (!(policyDef.key in parsed)) continue;
+      const val = parsed[policyDef.key];
+      let displayVal: string;
+      if (policyDef.type === "list" && Array.isArray(val)) {
+        displayVal = val.length > 0 ? val.join(", ") : "(empty)";
+      } else if (policyDef.type === "integer-enum" && policyDef.intOptions) {
+        const opt = policyDef.intOptions.find(o => o.value === val);
+        displayVal = opt ? opt.label : formatDisplayValue(val);
+      } else if (policyDef.type === "string-enum" && policyDef.stringOptions) {
+        const opt = policyDef.stringOptions.find(o => o === val);
+        displayVal = opt ? opt : formatDisplayValue(val);
+      } else if (policyDef.type === "json") {
+        displayVal = typeof val === "string" ? val : JSON.stringify(val);
+      } else {
+        displayVal = formatDisplayValue(val);
+      }
+      rows.push({
+        setting: policyDef.label,
+        value: displayVal,
+        locked: null,
+      });
+    }
+    return rows;
+  }
+
   if (policyType === "Kconfig") {
     const parsed = raw as Record<string, unknown>;
     const enforcedFields = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as string[]) : [];
@@ -848,6 +918,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const [chromeValue, setChromeValue] = useState<unknown>(undefined);
   const [chromeExpandedGroups, setChromeExpandedGroups] = useState<Set<string>>(new Set());
 
+  // Edge-specific state: selected policy key + its value
+  const [edgeSelectedKey, setEdgeSelectedKey] = useState<string | null>(null);
+  const [edgeValue, setEdgeValue] = useState<unknown>(undefined);
+  const [edgeExpandedGroups, setEdgeExpandedGroups] = useState<Set<string>>(new Set());
+
   // Dconf-specific state: contentRaw is shared with the raw editor;
   // the DConfPolicyEditor reads/writes via contentRaw directly.
   // (No extra state needed — DConfPolicyEditor is driven by contentRaw.)
@@ -929,6 +1004,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           setChromeValue(undefined);
           setChromeExpandedGroups(new Set());
         }
+      } else if (policy.type === "Edge") {
+        const configuredKeys = detectEdgeConfiguredKeys(policy.content);
+        if (configuredKeys.length > 0) {
+          setEdgeSelectedKey(configuredKeys[0]);
+          setEdgeValue(extractEdgeValue(policy.content, configuredKeys[0]));
+          const groups = new Set<string>();
+          for (const key of configuredKeys) {
+            const def = EDGE_ALL_POLICIES.find(p => p.key === key);
+            if (def) groups.add(def.group);
+          }
+          setEdgeExpandedGroups(groups);
+        } else {
+          setEdgeSelectedKey(null);
+          setEdgeValue(undefined);
+          setEdgeExpandedGroups(new Set());
+        }
       } else if (policy.type === "Thunderbird") {
         const configuredKeys = detectFirefoxConfiguredKeys(policy.content);
         if (configuredKeys.length > 0) {
@@ -985,6 +1076,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setChromeSelectedKey(null);
       setChromeValue(undefined);
       setChromeExpandedGroups(new Set());
+      setEdgeSelectedKey(null);
+      setEdgeValue(undefined);
+      setEdgeExpandedGroups(new Set());
     }
     setActiveTab(0);
     setConfigMode("structured");
@@ -1022,6 +1116,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setChromeValue(undefined);
       setContentRaw("{}");
       setChromeExpandedGroups(new Set());
+    } else if (newType === "Edge") {
+      setEdgeSelectedKey(null);
+      setEdgeValue(undefined);
+      setContentRaw("{}");
+      setEdgeExpandedGroups(new Set());
     } else if (newType === "Dconf") {
       setContentRaw(JSON.stringify({ entries: [], db_name: "local" }, null, 2));
     } else if (newType === "Package") {
@@ -1321,6 +1420,55 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     });
   };
 
+  // Edge: select a policy from the tree
+  const handleEdgeSelectPolicy = (policyDef: PolicyFieldDef) => {
+    setEdgeSelectedKey(policyDef.key);
+    const existing = extractEdgeValue(contentRaw, policyDef.key);
+    if (existing !== undefined) {
+      setEdgeValue(existing);
+    } else {
+      let defaultValue: unknown;
+      if (policyDef.type === "boolean") {
+        defaultValue = true;
+      } else if (policyDef.type === "string" || policyDef.type === "string-enum") {
+        defaultValue = policyDef.stringOptions ? policyDef.stringOptions[0] ?? "" : "";
+      } else if (policyDef.type === "integer" || policyDef.type === "integer-enum") {
+        defaultValue = policyDef.intOptions ? policyDef.intOptions[0]?.value ?? 0 : 0;
+      } else if (policyDef.type === "list") {
+        defaultValue = [];
+      } else if (policyDef.type === "json") {
+        defaultValue = {};
+      }
+      setEdgeValue(defaultValue);
+      setContentRaw(buildEdgeContent(policyDef.key, defaultValue, contentRaw));
+    }
+  };
+
+  const handleEdgeRemovePolicy = (key: string) => {
+    const newContent = removeEdgeContentKey(key, contentRaw);
+    setContentRaw(newContent);
+    if (edgeSelectedKey === key) {
+      setEdgeSelectedKey(null);
+      setEdgeValue(undefined);
+    }
+  };
+
+  const updateEdgeValue = (newValue: unknown) => {
+    setEdgeValue(newValue);
+    if (edgeSelectedKey) {
+      setContentRaw(buildEdgeContent(edgeSelectedKey, newValue, contentRaw));
+    }
+  };
+
+  const toggleEdgeGroup = (group: string) => {
+    setEdgeExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     setError(null);
     setSaving(true);
@@ -1399,6 +1547,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           }
         } catch {
           setError("Chrome policy content is not valid JSON");
+          setSaving(false);
+          return;
+        }
+      } else if (policyType === "Edge") {
+        if (edgeSelectedKey) {
+          finalContent = buildEdgeContent(edgeSelectedKey, edgeValue, contentRaw);
+        }
+        try {
+          const parsed = JSON.parse(finalContent);
+          if (Object.keys(parsed).length === 0) {
+            setError("At least one Edge policy setting must be selected and configured before saving");
+            setSaving(false);
+            return;
+          }
+        } catch {
+          setError("Edge policy content is not valid JSON");
           setSaving(false);
           return;
         }
@@ -2627,6 +2791,238 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     );
   };
 
+  /* ── Edge: property editor ── */
+  const renderEdgePropertyEditor = () => {
+    if (!edgeSelectedKey) {
+      return (
+        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+          <Title headingLevel="h3" size="lg">Select a Microsoft Edge policy</Title>
+          <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its value.</p>
+        </div>
+      );
+    }
+
+    const policyDef = EDGE_ALL_POLICIES.find(p => p.key === edgeSelectedKey);
+    if (!policyDef) return null;
+
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
+        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
+        <Form>
+          {policyDef.type === "boolean" && (
+            <FormGroup label="Value" fieldId="ed-prop-bool">
+              <Switch
+                id="ed-prop-bool"
+                isChecked={edgeValue === true}
+                onChange={(_ev, checked) => updateEdgeValue(checked)}
+                label="Enabled"
+                labelOff="Disabled"
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "string" && (
+            <FormGroup label="Value" fieldId="ed-prop-string">
+              <TextInput
+                id="ed-prop-string"
+                value={(edgeValue as string) || ""}
+                onChange={(_ev, val) => updateEdgeValue(val)}
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "integer" && (
+            <FormGroup label="Value" fieldId="ed-prop-int">
+              <TextInput
+                id="ed-prop-int"
+                type="number"
+                value={String(edgeValue ?? 0)}
+                onChange={(_ev, val) => updateEdgeValue(parseInt(val, 10) || 0)}
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "integer-enum" && policyDef.intOptions && (
+            <FormGroup label="Value" fieldId="ed-prop-int-enum">
+              <FormSelect
+                id="ed-prop-int-enum"
+                value={String(edgeValue ?? policyDef.intOptions[0]?.value ?? 0)}
+                onChange={(_ev, val) => updateEdgeValue(parseInt(val, 10))}
+              >
+                {policyDef.intOptions.map(opt => (
+                  <FormSelectOption key={String(opt.value)} value={String(opt.value)} label={opt.label} />
+                ))}
+              </FormSelect>
+            </FormGroup>
+          )}
+          {policyDef.type === "string-enum" && policyDef.stringOptions && (
+            <FormGroup label="Value" fieldId="ed-prop-str-enum">
+              <FormSelect
+                id="ed-prop-str-enum"
+                value={(edgeValue as string) || (policyDef.stringOptions[0] ?? "")}
+                onChange={(_ev, val) => updateEdgeValue(val)}
+              >
+                {policyDef.stringOptions.map(opt => (
+                  <FormSelectOption key={opt} value={opt} label={opt} />
+                ))}
+              </FormSelect>
+            </FormGroup>
+          )}
+          {policyDef.type === "list" && (
+            <FormGroup label="Value" fieldId="ed-prop-list" helperText="One item per line">
+              <TextArea
+                id="ed-prop-list"
+                value={((edgeValue as string[]) || []).join("\n")}
+                onChange={(_ev, val) => updateEdgeValue(val.split("\n").filter(Boolean))}
+                rows={5}
+                placeholder="One item per line"
+              />
+            </FormGroup>
+          )}
+          {policyDef.type === "json" && (
+            <FormGroup label="Value (JSON)" fieldId="ed-prop-json" helperText="Enter a valid JSON object or array">
+              <TextArea
+                id="ed-prop-json"
+                value={typeof edgeValue === "string" ? edgeValue : JSON.stringify(edgeValue ?? {}, null, 2)}
+                onChange={(_ev, val) => {
+                  try {
+                    updateEdgeValue(JSON.parse(val));
+                  } catch {
+                    updateEdgeValue(val);
+                  }
+                }}
+                rows={8}
+                style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
+                placeholder="{}"
+              />
+            </FormGroup>
+          )}
+          {isEditable && (
+            <FormGroup fieldId="ed-prop-actions">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => handleEdgeRemovePolicy(policyDef.key)}
+              >
+                Remove Policy
+              </Button>
+            </FormGroup>
+          )}
+        </Form>
+      </div>
+    );
+  };
+
+  /* ── Edge: tree view + property editor layout ── */
+  const renderEdgeForm = () => {
+    const tree = buildEdgeTree();
+    const configuredKeys = detectEdgeConfiguredKeys(contentRaw);
+
+    return (
+      <div style={{ display: "flex", minHeight: "400px" }}>
+        <div style={{
+          width: "260px",
+          minWidth: "260px",
+          borderRight: "1px solid var(--pf-t--global--border--color--default)",
+          overflowY: "auto",
+          paddingRight: "0",
+        }}>
+          {Array.from(tree.entries()).map(([group, policies]) => (
+            <div key={group} style={{ marginBottom: "2px" }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleEdgeGroup(group)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEdgeGroup(group); } }}
+                style={{
+                  padding: "0.4rem 0.75rem",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "0.8rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.03em",
+                  color: "var(--pf-t--global--text--color--regular)",
+                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
+                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
+                  userSelect: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                <span style={{
+                  display: "inline-block",
+                  width: 0,
+                  height: 0,
+                  borderStyle: "solid",
+                  ...(edgeExpandedGroups.has(group)
+                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
+                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
+                }} />
+                {group}
+              </div>
+              {edgeExpandedGroups.has(group) && policies.map(p => {
+                const isSelected = edgeSelectedKey === p.key;
+                const isConfigured = configuredKeys.includes(p.key);
+                return (
+                  <div
+                    key={p.key}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleEdgeSelectPolicy(p)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleEdgeSelectPolicy(p); } }}
+                    style={{
+                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
+                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
+                      fontWeight: isSelected || isConfigured ? 600 : 400,
+                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
+                      userSelect: "none",
+                      transition: "background-color 0.1s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
+                  >
+                    <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
+                        {p.label}
+                      </span>
+                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {p.description}
+                      </span>
+                    </span>
+                    {isConfigured && (
+                      <Button
+                        variant="plain"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handleEdgeRemovePolicy(p.key); }}
+                        style={{
+                          fontSize: "0.75rem",
+                          color: isSelected ? "#fff" : "#6a6e73",
+                          padding: "0 0.25rem",
+                          minWidth: "auto",
+                          flexShrink: 0,
+                        }}
+                        aria-label={`Remove ${p.label}`}
+                      >✕</Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
+          {renderEdgePropertyEditor()}
+        </div>
+      </div>
+    );
+  };
+
   /* ── Structured form for the selected policy type ── */
   const renderStructuredForm = () => {
     if (policyType === "Firefox") {
@@ -2637,6 +3033,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     }
     if (policyType === "Chrome") {
       return renderChromeForm();
+    }
+    if (policyType === "Edge") {
+      return renderEdgeForm();
     }
 
     const config = TYPE_CONFIGS[policyType];
@@ -2925,8 +3324,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     const isThunderbird = policyType === "Thunderbird";
     const isKconfig = policyType === "Kconfig";
     const isChrome = policyType === "Chrome";
+    const isEdge = policyType === "Edge";
 
-    // For Firefox / Thunderbird / KConfig / Chrome: render the tree view directly (they have their own split layout)
+    // For Firefox / Thunderbird / KConfig / Chrome / Edge: render the tree view directly (they have their own split layout)
     if (isFirefox) {
       return (
         <div style={{ padding: "1rem 0" }}>
@@ -2952,6 +3352,13 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       return (
         <div style={{ padding: "1rem 0" }}>
           {renderChromeForm()}
+        </div>
+      );
+    }
+    if (isEdge) {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          {renderEdgeForm()}
         </div>
       );
     }

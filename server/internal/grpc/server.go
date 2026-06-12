@@ -366,6 +366,7 @@ func (s *PolicyServer) GetAgentConfig(ctx context.Context, _ *pb.GetAgentConfigR
 			NotifyMessageFirefox:     settings.NotifyMessageFirefox,
 			NotifyMessageChrome:      settings.NotifyMessageChrome,
 			NotifyMessageThunderbird: settings.NotifyMessageThunderbird,
+			NotifyMessageEdge:        settings.NotifyMessageEdge,
 		},
 	}, nil
 }
@@ -559,6 +560,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal Thunderbird typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_ThunderbirdPolicy{ThunderbirdPolicy: &tbPol}
+		}
+	case "Edge":
+		var edgePol pb.EdgePolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &edgePol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Edge typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_EdgePolicy{EdgePolicy: &edgePol}
 		}
 	}
 

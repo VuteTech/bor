@@ -7,6 +7,7 @@ option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 import "google/protobuf/timestamp.proto";
 import "chrome.proto";
 import "dconf.proto";
+import "edge.proto";
 import "firefox.proto";
 import "kconfig.proto";
 import "package.proto";
@@ -89,6 +90,7 @@ message Policy {
     PolkitPolicy       polkit_policy       = 15;
     PackagePolicy      package_policy      = 16;
     ThunderbirdPolicy  thunderbird_policy  = 17;
+    EdgePolicy         edge_policy         = 18;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority
@@ -240,6 +242,7 @@ message AgentConfig {
   string notify_message_firefox     = 4;
   string notify_message_chrome      = 5;
   string notify_message_thunderbird = 6;
+  string notify_message_edge        = 7;
 }
 
 // ─── Heartbeat messages ─────────────────────────────────────────────────────
