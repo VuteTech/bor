@@ -1025,21 +1025,21 @@ func (s *AuthService) EnsureDefaultAdmin(ctx context.Context) error {
 			return fmt.Errorf("failed to generate admin password: %w", genErr)
 		}
 		adminPassword = generated
-		// Do not log the password (it lands in journald/centralized logs).
-		// Write it to a root-only file the operator can read once, then delete.
+		// Never log the password (it would land in journald/centralized logs).
+		// Persist it to a root-only file the operator can read once, then delete.
+		// If that write fails we abort rather than fall back to logging the
+		// secret — the operator must fix the path or pre-set BOR_ADMIN_PASSWORD.
 		if writeErr := writeInitialAdminPassword(adminPassword); writeErr != nil {
-			// As a last resort, surface it on stderr so bootstrap is not blocked,
-			// but flag the security implication for the operator.
-			log.Printf("WARNING: could not write initial admin password file (%v).", writeErr)
-			log.Printf("  Initial admin password (CHANGE IMMEDIATELY): %s", adminPassword)
-		} else {
-			log.Println("======================================================")
-			log.Printf("  Initial admin password written to %s (mode 0600).", initialAdminPasswordPath)
-			log.Println("  Username: admin")
-			log.Println("  Read it, log in, change the password, then delete the file.")
-			log.Println("  Or pre-set BOR_ADMIN_PASSWORD / security.admin_password.")
-			log.Println("======================================================")
+			return fmt.Errorf("could not persist the generated initial admin password to %s (%w); "+
+				"fix the path permissions or set BOR_ADMIN_PASSWORD / security.admin_password and restart",
+				initialAdminPasswordPath, writeErr)
 		}
+		log.Println("======================================================")
+		log.Printf("  Initial admin password written to %s (mode 0600).", initialAdminPasswordPath)
+		log.Println("  Username: admin")
+		log.Println("  Read it, log in, change the password, then delete the file.")
+		log.Println("  Or pre-set BOR_ADMIN_PASSWORD / security.admin_password.")
+		log.Println("======================================================")
 	}
 
 	_, err = s.CreateUser(ctx, &models.CreateUserRequest{
