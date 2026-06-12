@@ -39,10 +39,19 @@ dev/syslog-ng/logs/
 #AI Tools
 CLAUDE.md
 
-# Environment
-.env
-.env.local
-.env.*.local
+# Environment (covers .env, .env.local, .env-old, etc. — keep the example)
+.env*
+!.env.example
+
+# Secrets / credentials (must never be committed)
+sshkey
+sshkey.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.keytab
+dev/
 
 # Node modules (for frontend)
 node_modules/

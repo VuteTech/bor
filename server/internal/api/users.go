@@ -61,6 +61,15 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Privilege-escalation guard: the caller cannot assign a role granting
+	// permissions beyond their own.
+	if claims := GetUserFromContext(r.Context()); claims != nil {
+		if err := h.authSvc.EnsureCallerCanAssignRole(r.Context(), claims.UserID, req.RoleName); err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusForbidden)
+			return
+		}
+	}
+
 	user, err := h.authSvc.CreateUser(r.Context(), &req)
 	if err != nil {
 		log.Printf("Failed to create user: %v", err)

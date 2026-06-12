@@ -16,9 +16,9 @@ import (
 // ReportSchemaCatalogue accepts a GSettings schema catalogue from an agent.
 // The agent calls this at startup after scanning /usr/share/glib-2.0/schemas/.
 func (s *PolicyServer) ReportSchemaCatalogue(ctx context.Context, req *pb.ReportSchemaCatalogueRequest) (*pb.ReportSchemaCatalogueResponse, error) {
-	clientID := req.GetClientId()
-	if clientID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
 	}
 
 	if s.dconfRepo == nil {

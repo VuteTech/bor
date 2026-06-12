@@ -13,6 +13,8 @@ import (
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // AuthHandler handles authentication endpoints
@@ -20,6 +22,7 @@ type AuthHandler struct {
 	authSvc          *services.AuthService
 	mfaSvc           *services.MFAService
 	webauthnSvc      *services.WebAuthnService
+	auditSvc         *services.AuditService
 	privacyPolicyURL string
 }
 
@@ -32,6 +35,43 @@ func NewAuthHandler(authSvc *services.AuthService, mfaSvc *services.MFAService, 
 func (h *AuthHandler) WithPrivacyPolicyURL(url string) *AuthHandler {
 	h.privacyPolicyURL = url
 	return h
+}
+
+// WithAuditService attaches an AuditService so authentication, MFA, and
+// credential-lifecycle events are written to the tamper-evident audit log
+// (NIS2 / eIDAS requirement). Both successful and failed events are recorded.
+func (h *AuthHandler) WithAuditService(auditSvc *services.AuditService) *AuthHandler {
+	h.auditSvc = auditSvc
+	return h
+}
+
+// emitAuthAudit records an authentication-related audit event. action is e.g.
+// "auth.login"; username is the subject; success drives the outcome.
+func (h *AuthHandler) emitAuthAudit(r *http.Request, action, username string, success bool, detail string) {
+	if h.auditSvc == nil {
+		return
+	}
+	outcome := auditpb.Outcome_OUTCOME_SUCCESS
+	if !success {
+		outcome = auditpb.Outcome_OUTCOME_FAILURE
+	}
+	event := &auditpb.AuditEvent{
+		OccurredAt: timestamppb.Now(),
+		Actor:      &auditpb.Actor{Username: username},
+		Action:     action,
+		Resource:   &auditpb.Resource{Type: "auth", Id: username},
+		Outcome:    outcome,
+		SrcIp:      extractIP(r),
+		Payload: &auditpb.AuditEvent_HttpChange{
+			HttpChange: &auditpb.HttpPayload{
+				Method: r.Method,
+				Path:   r.URL.Path,
+				// detail must never contain credentials.
+				BodyJson: detail,
+			},
+		},
+	}
+	h.auditSvc.Emit(r.Context(), event)
 }
 
 // Login handles POST /api/v1/auth/login
@@ -50,10 +90,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.authSvc.Login(r.Context(), &req)
 	if err != nil {
 		log.Printf("Login failed for user %s: %v", req.Username, err)
+		h.emitAuthAudit(r, "auth.login", req.Username, false, "")
 		http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
 		return
 	}
 
+	h.emitAuthAudit(r, "auth.login", resp.User.Username, true, "")
 	SetSessionCookie(w, resp.Token, h.authSvc.TokenLifetime())
 	SetCSRFCookie(w)
 	if refreshToken, err := h.authSvc.GenerateRefreshToken(&resp.User); err == nil {
@@ -107,12 +149,14 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.authSvc.AuthStep(r.Context(), &req)
 	if err != nil {
 		log.Printf("AuthStep failed: %v", err)
+		h.emitAuthAudit(r, "auth.step."+req.Type, "", false, "step="+req.Type)
 		http.Error(w, `{"error":"authentication failed"}`, http.StatusUnauthorized)
 		return
 	}
 
 	// When the final JWT is issued, set it as an httpOnly cookie.
 	if resp.Token != "" && resp.User != nil {
+		h.emitAuthAudit(r, "auth.login", resp.User.Username, true, "via=step")
 		SetSessionCookie(w, resp.Token, h.authSvc.TokenLifetime())
 		SetCSRFCookie(w)
 		if refreshToken, rtErr := h.authSvc.GenerateRefreshToken(resp.User); rtErr == nil {
@@ -586,11 +630,23 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// Logout handles POST /api/v1/auth/logout — clears the session cookie.
+// Logout handles POST /api/v1/auth/logout — clears the session cookie and
+// revokes the user's outstanding tokens server-side so a captured token cannot
+// be reused after logout.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
+	}
+	// Best-effort server-side revocation: derive the user from the presented
+	// token (cookie or bearer) and advance their token cut-off.
+	if token := tokenFromRequest(r); token != "" {
+		if claims, err := h.authSvc.ValidateToken(r.Context(), token); err == nil && claims != nil {
+			if err := h.authSvc.InvalidateUserTokens(r.Context(), claims.UserID); err != nil {
+				log.Printf("Logout: failed to invalidate tokens for user %s: %v", claims.UserID, err) //nolint:gosec // user id derived from a verified JWT, not raw input
+			}
+			h.emitAuthAudit(r, "auth.logout", claims.Username, true, "")
+		}
 	}
 	ClearSessionCookie(w)
 	clearCSRFCookie(w)
@@ -613,7 +669,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, err := h.authSvc.ValidateRefreshToken(cookie.Value)
+	claims, err := h.authSvc.ValidateRefreshToken(r.Context(), cookie.Value)
 	if err != nil {
 		log.Printf("Refresh token validation failed: %v", err)
 		http.Error(w, `{"error":"invalid or expired refresh token"}`, http.StatusUnauthorized)
@@ -786,10 +842,9 @@ func (h *AuthHandler) MFADisable(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"password is required to disable MFA"}`, http.StatusBadRequest)
 			return
 		}
-		if _, err := h.authSvc.Login(r.Context(), &models.LoginRequest{
-			Username: user.Username,
-			Password: req.Password,
-		}); err != nil {
+		// Verify the password without issuing a session and without the MFA
+		// gate (the user is, by definition, disabling their second factor here).
+		if _, err := h.authSvc.VerifyPassword(r.Context(), user.Username, req.Password); err != nil {
 			http.Error(w, `{"error":"invalid password"}`, http.StatusUnauthorized)
 			return
 		}
@@ -797,10 +852,12 @@ func (h *AuthHandler) MFADisable(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.mfaSvc.Disable(r.Context(), claims.UserID); err != nil {
 		log.Printf("MFA disable failed for user %s: %v", claims.UserID, err)
+		h.emitAuthAudit(r, "auth.mfa.disable", claims.Username, false, "")
 		http.Error(w, `{"error":"failed to disable MFA"}`, http.StatusInternalServerError)
 		return
 	}
 
+	h.emitAuthAudit(r, "auth.mfa.disable", claims.Username, true, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 

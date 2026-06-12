@@ -193,11 +193,28 @@ func polkitResultJS(r pb.PolkitResult) string {
 // numeric order: polkitd evaluates files in alphabetical order, so a lower
 // number is evaluated first and wins in first-match-wins evaluation.
 func PolkitRulesPath(priority int32, policyID string) string {
-	shortID := strings.ReplaceAll(policyID, "-", "")
+	// policyID is server-supplied. Keep only alphanumerics so the value can
+	// never introduce a path separator or parent-directory reference; an
+	// empty result falls back to a constant so the filename stays well-formed.
+	shortID := sanitizeAlphanumeric(policyID)
 	if len(shortID) > 8 {
 		shortID = shortID[:8]
 	}
+	if shortID == "" {
+		shortID = "unknown"
+	}
 	return filepath.Join(PolkitRulesDir, fmt.Sprintf("%03d-bor-%s.rules", priority, shortID))
+}
+
+// sanitizeAlphanumeric returns s with all non-alphanumeric characters removed.
+func sanitizeAlphanumeric(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // SyncPolkitRules atomically writes the polkit rules file at rulesPath.

@@ -5,6 +5,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func TestAuthService_GenerateAndValidateToken(t *testing.T) {
 		t.Fatal("generateToken() returned empty token")
 	}
 
-	claims, err := authSvc.ValidateToken(token)
+	claims, err := authSvc.ValidateToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("ValidateToken() error = %v", err)
 	}
@@ -45,7 +46,7 @@ func TestAuthService_GenerateAndValidateToken(t *testing.T) {
 func TestAuthService_ValidateToken_InvalidToken(t *testing.T) {
 	authSvc := &AuthService{jwtSecret: "test-secret-key"}
 
-	_, err := authSvc.ValidateToken("invalid-token")
+	_, err := authSvc.ValidateToken(context.Background(), "invalid-token")
 	if err == nil {
 		t.Fatal("ValidateToken() should return error for invalid token")
 	}
@@ -65,7 +66,7 @@ func TestAuthService_ValidateToken_WrongSecret(t *testing.T) {
 		t.Fatalf("generateToken() error = %v", err)
 	}
 
-	_, err = authSvc2.ValidateToken(token)
+	_, err = authSvc2.ValidateToken(context.Background(), token)
 	if err == nil {
 		t.Fatal("ValidateToken() should return error for wrong secret")
 	}
@@ -92,7 +93,7 @@ func TestAuthService_ValidateToken_ExpiredToken(t *testing.T) {
 		t.Fatalf("failed to create expired token: %v", err)
 	}
 
-	_, err = authSvc.ValidateToken(tokenString)
+	_, err = authSvc.ValidateToken(context.Background(), tokenString)
 	if err == nil {
 		t.Fatal("ValidateToken() should return error for expired token")
 	}
@@ -112,7 +113,7 @@ func TestAuthService_ValidateToken_WrongSigningMethod(t *testing.T) {
 	})
 	tokenString, _ := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
 
-	_, err := authSvc.ValidateToken(tokenString)
+	_, err := authSvc.ValidateToken(context.Background(), tokenString)
 	if err == nil {
 		t.Fatal("ValidateToken() should reject tokens with non-HMAC signing method")
 	}

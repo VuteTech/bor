@@ -174,6 +174,17 @@ func (h *NodeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Revoke the node's certificate before deleting the record so the cert
+	// cannot be reused (the DB record that app-level checks rely on is gone,
+	// but the cert remains cryptographically valid until its 90-day expiry).
+	if h.enrollSvc != nil && node.CertSerial != nil && *node.CertSerial != "" {
+		if err := h.enrollSvc.RevokeCertificate(r.Context(), id, *node.CertSerial, "node deleted"); err != nil {
+			log.Printf("Failed to revoke certificate for node %s before delete: %v", id, err) //nolint:gosec // id comes from URL path parameter
+			http.Error(w, `{"error":"failed to revoke node certificate"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err := h.nodeSvc.DeleteNode(r.Context(), id); err != nil {
 		log.Printf("Failed to delete node %s: %v", id, err) //nolint:gosec // id comes from URL path parameter
 		http.Error(w, `{"error":"failed to delete node"}`, http.StatusInternalServerError)

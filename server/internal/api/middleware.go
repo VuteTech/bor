@@ -38,7 +38,7 @@ func AuthMiddleware(authSvc *services.AuthService) func(http.Handler) http.Handl
 				return
 			}
 
-			claims, err := authSvc.ValidateToken(token)
+			claims, err := authSvc.ValidateToken(r.Context(), token)
 			if err != nil {
 				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 				return

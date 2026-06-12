@@ -60,7 +60,7 @@ func TestFullTLSChain(t *testing.T) {
 		t.Fatal("CreateCertificateRequest:", err)
 	}
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
-	agentCertPEM, _, _, err := pki.SignCSR(csrPEM, caCert, caKey)
+	agentCertPEM, _, _, err := pki.SignCSR(csrPEM, caCert, caKey, "test-agent")
 	if err != nil {
 		t.Fatal("SignCSR:", err)
 	}

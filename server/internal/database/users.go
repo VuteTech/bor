@@ -7,6 +7,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -197,6 +198,33 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("user not found")
 	}
 
+	return nil
+}
+
+// GetTokensValidAfter returns the token-invalidation cut-off for a user. A zero
+// time means no cut-off is set (all non-expired tokens are valid).
+func (r *UserRepository) GetTokensValidAfter(ctx context.Context, id string) (time.Time, error) {
+	var validAfter sql.NullTime
+	err := r.db.QueryRowContext(ctx, `SELECT tokens_valid_after FROM users WHERE id = $1`, id).Scan(&validAfter)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, fmt.Errorf("user not found")
+		}
+		return time.Time{}, fmt.Errorf("failed to get tokens_valid_after: %w", err)
+	}
+	if validAfter.Valid {
+		return validAfter.Time, nil
+	}
+	return time.Time{}, nil
+}
+
+// InvalidateTokens sets the token-invalidation cut-off for a user to NOW(),
+// revoking every access/refresh token issued before this call.
+func (r *UserRepository) InvalidateTokens(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE users SET tokens_valid_after = NOW() WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to invalidate tokens: %w", err)
+	}
 	return nil
 }
 

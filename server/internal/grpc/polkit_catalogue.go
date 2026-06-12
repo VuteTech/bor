@@ -16,9 +16,9 @@ import (
 // ReportPolkitCatalogue accepts a polkit action catalogue from an agent.
 // The agent calls this at startup after running pkaction --verbose.
 func (s *PolicyServer) ReportPolkitCatalogue(ctx context.Context, req *pb.ReportPolkitCatalogueRequest) (*pb.ReportPolkitCatalogueResponse, error) {
-	clientID := req.GetClientId()
-	if clientID == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "client_id is required")
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
 	}
 
 	if s.polkitRepo == nil {

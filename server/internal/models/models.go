@@ -193,6 +193,25 @@ const (
 	RoleAuditor          = "Auditor"
 )
 
+// builtInRoles is the set of seeded, system-managed roles. Their definitions
+// (permissions) and existence are protected from modification via the API so a
+// delegated role administrator cannot escalate by rewriting or deleting them.
+var builtInRoles = map[string]struct{}{
+	RoleSuperAdmin:       {},
+	RoleOrgAdmin:         {},
+	RolePolicyEditor:     {},
+	RolePolicyReviewer:   {},
+	RoleComplianceViewer: {},
+	RoleAuditor:          {},
+}
+
+// IsBuiltInRole reports whether the given role name is a seeded system role
+// whose permissions and existence must not be altered through the API.
+func IsBuiltInRole(name string) bool {
+	_, ok := builtInRoles[name]
+	return ok
+}
+
 // UserSource constants
 const (
 	SourceLocal = "local"

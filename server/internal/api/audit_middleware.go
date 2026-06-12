@@ -37,15 +37,26 @@ func isSensitiveKey(key string) bool {
 }
 
 // redactBody replaces sensitive values in a decoded JSON map with "[REDACTED]".
-// Operates recursively on nested objects.
+// Operates recursively on nested objects and arrays, so secrets nested inside
+// slices (e.g. {"items":[{"password":"x"}]}) are also redacted.
 func redactBody(m map[string]interface{}) {
 	for k, v := range m {
 		if isSensitiveKey(k) {
 			m[k] = "[REDACTED]"
 			continue
 		}
-		if nested, ok := v.(map[string]interface{}); ok {
-			redactBody(nested)
+		redactValue(v)
+	}
+}
+
+// redactValue recurses into nested maps and arrays, redacting sensitive fields.
+func redactValue(v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		redactBody(val)
+	case []interface{}:
+		for _, item := range val {
+			redactValue(item)
 		}
 	}
 }

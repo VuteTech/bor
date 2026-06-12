@@ -112,6 +112,41 @@ func extractCertSerial(ctx context.Context) (string, error) {
 	return cert.SerialNumber.Text(16), nil
 }
 
+// certCommonName returns the Common Name of the verified TLS client certificate
+// in the context. The CN is the authoritative node identity, assigned by the
+// server at enrollment time.
+func certCommonName(ctx context.Context) (string, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return "", status.Errorf(codes.Unauthenticated, "no peer info")
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
+		return "", status.Errorf(codes.Unauthenticated, "no verified client certificate")
+	}
+	return tlsInfo.State.VerifiedChains[0][0].Subject.CommonName, nil
+}
+
+// requireClientIdentity verifies that the client_id supplied in a request body
+// matches the Common Name of the verified TLS client certificate. This binds
+// the request to the authenticated node and prevents an enrolled agent from
+// impersonating another node by spoofing client_id. It returns the
+// authoritative identity (the cert CN) on success.
+func requireClientIdentity(ctx context.Context, claimedID string) (string, error) {
+	cn, err := certCommonName(ctx)
+	if err != nil {
+		return "", err
+	}
+	if cn == "" {
+		return "", status.Errorf(codes.Unauthenticated, "client certificate has no common name")
+	}
+	if claimedID != "" && claimedID != cn {
+		return "", status.Errorf(codes.PermissionDenied,
+			"client_id %q does not match authenticated certificate identity", claimedID)
+	}
+	return cn, nil
+}
+
 // checkRevocation returns a gRPC Unauthenticated error when the client
 // certificate serial has been revoked.
 func checkRevocation(ctx context.Context, rc RevocationChecker) error {

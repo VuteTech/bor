@@ -8,6 +8,7 @@ package pki
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -237,7 +238,13 @@ func LoadCA(certPath, keyPath string) (*x509.Certificate, crypto.Signer, error) 
 // certificate PEM, the certificate serial number as a hex string, and the
 // NotAfter time. The issued certificate is valid for 90 days with
 // client-auth extended key usage.
-func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey crypto.Signer) (certPEM []byte, serial string, notAfter time.Time, err error) {
+//
+// subjectCN, when non-empty, overrides the Common Name of the issued
+// certificate. The CN is the authoritative node identity used for mTLS
+// authorization, so callers MUST pass the server-assigned node name rather than
+// trusting the CN embedded in the (attacker-controlled) CSR. When subjectCN is
+// empty the CSR's own subject is used (used only by tests / non-agent callers).
+func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey crypto.Signer, subjectCN string) (certPEM []byte, serial string, notAfter time.Time, err error) {
 	block, _ := pem.Decode(csrPEM)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
 		return nil, "", time.Time{}, fmt.Errorf("failed to decode CSR PEM")
@@ -250,15 +257,29 @@ func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey crypto.Signer) (cert
 	if sigErr := csr.CheckSignature(); sigErr != nil {
 		return nil, "", time.Time{}, fmt.Errorf("CSR signature verification failed: %w", sigErr)
 	}
+	// Reject keys weaker than the compliance baseline (FIPS 140-3, BSI
+	// TR-02102, SOG-IS): RSA must be >= 3072 bits, ECDSA must use a NIST
+	// curve P-256 or stronger; Ed25519 is also accepted.
+	if keyErr := validateCSRPublicKey(csr.PublicKey); keyErr != nil {
+		return nil, "", time.Time{}, keyErr
+	}
 
 	serialNumber, randErr := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if randErr != nil {
 		return nil, "", time.Time{}, fmt.Errorf("failed to generate serial number: %w", randErr)
 	}
 
+	// Use the server-assigned CN as the authoritative identity. Any other
+	// subject fields from the CSR are intentionally discarded so an enrolling
+	// agent cannot request an identity (CN) it was not assigned.
+	subject := csr.Subject
+	if subjectCN != "" {
+		subject = pkix.Name{CommonName: subjectCN}
+	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: serialNumber,
-		Subject:      csr.Subject,
+		Subject:      subject,
 		NotBefore:    time.Now().Add(-1 * time.Minute),
 		NotAfter:     time.Now().Add(90 * 24 * time.Hour),
 		// KeyUsageDigitalSignature only — KeyUsageKeyEncipherment is RSA-specific
@@ -280,6 +301,34 @@ func SignCSR(csrPEM []byte, caCert *x509.Certificate, caKey crypto.Signer) (cert
 	serialHex := parsedCert.SerialNumber.Text(16)
 
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), serialHex, tmpl.NotAfter, nil
+}
+
+// minRSABits is the minimum accepted RSA modulus size for issued certificates,
+// per BSI TR-02102 / SOG-IS / FIPS 140-3.
+const minRSABits = 3072
+
+// validateCSRPublicKey enforces the cryptographic strength baseline on the
+// public key contained in a CSR. Weak or non-approved keys are rejected so the
+// internal CA never issues a certificate that violates the compliance targets.
+func validateCSRPublicKey(pub crypto.PublicKey) error {
+	switch key := pub.(type) {
+	case *rsa.PublicKey:
+		if key.N.BitLen() < minRSABits {
+			return fmt.Errorf("RSA key too small: %d bits (minimum %d)", key.N.BitLen(), minRSABits)
+		}
+		return nil
+	case *ecdsa.PublicKey:
+		switch key.Curve {
+		case elliptic.P256(), elliptic.P384(), elliptic.P521():
+			return nil
+		default:
+			return fmt.Errorf("unsupported ECDSA curve: only NIST P-256/P-384/P-521 are permitted")
+		}
+	case ed25519.PublicKey:
+		return nil
+	default:
+		return fmt.Errorf("unsupported public key type %T: only RSA-3072+, ECDSA P-256+, and Ed25519 are permitted", pub)
+	}
 }
 
 // LoadCACertPool loads a CA certificate from the given path and returns

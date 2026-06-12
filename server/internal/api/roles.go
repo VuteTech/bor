@@ -5,7 +5,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -172,6 +174,11 @@ func (h *RoleHandler) Update(w http.ResponseWriter, r *http.Request, id string) 
 		return
 	}
 
+	if models.IsBuiltInRole(role.Name) {
+		http.Error(w, `{"error":"built-in roles cannot be modified"}`, http.StatusForbidden)
+		return
+	}
+
 	var req models.UpdateRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -189,6 +196,16 @@ func (h *RoleHandler) Update(w http.ResponseWriter, r *http.Request, id string) 
 
 // Delete handles DELETE /api/v1/roles/{id}
 func (h *RoleHandler) Delete(w http.ResponseWriter, r *http.Request, id string) {
+	role, err := h.roleRepo.GetByID(r.Context(), id)
+	if err != nil || role == nil {
+		http.Error(w, `{"error":"role not found"}`, http.StatusNotFound)
+		return
+	}
+	if models.IsBuiltInRole(role.Name) {
+		http.Error(w, `{"error":"built-in roles cannot be deleted"}`, http.StatusForbidden)
+		return
+	}
+
 	if err := h.roleRepo.Delete(r.Context(), id); err != nil {
 		log.Printf("Failed to delete role: %v", err)
 		http.Error(w, `{"error":"failed to delete role"}`, http.StatusInternalServerError)
@@ -219,9 +236,26 @@ func (h *RoleHandler) GetRolePermissions(w http.ResponseWriter, r *http.Request,
 
 // SetRolePermissions handles PUT /api/v1/roles/{id}/permissions
 func (h *RoleHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request, roleID string) {
+	role, err := h.roleRepo.GetByID(r.Context(), roleID)
+	if err != nil || role == nil {
+		http.Error(w, `{"error":"role not found"}`, http.StatusNotFound)
+		return
+	}
+	if models.IsBuiltInRole(role.Name) {
+		http.Error(w, `{"error":"permissions of built-in roles cannot be changed"}`, http.StatusForbidden)
+		return
+	}
+
 	var req models.SetRolePermissionsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Privilege-escalation guard: the caller may only grant permissions they
+	// themselves hold.
+	if err := h.ensureCallerHoldsPermissions(r.Context(), req.PermissionIDs); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusForbidden)
 		return
 	}
 
@@ -232,6 +266,42 @@ func (h *RoleHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request,
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ensureCallerHoldsPermissions verifies that every permission ID the caller is
+// about to assign maps to a permission the caller already holds. This prevents
+// a delegated role administrator from escalating by granting permissions beyond
+// their own.
+func (h *RoleHandler) ensureCallerHoldsPermissions(ctx context.Context, permissionIDs []string) error {
+	claims := GetUserFromContext(ctx)
+	if claims == nil {
+		return fmt.Errorf("unauthorized")
+	}
+	callerPerms, err := callerEffectivePermissions(ctx, h.roleRepo, h.bindingRepo, claims.UserID)
+	if err != nil {
+		log.Printf("ensureCallerHoldsPermissions: %v", err)
+		return fmt.Errorf("failed to verify caller permissions")
+	}
+	// Map requested permission IDs to their canonical resource:action key.
+	allPerms, err := h.permRepo.List(ctx)
+	if err != nil {
+		log.Printf("ensureCallerHoldsPermissions: list permissions: %v", err)
+		return fmt.Errorf("failed to verify caller permissions")
+	}
+	byID := make(map[string]string, len(allPerms))
+	for _, p := range allPerms {
+		byID[p.ID] = permKey(p.Resource, p.Action)
+	}
+	for _, id := range permissionIDs {
+		key, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("unknown permission")
+		}
+		if _, held := callerPerms[key]; !held {
+			return fmt.Errorf("cannot grant a permission you do not hold")
+		}
+	}
+	return nil
 }
 
 // ListAllPermissions handles GET /api/v1/permissions
