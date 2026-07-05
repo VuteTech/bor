@@ -5,14 +5,14 @@ go 1.25.0
 require (
 	github.com/VuteTech/Bor/server v0.0.0
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	google.golang.org/grpc v1.81.0
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
@@ -23,7 +23,7 @@ require (
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 )
 
 replace github.com/VuteTech/Bor/server => ../server
