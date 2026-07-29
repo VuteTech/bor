@@ -139,7 +139,8 @@ jobs:
           cache-dependency-path: server/web/frontend/package-lock.json
 
       - name: Install nfpm
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        # Pinned: nfpm >= v2.47.0 requires Go 1.26, newer than our toolchain.
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
 
       - name: Determine version
         id: version
