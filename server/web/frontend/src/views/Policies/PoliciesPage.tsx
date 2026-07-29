@@ -2,12 +2,13 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   PageSection,
   Title,
   Button,
   Alert,
+  AlertActionCloseButton,
   Spinner,
   Flex,
   FlexItem,
@@ -27,16 +28,20 @@ import {
   DropdownList,
   Modal,
   ModalVariant,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
   Form,
   FormGroup,
   TextInput,
   ActionGroup,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
+import { Table, Thead, Tr, Th, Tbody, Td, ActionsColumn, IAction } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
-import PencilAltIcon from "@patternfly/react-icons/dist/esm/icons/pencil-alt-icon";
+import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-icon";
 
-import { fetchAllPolicies, deletePolicy, Policy } from "../../apiClient/policiesApi";
+import { fetchAllPolicies, deletePolicy, setPolicyState, Policy } from "../../apiClient/policiesApi";
+import { LiveAlert } from "../../components/LiveAlert";
 import { PolicyDetailsModal } from "./PolicyDetailsModal";
 
 /* ── Filter options ── */
@@ -52,6 +57,50 @@ const statusLabelColor = (status: string): "green" | "red" | "blue" | "orange" |
     default:         return "grey";
   }
 };
+
+/* ── Policy lifecycle actions ── */
+
+type LifecycleAction = "release" | "unpublish" | "archive" | "restore";
+
+const LIFECYCLE_TARGET: Record<LifecycleAction, string> = {
+  release: "released",
+  unpublish: "draft",
+  archive: "archived",
+  restore: "draft",
+};
+
+const LIFECYCLE_DONE: Record<LifecycleAction, string> = {
+  release: "released",
+  unpublish: "unpublished",
+  archive: "archived",
+  restore: "restored to draft",
+};
+
+// Which states a lifecycle action can start from, and whether enabled
+// bindings block it (mirrors the server-side transition rules).
+const LIFECYCLE_FROM: Record<LifecycleAction, Policy["state"]> = {
+  release: "draft",
+  unpublish: "released",
+  archive: "released",
+  restore: "archived",
+};
+
+const LIFECYCLE_BLOCKED_BY_BINDINGS: Record<LifecycleAction, boolean> = {
+  release: false,
+  unpublish: true,
+  archive: true,
+  restore: true,
+};
+
+const isEligible = (p: Policy, action: LifecycleAction): boolean =>
+  p.state === LIFECYCLE_FROM[action] &&
+  (!LIFECYCLE_BLOCKED_BY_BINDINGS[action] || (p.enabled_bindings_count ?? 0) === 0);
+
+interface ActionFeedback {
+  variant: "success" | "danger" | "warning";
+  title: string;
+  details?: string[];
+}
 
 export const PoliciesPage: React.FC = () => {
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -85,9 +134,22 @@ export const PoliciesPage: React.FC = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const loadPolicies = useCallback(async () => {
+  // Lifecycle actions (release/unpublish/archive/restore)
+  const [confirmLifecycle, setConfirmLifecycle] = useState<{
+    action: LifecycleAction;
+    policies: Policy[];
+    skipped: number;
+  } | null>(null);
+  const [lifecycleLoading, setLifecycleLoading] = useState(false);
+  const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
+  // Element that triggered the confirm modal, to restore focus on close (WCAG)
+  const confirmTriggerRef = useRef<HTMLElement | null>(null);
+
+  // showSpinner only on initial load; refreshes after actions keep the table
+  // (and the aria-live feedback region) mounted.
+  const loadPolicies = useCallback(async (showSpinner = false) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       setError(null);
       const data = await fetchAllPolicies();
       setPolicies(data);
@@ -99,7 +161,7 @@ export const PoliciesPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadPolicies();
+    loadPolicies(true);
   }, [loadPolicies]);
 
   /* ── Selection ── */
@@ -152,6 +214,66 @@ export const PoliciesPage: React.FC = () => {
     setSelectedPolicy(null);
   };
 
+  /* ── Lifecycle actions (release / unpublish / archive / restore) ── */
+
+  // Release and archive are outward-facing → confirm first. Unpublish and
+  // restore run immediately; the server rejects them when bindings exist.
+  const requestLifecycle = (action: LifecycleAction, targets: Policy[], skipped = 0) => {
+    if (targets.length === 0) return;
+    if (action === "release" || action === "archive") {
+      confirmTriggerRef.current = document.activeElement as HTMLElement | null;
+      setConfirmLifecycle({ action, policies: targets, skipped });
+    } else {
+      runLifecycle(action, targets, skipped);
+    }
+  };
+
+  const closeConfirmLifecycle = () => {
+    setConfirmLifecycle(null);
+    confirmTriggerRef.current?.focus();
+    confirmTriggerRef.current = null;
+  };
+
+  const runLifecycle = async (action: LifecycleAction, targets: Policy[], skipped = 0) => {
+    setLifecycleLoading(true);
+    setFeedback(null);
+    const results = await Promise.allSettled(
+      targets.map((p) => setPolicyState(p.id, { state: LIFECYCLE_TARGET[action] })),
+    );
+    setLifecycleLoading(false);
+    setConfirmLifecycle(null);
+    confirmTriggerRef.current = null;
+
+    const failures = results
+      .map((r, i) => ({ r, p: targets[i] }))
+      .filter((x): x is { r: PromiseRejectedResult; p: Policy } => x.r.status === "rejected");
+    const okCount = targets.length - failures.length;
+
+    const noun = (n: number) => `${n} ${n === 1 ? "policy" : "policies"}`;
+    const skippedSuffix = skipped > 0 ? ` (${skipped} not eligible, skipped)` : "";
+    if (failures.length === 0) {
+      const what = targets.length === 1 ? `"${targets[0].name}"` : noun(okCount);
+      setFeedback({
+        variant: "success",
+        title: `${what.charAt(0).toUpperCase() + what.slice(1)} ${LIFECYCLE_DONE[action]}${skippedSuffix}`,
+      });
+    } else {
+      setFeedback({
+        variant: okCount > 0 ? "warning" : "danger",
+        title:
+          okCount > 0
+            ? `${noun(okCount)} ${LIFECYCLE_DONE[action]}, ${failures.length} failed${skippedSuffix}`
+            : `Failed to ${action} ${noun(failures.length)}${skippedSuffix}`,
+        details: failures.map(
+          ({ r, p }) => `${p.name}: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+        ),
+      });
+    }
+
+    setSelectedIds(new Set());
+    loadPolicies();
+  };
+
   /* ── Delete (type-to-confirm) ── */
   const openDeleteModal = (ids: string[]) => {
     setDeleteTargetIds(ids);
@@ -184,6 +306,47 @@ export const PoliciesPage: React.FC = () => {
     } finally {
       setDeleteLoading(false);
     }
+  };
+
+  /* ── Row actions ── */
+  const rowActions = (policy: Policy): IAction[] => {
+    const enabled = policy.enabled_bindings_count ?? 0;
+    const bindingsBlock = (verb: string) =>
+      enabled > 0
+        ? {
+            isAriaDisabled: true,
+            tooltipProps: {
+              content: `Cannot ${verb}: ${enabled} enabled binding${enabled === 1 ? "" : "s"} exist. Disable the bindings first.`,
+            },
+          }
+        : {};
+
+    const items: IAction[] = [];
+    if (policy.state === "draft") {
+      items.push({ title: "Release", onClick: () => requestLifecycle("release", [policy]) });
+    }
+    if (policy.state === "released") {
+      items.push({
+        title: "Unpublish",
+        onClick: () => requestLifecycle("unpublish", [policy]),
+        ...bindingsBlock("unpublish"),
+      });
+      items.push({
+        title: "Archive",
+        onClick: () => requestLifecycle("archive", [policy]),
+        ...bindingsBlock("archive"),
+      });
+    }
+    if (policy.state === "archived") {
+      items.push({ title: "Restore to draft", onClick: () => requestLifecycle("restore", [policy]) });
+    }
+    items.push({
+      title: policy.state === "draft" ? "Edit" : "View details",
+      onClick: () => handleEdit(policy),
+    });
+    items.push({ isSeparator: true });
+    items.push({ title: "Delete", isDanger: true, onClick: () => openDeleteModal([policy.id]) });
+    return items;
   };
 
   /* ── Filter helpers ── */
@@ -238,6 +401,23 @@ export const PoliciesPage: React.FC = () => {
             </Alert>
           )}
         </div>
+
+        {/* Lifecycle action feedback */}
+        <LiveAlert
+          message={feedback?.title ?? null}
+          variant={feedback?.variant ?? "success"}
+          isInline
+          actionClose={<AlertActionCloseButton onClose={() => setFeedback(null)} />}
+          style={{ marginBottom: "1rem" }}
+        >
+          {feedback?.details && (
+            <ul>
+              {feedback.details.map((d) => (
+                <li key={d}>{d}</li>
+              ))}
+            </ul>
+          )}
+        </LiveAlert>
 
         {/* Toolbar with filters + bulk Actions */}
         <Toolbar clearAllFilters={() => {
@@ -385,6 +565,26 @@ export const PoliciesPage: React.FC = () => {
                   )}
                 >
                   <DropdownList>
+                    {(["release", "unpublish", "archive"] as const).map((action) => {
+                      const eligible = selectedPolicies.filter((p) => isEligible(p, action));
+                      const label = action.charAt(0).toUpperCase() + action.slice(1);
+                      return (
+                        <DropdownItem
+                          key={action}
+                          isDisabled={eligible.length === 0}
+                          description={
+                            eligible.length < selectedPolicies.length
+                              ? `${eligible.length} of ${selectedPolicies.length} selected eligible`
+                              : undefined
+                          }
+                          onClick={() =>
+                            requestLifecycle(action, eligible, selectedPolicies.length - eligible.length)
+                          }
+                        >
+                          {label}
+                        </DropdownItem>
+                      );
+                    })}
                     <DropdownItem
                       key="edit"
                       isDisabled={selectedIds.size !== 1}
@@ -476,18 +676,32 @@ export const PoliciesPage: React.FC = () => {
                       </Label>
                     )}
                   </Td>
-                  <Td dataLabel="Bindings">0</Td>
+                  <Td dataLabel="Bindings">
+                    {policy.bindings_count ?? 0}
+                    {(policy.enabled_bindings_count ?? 0) > 0 && (
+                      <span style={{ fontSize: "0.8rem", color: "#6a6e73" }}>
+                        {" "}({policy.enabled_bindings_count} enabled)
+                      </span>
+                    )}
+                  </Td>
                   <Td dataLabel="Last Updated">
                     {new Date(policy.updated_at).toLocaleString()}
                   </Td>
-                  <Td dataLabel="Actions">
-                    <Button
-                      variant="plain"
-                      aria-label={`Edit policy ${policy.name}`}
-                      onClick={() => handleEdit(policy)}
-                    >
-                      <PencilAltIcon />
-                    </Button>
+                  <Td dataLabel="Actions" isActionCell>
+                    <ActionsColumn
+                      items={rowActions(policy)}
+                      actionsToggle={({ onToggle, isOpen, isDisabled, toggleRef }) => (
+                        <MenuToggle
+                          ref={toggleRef}
+                          aria-label={`Actions for policy ${policy.name}`}
+                          variant="plain"
+                          onClick={onToggle}
+                          isExpanded={isOpen}
+                          isDisabled={isDisabled}
+                          icon={<EllipsisVIcon />}
+                        />
+                      )}
+                    />
                   </Td>
                 </Tr>
               ))}
@@ -508,11 +722,14 @@ export const PoliciesPage: React.FC = () => {
       {/* ── Delete Confirmation Modal ── */}
       <Modal
         variant={ModalVariant.small}
-        title={`Delete Polic${deleteTargetIds.length !== 1 ? "ies" : "y"}`}
-        titleIconVariant="warning"
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
       >
+        <ModalHeader
+          title={`Delete Polic${deleteTargetIds.length !== 1 ? "ies" : "y"}`}
+          titleIconVariant="warning"
+        />
+        <ModalBody>
         <Form>
           <p>
             {deleteTargetIds.length === 1 ? (
@@ -552,6 +769,67 @@ export const PoliciesPage: React.FC = () => {
             </Button>
           </ActionGroup>
         </Form>
+        </ModalBody>
+      </Modal>
+
+      {/* ── Release / Archive Confirmation Modal ── */}
+      <Modal
+        variant={ModalVariant.small}
+        isOpen={confirmLifecycle !== null}
+        onClose={closeConfirmLifecycle}
+      >
+        <ModalHeader
+          title={
+            confirmLifecycle
+              ? `${confirmLifecycle.action === "release" ? "Release" : "Archive"} ${
+                  confirmLifecycle.policies.length === 1
+                    ? `"${confirmLifecycle.policies[0].name}"`
+                    : `${confirmLifecycle.policies.length} policies`
+                }?`
+              : ""
+          }
+          titleIconVariant={confirmLifecycle?.action === "archive" ? "warning" : "info"}
+        />
+        <ModalBody>
+          {confirmLifecycle && (
+            <>
+              <p>
+                {confirmLifecycle.action === "release"
+                  ? "Released policies become available for binding and are delivered to agents on all bound node groups."
+                  : "Archived policies are hidden from new bindings. You can restore an archived policy to draft later."}
+              </p>
+              {confirmLifecycle.policies.length > 1 && (
+                <ul>
+                  {confirmLifecycle.policies.map((p) => (
+                    <li key={p.id}>{p.name}</li>
+                  ))}
+                </ul>
+              )}
+              {confirmLifecycle.skipped > 0 && (
+                <p style={{ color: "#6a6e73", fontSize: "0.9rem" }}>
+                  {confirmLifecycle.skipped} selected {confirmLifecycle.skipped === 1 ? "policy is" : "policies are"}{" "}
+                  not eligible and will be skipped.
+                </p>
+              )}
+            </>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant={confirmLifecycle?.action === "archive" ? "warning" : "primary"}
+            isLoading={lifecycleLoading}
+            isDisabled={lifecycleLoading || !confirmLifecycle}
+            onClick={() =>
+              confirmLifecycle &&
+              runLifecycle(confirmLifecycle.action, confirmLifecycle.policies, confirmLifecycle.skipped)
+            }
+          >
+            {confirmLifecycle?.action === "release" ? "Release" : "Archive"}
+          </Button>
+          <Button variant="link" onClick={closeConfirmLifecycle} isDisabled={lifecycleLoading}>
+            Cancel
+          </Button>
+        </ModalFooter>
       </Modal>
     </>
   );

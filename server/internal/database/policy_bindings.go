@@ -161,6 +161,35 @@ func (r *PolicyBindingRepository) GetEnabledGroupIDsByPolicyID(ctx context.Conte
 	return ids, rows.Err()
 }
 
+// BindingCounts holds per-policy binding tallies.
+type BindingCounts struct {
+	Total   int
+	Enabled int
+}
+
+// CountsByPolicy returns total and enabled binding counts grouped by policy ID.
+// Policies with no bindings are absent from the map.
+func (r *PolicyBindingRepository) CountsByPolicy(ctx context.Context) (map[string]BindingCounts, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT policy_id, COUNT(*), COUNT(*) FILTER (WHERE state = 'enabled')
+		 FROM policy_bindings GROUP BY policy_id`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count bindings by policy: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]BindingCounts)
+	for rows.Next() {
+		var policyID string
+		var c BindingCounts
+		if err := rows.Scan(&policyID, &c.Total, &c.Enabled); err != nil {
+			return nil, fmt.Errorf("failed to scan binding counts: %w", err)
+		}
+		counts[policyID] = c
+	}
+	return counts, rows.Err()
+}
+
 // CountEnabledByPolicyID returns the count of enabled bindings for a given policy
 func (r *PolicyBindingRepository) CountEnabledByPolicyID(ctx context.Context, policyID string) (int, error) {
 	var count int

@@ -29,6 +29,9 @@ export interface Policy {
   content: string;
   version: number;
   state: "draft" | "released" | "archived";
+  /** Total / enabled binding counts; populated by the list endpoint. */
+  bindings_count?: number;
+  enabled_bindings_count?: number;
   deprecated_at?: string | null;
   deprecation_message?: string | null;
   replacement_policy_id?: string | null;

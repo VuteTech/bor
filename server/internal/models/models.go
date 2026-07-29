@@ -34,13 +34,18 @@ type Policy struct {
 	// Priority is the maximum binding priority across all enabled bindings for
 	// this policy. Only populated when fetched via node-group queries
 	// (ListPoliciesByGroupIDs). Zero for all other fetches.
-	Priority            int        `json:"priority" db:"priority"`
-	DeprecatedAt        *time.Time `json:"deprecated_at,omitempty" db:"deprecated_at"`
-	DeprecationMessage  *string    `json:"deprecation_message,omitempty" db:"deprecation_message"`
-	ReplacementPolicyID *string    `json:"replacement_policy_id,omitempty" db:"replacement_policy_id"`
-	CreatedBy           string     `json:"created_by" db:"created_by"`
-	CreatedAt           time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at"`
+	Priority int `json:"priority" db:"priority"`
+	// BindingsCount / EnabledBindingsCount are the number of bindings (total /
+	// enabled) referencing this policy. Only populated by ListAllPolicies
+	// (admin UI listing). Zero for all other fetches.
+	BindingsCount        int        `json:"bindings_count" db:"-"`
+	EnabledBindingsCount int        `json:"enabled_bindings_count" db:"-"`
+	DeprecatedAt         *time.Time `json:"deprecated_at,omitempty" db:"deprecated_at"`
+	DeprecationMessage   *string    `json:"deprecation_message,omitempty" db:"deprecation_message"`
+	ReplacementPolicyID  *string    `json:"replacement_policy_id,omitempty" db:"replacement_policy_id"`
+	CreatedBy            string     `json:"created_by" db:"created_by"`
+	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // CreatePolicyRequest represents a request to create a policy
