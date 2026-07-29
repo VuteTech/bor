@@ -21,6 +21,7 @@ type Config struct {
 	Thunderbird ThunderbirdConfig `yaml:"thunderbird"`
 	Chrome      ChromeConfig      `yaml:"chrome"`
 	Edge        EdgeConfig        `yaml:"edge"`
+	Firewalld   FirewalldConfig   `yaml:"firewalld"`
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
@@ -72,6 +73,12 @@ type ThunderbirdConfig struct {
 // /run/host/etc/opt/edge/policies/ into the sandbox automatically.
 type EdgeConfig struct {
 	EdgePoliciesPath string `yaml:"edge_policies_path"`
+}
+
+// FirewalldConfig holds firewalld zone management settings. The agent renders
+// managed zone XML into ZonesDir and reloads firewalld.
+type FirewalldConfig struct {
+	ZonesDir string `yaml:"zones_dir"`
 }
 
 // ChromeConfig holds Chrome/Chromium policy directory settings.
@@ -159,6 +166,9 @@ func DefaultConfig() *Config {
 		},
 		Edge: EdgeConfig{
 			EdgePoliciesPath: "/etc/opt/edge/policies/managed",
+		},
+		Firewalld: FirewalldConfig{
+			ZonesDir: "/etc/firewalld/zones",
 		},
 		KConfig: KConfigConfig{
 			ConfigPath: "/etc/bor/xdg",

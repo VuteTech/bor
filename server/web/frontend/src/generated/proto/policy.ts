@@ -9,6 +9,7 @@ import type { ChromePolicy } from "./chrome";
 import type { DConfPolicy } from "./dconf";
 import type { EdgePolicy } from "./edge";
 import type { FirefoxPolicy } from "./firefox";
+import type { FirewalldPolicy } from "./firewalld";
 import type { KConfigPolicy } from "./kconfig";
 import type { PackagePolicy } from "./package";
 import type { PolkitPolicy } from "./polkit";
@@ -62,8 +63,9 @@ export interface Policy {
   polkit_policy?: PolkitPolicy | undefined;
   package_policy?: PackagePolicy | undefined;
   thunderbird_policy?: ThunderbirdPolicy | undefined;
-  edge_policy?:
-    | EdgePolicy
+  edge_policy?: EdgePolicy | undefined;
+  firewalld_policy?:
+    | FirewalldPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority

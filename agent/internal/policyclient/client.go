@@ -113,6 +113,7 @@ type PolicyInfo struct {
 	PackagePolicy     *pb.PackagePolicy     // populated from typed_content for Package type
 	ThunderbirdPolicy *pb.ThunderbirdPolicy // populated from typed_content for Thunderbird type
 	EdgePolicy        *pb.EdgePolicy        // populated from typed_content for Edge type
+	FirewalldPolicy   *pb.FirewalldPolicy   // populated from typed_content for Firewalld type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -313,6 +314,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if edgep := p.GetEdgePolicy(); edgep != nil {
 				pi.EdgePolicy = edgep
+			}
+			if fwp := p.GetFirewalldPolicy(); fwp != nil {
+				pi.FirewalldPolicy = fwp
 			}
 		}
 
