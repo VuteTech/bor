@@ -49,7 +49,13 @@ type COPRInfoHandler struct {
 // NewCOPRInfoHandler constructs a COPRInfoHandler.
 func NewCOPRInfoHandler() *COPRInfoHandler {
 	return &COPRInfoHandler{
-		client: &http.Client{Timeout: 20 * time.Second},
+		client: &http.Client{
+			Timeout: 20 * time.Second,
+			CheckRedirect: allowlistedRedirect(
+				"copr.fedorainfracloud.org",
+				"download.copr.fedorainfracloud.org",
+			),
+		},
 	}
 }
 
