@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -119,7 +120,7 @@ func (s *MFAService) GenerateSetupQR(ctx context.Context, userID, username strin
 		return nil, fmt.Errorf("MFA is already enabled")
 	}
 
-	secret, err := s.decryptSecret(row.TOTPSecret)
+	secret, err := s.decryptSecret(ctx, row)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +166,7 @@ func (s *MFAService) FinishSetup(ctx context.Context, userID, code string) (*mod
 		return nil, fmt.Errorf("mfa setup not started")
 	}
 
-	secret, err := s.decryptSecret(row.TOTPSecret)
+	secret, err := s.decryptSecret(ctx, row)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +227,7 @@ func (s *MFAService) VerifyCode(ctx context.Context, userID, code string) error 
 		return fmt.Errorf("mfa not enabled")
 	}
 
-	secret, err := s.decryptSecret(row.TOTPSecret)
+	secret, err := s.decryptSecret(ctx, row)
 	if err != nil {
 		return err
 	}
@@ -293,17 +294,32 @@ func (s *MFAService) UpdateMFASettings(ctx context.Context, settings *models.MFA
 	return s.settingsRepo.Set(ctx, "totp_algorithm", alg)
 }
 
-func (s *MFAService) decryptSecret(encSecret string) (string, error) {
+// decryptSecret decrypts a stored TOTP secret. Secrets still encrypted with
+// the legacy (pre-HKDF) key are transparently re-encrypted with the current
+// key, so the legacy derivation can be removed once all rows have migrated.
+func (s *MFAService) decryptSecret(ctx context.Context, row *database.UserMFARow) (string, error) {
 	// Try the current HKDF-derived key first.
-	b, err := aesDecrypt(s.aesKey, encSecret)
+	b, err := aesDecrypt(s.aesKey, row.TOTPSecret)
 	if err == nil {
 		return string(b), nil
 	}
 	// Fall back to the legacy SHA-256-derived key for secrets encrypted
 	// before the HKDF migration.
-	b, legacyErr := aesDecrypt(s.legacyAESKey, encSecret)
+	b, legacyErr := aesDecrypt(s.legacyAESKey, row.TOTPSecret)
 	if legacyErr != nil {
 		return "", fmt.Errorf("decrypt totp secret: %w", err)
+	}
+	// Migrate on read. Failures are non-fatal: the secret still decrypts via
+	// the legacy key, and the next read retries the migration.
+	if s.mfaRepo != nil {
+		if enc, encErr := aesEncrypt(s.aesKey, b); encErr == nil {
+			if upErr := s.mfaRepo.UpdateSecret(ctx, row.UserID, enc); upErr != nil {
+				log.Printf("mfa: re-encrypting TOTP secret for user %s failed: %v", row.UserID, upErr)
+			} else {
+				row.TOTPSecret = enc
+				log.Printf("mfa: TOTP secret for user %s re-encrypted with current key", row.UserID)
+			}
+		}
 	}
 	return string(b), nil
 }

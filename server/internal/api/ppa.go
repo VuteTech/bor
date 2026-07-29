@@ -37,7 +37,13 @@ type PPAInfoHandler struct {
 // NewPPAInfoHandler constructs a PPAInfoHandler with a conservative HTTP client.
 func NewPPAInfoHandler() *PPAInfoHandler {
 	return &PPAInfoHandler{
-		client: &http.Client{Timeout: 20 * time.Second},
+		client: &http.Client{
+			Timeout: 20 * time.Second,
+			CheckRedirect: allowlistedRedirect(
+				"api.launchpad.net",
+				"keyserver.ubuntu.com",
+			),
+		},
 	}
 }
 
@@ -89,8 +95,9 @@ func (h *PPAInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // fetchFingerprint calls the Launchpad REST API to retrieve the PPA's signing
 // key fingerprint.
 func (h *PPAInfoHandler) fetchFingerprint(owner, ppa string) (string, error) {
-	// owner and ppa are validated by ppaNameRE before reaching here, so SSRF is
-	// not possible — the URL cannot be redirected to an internal address.
+	// owner and ppa are validated by ppaNameRE (no slashes/dots-only), so the
+	// request host is fixed. Redirect-based SSRF is blocked separately by the
+	// client's allowlistedRedirect policy.
 	url := fmt.Sprintf("https://api.launchpad.net/1.0/~%s/+archive/%s", owner, ppa) //nolint:gosec // G704: URL built from allowlisted input
 	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)                   //nolint:gosec // G704: same
 	if err != nil {
