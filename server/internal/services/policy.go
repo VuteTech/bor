@@ -51,9 +51,24 @@ func (s *PolicyService) ListPoliciesForNodeGroups(ctx context.Context, groupIDs 
 	return s.bindingRepo.ListPoliciesByGroupIDs(ctx, groupIDs)
 }
 
-// ListAllPolicies returns all policies
+// ListAllPolicies returns all policies with their binding counts populated.
 func (s *PolicyService) ListAllPolicies(ctx context.Context) ([]*models.Policy, error) {
-	return s.policyRepo.ListAll(ctx)
+	policies, err := s.policyRepo.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.bindingRepo != nil {
+		counts, err := s.bindingRepo.CountsByPolicy(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count bindings: %w", err)
+		}
+		for _, p := range policies {
+			c := counts[p.ID]
+			p.BindingsCount = c.Total
+			p.EnabledBindingsCount = c.Enabled
+		}
+	}
+	return policies, nil
 }
 
 // GetPolicy retrieves a policy by ID
@@ -131,6 +146,27 @@ func (s *PolicyService) UpdatePolicy(ctx context.Context, id string, req *models
 	return policy, nil
 }
 
+// validateStateTransition enforces the policy lifecycle state machine:
+// DRAFT → RELEASED → ARCHIVED, with RELEASED → DRAFT (unpublish) and
+// ARCHIVED → DRAFT (restore) as the backward edges.
+func validateStateTransition(current, target string) error {
+	switch target {
+	case models.PolicyStateDraft:
+		if current != models.PolicyStateReleased && current != models.PolicyStateArchived {
+			return fmt.Errorf("only released or archived policies can be reverted to draft (current state: %s)", current)
+		}
+	case models.PolicyStateReleased:
+		if current != models.PolicyStateDraft {
+			return fmt.Errorf("only draft policies can be released (current state: %s)", current)
+		}
+	case models.PolicyStateArchived:
+		if current != models.PolicyStateReleased {
+			return fmt.Errorf("only released policies can be archived (current state: %s)", current)
+		}
+	}
+	return nil
+}
+
 // SetPolicyState changes the state of a policy with validation
 func (s *PolicyService) SetPolicyState(ctx context.Context, id, newState string) (*models.Policy, error) {
 	if !isValidState(newState) {
@@ -145,13 +181,13 @@ func (s *PolicyService) SetPolicyState(ctx context.Context, id, newState string)
 		return nil, fmt.Errorf("policy not found")
 	}
 
-	// Validate state transitions
+	if err := validateStateTransition(policy.State, newState); err != nil {
+		return nil, err
+	}
+
 	switch newState {
 	case models.PolicyStateDraft:
-		// Unpublish: RELEASED → DRAFT (only if no enabled bindings)
-		if policy.State != models.PolicyStateReleased {
-			return nil, fmt.Errorf("only released policies can be unpublished (current state: %s)", policy.State)
-		}
+		// Unpublish/restore only when no enabled bindings exist.
 		if s.bindingRepo != nil {
 			count, err := s.bindingRepo.CountEnabledByPolicyID(ctx, id)
 			if err != nil {
@@ -163,9 +199,6 @@ func (s *PolicyService) SetPolicyState(ctx context.Context, id, newState string)
 		}
 
 	case models.PolicyStateReleased:
-		if policy.State != models.PolicyStateDraft {
-			return nil, fmt.Errorf("only draft policies can be released (current state: %s)", policy.State)
-		}
 		// Validate policy content for release
 		if policy.Name == "" {
 			return nil, fmt.Errorf("policy name is required for release")
@@ -181,9 +214,6 @@ func (s *PolicyService) SetPolicyState(ctx context.Context, id, newState string)
 		}
 
 	case models.PolicyStateArchived:
-		if policy.State != models.PolicyStateReleased {
-			return nil, fmt.Errorf("only released policies can be archived (current state: %s)", policy.State)
-		}
 		// Check for enabled bindings
 		if s.bindingRepo != nil {
 			count, err := s.bindingRepo.CountEnabledByPolicyID(ctx, id)

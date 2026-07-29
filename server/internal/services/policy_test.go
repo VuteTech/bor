@@ -78,6 +78,38 @@ func TestPolicyService_SetPolicyState_InvalidState(t *testing.T) {
 	}
 }
 
+func TestValidateStateTransition(t *testing.T) {
+	tests := []struct {
+		current string
+		target  string
+		allowed bool
+	}{
+		// Forward edges
+		{models.PolicyStateDraft, models.PolicyStateReleased, true},
+		{models.PolicyStateReleased, models.PolicyStateArchived, true},
+		// Backward edges: unpublish and restore
+		{models.PolicyStateReleased, models.PolicyStateDraft, true},
+		{models.PolicyStateArchived, models.PolicyStateDraft, true},
+		// Forbidden transitions
+		{models.PolicyStateDraft, models.PolicyStateDraft, false},
+		{models.PolicyStateDraft, models.PolicyStateArchived, false},
+		{models.PolicyStateReleased, models.PolicyStateReleased, false},
+		{models.PolicyStateArchived, models.PolicyStateReleased, false},
+		{models.PolicyStateArchived, models.PolicyStateArchived, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.current+"->"+tt.target, func(t *testing.T) {
+			err := validateStateTransition(tt.current, tt.target)
+			if tt.allowed && err != nil {
+				t.Errorf("transition %s -> %s should be allowed, got error: %v", tt.current, tt.target, err)
+			}
+			if !tt.allowed && err == nil {
+				t.Errorf("transition %s -> %s should be rejected, got nil error", tt.current, tt.target)
+			}
+		})
+	}
+}
+
 func TestPolicyService_SetPolicyState_DraftIsValidTarget(t *testing.T) {
 	// "draft" is now a valid target state for the unpublish transition (RELEASED→DRAFT).
 	// It should pass basic state validation.

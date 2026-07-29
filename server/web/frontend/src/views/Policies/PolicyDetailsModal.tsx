@@ -3259,54 +3259,12 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           </FormSelect>
         </FormGroup>
         <FormGroup label="State" fieldId="policy-status">
-          <Flex alignItems={{ default: "alignItemsCenter" }} spaceItems={{ default: "spaceItemsSm" }}>
-            <FlexItem>
-              <Label
-                color={status === "released" ? "green" : status === "archived" ? "red" : "blue"}
-              >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </Label>
-            </FlexItem>
-            {isEditMode && status === "draft" && (
-              <FlexItem>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => handleStateTransition("released")}
-                  isLoading={saving}
-                  isDisabled={saving || !name.trim() || !policyType || !contentRaw.trim()}
-                >
-                  Release
-                </Button>
-              </FlexItem>
-            )}
-            {isEditMode && status === "released" && (
-              <>
-                <FlexItem>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleStateTransition("draft")}
-                    isLoading={saving}
-                    isDisabled={saving}
-                  >
-                    Unpublish
-                  </Button>
-                </FlexItem>
-                <FlexItem>
-                  <Button
-                    variant="warning"
-                    size="sm"
-                    onClick={() => handleStateTransition("archived")}
-                    isLoading={saving}
-                    isDisabled={saving}
-                  >
-                    Archive
-                  </Button>
-                </FlexItem>
-              </>
-            )}
-          </Flex>
+          {/* Lifecycle buttons live in the status bar above the tabs. */}
+          <Label
+            color={status === "released" ? "green" : status === "archived" ? "red" : "blue"}
+          >
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+          </Label>
         </FormGroup>
 
         {isEditMode && policy && (
@@ -3521,6 +3479,73 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           </Alert>
         )}
       </div>
+
+      {/* Lifecycle status bar — visible on every tab */}
+      {isEditMode && (
+        <Flex
+          alignItems={{ default: "alignItemsCenter" }}
+          spaceItems={{ default: "spaceItemsSm" }}
+          style={{ marginBottom: "1rem" }}
+        >
+          <FlexItem>
+            <Label color={status === "released" ? "green" : status === "archived" ? "red" : "blue"}>
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </Label>
+          </FlexItem>
+          {status === "draft" && (
+            <FlexItem>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleStateTransition("released")}
+                isLoading={saving}
+                isDisabled={saving || !name.trim() || !policyType || !contentRaw.trim()}
+              >
+                Release
+              </Button>
+            </FlexItem>
+          )}
+          {status === "released" && (
+            <>
+              <FlexItem>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleStateTransition("draft")}
+                  isLoading={saving}
+                  isDisabled={saving}
+                >
+                  Unpublish
+                </Button>
+              </FlexItem>
+              <FlexItem>
+                <Button
+                  variant="warning"
+                  size="sm"
+                  onClick={() => handleStateTransition("archived")}
+                  isLoading={saving}
+                  isDisabled={saving}
+                >
+                  Archive
+                </Button>
+              </FlexItem>
+            </>
+          )}
+          {status === "archived" && (
+            <FlexItem>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleStateTransition("draft")}
+                isLoading={saving}
+                isDisabled={saving}
+              >
+                Restore to draft
+              </Button>
+            </FlexItem>
+          )}
+        </Flex>
+      )}
 
       <Tabs
         activeKey={activeTab}
