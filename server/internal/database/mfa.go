@@ -67,6 +67,17 @@ func (r *MFARepository) Upsert(ctx context.Context, row *UserMFARow) error {
 	return err
 }
 
+// UpdateSecret replaces only the encrypted TOTP secret for a user. Used when
+// re-encrypting legacy ciphertexts; deliberately narrow so it cannot race
+// with concurrent backup-code updates.
+func (r *MFARepository) UpdateSecret(ctx context.Context, userID, encSecret string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE user_mfa SET totp_secret = $2, updated_at = NOW() WHERE user_id = $1`,
+		userID, encSecret,
+	)
+	return err
+}
+
 // Delete removes the MFA row for a user (disables MFA).
 func (r *MFARepository) Delete(ctx context.Context, userID string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID)
