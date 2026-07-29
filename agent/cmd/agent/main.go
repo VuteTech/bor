@@ -156,6 +156,20 @@ var polkitCache = make(map[string]polkitCacheEntry)
 // polkitSnapshotStaging accumulates Polkit policies during a SNAPSHOT.
 var polkitSnapshotStaging map[string]polkitCacheEntry
 
+// firewalldCacheEntry holds a Firewalld policy alongside its binding priority and name.
+type firewalldCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.FirewalldPolicy
+}
+
+// firewalldCache maps policy ID → Firewalld policy + priority for all active Firewalld policies.
+var firewalldCache = make(map[string]firewalldCacheEntry)
+
+// firewalldSnapshotStaging accumulates Firewalld policies during a SNAPSHOT.
+var firewalldSnapshotStaging map[string]firewalldCacheEntry
+
 // polkitActionsReported tracks whether the polkit action catalogue has been
 // reported to the server in this agent session.
 var polkitActionsReported bool
@@ -574,6 +588,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				polkitSnapshotStaging = nil
 				packageCache = make(map[string]packageCacheEntry)
 				packageSnapshotStaging = nil
+				firewalldCache = make(map[string]firewalldCacheEntry)
+				firewalldSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
 				syncAllThunderbird(ctx, client, cfg)
@@ -581,6 +597,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				syncAllEdge(ctx, client, cfg)
 				syncAllDConf(ctx, client, cfg)
 				syncAllPolkit(ctx, client, cfg)
+				syncAllFirewalld(ctx, client, cfg)
 				go triggerPackageSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
@@ -648,6 +665,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				packageSnapshotStaging = make(map[string]packageCacheEntry)
 			}
 			packageSnapshotStaging[pi.ID] = packageCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PackagePolicy}
+		case "Firewalld":
+			if firewalldSnapshotStaging == nil {
+				firewalldSnapshotStaging = make(map[string]firewalldCacheEntry)
+			}
+			firewalldSnapshotStaging[pi.ID] = firewalldCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FirewalldPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -725,6 +747,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			packageSnapshotStaging = nil
 
+			// Swap Firewalld staging into cache.
+			if firewalldSnapshotStaging != nil {
+				firewalldCache = firewalldSnapshotStaging
+			} else {
+				firewalldCache = make(map[string]firewalldCacheEntry)
+			}
+			firewalldSnapshotStaging = nil
+
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
 			syncAllThunderbird(ctx, client, cfg)
@@ -732,6 +762,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			syncAllEdge(ctx, client, cfg)
 			syncAllDConf(ctx, client, cfg)
 			syncAllPolkit(ctx, client, cfg)
+			syncAllFirewalld(ctx, client, cfg)
 			go triggerPackageSync(ctx, client, cfg)
 
 			if *postInitialSync {
@@ -797,6 +828,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "Package":
 			packageCache[pi.ID] = packageCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.PackagePolicy}
 			go triggerPackageSync(ctx, client, cfg)
+		case "Firewalld":
+			firewalldCache[pi.ID] = firewalldCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FirewalldPolicy}
+			syncAllFirewalld(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -844,6 +878,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := packageCache[pi.ID]; ok {
 			delete(packageCache, pi.ID)
 			go triggerPackageSync(ctx, client, cfg)
+		} else if _, ok := firewalldCache[pi.ID]; ok {
+			delete(firewalldCache, pi.ID)
+			syncAllFirewalld(ctx, client, cfg)
 		} else {
 			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
 		}
@@ -944,6 +981,39 @@ func syncAllEdge(ctx context.Context, client *policyclient.Client, cfg *config.C
 		_ = client.ReportCompliance(ctx, id, true, "Deployed")
 	}
 	return true
+}
+
+// syncAllFirewalld re-merges all cached Firewalld policies and renders the
+// managed firewalld zone files, then validates and reloads firewalld. Each
+// policy's four-state compliance is reported back to the server.
+func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	entries := make([]policy.FirewalldEntry, 0, len(firewalldCache))
+	ids := make([]string, 0, len(firewalldCache))
+	for _, e := range firewalldCache {
+		entries = append(entries, policy.FirewalldEntry{Priority: e.priority, Policy: e.policy})
+		ids = append(ids, e.id)
+	}
+
+	// Suppress the watcher for currently-managed zone files plus the files this
+	// sync is about to write (resolved target zones), so our own writes don't
+	// trigger a tamper restore.
+	toSuppress, _ := policy.ListBorManagedFirewalldFiles(cfg.Firewalld.ZonesDir)
+	if len(entries) > 0 && policy.FirewalldAvailable() && policy.FirewalldActive() {
+		if dz, err := policy.FirewalldDefaultZone(); err == nil {
+			for _, zone := range policy.FirewalldTargetZones(entries, dz) {
+				toSuppress = append(toSuppress, filepath.Join(cfg.Firewalld.ZonesDir, zone+".xml"))
+			}
+		}
+	}
+	suppressManagedWrites(cfg, toSuppress...)
+	defer updateWatcher(cfg)
+
+	result := policy.SyncFirewalldFromProto(entries, cfg.Firewalld.ZonesDir)
+	log.Printf("Firewalld policies synced (%d policies): %s — %s",
+		len(ids), result.Status.String(), result.Message)
+	for _, id := range ids {
+		_ = client.ReportComplianceWithStatus(ctx, id, result.Status, result.Message, nil)
+	}
 }
 
 // syncAllKConfig re-merges all cached KConfig policies and syncs the
@@ -1732,6 +1802,11 @@ func getManagedPaths(cfg *config.Config) []string {
 		paths = append(paths, repoPaths...)
 	}
 
+	// Firewalld: all bor-managed zone files under /etc/firewalld/zones/.
+	if zoneFiles, err := policy.ListBorManagedFirewalldFiles(cfg.Firewalld.ZonesDir); err == nil {
+		paths = append(paths, zoneFiles...)
+	}
+
 	return paths
 }
 
@@ -1789,6 +1864,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllChrome(ctx, client, cfg)
 	case cfg.Edge.EdgePoliciesPath != "" && path == filepath.Join(cfg.Edge.EdgePoliciesPath, policy.EdgeManagedFilename):
 		syncAllEdge(ctx, client, cfg)
+	case strings.HasPrefix(path, cfg.Firewalld.ZonesDir+string(filepath.Separator)):
+		syncAllFirewalld(ctx, client, cfg)
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
 	default:

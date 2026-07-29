@@ -9,6 +9,7 @@ import "chrome.proto";
 import "dconf.proto";
 import "edge.proto";
 import "firefox.proto";
+import "firewalld.proto";
 import "kconfig.proto";
 import "package.proto";
 import "polkit.proto";
@@ -91,6 +92,7 @@ message Policy {
     PackagePolicy      package_policy      = 16;
     ThunderbirdPolicy  thunderbird_policy  = 17;
     EdgePolicy         edge_policy         = 18;
+    FirewalldPolicy    firewalld_policy    = 19;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

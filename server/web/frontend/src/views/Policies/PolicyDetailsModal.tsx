@@ -49,6 +49,7 @@ import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
 import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
+import { FirewalldPolicyEditor } from "./FirewalldPolicyEditor";
 
 /* ── Known policy types and their config schemas ── */
 
@@ -61,6 +62,7 @@ const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Chrome", label: "Chrome" },
   { value: "Edge", label: "Edge" },
   { value: "Package", label: "Package" },
+  { value: "Firewalld", label: "Firewall (firewalld)" },
 ];
 
 interface PolicyTypeConfig {
@@ -1040,6 +1042,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         // Dconf editor reads contentRaw directly — nothing extra to initialise.
       } else if (policy.type === "Polkit") {
         // Polkit editor reads contentRaw directly — nothing extra to initialise.
+      } else if (policy.type === "Firewalld") {
+        // Firewalld editor reads contentRaw directly — nothing extra to initialise.
       } else {
         try {
           const parsed = JSON.parse(policy.content || "{}");
@@ -1125,6 +1129,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setContentRaw(JSON.stringify({ entries: [], db_name: "local" }, null, 2));
     } else if (newType === "Package") {
       setContentRaw(JSON.stringify({ repositories: [], packages: [], updateCache: true, allowDowngrade: false }, null, 2));
+    } else if (newType === "Firewalld") {
+      setContentRaw("{}");
     } else {
       setStructuredFieldsList([{}]);
       setContentRaw(JSON.stringify([{}], null, 2));
@@ -1589,6 +1595,19 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           }
         } catch {
           setError("Polkit policy content is not valid JSON");
+          setSaving(false);
+          return;
+        }
+      } else if (policyType === "Firewalld") {
+        try {
+          const parsed = JSON.parse(finalContent) as Record<string, unknown>;
+          if (!parsed || Object.keys(parsed).length === 0) {
+            setError("Configure at least one firewall setting (service, port, or rich rule) before saving");
+            setSaving(false);
+            return;
+          }
+        } catch {
+          setError("Firewalld policy content is not valid JSON");
           setSaving(false);
           return;
         }
@@ -3388,6 +3407,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       return (
         <div style={{ padding: "1rem 0" }}>
           <PackagePolicyEditor
+            contentRaw={contentRaw}
+            onChange={(newRaw) => { setContentRaw(newRaw); }}
+            isDisabled={!isEditable}
+          />
+        </div>
+      );
+    }
+    if (policyType === "Firewalld") {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          <FirewalldPolicyEditor
             contentRaw={contentRaw}
             onChange={(newRaw) => { setContentRaw(newRaw); }}
             isDisabled={!isEditable}

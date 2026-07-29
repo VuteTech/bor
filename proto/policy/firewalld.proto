@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// FirewalldPolicy manages the ruleset of a single firewalld zone on a node.
+// Bor renders these settings into the zone's permanent XML
+// (/etc/firewalld/zones/<zone>.xml), preserving any host-specific
+// <interface>/<source> bindings, then reloads firewalld. Multiple bound
+// FirewalldPolicies targeting the same zone are merged: list fields are unioned
+// and scalar fields are won by the highest-priority binding.
+//
+// Note: this manages a firewalld *zone*, not a firewalld "policy object"
+// (zone-to-zone forwarding), which is a separate, deferred feature.
+message FirewalldPolicy {
+  // Target zone whose ruleset Bor manages. Empty = the node's default zone.
+  string zone = 1;
+
+  // Default packet target for the zone: "default" | "ACCEPT" | "REJECT" | "DROP".
+  // Empty is treated as "default".
+  string target = 2;
+
+  // Allowed services by name (see firewall-cmd --get-services), e.g. "ssh".
+  repeated string services = 3;
+
+  // Allowed ports.
+  repeated FirewalldPort ports = 4;
+
+  // Allowed source ports.
+  repeated FirewalldPort source_ports = 5;
+
+  // Allowed protocols from /etc/protocols, e.g. "gre", "esp".
+  repeated string protocols = 6;
+
+  // ICMP types to block by name (see firewall-cmd --get-icmptypes).
+  repeated string icmp_blocks = 7;
+
+  // Invert ICMP block handling: when true, only the listed icmp_blocks are
+  // accepted and all other ICMP is blocked.
+  bool icmp_block_inversion = 8;
+
+  // Enable masquerading (NAT) for the zone.
+  bool masquerade = 9;
+
+  // Port forwards.
+  repeated FirewalldForwardPort forward_ports = 10;
+
+  // Raw firewalld rich-language rule strings, for rules not expressible above.
+  // Example: rule family="ipv4" source address="10.0.0.0/8" service name="ssh" accept
+  repeated string rich_rules = 11;
+
+  // Phase 2: when true, the agent ensures firewalld is enabled and running
+  // before applying. When false (default) and firewalld is inactive, the
+  // policy is reported INAPPLICABLE. Not yet enforced.
+  bool ensure_enabled = 12;
+}
+
+// FirewalldPort is a single port or port range with its protocol.
+message FirewalldPort {
+  // Port id "443" or range "5000-6000".
+  string port = 1;
+  // Transport protocol: "tcp" | "udp" | "sctp" | "dccp".
+  string protocol = 2;
+}
+
+// FirewalldForwardPort describes a port-forwarding rule.
+message FirewalldForwardPort {
+  // Source port id or range.
+  string port = 1;
+  // Transport protocol: "tcp" | "udp" | "sctp" | "dccp".
+  string protocol = 2;
+  // Destination port (defaults to the source port when empty).
+  string to_port = 3;
+  // Destination address for remote forwarding (optional).
+  string to_addr = 4;
+}

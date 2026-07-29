@@ -573,6 +573,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		} else {
 			pol.TypedContent = &pb.Policy_EdgePolicy{EdgePolicy: &edgePol}
 		}
+	case "Firewalld":
+		var fwPol pb.FirewalldPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &fwPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Firewalld typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_FirewalldPolicy{FirewalldPolicy: &fwPol}
+		}
 	}
 
 	return pol
