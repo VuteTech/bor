@@ -70,7 +70,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
       </Title>
       <Grid hasGutter>
         <GridItem span={3}>
-          <StatCard title="Total Nodes" value={data.totalNodes} color="blue" />
+          <StatCard title="Total Nodes" value={data.totalNodes} color="blue" href="/nodes" />
         </GridItem>
         <GridItem span={3}>
           <StatCard
@@ -78,6 +78,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             value={data.online}
             icon={<CheckCircleIcon />}
             color="green"
+            href="/nodes?status=online"
           />
         </GridItem>
         <GridItem span={3}>
@@ -86,6 +87,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             value={data.offline}
             icon={<ExclamationCircleIcon />}
             color="red"
+            href="/nodes?status=offline"
           />
         </GridItem>
         <GridItem span={3}>
@@ -94,6 +96,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             value={data.unknown}
             icon={<QuestionCircleIcon />}
             color="grey"
+            href="/nodes?status=unknown"
           />
         </GridItem>
 

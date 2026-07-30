@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { LiveAlert } from "../../components/LiveAlert";
 import { useToast } from "../../components/ToastHost";
 import {
@@ -123,8 +124,12 @@ export const NodesPage: React.FC = () => {
   const [searchValue, setSearchValue] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  // Filters — status can be seeded from the URL (?status=) for dashboard drill-down.
+  const [searchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    const s = searchParams.get("status");
+    return s && (STATUS_OPTIONS as string[]).includes(s) ? s : "All";
+  });
   const [statusOpen, setStatusOpen] = useState(false);
   const [osFilter, setOsFilter] = useState<string>("All");
   const [osOpen, setOsOpen] = useState(false);

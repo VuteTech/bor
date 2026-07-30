@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   PageSection,
   Title,
@@ -113,7 +114,12 @@ export const PoliciesPage: React.FC = () => {
   const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  // Status can be seeded from the URL (?state=) for dashboard drill-down.
+  const [searchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState<string[]>(() => {
+    const s = searchParams.get("state");
+    return s && STATUS_OPTIONS.includes(s) ? [s] : [];
+  });
   const [bindingsFilter, setBindingsFilter] = useState<string | null>(null);
   const [recentlyModified, setRecentlyModified] = useState(false);
 

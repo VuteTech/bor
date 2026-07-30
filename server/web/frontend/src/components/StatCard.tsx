@@ -9,6 +9,7 @@
  */
 
 import React from "react";
+import { Link } from "react-router-dom";
 import { Card, CardBody, Flex, FlexItem } from "@patternfly/react-core";
 
 export type StatColor = "green" | "red" | "blue" | "orange" | "grey";
@@ -59,9 +60,9 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, h
   return (
     <Card isCompact isClickable={!!href}>
       {href ? (
-        <a href={href} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+        <Link to={href} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
           {body}
-        </a>
+        </Link>
       ) : (
         body
       )}

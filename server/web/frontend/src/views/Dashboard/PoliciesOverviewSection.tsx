@@ -44,16 +44,16 @@ export const PoliciesOverviewSection: React.FC<PoliciesOverviewSectionProps> = (
       </Title>
       <Grid hasGutter>
         <GridItem span={3}>
-          <StatCard title="Total Policies" value={data.totalPolicies} />
+          <StatCard title="Total Policies" value={data.totalPolicies} href="/policies" />
         </GridItem>
         <GridItem span={3}>
-          <StatCard title="Released" value={data.released} color="green" />
+          <StatCard title="Released" value={data.released} color="green" href="/policies?state=released" />
         </GridItem>
         <GridItem span={3}>
-          <StatCard title="Draft" value={data.draft} color="blue" />
+          <StatCard title="Draft" value={data.draft} color="blue" href="/policies?state=draft" />
         </GridItem>
         <GridItem span={3}>
-          <StatCard title="Archived" value={data.archived} color="grey" />
+          <StatCard title="Archived" value={data.archived} color="grey" href="/policies?state=archived" />
         </GridItem>
 
         <GridItem span={12}>
