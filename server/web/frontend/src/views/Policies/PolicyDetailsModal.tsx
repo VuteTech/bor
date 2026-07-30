@@ -50,6 +50,7 @@ import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "./FirewalldPolicyEditor";
+import { PolicyTreePanel } from "./PolicyTreePanel";
 
 /* ── Known policy types and their config schemas ── */
 
@@ -1958,105 +1959,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div role="tree" aria-label="Firefox policy settings" style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              {/* Group header */}
-              <div
-                role="treeitem"
-                aria-expanded={firefoxExpandedGroups.has(group)}
-                aria-selected={false}
-                aria-level={1}
-                tabIndex={0}
-                onClick={() => toggleFirefoxGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFirefoxGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(firefoxExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {/* Policy items */}
-              {firefoxExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = firefoxSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="treeitem"
-                    aria-selected={isSelected}
-                    aria-level={2}
-                    tabIndex={0}
-                    onClick={() => handleFirefoxSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFirefoxSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                      {p.label}
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleFirefoxRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Firefox policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={firefoxSelectedKey}
+          expandedGroups={firefoxExpandedGroups}
+          onToggleGroup={toggleFirefoxGroup}
+          onSelect={handleFirefoxSelectPolicy}
+          onRemove={handleFirefoxRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderFirefoxPropertyEditor()}
@@ -2207,103 +2119,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div role="tree" aria-label="Thunderbird policy settings" style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              <div
-                role="treeitem"
-                aria-expanded={thunderbirdExpandedGroups.has(group)}
-                aria-selected={false}
-                aria-level={1}
-                tabIndex={0}
-                onClick={() => toggleThunderbirdGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleThunderbirdGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(thunderbirdExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {thunderbirdExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = thunderbirdSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="treeitem"
-                    aria-selected={isSelected}
-                    aria-level={2}
-                    tabIndex={0}
-                    onClick={() => handleThunderbirdSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleThunderbirdSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                      {p.label}
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleThunderbirdRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Thunderbird policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={thunderbirdSelectedKey}
+          expandedGroups={thunderbirdExpandedGroups}
+          onToggleGroup={toggleThunderbirdGroup}
+          onSelect={handleThunderbirdSelectPolicy}
+          onRemove={handleThunderbirdRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderThunderbirdPropertyEditor()}
@@ -2672,105 +2497,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div role="tree" aria-label="KDE Kiosk policy settings" style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              {/* Group header */}
-              <div
-                role="treeitem"
-                aria-expanded={kconfigExpandedGroups.has(group)}
-                aria-selected={false}
-                aria-level={1}
-                tabIndex={0}
-                onClick={() => toggleKconfigGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleKconfigGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(kconfigExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {/* Policy items */}
-              {kconfigExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = kconfigSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="treeitem"
-                    aria-selected={isSelected}
-                    aria-level={2}
-                    tabIndex={0}
-                    onClick={() => handleKconfigSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleKconfigSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                      {p.label}
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleKconfigRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="KDE Kiosk policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={kconfigSelectedKey}
+          expandedGroups={kconfigExpandedGroups}
+          onToggleGroup={toggleKconfigGroup}
+          onSelect={handleKconfigSelectPolicy}
+          onRemove={handleKconfigRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderKconfigPropertyEditor()}
@@ -2935,116 +2671,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div role="tree" aria-label="Chrome policy settings" style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              {/* Group header */}
-              <div
-                role="treeitem"
-                aria-expanded={chromeExpandedGroups.has(group)}
-                aria-selected={false}
-                aria-level={1}
-                tabIndex={0}
-                onClick={() => toggleChromeGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleChromeGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(chromeExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {/* Policy items */}
-              {chromeExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = chromeSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="treeitem"
-                    aria-selected={isSelected}
-                    aria-level={2}
-                    tabIndex={0}
-                    onClick={() => handleChromeSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleChromeSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                        {p.label}
-                        {p.chromeOnly && (
-                          <Label color="blue" isCompact style={{ marginLeft: 8 }}>
-                            Chrome only
-                          </Label>
-                        )}
-                      </span>
-                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {p.description}
-                      </span>
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleChromeRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                          flexShrink: 0,
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Chrome policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={chromeSelectedKey}
+          expandedGroups={chromeExpandedGroups}
+          onToggleGroup={toggleChromeGroup}
+          onSelect={handleChromeSelectPolicy}
+          onRemove={handleChromeRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderChromePropertyEditor()}
@@ -3208,109 +2844,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
-        <div role="tree" aria-label="Edge policy settings" style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              <div
-                role="treeitem"
-                aria-expanded={edgeExpandedGroups.has(group)}
-                aria-selected={false}
-                aria-level={1}
-                tabIndex={0}
-                onClick={() => toggleEdgeGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEdgeGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(edgeExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {edgeExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = edgeSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="treeitem"
-                    aria-selected={isSelected}
-                    aria-level={2}
-                    tabIndex={0}
-                    onClick={() => handleEdgeSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleEdgeSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                        {p.label}
-                      </span>
-                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {p.description}
-                      </span>
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleEdgeRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                          flexShrink: 0,
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Edge policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={edgeSelectedKey}
+          expandedGroups={edgeExpandedGroups}
+          onToggleGroup={toggleEdgeGroup}
+          onSelect={handleEdgeSelectPolicy}
+          onRemove={handleEdgeRemovePolicy}
+        />
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderEdgePropertyEditor()}
         </div>
