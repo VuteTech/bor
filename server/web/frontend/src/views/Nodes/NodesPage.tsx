@@ -16,6 +16,7 @@ import {
   ToolbarContent,
   ToolbarItem,
   ToolbarFilter,
+  Pagination,
   SearchInput,
   MenuToggle,
   MenuToggleElement,
@@ -57,7 +58,8 @@ import SearchIcon from "@patternfly/react-icons/dist/esm/icons/search-icon";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
 
 import {
-  fetchNodes,
+  fetchNodesPaged,
+  fetchNodeFilterOptions,
   refreshNodeMetadata,
   addNodeToGroup,
   removeNodeFromGroup,
@@ -65,6 +67,7 @@ import {
   revokeNodeCertificate,
   Node,
   NodeStatus,
+  NodeFilterOptions,
 } from "../../apiClient/nodesApi";
 import { fetchNodeGroups, NodeGroup } from "../../apiClient/nodeGroupsApi";
 
@@ -134,6 +137,16 @@ export const NodesPage: React.FC = () => {
   const [sortField, setSortField] = useState<SortField>("last_seen");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
+  // Server-side pagination
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [filterOptions, setFilterOptions] = useState<NodeFilterOptions>({
+    os: [],
+    desktops: [],
+    agent_versions: [],
+  });
+
   // Drawer
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
@@ -180,77 +193,60 @@ export const NodesPage: React.FC = () => {
   const [removeGroupLoading, setRemoveGroupLoading] = useState(false);
   const [removeGroupError, setRemoveGroupError] = useState<string | null>(null);
 
-  /* ── Load data ── */
-  const loadNodes = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await fetchNodes(
-        appliedSearch ? { search: appliedSearch } : undefined
-      );
-      setNodes(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load nodes");
-    } finally {
-      setLoading(false);
-    }
-  }, [appliedSearch]);
+  /* ── Build the current query from filters/sort/page ── */
+  const nodeQuery = useCallback(
+    () => ({
+      search: appliedSearch || undefined,
+      status: statusFilter !== "All" ? statusFilter : undefined,
+      os: osFilter !== "All" ? osFilter : undefined,
+      desktop: desktopFilter !== "All" ? desktopFilter : undefined,
+      agent_version: agentVersionFilter !== "All" ? agentVersionFilter : undefined,
+      sort_field: sortField,
+      sort_order: sortDirection,
+    }),
+    [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, sortField, sortDirection],
+  );
+
+  /* ── Load a page of data (all filtering/sorting is server-side) ── */
+  const loadNodes = useCallback(
+    async (showSpinner = true) => {
+      try {
+        if (showSpinner) setLoading(true);
+        setError(null);
+        const result = await fetchNodesPaged({ page, per_page: perPage, ...nodeQuery() });
+        setNodes(result.items);
+        setTotal(result.total);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load nodes");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [page, perPage, nodeQuery],
+  );
 
   useEffect(() => {
     loadNodes();
   }, [loadNodes]);
 
-  /* ── Derive filter options from data ── */
-  const osOptions = useMemo(() => {
-    const set = new Set<string>();
-    nodes.forEach((n) => { const os = osDisplay(n); if (os) set.add(os); });
-    return ["All", ...Array.from(set).sort()];
-  }, [nodes]);
+  // Reset to the first page whenever the filters/search/sort change, so the
+  // user never lands on an out-of-range page.
+  useEffect(() => {
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, sortField, sortDirection]);
 
-  const desktopOptions = useMemo(() => {
-    const set = new Set<string>();
-    nodes.forEach((n) => { if (n.desktop_env) set.add(n.desktop_env); });
-    return ["All", ...Array.from(set).sort()];
-  }, [nodes]);
+  /* ── Filter dropdown options (distinct values, fetched once) ── */
+  useEffect(() => {
+    fetchNodeFilterOptions().then(setFilterOptions).catch(() => {});
+  }, []);
 
-  const agentVersionOptions = useMemo(() => {
-    const set = new Set<string>();
-    nodes.forEach((n) => { if (n.agent_version) set.add(n.agent_version); });
-    return ["All", ...Array.from(set).sort()];
-  }, [nodes]);
-
-  /* ── Filtering ── */
-  const filteredNodes = useMemo(() => {
-    return nodes.filter((n) => {
-      if (statusFilter !== "All" && n.status !== statusFilter) return false;
-      if (osFilter !== "All" && osDisplay(n) !== osFilter) return false;
-      if (desktopFilter !== "All" && n.desktop_env !== desktopFilter) return false;
-      if (agentVersionFilter !== "All" && n.agent_version !== agentVersionFilter) return false;
-      return true;
-    });
-  }, [nodes, statusFilter, osFilter, desktopFilter, agentVersionFilter]);
-
-  /* ── Sorting ── */
-  const sortedNodes = useMemo(() => {
-    const sorted = [...filteredNodes];
-    sorted.sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case "name":
-          cmp = a.name.localeCompare(b.name);
-          break;
-        case "last_seen":
-        default: {
-          const aTime = a.last_seen ? new Date(a.last_seen).getTime() : 0;
-          const bTime = b.last_seen ? new Date(b.last_seen).getTime() : 0;
-          cmp = aTime - bTime;
-          break;
-        }
-      }
-      return sortDirection === "asc" ? cmp : -cmp;
-    });
-    return sorted;
-  }, [filteredNodes, sortField, sortDirection]);
+  const osOptions = useMemo(() => ["All", ...filterOptions.os], [filterOptions.os]);
+  const desktopOptions = useMemo(() => ["All", ...filterOptions.desktops], [filterOptions.desktops]);
+  const agentVersionOptions = useMemo(
+    () => ["All", ...filterOptions.agent_versions],
+    [filterOptions.agent_versions],
+  );
 
   /* ── Sort handler ── */
   // Column indices must match the real header order, where index 0 is the
@@ -271,12 +267,12 @@ export const NodesPage: React.FC = () => {
   });
 
   /* ── Selection ── */
-  const isAllSelected = sortedNodes.length > 0 && selectedIds.size === sortedNodes.length;
+  const isAllSelected = nodes.length > 0 && selectedIds.size === nodes.length;
   const toggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(sortedNodes.map((n) => n.id)));
+      setSelectedIds(new Set(nodes.map((n) => n.id)));
     }
   };
   const toggleSelectNode = (id: string) => {
@@ -297,9 +293,22 @@ export const NodesPage: React.FC = () => {
     return `"${v.replace(/"/g, '""')}"`;
   };
 
-  const exportCSV = () => {
-    const selected = sortedNodes.filter((n) => selectedIds.has(n.id));
-    const rows = selected.length > 0 ? selected : sortedNodes;
+  const exportCSV = async () => {
+    // Export all rows matching the current filters (or just the selected ones),
+    // not only the visible page — fetch every matching page first.
+    let rows: Node[];
+    if (selectedIds.size > 0) {
+      rows = nodes.filter((n) => selectedIds.has(n.id));
+    } else {
+      const all: Node[] = [];
+      const query = nodeQuery();
+      for (let p = 1; ; p++) {
+        const res = await fetchNodesPaged({ page: p, per_page: 100, ...query });
+        all.push(...res.items);
+        if (res.items.length === 0 || p >= res.total_pages) break;
+      }
+      rows = all;
+    }
     const header = "Name,Status,Node Groups,Last Seen,Agent Version,OS,Notes";
     const csvRows = rows.map((n) =>
       [
@@ -710,7 +719,7 @@ export const NodesPage: React.FC = () => {
   if (desktopFilter !== "All") activeFilters.push(`Desktop: ${desktopFilter}`);
   if (agentVersionFilter !== "All") activeFilters.push(`Agent: ${agentVersionFilter}`);
 
-  const selectedNodes = sortedNodes.filter((n) => selectedIds.has(n.id));
+  const selectedNodes = nodes.filter((n) => selectedIds.has(n.id));
 
   return (
     <>
@@ -909,8 +918,23 @@ export const NodesPage: React.FC = () => {
                 </ToolbarContent>
               </Toolbar>
 
+              {total > 0 && (
+                <Pagination
+                  itemCount={total}
+                  page={page}
+                  perPage={perPage}
+                  onSetPage={(_ev, p) => setPage(p)}
+                  onPerPageSelect={(_ev, pp) => {
+                    setPerPage(pp);
+                    setPage(1);
+                  }}
+                  isCompact
+                  aria-label="Nodes pagination top"
+                />
+              )}
+
               {/* ── Table ── */}
-              {sortedNodes.length === 0 ? (
+              {nodes.length === 0 ? (
                 <EmptyState titleText="No nodes found" headingLevel="h2" icon={CubesIcon}>
                   <EmptyStateBody>
                     {appliedSearch || activeFilters.length > 0
@@ -938,7 +962,7 @@ export const NodesPage: React.FC = () => {
                     </Tr>
                   </Thead>
                   <Tbody>
-                    {sortedNodes.map((node, rowIndex) => (
+                    {nodes.map((node, rowIndex) => (
                       <Tr
                         key={node.id}
                         isClickable
@@ -978,6 +1002,21 @@ export const NodesPage: React.FC = () => {
                     ))}
                   </Tbody>
                 </Table>
+              )}
+
+              {total > 0 && (
+                <Pagination
+                  itemCount={total}
+                  page={page}
+                  perPage={perPage}
+                  onSetPage={(_ev, p) => setPage(p)}
+                  onPerPageSelect={(_ev, pp) => {
+                    setPerPage(pp);
+                    setPage(1);
+                  }}
+                  variant="bottom"
+                  aria-label="Nodes pagination bottom"
+                />
               )}
             </DrawerContentBody>
           </DrawerContent>

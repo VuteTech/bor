@@ -9,6 +9,27 @@ import (
 	"testing"
 )
 
+func TestClampPagination(t *testing.T) {
+	tests := []struct {
+		page, perPage         int
+		wantPage, wantPerPage int
+	}{
+		{1, 25, 1, 25},
+		{0, 0, 1, 25},     // defaults
+		{-5, -1, 1, 25},   // negatives clamped
+		{3, 50, 3, 50},    // in range
+		{2, 1000, 2, 100}, // per_page capped at 100
+		{1, 101, 1, 100},  // just over cap
+	}
+	for _, tt := range tests {
+		gotPage, gotPerPage := ClampPagination(tt.page, tt.perPage)
+		if gotPage != tt.wantPage || gotPerPage != tt.wantPerPage {
+			t.Errorf("ClampPagination(%d,%d) = (%d,%d), want (%d,%d)",
+				tt.page, tt.perPage, gotPage, gotPerPage, tt.wantPage, tt.wantPerPage)
+		}
+	}
+}
+
 func TestMeResponse_JSON(t *testing.T) {
 	resp := MeResponse{
 		ID:          "user-123",

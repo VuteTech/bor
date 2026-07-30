@@ -432,6 +432,7 @@ func main() {
 	})
 	mux.Handle("/api/v1/nodes", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.List))))
 	mux.Handle("/api/v1/nodes/status-counts", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.CountByStatus))))
+	mux.Handle("/api/v1/nodes/filter-options", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.FilterOptions))))
 	mux.Handle("/api/v1/nodes/", authMiddleware(nodePerms(auditMw(http.HandlerFunc(nodeHandler.ServeHTTP)))))
 
 	// Node group routes — method-based permission checking
