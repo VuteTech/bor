@@ -3818,8 +3818,26 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <Tab eventKey={isEditMode ? 1 : 0} title={<TabTitleText>Details</TabTitleText>}>
           {renderOverviewTab()}
         </Tab>
-        <Tab eventKey={isEditMode ? 2 : 1} title={<TabTitleText>Configuration</TabTitleText>} isDisabled={isEditMode && !isEditable}>
-          {renderConfigurationTab()}
+        <Tab eventKey={isEditMode ? 2 : 1} title={<TabTitleText>Configuration</TabTitleText>}>
+          {isEditMode && !isEditable ? (
+            // Released/archived policies are read-only: show the configuration
+            // (previously the tab was disabled entirely) but disable every form
+            // control via a disabled fieldset. Tree navigation still works so the
+            // configured settings can be browsed; nothing can be edited or saved.
+            <>
+              <Alert
+                variant="info"
+                isInline
+                title={`This policy is ${status} and its configuration is read-only. Move it back to draft to make changes.`}
+                style={{ margin: "1rem 0" }}
+              />
+              <fieldset disabled style={{ border: "none", margin: 0, padding: 0, minWidth: 0, minInlineSize: "auto" }}>
+                {renderConfigurationTab()}
+              </fieldset>
+            </>
+          ) : (
+            renderConfigurationTab()
+          )}
         </Tab>
       </Tabs>
       </ModalBody>
