@@ -2395,7 +2395,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                     alignItems: "center",
                     justifyContent: "space-between",
                     padding: "0.4rem 0.75rem",
-                    borderBottom: "1px solid #e8e8e8",
+                    borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                     fontSize: "0.85rem",
                   }}
                 >
@@ -2404,7 +2404,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                     {mod && <span style={{ color: "var(--pf-t--global--text--color--subtle)", marginLeft: "0.5rem" }}>({moduleId})</span>}
                     {!mod && <Label isCompact color="orange" style={{ marginLeft: "0.5rem" }}>custom</Label>}
                   </span>
-                  <Button variant="plain" size="sm" onClick={() => removeModule(moduleId)} style={{ color: "#c9190b", padding: "0 0.25rem", minWidth: "auto" }} aria-label={`Remove ${moduleId}`}>
+                  <Button variant="plain" size="sm" onClick={() => removeModule(moduleId)} style={{ color: "var(--pf-t--global--text--color--status--danger--default)", padding: "0 0.25rem", minWidth: "auto" }} aria-label={`Remove ${moduleId}`}>
                     Remove
                   </Button>
                 </div>
@@ -2459,7 +2459,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               <Flex justifyContent={{ default: "justifyContentSpaceBetween" }} alignItems={{ default: "alignItemsCenter" }}>
                 <FlexItem><strong>Rule {idx + 1}</strong></FlexItem>
                 <FlexItem>
-                  <Button variant="plain" size="sm" onClick={() => removeRule(idx)} aria-label={`Remove rule ${idx + 1}`} style={{ color: "#c9190b" }}>Remove</Button>
+                  <Button variant="plain" size="sm" onClick={() => removeRule(idx)} aria-label={`Remove rule ${idx + 1}`} style={{ color: "var(--pf-t--global--text--color--status--danger--default)" }}>Remove</Button>
                 </FlexItem>
               </Flex>
             </CardTitle>

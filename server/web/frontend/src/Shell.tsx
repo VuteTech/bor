@@ -450,7 +450,7 @@ export const Shell: React.FC = () => {
           style={{
             marginTop: "auto",
             padding: "1rem",
-            borderTop: "1px solid #3c3f42",
+            borderTop: "1px solid var(--pf-t--global--border--color--default)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -483,7 +483,7 @@ export const Shell: React.FC = () => {
               href="https://getbor.dev"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "#2E7D32", textDecoration: "none" }}
+              style={{ color: "var(--pf-t--global--color--brand--default)", textDecoration: "none" }}
             >
               getbor.dev
             </a>
