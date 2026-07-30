@@ -597,7 +597,9 @@ export const AuditLogsPage: React.FC = () => {
               </Toolbar>
 
               {/* ── Table ── */}
-              {loading ? (
+              {/* Spinner only on the very first load; refreshes/filters/page
+                  changes keep the table mounted so the user doesn't lose context. */}
+              {loading && logs.length === 0 ? (
                 <Spinner size="lg" aria-label="Loading" style={{ marginTop: 32 }} />
               ) : (
                 <>
@@ -631,14 +633,8 @@ export const AuditLogsPage: React.FC = () => {
                         return (
                           <Tr
                             key={entry.id}
-                            onClick={() => setSelectedEntry(isSelected ? null : entry)}
-                            style={{
-                              cursor: "pointer",
-                              background: isSelected
-                                ? "var(--pf-t--global--background--color--secondary--default)"
-                                : undefined,
-                            }}
-                            isHoverable
+                            isClickable
+                            onRowClick={() => setSelectedEntry(isSelected ? null : entry)}
                             isRowSelected={isSelected}
                           >
                             <Td style={{ whiteSpace: "nowrap" }}>{formatTimestamp(entry.created_at)}</Td>

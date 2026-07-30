@@ -17,11 +17,13 @@ import {
   AlertGroup,
   Alert,
   AlertActionCloseButton,
-  AlertVariant,
+  AlertProps,
 } from "@patternfly/react-core";
 
+type ToastVariant = AlertProps["variant"];
+
 interface ToastOptions {
-  variant?: AlertVariant;
+  variant?: ToastVariant;
   title: string;
   detail?: string;
 }
@@ -56,9 +58,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addToast = useCallback(
     (opts: ToastOptions) => {
       const key = nextKey.current++;
-      const variant = opts.variant ?? AlertVariant.success;
+      const variant: ToastVariant = opts.variant ?? "success";
       setToasts((prev) => [...prev, { ...opts, variant, key }]);
-      if (variant === AlertVariant.success || variant === AlertVariant.info) {
+      // Positive/neutral toasts auto-dismiss; danger/warning stay until closed.
+      if (variant === "success" || variant === "info") {
         window.setTimeout(() => remove(key), AUTO_DISMISS_MS);
       }
     },

@@ -2,11 +2,12 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
+import { useToast } from "../../components/ToastHost";
 import {
   PageSection,
-  Title,
   Alert,
   Spinner,
   Flex,
@@ -22,8 +23,6 @@ import {
   TextInput,
   TextArea,
   ActionGroup,
-  EmptyState,
-  EmptyStateBody,
   ClipboardCopy,
   Label,
   Dropdown,
@@ -31,12 +30,13 @@ import {
   DropdownList,
   MenuToggle,
   MenuToggleElement,
+  SearchInput,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
-import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
+import { Table, Thead, Tr, Th, Tbody, Td, ActionsColumn, IAction, ThProps } from "@patternfly/react-table";
+import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-icon";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
 import {
@@ -59,6 +59,13 @@ export const NodeGroupsPage: React.FC = () => {
   const [groups, setGroups] = useState<NodeGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { addToast } = useToast();
+
+  // Search + client-side sort
+  const [searchText, setSearchText] = useState("");
+  const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -103,14 +110,48 @@ export const NodeGroupsPage: React.FC = () => {
     loadGroups();
   }, [loadGroups]);
 
-  /* ── Selection ── */
-  const isAllSelected = groups.length > 0 && selectedIds.size === groups.length;
+  /* ── Filter + sort (client-side) ──
+     Column indices match header order (0 = select cell):
+     Name=1, Nodes=3, Created=4. */
+  const view = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    let list = q
+      ? groups.filter(
+          (g) =>
+            g.name.toLowerCase().includes(q) || (g.description ?? "").toLowerCase().includes(q),
+        )
+      : groups;
+    if (sortIndex !== undefined) {
+      const cmp = (a: NodeGroup, b: NodeGroup): number => {
+        switch (sortIndex) {
+          case 1: return a.name.localeCompare(b.name);
+          case 3: return a.node_count - b.node_count;
+          case 4: return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          default: return 0;
+        }
+      };
+      list = [...list].sort((a, b) => (sortDir === "asc" ? cmp(a, b) : -cmp(a, b)));
+    }
+    return list;
+  }, [groups, searchText, sortIndex, sortDir]);
+
+  const getSort = (columnIndex: number): ThProps["sort"] => ({
+    sortBy: { index: sortIndex, direction: sortDir },
+    onSort: (_e, index, direction) => {
+      setSortIndex(index);
+      setSortDir(direction);
+    },
+    columnIndex,
+  });
+
+  /* ── Selection (over the visible rows) ── */
+  const isAllSelected = view.length > 0 && view.every((g) => selectedIds.has(g.id));
 
   const toggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(groups.map((g) => g.id)));
+      setSelectedIds(new Set(view.map((g) => g.id)));
     }
   };
 
@@ -159,6 +200,11 @@ export const NodeGroupsPage: React.FC = () => {
         });
       }
       setIsFormOpen(false);
+      addToast({
+        variant: "success",
+        title: editingGroup ? "Node group updated" : "Node group created",
+        detail: formName.trim(),
+      });
       loadGroups();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to save");
@@ -189,10 +235,12 @@ export const NodeGroupsPage: React.FC = () => {
     if (!deleteValid) return;
     setDeleteLoading(true);
     setDeleteError(null);
+    const count = deleteTargetIds.length;
     try {
       await Promise.all(deleteTargetIds.map((id) => deleteNodeGroup(id)));
       setSelectedIds(new Set());
       setDeleteModalOpen(false);
+      addToast({ variant: "success", title: `Deleted ${count} node group${count === 1 ? "" : "s"}` });
       loadGroups();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Failed to delete");
@@ -248,7 +296,7 @@ export const NodeGroupsPage: React.FC = () => {
 
   return (
     <>
-      <PageSection variant="light">
+      <PageSection>
         <Flex
           justifyContent={{ default: "justifyContentSpaceBetween" }}
           alignItems={{ default: "alignItemsCenter" }}
@@ -262,77 +310,98 @@ export const NodeGroupsPage: React.FC = () => {
       </PageSection>
 
       <PageSection>
-        {groups.length === 0 ? (
-          <EmptyState titleText="No node groups" headingLevel="h2" icon={CubesIcon}>
-            <EmptyStateBody>
-              Create a node group to organize your desktop agents and generate enrollment tokens.
-            </EmptyStateBody>
-            <Button variant="primary" onClick={openCreateModal}>Create Node Group</Button>
-          </EmptyState>
-        ) : (
-          <>
+        <Toolbar style={{ padding: 0, marginBottom: "0.5rem" }} clearAllFilters={() => setSearchText("")}>
+          <ToolbarContent>
+            <ToolbarItem>
+              <SearchInput
+                aria-label="Search node groups"
+                placeholder="Search by name or description…"
+                value={searchText}
+                onChange={(_ev, val) => setSearchText(val)}
+                onClear={() => setSearchText("")}
+              />
+            </ToolbarItem>
             {selectedIds.size > 0 && (
-              <Toolbar style={{ padding: 0, marginBottom: "0.5rem" }}>
-                <ToolbarContent>
-                  <ToolbarItem>
-                    <Dropdown
-                      isOpen={bulkOpen}
-                      onSelect={() => setBulkOpen(false)}
-                      onOpenChange={setBulkOpen}
-                      toggle={(ref: React.Ref<MenuToggleElement>) => (
-                        <MenuToggle
-                          ref={ref}
-                          onClick={() => setBulkOpen(!bulkOpen)}
-                          isExpanded={bulkOpen}
-                          variant="primary"
-                        >
-                          Actions ({selectedIds.size})
-                        </MenuToggle>
-                      )}
+              <ToolbarItem>
+                <Dropdown
+                  isOpen={bulkOpen}
+                  onSelect={() => setBulkOpen(false)}
+                  onOpenChange={setBulkOpen}
+                  toggle={(ref: React.Ref<MenuToggleElement>) => (
+                    <MenuToggle
+                      ref={ref}
+                      onClick={() => setBulkOpen(!bulkOpen)}
+                      isExpanded={bulkOpen}
+                      variant="primary"
                     >
-                      <DropdownList>
-                        <DropdownItem
-                          key="edit"
-                          isDisabled={selectedIds.size !== 1}
-                          onClick={() => {
-                            const g = selectedGroups[0];
-                            if (g) openEditModal(g);
-                          }}
-                        >
-                          Edit
-                        </DropdownItem>
-                        <DropdownItem
-                          key="delete"
-                          isDanger
-                          onClick={() => openDeleteModal(Array.from(selectedIds))}
-                        >
-                          Delete
-                        </DropdownItem>
-                      </DropdownList>
-                    </Dropdown>
-                  </ToolbarItem>
-                </ToolbarContent>
-              </Toolbar>
+                      Actions ({selectedIds.size})
+                    </MenuToggle>
+                  )}
+                >
+                  <DropdownList>
+                    <DropdownItem
+                      key="edit"
+                      isDisabled={selectedIds.size !== 1}
+                      onClick={() => {
+                        const g = selectedGroups[0];
+                        if (g) openEditModal(g);
+                      }}
+                    >
+                      Edit
+                    </DropdownItem>
+                    <DropdownItem
+                      key="delete"
+                      isDanger
+                      onClick={() => openDeleteModal(Array.from(selectedIds))}
+                    >
+                      Delete
+                    </DropdownItem>
+                  </DropdownList>
+                </Dropdown>
+              </ToolbarItem>
             )}
+          </ToolbarContent>
+        </Toolbar>
 
-            <Table aria-label="Node groups table" variant="compact">
-              <Thead>
-                <Tr>
-                  <Th
-                    select={{
-                      onSelect: toggleSelectAll,
-                      isSelected: isAllSelected,
-                    }}
-                  />
-                  <Th>Name</Th>
-                  <Th>Description</Th>
-                  <Th>Nodes</Th>
-                  <Th>Created</Th>
-                  <Th>Actions</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {groups.map((group, rowIndex) => (
+        {view.length === 0 ? (
+          <BorEmptyState
+            isEmptyData={groups.length === 0}
+            itemsLabel="node groups"
+            emptyTitle="No node groups"
+            emptyBody="Create a node group to organize your desktop agents and generate enrollment tokens."
+            action={
+              <Button variant="primary" onClick={openCreateModal}>
+                Create Node Group
+              </Button>
+            }
+            onClearFilters={() => setSearchText("")}
+          />
+        ) : (
+          <Table aria-label="Node groups table" variant="compact">
+            <Thead>
+              <Tr>
+                <Th
+                  select={{
+                    onSelect: toggleSelectAll,
+                    isSelected: isAllSelected,
+                  }}
+                />
+                <Th sort={getSort(1)}>Name</Th>
+                <Th>Description</Th>
+                <Th sort={getSort(3)}>Nodes</Th>
+                <Th sort={getSort(4)}>Created</Th>
+                <Th screenReaderText="Actions" />
+              </Tr>
+            </Thead>
+            <Tbody>
+              {view.map((group, rowIndex) => {
+                const rowActions: IAction[] = [
+                  { title: "Generate token", onClick: () => openTokenModal(group) },
+                  { title: "Edit", onClick: () => openEditModal(group) },
+                  { isSeparator: true },
+                  { title: "Delete", isDanger: true, onClick: () => openDeleteModal([group.id]) },
+                ];
+                return (
                   <Tr key={group.id}>
                     <Td
                       select={{
@@ -349,33 +418,27 @@ export const NodeGroupsPage: React.FC = () => {
                       </Label>
                     </Td>
                     <Td dataLabel="Created">{formatDate(group.created_at)}</Td>
-                    <Td dataLabel="Actions">
-                      <Flex>
-                        <FlexItem>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => openTokenModal(group)}
-                          >
-                            Generate Token
-                          </Button>
-                        </FlexItem>
-                        <FlexItem>
-                          <Button
+                    <Td dataLabel="Actions" isActionCell>
+                      <ActionsColumn
+                        items={rowActions}
+                        actionsToggle={({ onToggle, isOpen, isDisabled, toggleRef }) => (
+                          <MenuToggle
+                            ref={toggleRef}
+                            aria-label={`Actions for node group ${group.name}`}
                             variant="plain"
-                            size="sm"
-                            onClick={() => openEditModal(group)}
-                          >
-                            Edit
-                          </Button>
-                        </FlexItem>
-                      </Flex>
+                            onClick={onToggle}
+                            isExpanded={isOpen}
+                            isDisabled={isDisabled}
+                            icon={<EllipsisVIcon />}
+                          />
+                        )}
+                      />
                     </Td>
                   </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          </>
+                );
+              })}
+            </Tbody>
+          </Table>
         )}
       </PageSection>
 
