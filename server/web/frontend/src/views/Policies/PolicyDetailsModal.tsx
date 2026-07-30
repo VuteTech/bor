@@ -1958,7 +1958,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
+        <div role="tree" aria-label="Firefox policy settings" style={{
           width: "260px",
           minWidth: "260px",
           borderRight: "1px solid var(--pf-t--global--border--color--default)",
@@ -1969,7 +1969,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <div key={group} style={{ marginBottom: "2px" }}>
               {/* Group header */}
               <div
-                role="button"
+                role="treeitem"
+                aria-expanded={firefoxExpandedGroups.has(group)}
+                aria-selected={false}
+                aria-level={1}
                 tabIndex={0}
                 onClick={() => toggleFirefoxGroup(group)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFirefoxGroup(group); } }}
@@ -2007,7 +2010,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 return (
                   <div
                     key={p.key}
-                    role="button"
+                    role="treeitem"
+                    aria-selected={isSelected}
+                    aria-level={2}
                     tabIndex={0}
                     onClick={() => handleFirefoxSelectPolicy(p)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFirefoxSelectPolicy(p); } }}
@@ -2202,7 +2207,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
+        <div role="tree" aria-label="Thunderbird policy settings" style={{
           width: "260px",
           minWidth: "260px",
           borderRight: "1px solid var(--pf-t--global--border--color--default)",
@@ -2212,7 +2217,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           {Array.from(tree.entries()).map(([group, policies]) => (
             <div key={group} style={{ marginBottom: "2px" }}>
               <div
-                role="button"
+                role="treeitem"
+                aria-expanded={thunderbirdExpandedGroups.has(group)}
+                aria-selected={false}
+                aria-level={1}
                 tabIndex={0}
                 onClick={() => toggleThunderbirdGroup(group)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleThunderbirdGroup(group); } }}
@@ -2249,7 +2257,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 return (
                   <div
                     key={p.key}
-                    role="button"
+                    role="treeitem"
+                    aria-selected={isSelected}
+                    aria-level={2}
                     tabIndex={0}
                     onClick={() => handleThunderbirdSelectPolicy(p)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleThunderbirdSelectPolicy(p); } }}
@@ -2662,7 +2672,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
+        <div role="tree" aria-label="KDE Kiosk policy settings" style={{
           width: "260px",
           minWidth: "260px",
           borderRight: "1px solid var(--pf-t--global--border--color--default)",
@@ -2673,7 +2683,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <div key={group} style={{ marginBottom: "2px" }}>
               {/* Group header */}
               <div
-                role="button"
+                role="treeitem"
+                aria-expanded={kconfigExpandedGroups.has(group)}
+                aria-selected={false}
+                aria-level={1}
                 tabIndex={0}
                 onClick={() => toggleKconfigGroup(group)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleKconfigGroup(group); } }}
@@ -2711,7 +2724,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 return (
                   <div
                     key={p.key}
-                    role="button"
+                    role="treeitem"
+                    aria-selected={isSelected}
+                    aria-level={2}
                     tabIndex={0}
                     onClick={() => handleKconfigSelectPolicy(p)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleKconfigSelectPolicy(p); } }}
@@ -2920,7 +2935,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
+        <div role="tree" aria-label="Chrome policy settings" style={{
           width: "260px",
           minWidth: "260px",
           borderRight: "1px solid var(--pf-t--global--border--color--default)",
@@ -2931,7 +2946,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <div key={group} style={{ marginBottom: "2px" }}>
               {/* Group header */}
               <div
-                role="button"
+                role="treeitem"
+                aria-expanded={chromeExpandedGroups.has(group)}
+                aria-selected={false}
+                aria-level={1}
                 tabIndex={0}
                 onClick={() => toggleChromeGroup(group)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleChromeGroup(group); } }}
@@ -2969,7 +2987,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 return (
                   <div
                     key={p.key}
-                    role="button"
+                    role="treeitem"
+                    aria-selected={isSelected}
+                    aria-level={2}
                     tabIndex={0}
                     onClick={() => handleChromeSelectPolicy(p)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleChromeSelectPolicy(p); } }}
@@ -3188,7 +3208,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
-        <div style={{
+        <div role="tree" aria-label="Edge policy settings" style={{
           width: "260px",
           minWidth: "260px",
           borderRight: "1px solid var(--pf-t--global--border--color--default)",
@@ -3198,7 +3218,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           {Array.from(tree.entries()).map(([group, policies]) => (
             <div key={group} style={{ marginBottom: "2px" }}>
               <div
-                role="button"
+                role="treeitem"
+                aria-expanded={edgeExpandedGroups.has(group)}
+                aria-selected={false}
+                aria-level={1}
                 tabIndex={0}
                 onClick={() => toggleEdgeGroup(group)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEdgeGroup(group); } }}
@@ -3235,7 +3258,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 return (
                   <div
                     key={p.key}
-                    role="button"
+                    role="treeitem"
+                    aria-selected={isSelected}
+                    aria-level={2}
                     tabIndex={0}
                     onClick={() => handleEdgeSelectPolicy(p)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleEdgeSelectPolicy(p); } }}
