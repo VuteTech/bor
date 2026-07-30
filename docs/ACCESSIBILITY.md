@@ -25,7 +25,7 @@ All WCAG 2.2 AA success criteria that apply to this UI are satisfied.
 | Abbreviations expanded with `<abbr title="...">` on first use (MFA, TOTP, FIDO2, NFC) | Best practice |
 | Custom tree-view is fully keyboard-operable | 2.1.1 |
 | Modal focus trap (PF6 Modal) | 2.1.2 |
-| Focus returns to trigger element when a modal closes | 2.1.1 |
+| Focus returns to trigger element when a modal closes (PF6 `<Modal>` FocusTrap unmounts on close and restores focus automatically; no modal passes `disableFocusTrap`) | 2.1.1 |
 | Skip navigation link (visible on focus, first focusable element) | 2.4.1 |
 | Document title updated on every screen navigation | 2.4.2 |
 | Focus rings: ≥2 px with ≥3:1 contrast in all three themes | 2.4.11 |
