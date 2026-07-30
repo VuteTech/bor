@@ -398,7 +398,7 @@ export const MFATab: React.FC = () => {
                     />
                     <Button
                       variant="primary"
-                      isSmall
+                      size="sm"
                       onClick={() => saveRename(cred.id)}
                       isDisabled={renameSaving || !renameValue.trim()}
                       isLoading={renameSaving}
@@ -407,7 +407,7 @@ export const MFATab: React.FC = () => {
                     </Button>
                     <Button
                       variant="link"
-                      isSmall
+                      size="sm"
                       onClick={cancelRename}
                       isDisabled={renameSaving}
                     >
@@ -431,7 +431,7 @@ export const MFATab: React.FC = () => {
                     </span>
                     <Button
                       variant="danger"
-                      isSmall
+                      size="sm"
                       onClick={() => handleDelete(cred.id)}
                       isDisabled={deleting}
                       isLoading={deleting}
@@ -440,7 +440,7 @@ export const MFATab: React.FC = () => {
                     </Button>
                     <Button
                       variant="link"
-                      isSmall
+                      size="sm"
                       onClick={() => setConfirmDeleteId(null)}
                       isDisabled={deleting}
                     >
@@ -461,7 +461,7 @@ export const MFATab: React.FC = () => {
                     </div>
                     <Button
                       variant="plain"
-                      isSmall
+                      size="sm"
                       aria-label={`Rename ${cred.name}`}
                       onClick={() => startRename(cred)}
                     >
@@ -469,7 +469,7 @@ export const MFATab: React.FC = () => {
                     </Button>
                     <Button
                       variant="plain"
-                      isSmall
+                      size="sm"
                       aria-label={`Remove ${cred.name}`}
                       onClick={() => setConfirmDeleteId(cred.id)}
                       style={{ color: "var(--pf-t--global--text--color--status--danger--default)" }}
