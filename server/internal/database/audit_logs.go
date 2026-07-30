@@ -51,13 +51,34 @@ func (r *AuditLogRepository) DeleteOlderThan(ctx context.Context, cutoff time.Ti
 	return result.RowsAffected()
 }
 
-// List retrieves audit logs with pagination and optional filters
+// auditLogSortColumns allowlists sort fields to SQL columns (ORDER BY cannot be
+// parameterized, so the column must come from this fixed map).
+var auditLogSortColumns = map[string]string{
+	"created_at":    "created_at",
+	"username":      "username",
+	"action":        "action",
+	"resource_type": "resource_type",
+}
+
+func auditLogOrderBy(field, order string) string {
+	col, ok := auditLogSortColumns[field]
+	if !ok {
+		col = "created_at"
+	}
+	dir := "DESC"
+	if strings.EqualFold(order, "asc") {
+		dir = "ASC"
+	}
+	return fmt.Sprintf("ORDER BY %s %s", col, dir)
+}
+
+// List retrieves audit logs with pagination, filters, and sorting.
 func (r *AuditLogRepository) List(ctx context.Context, req *models.AuditLogListRequest) ([]*models.AuditLog, error) {
 	where, args := buildAuditLogFilter(req)
 
 	query := fmt.Sprintf(`SELECT id, user_id, username, action, resource_type, resource_id, details, ip_address, created_at
-		FROM audit_logs %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		where, len(args)+1, len(args)+2)
+		FROM audit_logs %s %s LIMIT $%d OFFSET $%d`,
+		where, auditLogOrderBy(req.SortField, req.SortOrder), len(args)+1, len(args)+2)
 
 	limit := req.PerPage
 	if limit <= 0 {

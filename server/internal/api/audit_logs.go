@@ -50,6 +50,8 @@ func (h *AuditLogHandler) List(w http.ResponseWriter, r *http.Request) {
 			req.PerPage = v
 		}
 	}
+	req.SortField = r.URL.Query().Get("sort_field")
+	req.SortOrder = r.URL.Query().Get("sort_order")
 
 	resp, err := h.auditSvc.List(r.Context(), req)
 	if err != nil {

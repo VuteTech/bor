@@ -19,29 +19,11 @@ import {
 } from "@patternfly/react-core";
 
 import type { BindingsOverview, BindingEntry } from "../../apiClient/dashboardApi";
+import { StatCard } from "../../components/StatCard";
 
 interface PolicyBindingsSectionProps {
   data: BindingsOverview;
 }
-
-const StatCard: React.FC<{
-  title: string;
-  value: number;
-  color?: string;
-}> = ({ title, value, color }) => (
-  <Card isCompact isFlat>
-    <CardBody>
-      <Flex direction={{ default: "column" }} alignItems={{ default: "alignItemsCenter" }}>
-        <FlexItem>
-          <span style={{ fontSize: "0.85rem", color: "#6a6e73" }}>{title}</span>
-        </FlexItem>
-        <FlexItem>
-          <span style={{ fontSize: "1.75rem", fontWeight: 700, color }}>{value}</span>
-        </FlexItem>
-      </Flex>
-    </CardBody>
-  </Card>
-);
 
 const policyStateColor = (state: string): "blue" | "grey" => {
   return state === "released" ? "blue" : "grey";
@@ -67,37 +49,25 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
           <StatCard title="Total Bindings" value={data.totalBindings} />
         </GridItem>
         <GridItem span={3}>
-          <StatCard
-            title="Enabled"
-            value={data.enabledBindings}
-            color="var(--pf-t--global--text--color--status--success--default)"
-          />
+          <StatCard title="Enabled" value={data.enabledBindings} color="green" />
         </GridItem>
         <GridItem span={3}>
           <StatCard
             title="Disabled"
             value={data.disabledBindings}
-            color={
-              data.disabledBindings > 0
-                ? "var(--pf-t--global--text--color--status--warning--default)"
-                : undefined
-            }
+            color={data.disabledBindings > 0 ? "orange" : undefined}
           />
         </GridItem>
         <GridItem span={3}>
           <StatCard
             title="Groups Without Policy"
             value={data.groupsWithoutBindings}
-            color={
-              data.groupsWithoutBindings > 0
-                ? "var(--pf-t--global--text--color--status--warning--default)"
-                : undefined
-            }
+            color={data.groupsWithoutBindings > 0 ? "orange" : undefined}
           />
         </GridItem>
 
         <GridItem span={12}>
-          <Card isFlat>
+          <Card>
             <CardTitle>Coverage by Group</CardTitle>
             <CardBody>
               {groupedBindings.length === 0 ? (

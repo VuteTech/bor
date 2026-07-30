@@ -399,6 +399,8 @@ type AuditLogListRequest struct {
 	ResourceTypes []string `json:"resource_types,omitempty"`
 	Actions       []string `json:"actions,omitempty"`
 	Username      string   `json:"username,omitempty"`
+	SortField     string   `json:"sort_field,omitempty"`
+	SortOrder     string   `json:"sort_order,omitempty"` // "asc" | "desc"
 }
 
 // AuditLogListResponse represents a paginated list of audit logs
