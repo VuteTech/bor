@@ -419,7 +419,7 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
 
   return (
     <>
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Flex style={{ marginBottom: 16 }}>
         <FlexItem align={{ default: "alignRight" }}>
@@ -586,7 +586,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
 
   return (
     <>
-      {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+      <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
       <Flex style={{ marginBottom: 16 }}>
         <FlexItem align={{ default: "alignRight" }}>

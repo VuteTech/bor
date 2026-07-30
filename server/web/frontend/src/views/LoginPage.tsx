@@ -162,7 +162,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
         message={errorMsg}
         isInline
         actionClose={
-          <Button variant="plain" onClick={() => setErrorMsg(null)}>
+          <Button variant="plain" aria-label="Close" onClick={() => setErrorMsg(null)}>
             &times;
           </Button>
         }

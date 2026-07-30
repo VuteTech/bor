@@ -70,7 +70,7 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
           <StatCard
             title="Enabled"
             value={data.enabledBindings}
-            color="var(--pf-v5-global--success-color--100)"
+            color="var(--pf-t--global--text--color--status--success--default)"
           />
         </GridItem>
         <GridItem span={3}>
@@ -79,7 +79,7 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
             value={data.disabledBindings}
             color={
               data.disabledBindings > 0
-                ? "var(--pf-v5-global--warning-color--100)"
+                ? "var(--pf-t--global--text--color--status--warning--default)"
                 : undefined
             }
           />
@@ -90,7 +90,7 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
             value={data.groupsWithoutBindings}
             color={
               data.groupsWithoutBindings > 0
-                ? "var(--pf-v5-global--warning-color--100)"
+                ? "var(--pf-t--global--text--color--status--warning--default)"
                 : undefined
             }
           />

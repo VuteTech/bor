@@ -110,7 +110,7 @@ export const AgentNotificationsTab: React.FC = () => {
         message={error}
         isInline
         actionClose={
-          <Button variant="plain" onClick={() => setError(null)}>
+          <Button variant="plain" aria-label="Close" onClick={() => setError(null)}>
             &times;
           </Button>
         }
@@ -121,7 +121,7 @@ export const AgentNotificationsTab: React.FC = () => {
         variant="success"
         isInline
         actionClose={
-          <Button variant="plain" onClick={() => setSuccess(null)}>
+          <Button variant="plain" aria-label="Close" onClick={() => setSuccess(null)}>
             &times;
           </Button>
         }

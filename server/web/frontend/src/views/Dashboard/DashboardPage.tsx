@@ -5,7 +5,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   PageSection,
-  Alert,
   Spinner,
   Flex,
   FlexItem,
@@ -14,6 +13,7 @@ import {
 import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 
 import { fetchDashboardData, DashboardData } from "../../apiClient/dashboardApi";
+import { LiveAlert } from "../../components/LiveAlert";
 import { FleetOverviewSection } from "./FleetOverviewSection";
 import { NodesGroupsSection } from "./NodesGroupsSection";
 import { PoliciesOverviewSection } from "./PoliciesOverviewSection";
@@ -55,7 +55,7 @@ export const DashboardPage: React.FC = () => {
       <PageSection>
         <Flex justifyContent={{ default: "justifyContentCenter" }}>
           <FlexItem>
-            <Spinner size="xl" />
+            <Spinner size="xl" aria-label="Loading" />
           </FlexItem>
         </Flex>
       </PageSection>
@@ -65,9 +65,9 @@ export const DashboardPage: React.FC = () => {
   if (error) {
     return (
       <PageSection>
-        <Alert variant="danger" title="Dashboard Error">
+        <LiveAlert variant="danger" title="Couldn’t load the dashboard">
           {error}
-        </Alert>
+        </LiveAlert>
       </PageSection>
     );
   }

@@ -251,16 +251,21 @@ export const NodesPage: React.FC = () => {
   }, [filteredNodes, sortField, sortDirection]);
 
   /* ── Sort handler ── */
+  // Column indices must match the real header order, where index 0 is the
+  // row-select cell: Node = 1, Last Seen = 5. sortBy.index is the *active*
+  // column so only that header shows a sort arrow.
+  const columnIndexFor = (field: SortField): number => (field === "name" ? 1 : 5);
   const getSortParams = (field: SortField): ThProps["sort"] => ({
     sortBy: {
-      index: field === "name" ? 0 : 4,
-      direction: sortField === field ? sortDirection : "asc",
+      index: columnIndexFor(sortField),
+      direction: sortDirection,
+      defaultDirection: "asc",
     },
     onSort: (_ev, _idx, dir) => {
       setSortField(field);
       setSortDirection(dir);
     },
-    columnIndex: field === "name" ? 0 : 4,
+    columnIndex: columnIndexFor(field),
   });
 
   /* ── Selection ── */
@@ -529,9 +534,9 @@ export const NodesPage: React.FC = () => {
             const msPerDay = 86_400_000;
             const daysLeft = notAfter ? Math.ceil((notAfter.getTime() - Date.now()) / msPerDay) : null;
             const certColor = daysLeft === null ? "#6a6e73"
-              : daysLeft <= 0 ? "var(--pf-v5-global--danger-color--100)"
-              : daysLeft <= 30 ? "var(--pf-v5-global--warning-color--100)"
-              : "var(--pf-v5-global--success-color--100)";
+              : daysLeft <= 0 ? "var(--pf-t--global--text--color--status--danger--default)"
+              : daysLeft <= 30 ? "var(--pf-t--global--text--color--status--warning--default)"
+              : "var(--pf-t--global--text--color--status--success--default)";
             const certLabel = daysLeft === null ? "Unknown"
               : daysLeft <= 0 ? `Expired ${Math.abs(daysLeft)}d ago`
               : `Expires in ${daysLeft}d`;
@@ -687,7 +692,7 @@ export const NodesPage: React.FC = () => {
               variant="danger"
               title="Action failed"
               isInline
-              actionClose={<Button variant="plain" onClick={() => setActionError(null)}>×</Button>}
+              actionClose={<Button variant="plain" aria-label="Close" onClick={() => setActionError(null)}>×</Button>}
               style={{ marginBottom: "1rem" }}
             >
               {actionError}

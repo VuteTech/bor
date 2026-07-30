@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Alert,
+  AlertActionCloseButton,
   Button,
   Form,
   FormGroup,
@@ -18,6 +18,7 @@ import {
   FormSelectOption,
 } from "@patternfly/react-core";
 import { getMFASettings, updateMFASettings, MFASettings } from "../../apiClient/authApi";
+import { LiveAlert } from "../../components/LiveAlert";
 
 export const MFASettingsTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -64,36 +65,24 @@ export const MFASettingsTab: React.FC = () => {
     }
   }, [mfaRequired, totpAlgorithm]);
 
-  if (loading) return <Spinner size="lg" />;
+  if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
   return (
     <>
-      {error && (
-        <Alert
-          variant="danger"
-          title={error}
-          isInline
-          actionClose={
-            <Button variant="plain" onClick={() => setError(null)}>
-              &times;
-            </Button>
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
-      {success && (
-        <Alert
-          variant="success"
-          title={success}
-          isInline
-          actionClose={
-            <Button variant="plain" onClick={() => setSuccess(null)}>
-              &times;
-            </Button>
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      <LiveAlert
+        variant="danger"
+        message={error}
+        isInline
+        actionClose={<AlertActionCloseButton onClose={() => setError(null)} />}
+        style={{ marginBottom: 16 }}
+      />
+      <LiveAlert
+        variant="success"
+        message={success}
+        isInline
+        actionClose={<AlertActionCloseButton onClose={() => setSuccess(null)} />}
+        style={{ marginBottom: 16 }}
+      />
 
       <Form style={{ maxWidth: 600 }}>
         <FormGroup label="Require MFA for all local users" fieldId="mfa-required">

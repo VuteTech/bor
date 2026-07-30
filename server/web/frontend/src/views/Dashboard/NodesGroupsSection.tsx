@@ -55,7 +55,7 @@ export const NodesGroupsSection: React.FC<NodesGroupsSectionProps> = ({ data }) 
                       fontWeight: 700,
                       color:
                         data.nodesWithoutGroup > 0
-                          ? "var(--pf-v5-global--warning-color--100)"
+                          ? "var(--pf-t--global--text--color--status--warning--default)"
                           : undefined,
                     }}
                   >
