@@ -18,6 +18,7 @@ import {
   Nav,
   NavList,
   NavItem,
+  NavGroup,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -417,27 +418,39 @@ export const Shell: React.FC = () => {
     <PageSidebar>
       <PageSidebarBody>
         <Nav
+          aria-label="Primary navigation"
           onSelect={(_ev, result) => {
             if (typeof result.to === "string") navigate(result.to);
           }}
         >
           <NavList>
             {navItem("dashboard", "Dashboard")}
-            {navItem("policies", "Policies")}
+          </NavList>
+          <NavGroup title="Fleet">
             {navItem("nodes", "Nodes")}
             {navItem("node-groups", "Node Groups")}
-            {navItem("policy-bindings", "Policy Bindings")}
             {navItem("compliance", "Compliance")}
-            {hasPermission("audit_log:view") && navItem("audit-logs", "Audit Logs")}
-            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view")) &&
-              navItem("settings", "Settings")}
-          </NavList>
+          </NavGroup>
+          <NavGroup title="Policy">
+            {navItem("policies", "Policies")}
+            {navItem("policy-bindings", "Policy Bindings")}
+          </NavGroup>
+          {(hasPermission("audit_log:view") ||
+            hasPermission("user:view") ||
+            hasPermission("role:view") ||
+            hasPermission("user_group:view")) && (
+            <NavGroup title="System">
+              {hasPermission("audit_log:view") && navItem("audit-logs", "Audit Logs")}
+              {(hasPermission("user:view") || hasPermission("role:view") || hasPermission("user_group:view")) &&
+                navItem("settings", "Settings")}
+            </NavGroup>
+          )}
         </Nav>
         <div
           style={{
             marginTop: "auto",
             padding: "1rem",
-            borderTop: "1px solid #3c3f42",
+            borderTop: "1px solid var(--pf-t--global--border--color--default)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -470,7 +483,7 @@ export const Shell: React.FC = () => {
               href="https://getbor.dev"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "#2E7D32", textDecoration: "none" }}
+              style={{ color: "var(--pf-t--global--color--brand--default)", textDecoration: "none" }}
             >
               getbor.dev
             </a>

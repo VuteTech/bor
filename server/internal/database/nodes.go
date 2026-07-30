@@ -291,6 +291,14 @@ func buildNodeFilter(req *models.NodeListRequest) (where string, args []interfac
 		args = append(args, req.AgentVersion)
 		conds = append(conds, fmt.Sprintf("n.agent_version = $%d", len(args)))
 	}
+	if req.Group == "none" {
+		// Nodes not a member of any group (unassigned).
+		conds = append(conds, "NOT EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id)")
+	} else if req.Group != "" {
+		args = append(args, req.Group)
+		conds = append(conds, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id AND ngm.node_group_id::text = $%d)", len(args)))
+	}
 	if s := strings.TrimSpace(req.Search); s != "" {
 		args = append(args, "%"+s+"%")
 		p := len(args)

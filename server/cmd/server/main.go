@@ -466,18 +466,32 @@ func main() {
 	mux.Handle("/api/v1/policy-bindings", authMiddleware(bindingPerms(auditMw(http.HandlerFunc(policyBindingHandler.ServeHTTP)))))
 	mux.Handle("/api/v1/policy-bindings/", authMiddleware(bindingPerms(auditMw(http.HandlerFunc(policyBindingHandler.ServeHTTP)))))
 
-	// Admin-only routes (requires "user:manage" permission)
+	// User management routes — per-action permissions (view/create/edit/delete).
+	// user:manage still grants all of these (migration 000028 grants the granular
+	// perms to every role that holds user:manage).
+	userPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+		{Method: http.MethodGet, Resource: "user", Action: "view"},
+		{Method: http.MethodPost, Resource: "user", Action: "create"},
+		{Method: http.MethodPut, Resource: "user", Action: "edit"},
+		{Method: http.MethodDelete, Resource: "user", Action: "delete"},
+	})
+	mux.Handle("/api/v1/users", authMiddleware(userPerms(auditMw(userHandler))))
+	mux.Handle("/api/v1/users/", authMiddleware(userPerms(auditMw(userHandler))))
+
+	// Role management routes — per-action permissions.
+	rolePerms := api.RequireMethodPermission(az, []api.MethodPermission{
+		{Method: http.MethodGet, Resource: "role", Action: "view"},
+		{Method: http.MethodPost, Resource: "role", Action: "create"},
+		{Method: http.MethodPut, Resource: "role", Action: "edit"},
+		{Method: http.MethodDelete, Resource: "role", Action: "delete"},
+	})
+	mux.Handle("/api/v1/roles", authMiddleware(rolePerms(auditMw(roleHandler))))
+	mux.Handle("/api/v1/roles/", authMiddleware(rolePerms(auditMw(roleHandler))))
+	// Listing the permission catalogue is a read — gated by role:view.
+	mux.Handle("/api/v1/permissions", authMiddleware(api.RequirePermission(az, "role", "view")(http.HandlerFunc(roleHandler.ListAllPermissions))))
+
+	// User role binding routes remain admin-level (managing who has which role).
 	adminMiddleware := api.AdminOnly(az)
-	mux.Handle("/api/v1/users", authMiddleware(adminMiddleware(auditMw(userHandler))))
-	mux.Handle("/api/v1/users/", authMiddleware(adminMiddleware(auditMw(userHandler))))
-
-	// Role management routes (requires "role:manage" permission)
-	roleMiddleware := api.RequirePermission(az, "role", "manage")
-	mux.Handle("/api/v1/roles", authMiddleware(roleMiddleware(auditMw(roleHandler))))
-	mux.Handle("/api/v1/roles/", authMiddleware(roleMiddleware(auditMw(roleHandler))))
-	mux.Handle("/api/v1/permissions", authMiddleware(roleMiddleware(http.HandlerFunc(roleHandler.ListAllPermissions))))
-
-	// User role binding routes (requires "user:manage" permission)
 	mux.Handle("/api/v1/user-role-bindings", authMiddleware(adminMiddleware(auditMw(bindingHandler))))
 	mux.Handle("/api/v1/user-role-bindings/", authMiddleware(adminMiddleware(auditMw(bindingHandler))))
 

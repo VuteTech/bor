@@ -40,10 +40,14 @@ import {
   Role,
   Permission,
 } from "../../apiClient/rolesApi";
+import { hasPermission } from "../../apiClient/permissions";
 
 /* ── Roles Tab ── */
 
 export const RolesTab: React.FC = () => {
+  const canCreate = hasPermission("role:create");
+  const canEdit = hasPermission("role:edit");
+  const canDelete = hasPermission("role:delete");
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,28 +93,32 @@ export const RolesTab: React.FC = () => {
     <>
       <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
-      <Flex style={{ marginBottom: 16 }}>
-        <FlexItem align={{ default: "alignRight" }}>
-          <Button
-            variant="primary"
-            icon={<PlusCircleIcon />}
-            onClick={() => setShowCreate(true)}
-          >
-            Create Role
-          </Button>
-        </FlexItem>
-      </Flex>
+      {canCreate && (
+        <Flex style={{ marginBottom: 16 }}>
+          <FlexItem align={{ default: "alignRight" }}>
+            <Button
+              variant="primary"
+              icon={<PlusCircleIcon />}
+              onClick={() => setShowCreate(true)}
+            >
+              Create Role
+            </Button>
+          </FlexItem>
+        </Flex>
+      )}
 
       {roles.length === 0 ? (
         <BorEmptyState
           isEmptyData
           itemsLabel="roles"
           emptyTitle="No roles yet"
-          emptyBody="Create a role to grant a set of permissions to users."
+          emptyBody={canCreate ? "Create a role to grant a set of permissions to users." : "No roles to display."}
           action={
-            <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
-              Create Role
-            </Button>
+            canCreate ? (
+              <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
+                Create Role
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -120,7 +128,7 @@ export const RolesTab: React.FC = () => {
               <Th>Role Name</Th>
               <Th>Description</Th>
               <Th># Permissions</Th>
-              <Th screenReaderText="Actions" />
+              {(canEdit || canDelete) && <Th screenReaderText="Actions" />}
             </Tr>
           </Thead>
           <Tbody>
@@ -129,23 +137,29 @@ export const RolesTab: React.FC = () => {
                 <Td>{role.name}</Td>
                 <Td>{role.description}</Td>
                 <Td>{role.permission_count}</Td>
-                <Td>
-                  <Button
-                    variant="plain"
-                    aria-label={`Edit role ${role.name}`}
-                    onClick={() => setEditRole(role)}
-                  >
-                    <PencilAltIcon />
-                  </Button>
-                  <Button
-                    variant="plain"
-                    aria-label={`Delete role ${role.name}`}
-                    isDanger
-                    onClick={() => setDeleteTarget(role)}
-                  >
-                    <TrashIcon />
-                  </Button>
-                </Td>
+                {(canEdit || canDelete) && (
+                  <Td>
+                    {canEdit && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Edit role ${role.name}`}
+                        onClick={() => setEditRole(role)}
+                      >
+                        <PencilAltIcon />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Delete role ${role.name}`}
+                        isDanger
+                        onClick={() => setDeleteTarget(role)}
+                      >
+                        <TrashIcon />
+                      </Button>
+                    )}
+                  </Td>
+                )}
               </Tr>
             ))}
           </Tbody>

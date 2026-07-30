@@ -48,10 +48,14 @@ import {
   CreateUserRequest,
 } from "../../apiClient/usersApi";
 import { fetchRoles, Role } from "../../apiClient/rolesApi";
+import { hasPermission } from "../../apiClient/permissions";
 
 /* ── Users Tab ── */
 
 export const UsersTab: React.FC = () => {
+  const canCreate = hasPermission("user:create");
+  const canEdit = hasPermission("user:edit");
+  const canDelete = hasPermission("user:delete");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,28 +115,32 @@ export const UsersTab: React.FC = () => {
     <>
       <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
-      <Flex style={{ marginBottom: 16 }}>
-        <FlexItem align={{ default: "alignRight" }}>
-          <Button
-            variant="primary"
-            icon={<PlusCircleIcon />}
-            onClick={() => setShowCreate(true)}
-          >
-            Create User
-          </Button>
-        </FlexItem>
-      </Flex>
+      {canCreate && (
+        <Flex style={{ marginBottom: 16 }}>
+          <FlexItem align={{ default: "alignRight" }}>
+            <Button
+              variant="primary"
+              icon={<PlusCircleIcon />}
+              onClick={() => setShowCreate(true)}
+            >
+              Create User
+            </Button>
+          </FlexItem>
+        </Flex>
+      )}
 
       {users.length === 0 ? (
         <BorEmptyState
           isEmptyData
           itemsLabel="users"
           emptyTitle="No users yet"
-          emptyBody="Create a user to grant someone access to the console."
+          emptyBody={canCreate ? "Create a user to grant someone access to the console." : "No users to display."}
           action={
-            <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
-              Create User
-            </Button>
+            canCreate ? (
+              <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
+                Create User
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -143,7 +151,7 @@ export const UsersTab: React.FC = () => {
               <Th>Email</Th>
               <Th>Source</Th>
               <Th>Enabled</Th>
-              <Th screenReaderText="Actions" />
+              {(canEdit || canDelete) && <Th screenReaderText="Actions" />}
             </Tr>
           </Thead>
           <Tbody>
@@ -161,30 +169,38 @@ export const UsersTab: React.FC = () => {
                     {u.enabled ? "Yes" : "No"}
                   </Label>
                 </Td>
-                <Td>
-                  <Button
-                    variant="plain"
-                    aria-label={`Edit user ${u.username}`}
-                    onClick={() => setEditUser(u)}
-                  >
-                    <PencilAltIcon />
-                  </Button>
-                  <Button
-                    variant="plain"
-                    aria-label={`${u.enabled ? "Disable" : "Enable"} user ${u.username}`}
-                    onClick={() => handleToggleEnabled(u)}
-                  >
-                    {u.enabled ? "Disable" : "Enable"}
-                  </Button>
-                  <Button
-                    variant="plain"
-                    aria-label={`Delete user ${u.username}`}
-                    isDanger
-                    onClick={() => setDeleteTarget(u)}
-                  >
-                    <TrashIcon />
-                  </Button>
-                </Td>
+                {(canEdit || canDelete) && (
+                  <Td>
+                    {canEdit && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Edit user ${u.username}`}
+                        onClick={() => setEditUser(u)}
+                      >
+                        <PencilAltIcon />
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <Button
+                        variant="plain"
+                        aria-label={`${u.enabled ? "Disable" : "Enable"} user ${u.username}`}
+                        onClick={() => handleToggleEnabled(u)}
+                      >
+                        {u.enabled ? "Disable" : "Enable"}
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Delete user ${u.username}`}
+                        isDanger
+                        onClick={() => setDeleteTarget(u)}
+                      >
+                        <TrashIcon />
+                      </Button>
+                    )}
+                  </Td>
+                )}
               </Tr>
             ))}
           </Tbody>

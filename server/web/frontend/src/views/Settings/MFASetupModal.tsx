@@ -13,6 +13,9 @@ import {
   TextInput,
   Alert,
   ClipboardCopy,
+  Checkbox,
+  Flex,
+  FlexItem,
   Form,
   FormGroup,
   Spinner,
@@ -20,6 +23,8 @@ import {
   List,
   ListItem,
 } from "@patternfly/react-core";
+import CopyIcon from "@patternfly/react-icons/dist/esm/icons/copy-icon";
+import DownloadIcon from "@patternfly/react-icons/dist/esm/icons/download-icon";
 import { LiveAlert } from "../../components/LiveAlert";
 import { mfaSetupBegin, mfaSetupFinish } from "../../apiClient/authApi";
 
@@ -46,6 +51,8 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const beginSetup = useCallback(async () => {
     setLoading(true);
@@ -81,6 +88,8 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
       setTotpCode("");
       setBackupCodes([]);
       setError(null);
+      setAcknowledged(false);
+      setCopied(false);
       beginSetup();
     } else {
       // Clear sensitive data when modal closes.
@@ -114,6 +123,35 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     onClose();
   };
 
+  // At the backup step MFA is already enabled server-side, so dismissing the
+  // dialog (X / Escape / backdrop) must still report success to the parent.
+  const handleModalClose = () => {
+    if (step === "backup") onSuccess();
+    onClose();
+  };
+
+  const copyBackupCodes = async () => {
+    try {
+      await navigator.clipboard.writeText(backupCodes.join("\n"));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Couldn’t copy to the clipboard — copy the codes manually.");
+    }
+  };
+
+  const downloadBackupCodes = () => {
+    const blob = new Blob([backupCodes.join("\n") + "\n"], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "bor-backup-codes.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const qrActions = [
     <Button
       key="verify"
@@ -130,7 +168,7 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
   ];
 
   const backupActions = [
-    <Button key="done" variant="primary" onClick={handleDone}>
+    <Button key="done" variant="primary" onClick={handleDone} isDisabled={!acknowledged}>
       Done
     </Button>,
   ];
@@ -139,7 +177,7 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     <Modal
       variant={ModalVariant.medium}
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleModalClose}
     >
       <ModalHeader title={step === "qr" ? "Set up two-factor authentication" : "Save your backup codes"} />
       <ModalBody>
@@ -218,6 +256,24 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
               ))}
             </List>
           </Content>
+          <Flex spaceItems={{ default: "spaceItemsSm" }} style={{ marginBottom: 16 }}>
+            <FlexItem>
+              <Button variant="secondary" icon={<CopyIcon />} onClick={copyBackupCodes}>
+                {copied ? "Copied" : "Copy codes"}
+              </Button>
+            </FlexItem>
+            <FlexItem>
+              <Button variant="secondary" icon={<DownloadIcon />} onClick={downloadBackupCodes}>
+                Download
+              </Button>
+            </FlexItem>
+          </Flex>
+          <Checkbox
+            id="mfa-ack-saved"
+            label="I have saved these backup codes in a safe place"
+            isChecked={acknowledged}
+            onChange={(_ev, checked) => setAcknowledged(checked)}
+          />
         </>
       )}
       </ModalBody>

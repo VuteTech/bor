@@ -33,7 +33,7 @@ interface FleetOverviewSectionProps {
 
 const CertExpiryList: React.FC<{ entries: CertExpiryEntry[]; emptyText: string }> = ({ entries, emptyText }) => {
   if (entries.length === 0) {
-    return <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>{emptyText}</span>;
+    return <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>{emptyText}</span>;
   }
   return (
     <DescriptionList isHorizontal isCompact>
@@ -70,7 +70,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
       </Title>
       <Grid hasGutter>
         <GridItem span={3}>
-          <StatCard title="Total Nodes" value={data.totalNodes} color="blue" />
+          <StatCard title="Total Nodes" value={data.totalNodes} color="blue" href="/nodes" />
         </GridItem>
         <GridItem span={3}>
           <StatCard
@@ -78,6 +78,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             value={data.online}
             icon={<CheckCircleIcon />}
             color="green"
+            href="/nodes?status=online"
           />
         </GridItem>
         <GridItem span={3}>
@@ -86,6 +87,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             value={data.offline}
             icon={<ExclamationCircleIcon />}
             color="red"
+            href="/nodes?status=offline"
           />
         </GridItem>
         <GridItem span={3}>
@@ -94,6 +96,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             value={data.unknown}
             icon={<QuestionCircleIcon />}
             color="grey"
+            href="/nodes?status=unknown"
           />
         </GridItem>
 
@@ -102,7 +105,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             <CardTitle>Agent Versions</CardTitle>
             <CardBody>
               {versionEntries.length === 0 ? (
-                <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>
+                <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>
                   No agents registered
                 </span>
               ) : (
@@ -124,7 +127,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             <CardTitle>OS / Distribution</CardTitle>
             <CardBody>
               {osEntries.length === 0 ? (
-                <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>No data available</span>
+                <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>No data available</span>
               ) : (
                 <LabelGroup>
                   {osEntries.map(([os, count]) => (
@@ -143,7 +146,7 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             <CardTitle>Desktop Environment</CardTitle>
             <CardBody>
               {deEntries.length === 0 ? (
-                <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>No data available</span>
+                <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>No data available</span>
               ) : (
                 <LabelGroup>
                   {deEntries.map(([de, count]) => (

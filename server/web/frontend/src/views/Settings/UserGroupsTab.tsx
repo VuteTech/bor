@@ -434,12 +434,21 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
     return detail ? `${u.username} (${detail})` : u.username;
   };
 
-  const handleRemove = async (memberId: string) => {
+  const [removeTarget, setRemoveTarget] = useState<UserGroupMember | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
+    setRemoveBusy(true);
+    setError(null);
     try {
-      await removeGroupMember(groupId, memberId);
+      await removeGroupMember(groupId, removeTarget.id);
+      setRemoveTarget(null);
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to remove member");
+    } finally {
+      setRemoveBusy(false);
     }
   };
 
@@ -499,7 +508,7 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
                   variant="plain"
                   isDanger
                   aria-label="Remove"
-                  onClick={() => handleRemove(m.id)}
+                  onClick={() => setRemoveTarget(m)}
                 >
                   <TrashIcon />
                 </Button>
@@ -559,6 +568,23 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
           </ModalFooter>
         </Modal>
       )}
+
+      <ConfirmModal
+        isOpen={removeTarget !== null}
+        title="Remove member?"
+        confirmLabel="Remove"
+        isDanger
+        isBusy={removeBusy}
+        onConfirm={confirmRemove}
+        onCancel={() => setRemoveTarget(null)}
+      >
+        {removeTarget && (
+          <>
+            Remove <strong>{userName(removeTarget.user_id)}</strong> from this group?
+            They will lose any access granted through it.
+          </>
+        )}
+      </ConfirmModal>
     </>
   );
 };
@@ -598,12 +624,21 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
     return r ? r.name : roleId;
   };
 
-  const handleRemove = async (bindingId: string) => {
+  const [removeTarget, setRemoveTarget] = useState<UserGroupRoleBinding | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
+    setRemoveBusy(true);
+    setError(null);
     try {
-      await removeGroupRoleBinding(groupId, bindingId);
+      await removeGroupRoleBinding(groupId, removeTarget.id);
+      setRemoveTarget(null);
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to remove binding");
+    } finally {
+      setRemoveBusy(false);
     }
   };
 
@@ -670,7 +705,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
                   variant="plain"
                   isDanger
                   aria-label="Remove"
-                  onClick={() => handleRemove(b.id)}
+                  onClick={() => setRemoveTarget(b)}
                 >
                   <TrashIcon />
                 </Button>
@@ -749,6 +784,24 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
           </ModalFooter>
         </Modal>
       )}
+
+      <ConfirmModal
+        isOpen={removeTarget !== null}
+        title="Remove role assignment?"
+        confirmLabel="Remove"
+        isDanger
+        isBusy={removeBusy}
+        onConfirm={confirmRemove}
+        onCancel={() => setRemoveTarget(null)}
+      >
+        {removeTarget && (
+          <>
+            Remove the <strong>{roleName(removeTarget.role_id)}</strong> role
+            ({removeTarget.scope_type} scope) from this group? Members will lose the
+            access it grants.
+          </>
+        )}
+      </ConfirmModal>
     </>
   );
 };

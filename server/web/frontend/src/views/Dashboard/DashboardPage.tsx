@@ -9,6 +9,7 @@ import {
   Flex,
   FlexItem,
   Button,
+  AlertActionLink,
 } from "@patternfly/react-core";
 import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 
@@ -62,10 +63,17 @@ export const DashboardPage: React.FC = () => {
     );
   }
 
-  if (error) {
+  // Full-page error only when there's no last-good data to fall back on
+  // (i.e. the very first load failed). Later refresh failures keep the last
+  // data and surface a non-blocking warning instead (see below).
+  if (error && !data) {
     return (
       <PageSection>
-        <LiveAlert variant="danger" title="Couldn’t load the dashboard">
+        <LiveAlert
+          variant="danger"
+          title="Couldn’t load the dashboard"
+          actionLinks={<AlertActionLink onClick={() => load()}>Retry</AlertActionLink>}
+        >
           {error}
         </LiveAlert>
       </PageSection>
@@ -77,13 +85,24 @@ export const DashboardPage: React.FC = () => {
   return (
     <>
       <PageSection>
+        {error && (
+          <LiveAlert
+            variant="warning"
+            isInline
+            title="Showing last-known data — the latest refresh failed"
+            actionLinks={<AlertActionLink onClick={() => load(true)}>Retry</AlertActionLink>}
+            style={{ marginBottom: "1rem" }}
+          >
+            {error}
+          </LiveAlert>
+        )}
         <Flex
           justifyContent={{ default: "justifyContentSpaceBetween" }}
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
             {lastUpdated && (
-              <span style={{ color: "#6a6e73", fontSize: "0.8rem" }}>
+              <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.8rem" }}>
                 Updated {lastUpdated.toLocaleTimeString()}
               </span>
             )}

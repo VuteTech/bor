@@ -421,6 +421,7 @@ type NodeListRequest struct {
 	OS           string `json:"os,omitempty"`            // matches os_name
 	Desktop      string `json:"desktop,omitempty"`       // matches desktop_env
 	AgentVersion string `json:"agent_version,omitempty"` // matches agent_version
+	Group        string `json:"group,omitempty"`         // node group id, or "none" for unassigned
 	SortField    string `json:"sort_field,omitempty"`
 	SortOrder    string `json:"sort_order,omitempty"` // "asc" | "desc"
 }

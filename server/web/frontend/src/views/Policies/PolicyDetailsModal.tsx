@@ -50,6 +50,7 @@ import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "./FirewalldPolicyEditor";
+import { PolicyTreePanel } from "./PolicyTreePanel";
 
 /* ── Known policy types and their config schemas ── */
 
@@ -943,6 +944,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // transitions that would otherwise silently drop them.
   const baselineRef = useRef({ name: "", description: "", policyType: "Kconfig", content: "{}" });
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  // Pending policy-type switch awaiting confirmation (it would clear configured content).
+  const [pendingTypeChange, setPendingTypeChange] = useState<string | null>(null);
+  // Whether the currently-edited Chrome/Edge JSON value field holds invalid JSON.
+  const [jsonFieldInvalid, setJsonFieldInvalid] = useState(false);
 
   // Derived: whether policy fields are editable (create mode or DRAFT state)
   const isEditable = !isEditMode || status === "draft";
@@ -1150,6 +1155,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     setShowDeleteConfirm(false);
     setDirty(false);
     setShowDiscardConfirm(false);
+    setPendingTypeChange(null);
+    setJsonFieldInvalid(false);
     // Capture the persisted baseline these setters just established so
     // hasUnsavedChanges reads false until the user actually edits something.
     baselineRef.current = policy
@@ -1162,9 +1169,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       : { name: "", description: "", policyType: "Kconfig", content: normalizePolicyContent("{}") };
   }, [isOpen, policy]);
 
+  // Clear the Chrome/Edge JSON-invalid flag whenever the edited key changes so a
+  // stale error doesn't linger on a different (or no) selection.
+  useEffect(() => {
+    setJsonFieldInvalid(false);
+  }, [chromeSelectedKey, edgeSelectedKey]);
+
   // When policy type changes, reset content for the target type
-  const handleTypeChange = (newType: string) => {
+  const applyTypeChange = (newType: string) => {
     setPolicyType(newType);
+    // The new type starts from empty content, so clear any lingering JSON error
+    // (otherwise Save could stay disabled with no field left to fix).
+    setJsonFieldInvalid(false);
     if (newType === "Firefox") {
       setFirefoxSelectedKey(null);
       setFirefoxValue(undefined);
@@ -1215,6 +1231,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     };
   };
 
+  // Type-change entry point: switching type clears the configured content for
+  // the current type, so confirm first when there is configured content to lose.
+  const handleTypeChange = (newType: string) => {
+    if (newType === policyType) return;
+    if (policyHasSettings(contentRaw)) {
+      setPendingTypeChange(newType);
+      return;
+    }
+    applyTypeChange(newType);
+  };
+
   // Keep content in sync (non-Firefox types)
   const syncContentFromStructuredList = (list: Record<string, string>[]) => {
     const json = JSON.stringify(list, null, 2);
@@ -1262,12 +1289,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Firefox: select a policy from the tree and set its default value
   const handleFirefoxSelectPolicy = (policyDef: PolicyFieldDef) => {
     setFirefoxSelectedKey(policyDef.key);
-    // If we already have a value for this key, load it for editing
+    // Selecting a key only previews it — load its value from content if it is
+    // already configured, otherwise load a default into local state WITHOUT
+    // writing to content. The key enters the policy only when the user edits its
+    // value or clicks "Add to policy".
     const existing = extractFirefoxValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setFirefoxValue(existing);
     } else {
-      // Set default value based on type and add to content
       let defaultValue: unknown;
       if (policyDef.type === "boolean") {
         defaultValue = true;
@@ -1285,7 +1314,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = obj;
       }
       setFirefoxValue(defaultValue);
-      setContentRaw(buildFirefoxContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1320,6 +1348,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Thunderbird: select a policy from the tree and set its default value
   const handleThunderbirdSelectPolicy = (policyDef: PolicyFieldDef) => {
     setThunderbirdSelectedKey(policyDef.key);
+    // Selecting only previews the key (see handleFirefoxSelectPolicy): load its
+    // value without writing to content until the user edits it or clicks "Add".
     const existing = extractFirefoxValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setThunderbirdValue(existing);
@@ -1343,7 +1373,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = obj;
       }
       setThunderbirdValue(defaultValue);
-      setContentRaw(buildFirefoxContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1386,11 +1415,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
         setCustomProtocolIndices(customIdxs);
       } else {
-        // Seed with one default rule
+        // Seed one default rule into the editor for preview only — don't write
+        // it to content until the user actually edits/adds a rule.
         const defaultRule: UrlRestrictionRule = { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true };
         setUrlRestrictionRules([defaultRule]);
         setCustomProtocolIndices(new Set());
-        setContentRaw(buildUrlRestrictionContent([defaultRule], contentRaw));
       }
       return;
     }
@@ -1405,11 +1434,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigValue(existing.value);
       setKconfigEnforced(existing.enforced);
     } else {
-      // Set default and add to content
+      // Preview only: load a default value/enforced into local state without
+      // writing to content until the user edits it or clicks "Add to policy".
       const defaultVal = policyDef.type === "boolean" ? "true" : policyDef.type === "int" ? "0" : "";
       setKconfigValue(defaultVal);
       setKconfigEnforced(true);
-      setContentRaw(buildKConfigContent(policyDef, defaultVal, true, contentRaw));
     }
   };
 
@@ -1455,6 +1484,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Chrome: select a policy from the tree and set its default value
   const handleChromeSelectPolicy = (policyDef: PolicyFieldDef) => {
     setChromeSelectedKey(policyDef.key);
+    // Selecting only previews the key (see handleFirefoxSelectPolicy): load its
+    // value without writing to content until the user edits it or clicks "Add".
     const existing = extractChromeValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setChromeValue(existing);
@@ -1472,7 +1503,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = {};
       }
       setChromeValue(defaultValue);
-      setContentRaw(buildChromeContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1507,6 +1537,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Edge: select a policy from the tree
   const handleEdgeSelectPolicy = (policyDef: PolicyFieldDef) => {
     setEdgeSelectedKey(policyDef.key);
+    // Selecting only previews the key (see handleFirefoxSelectPolicy): load its
+    // value without writing to content until the user edits it or clicks "Add".
     const existing = extractEdgeValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setEdgeValue(existing);
@@ -1524,7 +1556,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = {};
       }
       setEdgeValue(defaultValue);
-      setContentRaw(buildEdgeContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1555,14 +1586,19 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
   const handleSave = async () => {
     setError(null);
+    if (jsonFieldInvalid) {
+      setError("Fix the invalid JSON value before saving.");
+      return;
+    }
     setSaving(true);
 
     try {
       let finalContent = contentRaw;
 
       if (policyType === "Firefox") {
-        // Save the current selection into content before validating
-        if (firefoxSelectedKey) {
+        // Fold the current edit into content only if the selected key is already
+        // enabled (in content); a merely-previewed key must not be saved.
+        if (firefoxSelectedKey && detectFirefoxConfiguredKeys(contentRaw).includes(firefoxSelectedKey)) {
           finalContent = buildFirefoxContent(firefoxSelectedKey, firefoxValue, contentRaw);
         }
         try {
@@ -1578,7 +1614,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Thunderbird") {
-        if (thunderbirdSelectedKey) {
+        // Fold in the current edit only if the selected key is already enabled;
+        // a merely-previewed key must not be saved.
+        if (thunderbirdSelectedKey && detectThunderbirdConfiguredKeys(contentRaw).includes(thunderbirdSelectedKey)) {
           finalContent = buildFirefoxContent(thunderbirdSelectedKey, thunderbirdValue, contentRaw);
         }
         try {
@@ -1594,12 +1632,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Kconfig") {
-        // Save the current selection into content before validating
+        // Fold the current edit into content only if the selected key is already
+        // enabled (in content); a merely-previewed key must not be saved.
+        const kconfigConfigured = detectKConfigConfiguredKeys(contentRaw);
         if (kconfigSelectedKey === "urlRestrictions") {
-          finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
+          if (kconfigConfigured.includes("urlRestrictions")) {
+            finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
+          }
         } else if (kconfigSelectedKey === "kcmRestrictions") {
-          finalContent = buildKcmRestrictionContent(kcmRestrictedModules, contentRaw);
-        } else if (kconfigSelectedKey) {
+          if (kconfigConfigured.includes("kcmRestrictions")) {
+            finalContent = buildKcmRestrictionContent(kcmRestrictedModules, contentRaw);
+          }
+        } else if (kconfigSelectedKey && kconfigConfigured.includes(kconfigSelectedKey)) {
           const def = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);
           if (def) {
             finalContent = buildKConfigContent(def, kconfigValue, kconfigEnforced, contentRaw);
@@ -1618,8 +1662,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Chrome") {
-        // Save the current selection into content before validating
-        if (chromeSelectedKey) {
+        // Fold in the current edit only if the selected key is already enabled;
+        // a merely-previewed key must not be saved.
+        if (chromeSelectedKey && detectChromeConfiguredKeys(contentRaw).includes(chromeSelectedKey)) {
           finalContent = buildChromeContent(chromeSelectedKey, chromeValue, contentRaw);
         }
         try {
@@ -1635,7 +1680,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Edge") {
-        if (edgeSelectedKey) {
+        // Fold in the current edit only if the selected key is already enabled;
+        // a merely-previewed key must not be saved.
+        if (edgeSelectedKey && detectEdgeConfiguredKeys(contentRaw).includes(edgeSelectedKey)) {
           finalContent = buildEdgeContent(edgeSelectedKey, edgeValue, contentRaw);
         }
         try {
@@ -1785,7 +1832,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderFirefoxPropertyEditor = () => {
     if (!firefoxSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Firefox policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
@@ -1882,6 +1929,24 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             </>
           )}
         </Form>
+        {isEditable && (
+          <div style={{ marginTop: "1.25rem" }}>
+            {detectFirefoxConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+              <Button variant="danger" size="sm" onClick={() => handleFirefoxRemovePolicy(policyDef.key)}>
+                Remove from policy
+              </Button>
+            ) : (
+              <>
+                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
+                  Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                </div>
+                <Button variant="primary" size="sm" onClick={() => setContentRaw(buildFirefoxContent(policyDef.key, firefoxValue, contentRaw))}>
+                  Add to policy
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -1894,100 +1959,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              {/* Group header */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleFirefoxGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFirefoxGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(firefoxExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {/* Policy items */}
-              {firefoxExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = firefoxSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleFirefoxSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFirefoxSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                      {p.label}
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleFirefoxRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Firefox policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={firefoxSelectedKey}
+          expandedGroups={firefoxExpandedGroups}
+          onToggleGroup={toggleFirefoxGroup}
+          onSelect={handleFirefoxSelectPolicy}
+          onRemove={handleFirefoxRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderFirefoxPropertyEditor()}
@@ -2000,7 +1981,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderThunderbirdPropertyEditor = () => {
     if (!thunderbirdSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Thunderbird policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
@@ -2108,6 +2089,24 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             </>
           )}
         </Form>
+        {isEditable && (
+          <div style={{ marginTop: "1.25rem" }}>
+            {detectThunderbirdConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+              <Button variant="danger" size="sm" onClick={() => handleThunderbirdRemovePolicy(policyDef.key)}>
+                Remove from policy
+              </Button>
+            ) : (
+              <>
+                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
+                  Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                </div>
+                <Button variant="primary" size="sm" onClick={() => setContentRaw(buildFirefoxContent(policyDef.key, thunderbirdValue, contentRaw))}>
+                  Add to policy
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -2120,98 +2119,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleThunderbirdGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleThunderbirdGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(thunderbirdExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {thunderbirdExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = thunderbirdSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleThunderbirdSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleThunderbirdSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                      {p.label}
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleThunderbirdRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Thunderbird policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={thunderbirdSelectedKey}
+          expandedGroups={thunderbirdExpandedGroups}
+          onToggleGroup={toggleThunderbirdGroup}
+          onSelect={handleThunderbirdSelectPolicy}
+          onRemove={handleThunderbirdRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderThunderbirdPropertyEditor()}
@@ -2250,7 +2167,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>System Settings Module Restrictions</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           Files: <code>/etc/kde5rc</code>, <code>/etc/kde6rc</code> &nbsp; Group: <code>[KDE Control Module Restrictions]</code>
           <br />
           Selected modules will be <strong>restricted</strong> (users will not be able to access them in System Settings).
@@ -2274,7 +2191,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
         {/* Custom module input */}
         <details style={{ marginBottom: "1rem" }}>
-          <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Add custom modules</summary>
+          <summary style={{ cursor: "pointer", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem" }}>Add custom modules</summary>
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "flex-end" }}>
             <FormGroup label="Custom module IDs" fieldId="kcm-custom-input" helperText="One per line or comma-separated" style={{ flex: 1 }}>
               <TextArea
@@ -2303,16 +2220,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                     alignItems: "center",
                     justifyContent: "space-between",
                     padding: "0.4rem 0.75rem",
-                    borderBottom: "1px solid #e8e8e8",
+                    borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                     fontSize: "0.85rem",
                   }}
                 >
                   <span>
                     <strong>{mod ? mod.label : moduleId}</strong>
-                    {mod && <span style={{ color: "#6a6e73", marginLeft: "0.5rem" }}>({moduleId})</span>}
+                    {mod && <span style={{ color: "var(--pf-t--global--text--color--subtle)", marginLeft: "0.5rem" }}>({moduleId})</span>}
                     {!mod && <Label isCompact color="orange" style={{ marginLeft: "0.5rem" }}>custom</Label>}
                   </span>
-                  <Button variant="plain" size="sm" onClick={() => removeModule(moduleId)} style={{ color: "#c9190b", padding: "0 0.25rem", minWidth: "auto" }} aria-label={`Remove ${moduleId}`}>
+                  <Button variant="plain" size="sm" onClick={() => removeModule(moduleId)} style={{ color: "var(--pf-t--global--text--color--status--danger--default)", padding: "0 0.25rem", minWidth: "auto" }} aria-label={`Remove ${moduleId}`}>
                     Remove
                   </Button>
                 </div>
@@ -2320,7 +2237,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             })}
           </div>
         ) : (
-          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No modules restricted. Use the dropdown above to add modules.</p>
+          <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontStyle: "italic" }}>No modules restricted. Use the dropdown above to add modules.</p>
         )}
       </div>
     );
@@ -2357,7 +2274,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>URL Restrictions</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           File: <code>kdeglobals</code> &nbsp; Group: <code>[KDE URL Restrictions]</code>
         </p>
         <Button variant="secondary" size="sm" onClick={addRule} style={{ marginBottom: "1rem" }}>+ Add Rule</Button>
@@ -2367,7 +2284,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               <Flex justifyContent={{ default: "justifyContentSpaceBetween" }} alignItems={{ default: "alignItemsCenter" }}>
                 <FlexItem><strong>Rule {idx + 1}</strong></FlexItem>
                 <FlexItem>
-                  <Button variant="plain" size="sm" onClick={() => removeRule(idx)} aria-label={`Remove rule ${idx + 1}`} style={{ color: "#c9190b" }}>Remove</Button>
+                  <Button variant="plain" size="sm" onClick={() => removeRule(idx)} aria-label={`Remove rule ${idx + 1}`} style={{ color: "var(--pf-t--global--text--color--status--danger--default)" }}>Remove</Button>
                 </FlexItem>
               </Flex>
             </CardTitle>
@@ -2421,7 +2338,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 </FormGroup>
               </div>
               <details style={{ marginTop: "0.25rem" }}>
-                <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Referrer Matching (advanced)</summary>
+                <summary style={{ cursor: "pointer", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem" }}>Referrer Matching (advanced)</summary>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginTop: "0.5rem" }}>
                   <FormGroup label="Referrer Protocol" fieldId={`url-ref-proto-${idx}`}>
                     <TextInput id={`url-ref-proto-${idx}`} value={rule.referrerProtocol} onChange={(_ev, val) => updateRule(idx, { referrerProtocol: val })} placeholder="blank = all" />
@@ -2438,7 +2355,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           </Card>
         ))}
         {urlRestrictionRules.length === 0 && (
-          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No rules configured. Click "+ Add Rule" to begin.</p>
+          <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontStyle: "italic" }}>No rules configured. Click "+ Add Rule" to begin.</p>
         )}
       </div>
     );
@@ -2447,7 +2364,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderKconfigPropertyEditor = () => {
     if (!kconfigSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a KDE Kiosk policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
@@ -2468,7 +2385,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           {policyDef.group}
         </p>
         <Form>
@@ -2524,7 +2441,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   id="kc-prop-color"
                   value={rgbToHex(kconfigValue || "0,0,0")}
                   onChange={(ev) => updateKconfigValue(hexToRgb(ev.target.value))}
-                  style={{ width: "48px", height: "36px", padding: "2px", border: "1px solid #d2d2d2", borderRadius: "4px", cursor: "pointer" }}
+                  style={{ width: "48px", height: "36px", padding: "2px", border: "1px solid var(--pf-t--global--border--color--default)", borderRadius: "4px", cursor: "pointer" }}
                 />
                 <TextInput
                   id="kc-prop-color-text"
@@ -2545,6 +2462,28 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               labelOff="Not enforced"
             />
           </FormGroup>
+          {isEditable && (
+            <FormGroup fieldId="kc-prop-actions">
+              {detectKConfigConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+                <Button variant="danger" size="sm" onClick={() => handleKconfigRemovePolicy(policyDef.key)}>
+                  Remove from policy
+                </Button>
+              ) : (
+                <>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
+                    Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setContentRaw(buildKConfigContent(policyDef, kconfigValue, kconfigEnforced, contentRaw))}
+                  >
+                    Add to policy
+                  </Button>
+                </>
+              )}
+            </FormGroup>
+          )}
         </Form>
       </div>
     );
@@ -2558,100 +2497,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              {/* Group header */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleKconfigGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleKconfigGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(kconfigExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {/* Policy items */}
-              {kconfigExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = kconfigSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleKconfigSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleKconfigSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                      {p.label}
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleKconfigRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="KDE Kiosk policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={kconfigSelectedKey}
+          expandedGroups={kconfigExpandedGroups}
+          onToggleGroup={toggleKconfigGroup}
+          onSelect={handleKconfigSelectPolicy}
+          onRemove={handleKconfigRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderKconfigPropertyEditor()}
@@ -2664,7 +2519,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderChromePropertyEditor = () => {
     if (!chromeSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Chrome policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its value.</p>
         </div>
@@ -2677,7 +2532,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
         <Form>
           {policyDef.type === "boolean" && (
             <FormGroup label="Value" fieldId="cr-prop-bool">
@@ -2750,30 +2605,57 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <FormGroup label="Value (JSON)" fieldId="cr-prop-json" helperText="Enter a valid JSON object or array">
               <TextArea
                 id="cr-prop-json"
+                validated={jsonFieldInvalid ? "error" : "default"}
+                aria-invalid={jsonFieldInvalid || undefined}
+                aria-describedby={jsonFieldInvalid ? "cr-prop-json-error" : undefined}
                 value={typeof chromeValue === "string" ? chromeValue : JSON.stringify(chromeValue ?? {}, null, 2)}
                 onChange={(_ev, val) => {
                   try {
                     updateChromeValue(JSON.parse(val));
+                    setJsonFieldInvalid(false);
                   } catch {
-                    // store as raw string while editing, will be re-parsed on save
+                    // Keep the raw text so the user can fix it, and flag it invalid
+                    // so save is blocked until it parses.
                     updateChromeValue(val);
+                    setJsonFieldInvalid(true);
                   }
                 }}
                 rows={8}
                 style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
                 placeholder="{}"
               />
+              {jsonFieldInvalid && (
+                <div id="cr-prop-json-error" aria-live="polite" style={{ color: "var(--pf-t--global--text--color--status--danger--default, #c9190b)", fontSize: "0.85rem", marginTop: 4 }}>
+                  Invalid JSON — fix it before saving.
+                </div>
+              )}
             </FormGroup>
           )}
           {isEditable && (
             <FormGroup fieldId="cr-prop-actions">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => handleChromeRemovePolicy(policyDef.key)}
-              >
-                Remove Policy
-              </Button>
+              {detectChromeConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleChromeRemovePolicy(policyDef.key)}
+                >
+                  Remove from policy
+                </Button>
+              ) : (
+                <>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
+                    Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    isDisabled={jsonFieldInvalid}
+                    onClick={() => setContentRaw(buildChromeContent(policyDef.key, chromeValue, contentRaw))}
+                  >
+                    Add to policy
+                  </Button>
+                </>
+              )}
             </FormGroup>
           )}
         </Form>
@@ -2789,111 +2671,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
         {/* Left panel: tree view */}
-        <div style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              {/* Group header */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleChromeGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleChromeGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(chromeExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {/* Policy items */}
-              {chromeExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = chromeSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleChromeSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleChromeSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                        {p.label}
-                        {p.chromeOnly && (
-                          <Label color="blue" isCompact style={{ marginLeft: 8 }}>
-                            Chrome only
-                          </Label>
-                        )}
-                      </span>
-                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {p.description}
-                      </span>
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleChromeRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "#6a6e73",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                          flexShrink: 0,
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Chrome policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={chromeSelectedKey}
+          expandedGroups={chromeExpandedGroups}
+          onToggleGroup={toggleChromeGroup}
+          onSelect={handleChromeSelectPolicy}
+          onRemove={handleChromeRemovePolicy}
+        />
         {/* Right panel: property editor */}
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderChromePropertyEditor()}
@@ -2906,7 +2693,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderEdgePropertyEditor = () => {
     if (!edgeSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Microsoft Edge policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its value.</p>
         </div>
@@ -2919,7 +2706,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
         <Form>
           {policyDef.type === "boolean" && (
             <FormGroup label="Value" fieldId="ed-prop-bool">
@@ -2992,29 +2779,57 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <FormGroup label="Value (JSON)" fieldId="ed-prop-json" helperText="Enter a valid JSON object or array">
               <TextArea
                 id="ed-prop-json"
+                validated={jsonFieldInvalid ? "error" : "default"}
+                aria-invalid={jsonFieldInvalid || undefined}
+                aria-describedby={jsonFieldInvalid ? "ed-prop-json-error" : undefined}
                 value={typeof edgeValue === "string" ? edgeValue : JSON.stringify(edgeValue ?? {}, null, 2)}
                 onChange={(_ev, val) => {
                   try {
                     updateEdgeValue(JSON.parse(val));
+                    setJsonFieldInvalid(false);
                   } catch {
+                    // Keep the raw text so the user can fix it, and flag it invalid
+                    // so save is blocked until it parses.
                     updateEdgeValue(val);
+                    setJsonFieldInvalid(true);
                   }
                 }}
                 rows={8}
                 style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
                 placeholder="{}"
               />
+              {jsonFieldInvalid && (
+                <div id="ed-prop-json-error" aria-live="polite" style={{ color: "var(--pf-t--global--text--color--status--danger--default, #c9190b)", fontSize: "0.85rem", marginTop: 4 }}>
+                  Invalid JSON — fix it before saving.
+                </div>
+              )}
             </FormGroup>
           )}
           {isEditable && (
             <FormGroup fieldId="ed-prop-actions">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => handleEdgeRemovePolicy(policyDef.key)}
-              >
-                Remove Policy
-              </Button>
+              {detectEdgeConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleEdgeRemovePolicy(policyDef.key)}
+                >
+                  Remove from policy
+                </Button>
+              ) : (
+                <>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
+                    Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    isDisabled={jsonFieldInvalid}
+                    onClick={() => setContentRaw(buildEdgeContent(policyDef.key, edgeValue, contentRaw))}
+                  >
+                    Add to policy
+                  </Button>
+                </>
+              )}
             </FormGroup>
           )}
         </Form>
@@ -3029,104 +2844,16 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
-        <div style={{
-          width: "260px",
-          minWidth: "260px",
-          borderRight: "1px solid var(--pf-t--global--border--color--default)",
-          overflowY: "auto",
-          paddingRight: "0",
-        }}>
-          {Array.from(tree.entries()).map(([group, policies]) => (
-            <div key={group} style={{ marginBottom: "2px" }}>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleEdgeGroup(group)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleEdgeGroup(group); } }}
-                style={{
-                  padding: "0.4rem 0.75rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                  color: "var(--pf-t--global--text--color--regular)",
-                  backgroundColor: "var(--pf-t--global--background--color--secondary--default)",
-                  borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                  userSelect: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                <span style={{
-                  display: "inline-block",
-                  width: 0,
-                  height: 0,
-                  borderStyle: "solid",
-                  ...(edgeExpandedGroups.has(group)
-                    ? { borderWidth: "5px 4px 0 4px", borderColor: "var(--pf-t--global--text--color--regular) transparent transparent transparent" }
-                    : { borderWidth: "4px 0 4px 5px", borderColor: "transparent transparent transparent var(--pf-t--global--text--color--regular)" }),
-                }} />
-                {group}
-              </div>
-              {edgeExpandedGroups.has(group) && policies.map(p => {
-                const isSelected = edgeSelectedKey === p.key;
-                const isConfigured = configuredKeys.includes(p.key);
-                return (
-                  <div
-                    key={p.key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleEdgeSelectPolicy(p)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleEdgeSelectPolicy(p); } }}
-                    style={{
-                      padding: "0.35rem 0.75rem 0.35rem 1.5rem",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      backgroundColor: isSelected ? "#2d6a4f" : isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent",
-                      color: isSelected ? "#fff" : "var(--pf-t--global--text--color--regular)",
-                      fontWeight: isSelected || isConfigured ? 600 : 400,
-                      borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                      userSelect: "none",
-                      transition: "background-color 0.1s ease",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.22)" : "rgba(45, 106, 79, 0.1)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = isConfigured ? "rgba(45, 106, 79, 0.13)" : "transparent"; }}
-                  >
-                    <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        {isConfigured && <span style={{ color: isSelected ? "#fff" : "var(--pf-t--global--color--brand--200)", fontSize: "0.7rem" }}>●</span>}
-                        {p.label}
-                      </span>
-                      <span style={{ fontSize: "0.72rem", color: isSelected ? "rgba(255,255,255,0.75)" : "var(--pf-t--global--text--color--subtle)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {p.description}
-                      </span>
-                    </span>
-                    {isConfigured && (
-                      <Button
-                        variant="plain"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleEdgeRemovePolicy(p.key); }}
-                        style={{
-                          fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "#6a6e73",
-                          padding: "0 0.25rem",
-                          minWidth: "auto",
-                          flexShrink: 0,
-                        }}
-                        aria-label={`Remove ${p.label}`}
-                      >✕</Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <PolicyTreePanel
+          ariaLabel="Edge policy settings"
+          tree={tree}
+          configuredKeys={configuredKeys}
+          selectedKey={edgeSelectedKey}
+          expandedGroups={edgeExpandedGroups}
+          onToggleGroup={toggleEdgeGroup}
+          onSelect={handleEdgeSelectPolicy}
+          onRemove={handleEdgeRemovePolicy}
+        />
         <div style={{ flex: 1, paddingLeft: "1.5rem", overflowY: "auto" }}>
           {renderEdgePropertyEditor()}
         </div>
@@ -3161,7 +2888,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div>
         {structuredFieldsList.map((fields, idx) => (
-          <Card key={idx} isPlain isCompact style={{ marginBottom: "1rem", border: structuredFieldsList.length > 1 ? "1px solid #d2d2d2" : "none", borderRadius: "4px" }}>
+          <Card key={idx} isPlain isCompact style={{ marginBottom: "1rem", border: structuredFieldsList.length > 1 ? "1px solid var(--pf-t--global--border--color--default)" : "none", borderRadius: "4px" }}>
             {structuredFieldsList.length > 1 && (
               <CardTitle style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>Setting {idx + 1}</span>
@@ -3486,7 +3213,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <div
               style={{
                 marginTop: "0.5rem",
-                border: "1px solid #d2d2d2",
+                border: "1px solid var(--pf-t--global--border--color--default)",
                 borderRadius: "4px",
                 overflow: "hidden",
               }}
@@ -3638,7 +3365,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           )}
           {hasUnsavedChanges && (
             <FlexItem>
-              <span style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)" }}>
+              <span style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))" }}>
                 Unsaved changes — save to enable lifecycle actions.
               </span>
             </FlexItem>
@@ -3659,8 +3386,26 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <Tab eventKey={isEditMode ? 1 : 0} title={<TabTitleText>Details</TabTitleText>}>
           {renderOverviewTab()}
         </Tab>
-        <Tab eventKey={isEditMode ? 2 : 1} title={<TabTitleText>Configuration</TabTitleText>} isDisabled={isEditMode && !isEditable}>
-          {renderConfigurationTab()}
+        <Tab eventKey={isEditMode ? 2 : 1} title={<TabTitleText>Configuration</TabTitleText>}>
+          {isEditMode && !isEditable ? (
+            // Released/archived policies are read-only: show the configuration
+            // (previously the tab was disabled entirely) but disable every form
+            // control via a disabled fieldset. Tree navigation still works so the
+            // configured settings can be browsed; nothing can be edited or saved.
+            <>
+              <Alert
+                variant="info"
+                isInline
+                title={`This policy is ${status} and its configuration is read-only. Move it back to draft to make changes.`}
+                style={{ margin: "1rem 0" }}
+              />
+              <fieldset disabled style={{ border: "none", margin: 0, padding: 0, minWidth: 0, minInlineSize: "auto" }}>
+                {renderConfigurationTab()}
+              </fieldset>
+            </>
+          ) : (
+            renderConfigurationTab()
+          )}
         </Tab>
       </Tabs>
       </ModalBody>
@@ -3671,7 +3416,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           variant="primary"
           onClick={handleSave}
           isLoading={saving}
-          isDisabled={saving || !name.trim()}
+          isDisabled={saving || !name.trim() || jsonFieldInvalid}
         >
           {isEditMode ? "Save Changes" : "Create Policy"}
         </Button>
@@ -3709,6 +3454,35 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         </Button>
         <Button key="keep" variant="link" onClick={() => setShowDiscardConfirm(false)}>
           Keep editing
+        </Button>
+      </ModalFooter>
+    </Modal>
+
+    {/* Confirm a policy-type switch that would clear configured content */}
+    <Modal
+      variant={ModalVariant.small}
+      isOpen={pendingTypeChange !== null}
+      onClose={() => setPendingTypeChange(null)}
+    >
+      <ModalHeader title="Change policy type?" titleIconVariant="warning" />
+      <ModalBody>
+        Switching to <strong>{pendingTypeChange}</strong> will clear the settings
+        you&rsquo;ve configured for <strong>{policyType}</strong>. This can&rsquo;t
+        be undone.
+      </ModalBody>
+      <ModalFooter>
+        <Button
+          key="change-type"
+          variant="danger"
+          onClick={() => {
+            if (pendingTypeChange) applyTypeChange(pendingTypeChange);
+            setPendingTypeChange(null);
+          }}
+        >
+          Change type and clear settings
+        </Button>
+        <Button key="keep-type" variant="link" onClick={() => setPendingTypeChange(null)}>
+          Cancel
         </Button>
       </ModalFooter>
     </Modal>

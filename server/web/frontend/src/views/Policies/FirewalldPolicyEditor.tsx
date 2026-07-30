@@ -22,6 +22,7 @@ import {
 import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
+import { ListEditor } from "./ListEditor";
 import { LiveAlert } from "../../components/LiveAlert";
 
 /* ── types ── */
@@ -120,8 +121,9 @@ const StringListEditor: React.FC<StringListProps> = ({
   label, values, placeholder, addLabel, onChange, isDisabled, idPrefix, helper,
 }) => (
   <FormGroup label={label} fieldId={idPrefix}>
-    {values.map((v, idx) => (
-      <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.4rem", alignItems: "center" }}>
+    <ListEditor
+      items={values}
+      renderItem={(v, idx) => (
         <TextInput
           id={`${idPrefix}-${idx}`}
           value={v}
@@ -130,26 +132,14 @@ const StringListEditor: React.FC<StringListProps> = ({
           isDisabled={isDisabled}
           aria-label={`${label} ${idx + 1}`}
         />
-        <Button
-          variant="plain"
-          onClick={() => onChange(values.filter((_, i) => i !== idx))}
-          isDisabled={isDisabled}
-          aria-label={`Remove ${label} ${idx + 1}`}
-          style={{ color: "var(--pf-t--global--color--status--danger--100)" }}
-        >
-          <TrashIcon />
-        </Button>
-      </div>
-    ))}
-    <Button
-      variant="secondary"
-      icon={<PlusCircleIcon />}
-      onClick={() => onChange([...values, ""])}
+      )}
+      onRemove={(idx) => onChange(values.filter((_, i) => i !== idx))}
+      onAdd={() => onChange([...values, ""])}
+      addLabel={addLabel}
+      removeAriaLabel={(idx) => `Remove ${label} ${idx + 1}`}
+      rowGap="0.5rem"
       isDisabled={isDisabled}
-      size="sm"
-    >
-      {addLabel}
-    </Button>
+    />
     {helper && (
       <FormHelperText>
         <HelperText><HelperTextItem>{helper}</HelperTextItem></HelperText>

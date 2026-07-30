@@ -3,8 +3,8 @@
 // Copyright (C) 2026 Bor contributors
 
 export { SettingsPage } from "./SettingsPage";
-export { MFATab } from "./MFATab";
-export { MFASettingsTab } from "./MFASettingsTab";
+export { MFAEnrollmentTab } from "./MFAEnrollmentTab";
+export { MFAPolicyTab } from "./MFAPolicyTab";
 export { MFASetupModal } from "./MFASetupModal";
 export { AccountModal } from "./AccountModal";
 export { WebAuthnSetupModal } from "./WebAuthnSetupModal";

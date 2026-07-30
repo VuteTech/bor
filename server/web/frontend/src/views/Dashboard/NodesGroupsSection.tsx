@@ -19,13 +19,14 @@ export const NodesGroupsSection: React.FC<NodesGroupsSectionProps> = ({ data }) 
     </Title>
     <Grid hasGutter>
       <GridItem span={3}>
-        <StatCard title="Total Groups" value={data.totalGroups} />
+        <StatCard title="Total Groups" value={data.totalGroups} href="/node-groups" />
       </GridItem>
       <GridItem span={3}>
         <StatCard
           title="Unassigned Nodes"
           value={data.nodesWithoutGroup}
           color={data.nodesWithoutGroup > 0 ? "orange" : undefined}
+          href="/nodes?group=none"
         />
       </GridItem>
     </Grid>

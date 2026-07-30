@@ -20,7 +20,7 @@ import {
 import { getMFASettings, updateMFASettings, MFASettings } from "../../apiClient/authApi";
 import { LiveAlert } from "../../components/LiveAlert";
 
-export const MFASettingsTab: React.FC = () => {
+export const MFAPolicyTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

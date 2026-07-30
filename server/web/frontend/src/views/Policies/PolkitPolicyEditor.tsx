@@ -47,6 +47,7 @@ import {
 import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
+import { ListEditor } from "./ListEditor";
 import { LiveAlert } from "../../components/LiveAlert";
 import {
   PolkitAction,
@@ -217,20 +218,14 @@ interface ActionListEditorProps {
 const ActionListEditor: React.FC<ActionListEditorProps> = ({
   label, items, options, onChange, isDisabled, idPrefix, placeholder,
 }) => {
-  const addItem = () => onChange([...items, ""]);
-  const removeItem = (idx: number) => onChange(items.filter((_, i) => i !== idx));
   const updateItem = (idx: number, val: string) =>
     onChange(items.map((item, i) => (i === idx ? val : item)));
 
   return (
     <div>
-      {items.length === 0 && (
-        <p style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle)", marginBottom: "0.4rem" }}>
-          None — add one below.
-        </p>
-      )}
-      {items.map((item, idx) => (
-        <div key={idx} style={{ display: "flex", gap: "0.4rem", marginBottom: "0.4rem", alignItems: "center" }}>
+      <ListEditor
+        items={items}
+        renderItem={(item, idx) => (
           <div style={{ flex: 1 }}>
             <ActionCombobox
               id={`${idPrefix}-item-${idx}`}
@@ -241,26 +236,16 @@ const ActionListEditor: React.FC<ActionListEditorProps> = ({
               placeholder={placeholder}
             />
           </div>
-          <Button
-            variant="plain"
-            onClick={() => removeItem(idx)}
-            isDisabled={isDisabled}
-            aria-label={`Remove ${label} item ${idx + 1}`}
-            style={{ color: "var(--pf-t--global--color--status--danger--100)" }}
-          >
-            <TrashIcon />
-          </Button>
-        </div>
-      ))}
-      <Button
-        variant="link"
-        icon={<PlusCircleIcon />}
-        onClick={addItem}
+        )}
+        onRemove={(idx) => onChange(items.filter((_, i) => i !== idx))}
+        onAdd={() => onChange([...items, ""])}
+        addLabel="Add"
+        addVariant="link"
+        removeAriaLabel={(idx) => `Remove ${label} item ${idx + 1}`}
+        emptyText="None — add one below."
+        rowGap="0.4rem"
         isDisabled={isDisabled}
-        style={{ paddingLeft: 0 }}
-      >
-        Add
-      </Button>
+      />
     </div>
   );
 };

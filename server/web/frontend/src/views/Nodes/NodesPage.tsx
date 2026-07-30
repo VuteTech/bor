@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { LiveAlert } from "../../components/LiveAlert";
 import { useToast } from "../../components/ToastHost";
 import {
@@ -123,9 +124,16 @@ export const NodesPage: React.FC = () => {
   const [searchValue, setSearchValue] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<string>("All");
+  // Filters — status can be seeded from the URL (?status=) for dashboard drill-down.
+  const [searchParams] = useSearchParams();
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    const s = searchParams.get("status");
+    return s && (STATUS_OPTIONS as string[]).includes(s) ? s : "All";
+  });
   const [statusOpen, setStatusOpen] = useState(false);
+  // Group filter: "All", "none" (unassigned), or a group id. Seeded from ?group=.
+  const [groupFilter, setGroupFilter] = useState<string>(() => searchParams.get("group") ?? "All");
+  const [groupOpen, setGroupOpen] = useState(false);
   const [osFilter, setOsFilter] = useState<string>("All");
   const [osOpen, setOsOpen] = useState(false);
   const [desktopFilter, setDesktopFilter] = useState<string>("All");
@@ -201,10 +209,11 @@ export const NodesPage: React.FC = () => {
       os: osFilter !== "All" ? osFilter : undefined,
       desktop: desktopFilter !== "All" ? desktopFilter : undefined,
       agent_version: agentVersionFilter !== "All" ? agentVersionFilter : undefined,
+      group: groupFilter !== "All" ? groupFilter : undefined,
       sort_field: sortField,
       sort_order: sortDirection,
     }),
-    [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, sortField, sortDirection],
+    [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, groupFilter, sortField, sortDirection],
   );
 
   /* ── Load a page of data (all filtering/sorting is server-side) ── */
@@ -234,7 +243,7 @@ export const NodesPage: React.FC = () => {
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, sortField, sortDirection]);
+  }, [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, groupFilter, sortField, sortDirection]);
 
   /* ── Filter dropdown options (distinct values, fetched once) ── */
   useEffect(() => {
@@ -571,7 +580,7 @@ export const NodesPage: React.FC = () => {
             const notAfter = selectedNode.cert_not_after ? new Date(selectedNode.cert_not_after) : null;
             const msPerDay = 86_400_000;
             const daysLeft = notAfter ? Math.ceil((notAfter.getTime() - Date.now()) / msPerDay) : null;
-            const certColor = daysLeft === null ? "#6a6e73"
+            const certColor = daysLeft === null ? "var(--pf-t--global--text--color--subtle)"
               : daysLeft <= 0 ? "var(--pf-t--global--text--color--status--danger--default)"
               : daysLeft <= 30 ? "var(--pf-t--global--text--color--status--warning--default)"
               : "var(--pf-t--global--text--color--status--success--default)";
@@ -713,11 +722,15 @@ export const NodesPage: React.FC = () => {
     );
   }
 
+  const groupLabel = (v: string) =>
+    v === "none" ? "Unassigned" : (nodeGroups.find((g) => g.id === v)?.name ?? "Unknown group");
+
   const activeFilters: string[] = [];
   if (statusFilter !== "All") activeFilters.push(`Status: ${statusFilter}`);
   if (osFilter !== "All") activeFilters.push(`OS: ${osFilter}`);
   if (desktopFilter !== "All") activeFilters.push(`Desktop: ${desktopFilter}`);
   if (agentVersionFilter !== "All") activeFilters.push(`Agent: ${agentVersionFilter}`);
+  if (groupFilter !== "All") activeFilters.push(`Group: ${groupLabel(groupFilter)}`);
 
   const selectedNodes = nodes.filter((n) => selectedIds.has(n.id));
 
@@ -747,6 +760,7 @@ export const NodesPage: React.FC = () => {
                 setOsFilter("All");
                 setDesktopFilter("All");
                 setAgentVersionFilter("All");
+                setGroupFilter("All");
               }}>
                 <ToolbarContent>
                   <ToolbarItem>
@@ -779,6 +793,32 @@ export const NodesPage: React.FC = () => {
                         <SelectOption value="All">All</SelectOption>
                         {STATUS_OPTIONS.map((s) => (
                           <SelectOption key={s} value={s}>{s}</SelectOption>
+                        ))}
+                      </SelectList>
+                    </Select>
+                  </ToolbarFilter>
+
+                  <ToolbarFilter
+                    chips={groupFilter !== "All" ? [groupLabel(groupFilter)] : []}
+                    deleteChip={() => setGroupFilter("All")}
+                    categoryName="Group"
+                  >
+                    <Select
+                      isOpen={groupOpen}
+                      selected={groupFilter}
+                      onSelect={(_ev, val) => { setGroupFilter(val as string); setGroupOpen(false); }}
+                      onOpenChange={setGroupOpen}
+                      toggle={(ref: React.Ref<MenuToggleElement>) => (
+                        <MenuToggle ref={ref} onClick={() => setGroupOpen(!groupOpen)} isExpanded={groupOpen}>
+                          Group: {groupFilter === "All" ? "All" : groupLabel(groupFilter)}
+                        </MenuToggle>
+                      )}
+                    >
+                      <SelectList>
+                        <SelectOption value="All">All Groups</SelectOption>
+                        <SelectOption value="none">Unassigned</SelectOption>
+                        {nodeGroups.map((g) => (
+                          <SelectOption key={g.id} value={g.id}>{g.name}</SelectOption>
                         ))}
                       </SelectList>
                     </Select>

@@ -66,6 +66,7 @@ export interface NodeListParams {
   os?: string;
   desktop?: string;
   agent_version?: string;
+  group?: string;
   sort_field?: string;
   sort_order?: "asc" | "desc";
 }
