@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import { ConfirmModal } from "../../components/ConfirmModal";
@@ -46,9 +47,8 @@ import {
   deleteBinding,
   PolicyBinding,
 } from "../../apiClient/bindingsApi";
-import { fetchAllPolicies, fetchPolicy, Policy } from "../../apiClient/policiesApi";
+import { fetchAllPolicies, Policy } from "../../apiClient/policiesApi";
 import { fetchNodeGroups, NodeGroup } from "../../apiClient/nodeGroupsApi";
-import { PolicyDetailsModal } from "../Policies/PolicyDetailsModal";
 
 /* ── Helpers ── */
 
@@ -66,6 +66,7 @@ const statusColor = (status: string): "blue" | "green" | "orange" | "red" | "gre
 /* ── Component ── */
 
 export const PolicyBindingsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [bindings, setBindings] = useState<PolicyBinding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,9 +108,6 @@ export const PolicyBindingsPage: React.FC = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Policy details modal (opened by clicking a policy name)
-  const [policyDetailTarget, setPolicyDetailTarget] = useState<Policy | null>(null);
-  const [isPolicyDetailOpen, setIsPolicyDetailOpen] = useState(false);
 
   /* ── Load data ── */
   const loadBindings = useCallback(async () => {
@@ -329,15 +327,11 @@ export const PolicyBindingsPage: React.FC = () => {
     applyToggle(binding, "enabled");
   };
 
-  /* ── Open policy details modal ── */
-  const openPolicyDetail = async (policyId: string) => {
-    try {
-      const policy = await fetchPolicy(policyId);
-      setPolicyDetailTarget(policy);
-      setIsPolicyDetailOpen(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load policy details");
-    }
+  /* ── Open the policy in the full-page editor ──
+     `from` lets the editor's Cancel/Save return here instead of the
+     policies list. */
+  const openPolicyDetail = (policyId: string) => {
+    navigate(`/policies/${policyId}/edit`, { state: { from: "/policy-bindings" } });
   };
 
   const selectedBindings = bindings.filter((b) => selectedIds.has(b.id));
@@ -678,13 +672,6 @@ export const PolicyBindingsPage: React.FC = () => {
         )}
       </ConfirmModal>
 
-      {/* ── Policy Details Modal (opened by clicking policy name) ── */}
-      <PolicyDetailsModal
-        isOpen={isPolicyDetailOpen}
-        onClose={() => { setIsPolicyDetailOpen(false); setPolicyDetailTarget(null); }}
-        onSaved={() => { loadBindings(); }}
-        policy={policyDetailTarget}
-      />
     </>
   );
 };

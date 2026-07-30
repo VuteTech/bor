@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   PageSection,
   Spinner,
@@ -15,18 +15,23 @@ import {
 import ArrowLeftIcon from "@patternfly/react-icons/dist/esm/icons/arrow-left-icon";
 
 import { fetchPolicy, Policy } from "../../apiClient/policiesApi";
-import { PolicyDetailsModal } from "./PolicyDetailsModal";
+import { PolicyEditor } from "./PolicyEditor";
 
 /**
- * PolicyEditorPage is the full-page route wrapper around PolicyDetailsModal.
+ * PolicyEditorPage is the full-page route wrapper around PolicyEditor.
  * It is mounted at `/policies/new` (create) and `/policies/:policyId/edit`
- * (edit/view), loading the target policy before rendering the editor in its
- * `asPage` mode. Saving or cancelling returns to the policies list; the list
- * re-fetches on mount, so no explicit refresh is needed here.
+ * (edit/view), loading the target policy before rendering the editor. Saving
+ * or cancelling returns to wherever the user came from (the policies list, or
+ * the policy-bindings page when opened from there); that page re-fetches on
+ * mount, so no explicit refresh is needed here.
  */
 export const PolicyEditorPage: React.FC = () => {
   const { policyId } = useParams<{ policyId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Origin page to return to, set by whoever navigated here (defaults to the
+  // policies list for direct/deep links).
+  const from = (location.state as { from?: string } | null)?.from ?? "/policies";
 
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [loading, setLoading] = useState<boolean>(!!policyId);
@@ -57,7 +62,7 @@ export const PolicyEditorPage: React.FC = () => {
     };
   }, [policyId]);
 
-  const backToList = () => navigate("/policies");
+  const backToList = () => navigate(from);
 
   if (loading) {
     return (
@@ -93,15 +98,13 @@ export const PolicyEditorPage: React.FC = () => {
 
   // The editor's Cancel button routes through its own unsaved-changes guard
   // before calling onClose, so browsing away here stays safe. onSaved is a
-  // no-op: PoliciesPage re-fetches when it re-mounts on return.
+  // no-op: the origin page re-fetches when it re-mounts on return.
   return (
-    <PolicyDetailsModal
-      asPage
-      isOpen
+    <PolicyEditor
       policy={policy}
       onClose={backToList}
       onSaved={() => {
-        /* list refreshes on return */
+        /* origin page refreshes on return */
       }}
       onDeleted={backToList}
     />
