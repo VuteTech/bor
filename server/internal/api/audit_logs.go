@@ -82,6 +82,8 @@ func (h *AuditLogHandler) Export(w http.ResponseWriter, r *http.Request) {
 		ResourceTypes: r.URL.Query()["resource_type"],
 		Actions:       r.URL.Query()["action"],
 		Username:      r.URL.Query().Get("username"),
+		SortField:     r.URL.Query().Get("sort_field"),
+		SortOrder:     r.URL.Query().Get("sort_order"),
 	}
 
 	switch format {

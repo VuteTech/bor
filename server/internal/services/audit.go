@@ -111,7 +111,9 @@ func (s *AuditService) ExportCSV(ctx context.Context, req *models.AuditLogListRe
 		}
 
 		for _, entry := range items {
-			if err := csvWriter.Write([]string{
+			// User-influenced fields (username, details, etc.) are neutralised
+			// against spreadsheet formula injection before being written.
+			row := []string{
 				entry.ID,
 				entry.CreatedAt.Format("2006-01-02T15:04:05Z"),
 				entry.Username,
@@ -120,7 +122,11 @@ func (s *AuditService) ExportCSV(ctx context.Context, req *models.AuditLogListRe
 				entry.ResourceID,
 				entry.Details,
 				entry.IPAddress,
-			}); err != nil {
+			}
+			for i := range row {
+				row[i] = sanitizeCSVField(row[i])
+			}
+			if err := csvWriter.Write(row); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
 			}
 		}
