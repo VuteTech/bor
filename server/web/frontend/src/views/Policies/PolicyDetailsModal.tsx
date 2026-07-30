@@ -943,6 +943,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // transitions that would otherwise silently drop them.
   const baselineRef = useRef({ name: "", description: "", policyType: "Kconfig", content: "{}" });
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  // Pending policy-type switch awaiting confirmation (it would clear configured content).
+  const [pendingTypeChange, setPendingTypeChange] = useState<string | null>(null);
+  // Whether the currently-edited Chrome/Edge JSON value field holds invalid JSON.
+  const [jsonFieldInvalid, setJsonFieldInvalid] = useState(false);
 
   // Derived: whether policy fields are editable (create mode or DRAFT state)
   const isEditable = !isEditMode || status === "draft";
@@ -1150,6 +1154,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     setShowDeleteConfirm(false);
     setDirty(false);
     setShowDiscardConfirm(false);
+    setPendingTypeChange(null);
+    setJsonFieldInvalid(false);
     // Capture the persisted baseline these setters just established so
     // hasUnsavedChanges reads false until the user actually edits something.
     baselineRef.current = policy
@@ -1162,9 +1168,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       : { name: "", description: "", policyType: "Kconfig", content: normalizePolicyContent("{}") };
   }, [isOpen, policy]);
 
+  // Clear the Chrome/Edge JSON-invalid flag whenever the edited key changes so a
+  // stale error doesn't linger on a different (or no) selection.
+  useEffect(() => {
+    setJsonFieldInvalid(false);
+  }, [chromeSelectedKey, edgeSelectedKey]);
+
   // When policy type changes, reset content for the target type
-  const handleTypeChange = (newType: string) => {
+  const applyTypeChange = (newType: string) => {
     setPolicyType(newType);
+    // The new type starts from empty content, so clear any lingering JSON error
+    // (otherwise Save could stay disabled with no field left to fix).
+    setJsonFieldInvalid(false);
     if (newType === "Firefox") {
       setFirefoxSelectedKey(null);
       setFirefoxValue(undefined);
@@ -1213,6 +1228,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       policyType: newType,
       content: normalizePolicyContent(defaultContentForType(newType)),
     };
+  };
+
+  // Type-change entry point: switching type clears the configured content for
+  // the current type, so confirm first when there is configured content to lose.
+  const handleTypeChange = (newType: string) => {
+    if (newType === policyType) return;
+    if (policyHasSettings(contentRaw)) {
+      setPendingTypeChange(newType);
+      return;
+    }
+    applyTypeChange(newType);
   };
 
   // Keep content in sync (non-Firefox types)
@@ -1555,6 +1581,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
   const handleSave = async () => {
     setError(null);
+    if (jsonFieldInvalid) {
+      setError("Fix the invalid JSON value before saving.");
+      return;
+    }
     setSaving(true);
 
     try {
@@ -2750,19 +2780,30 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <FormGroup label="Value (JSON)" fieldId="cr-prop-json" helperText="Enter a valid JSON object or array">
               <TextArea
                 id="cr-prop-json"
+                validated={jsonFieldInvalid ? "error" : "default"}
+                aria-invalid={jsonFieldInvalid || undefined}
+                aria-describedby={jsonFieldInvalid ? "cr-prop-json-error" : undefined}
                 value={typeof chromeValue === "string" ? chromeValue : JSON.stringify(chromeValue ?? {}, null, 2)}
                 onChange={(_ev, val) => {
                   try {
                     updateChromeValue(JSON.parse(val));
+                    setJsonFieldInvalid(false);
                   } catch {
-                    // store as raw string while editing, will be re-parsed on save
+                    // Keep the raw text so the user can fix it, and flag it invalid
+                    // so save is blocked until it parses.
                     updateChromeValue(val);
+                    setJsonFieldInvalid(true);
                   }
                 }}
                 rows={8}
                 style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
                 placeholder="{}"
               />
+              {jsonFieldInvalid && (
+                <div id="cr-prop-json-error" aria-live="polite" style={{ color: "var(--pf-t--global--text--color--status--danger--default, #c9190b)", fontSize: "0.85rem", marginTop: 4 }}>
+                  Invalid JSON — fix it before saving.
+                </div>
+              )}
             </FormGroup>
           )}
           {isEditable && (
@@ -2992,18 +3033,30 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <FormGroup label="Value (JSON)" fieldId="ed-prop-json" helperText="Enter a valid JSON object or array">
               <TextArea
                 id="ed-prop-json"
+                validated={jsonFieldInvalid ? "error" : "default"}
+                aria-invalid={jsonFieldInvalid || undefined}
+                aria-describedby={jsonFieldInvalid ? "ed-prop-json-error" : undefined}
                 value={typeof edgeValue === "string" ? edgeValue : JSON.stringify(edgeValue ?? {}, null, 2)}
                 onChange={(_ev, val) => {
                   try {
                     updateEdgeValue(JSON.parse(val));
+                    setJsonFieldInvalid(false);
                   } catch {
+                    // Keep the raw text so the user can fix it, and flag it invalid
+                    // so save is blocked until it parses.
                     updateEdgeValue(val);
+                    setJsonFieldInvalid(true);
                   }
                 }}
                 rows={8}
                 style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
                 placeholder="{}"
               />
+              {jsonFieldInvalid && (
+                <div id="ed-prop-json-error" aria-live="polite" style={{ color: "var(--pf-t--global--text--color--status--danger--default, #c9190b)", fontSize: "0.85rem", marginTop: 4 }}>
+                  Invalid JSON — fix it before saving.
+                </div>
+              )}
             </FormGroup>
           )}
           {isEditable && (
@@ -3671,7 +3724,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           variant="primary"
           onClick={handleSave}
           isLoading={saving}
-          isDisabled={saving || !name.trim()}
+          isDisabled={saving || !name.trim() || jsonFieldInvalid}
         >
           {isEditMode ? "Save Changes" : "Create Policy"}
         </Button>
@@ -3709,6 +3762,35 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         </Button>
         <Button key="keep" variant="link" onClick={() => setShowDiscardConfirm(false)}>
           Keep editing
+        </Button>
+      </ModalFooter>
+    </Modal>
+
+    {/* Confirm a policy-type switch that would clear configured content */}
+    <Modal
+      variant={ModalVariant.small}
+      isOpen={pendingTypeChange !== null}
+      onClose={() => setPendingTypeChange(null)}
+    >
+      <ModalHeader title="Change policy type?" titleIconVariant="warning" />
+      <ModalBody>
+        Switching to <strong>{pendingTypeChange}</strong> will clear the settings
+        you&rsquo;ve configured for <strong>{policyType}</strong>. This can&rsquo;t
+        be undone.
+      </ModalBody>
+      <ModalFooter>
+        <Button
+          key="change-type"
+          variant="danger"
+          onClick={() => {
+            if (pendingTypeChange) applyTypeChange(pendingTypeChange);
+            setPendingTypeChange(null);
+          }}
+        >
+          Change type and clear settings
+        </Button>
+        <Button key="keep-type" variant="link" onClick={() => setPendingTypeChange(null)}>
+          Cancel
         </Button>
       </ModalFooter>
     </Modal>
