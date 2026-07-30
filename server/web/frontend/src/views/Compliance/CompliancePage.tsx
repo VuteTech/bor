@@ -21,10 +21,11 @@ import {
   SelectOption,
   SelectList,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td, ExpandableRowContent } from "@patternfly/react-table";
+import { Table, Thead, Tr, Th, Tbody, Td, ExpandableRowContent, ThProps } from "@patternfly/react-table";
 import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
 import {
   fetchComplianceResults,
   fetchDConfSchemas,
@@ -141,6 +142,8 @@ export const CompliancePage: React.FC = () => {
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [statusOpen, setStatusOpen] = useState(false);
+  const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -173,6 +176,32 @@ export const CompliancePage: React.FC = () => {
       return true;
     });
   }, [results, searchText, statusFilter]);
+
+  /* ── Client-side sort ──
+     Column indices match header order (0 = expand toggle): Node=1, Policy=2,
+     Status=3, Reported=5. */
+  const sorted = useMemo(() => {
+    if (sortIndex === undefined) return filtered;
+    const cmp = (a: ComplianceResult, b: ComplianceResult): number => {
+      switch (sortIndex) {
+        case 1: return a.node_name.localeCompare(b.node_name);
+        case 2: return a.policy_name.localeCompare(b.policy_name);
+        case 3: return (STATUS_LABELS[a.status] ?? a.status).localeCompare(STATUS_LABELS[b.status] ?? b.status);
+        case 5: return new Date(a.reported_at).getTime() - new Date(b.reported_at).getTime();
+        default: return 0;
+      }
+    };
+    return [...filtered].sort((a, b) => (sortDir === "asc" ? cmp(a, b) : -cmp(a, b)));
+  }, [filtered, sortIndex, sortDir]);
+
+  const getSort = (columnIndex: number): ThProps["sort"] => ({
+    sortBy: { index: sortIndex, direction: sortDir },
+    onSort: (_e, index, direction) => {
+      setSortIndex(index);
+      setSortDir(direction);
+    },
+    columnIndex,
+  });
 
   /* ── status summary counts ── */
   const counts = useMemo(() => {
@@ -227,15 +256,27 @@ export const CompliancePage: React.FC = () => {
 
       <LiveAlert message={error} variant="danger" style={{ marginBottom: "1rem" }} />
 
-      {/* Summary chips */}
+      {/* Summary chips — click to filter by that status (toggle back to All). */}
       <Flex spaceItems={{ default: "spaceItemsSm" }} style={{ marginBottom: "1.25rem" }}>
         {ALL_STATUSES.map(s => (
           counts[s] !== undefined
             ? (
               <FlexItem key={s}>
-                <Label color={STATUS_COLORS[s]} isCompact>
-                  {STATUS_LABELS[s]}: {counts[s]}
-                </Label>
+                <Button
+                  variant="plain"
+                  style={{ padding: 0 }}
+                  aria-pressed={statusFilter === s}
+                  aria-label={`Filter by ${STATUS_LABELS[s]} (${counts[s]})`}
+                  onClick={() => setStatusFilter(statusFilter === s ? "All" : s)}
+                >
+                  <Label
+                    color={STATUS_COLORS[s]}
+                    isCompact
+                    variant={statusFilter === s ? "filled" : "outline"}
+                  >
+                    {STATUS_LABELS[s]}: {counts[s]}
+                  </Label>
+                </Button>
               </FlexItem>
             ) : null
         ))}
@@ -282,26 +323,28 @@ export const CompliancePage: React.FC = () => {
         </ToolbarContent>
       </Toolbar>
 
-      {filtered.length === 0 ? (
-        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
-          {results.length === 0
-            ? "No compliance data yet. Agents will report status when they apply policies."
-            : "No results match the current filters."}
-        </div>
+      {sorted.length === 0 ? (
+        <BorEmptyState
+          isEmptyData={results.length === 0}
+          itemsLabel="compliance results"
+          emptyTitle="No compliance data yet"
+          emptyBody="Agents will report status here when they apply policies."
+          onClearFilters={() => { setSearchText(""); setStatusFilter("All"); }}
+        />
       ) : (
         <Table aria-label="Compliance results" variant="compact">
           <Thead>
             <Tr>
               {/* expand-toggle column — always present so column counts stay consistent */}
               <Th screenReaderText="Row expand" />
-              <Th>Node</Th>
-              <Th>Policy</Th>
-              <Th>Status</Th>
+              <Th sort={getSort(1)}>Node</Th>
+              <Th sort={getSort(2)}>Policy</Th>
+              <Th sort={getSort(3)}>Status</Th>
               <Th>Message</Th>
-              <Th>Reported</Th>
+              <Th sort={getSort(5)}>Reported</Th>
             </Tr>
           </Thead>
-          {filtered.map((r, idx) => {
+          {sorted.map((r, idx) => {
             const key = rowKey(r);
             const isExpanded = expandedRows.has(key);
             const hasItems = (r.items?.length ?? 0) > 0;

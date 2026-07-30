@@ -36,12 +36,13 @@ import {
   TextInput,
   ActionGroup,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td, ActionsColumn, IAction } from "@patternfly/react-table";
+import { Table, Thead, Tr, Th, Tbody, Td, ActionsColumn, IAction, ThProps } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-icon";
 
 import { fetchAllPolicies, deletePolicy, setPolicyState, Policy } from "../../apiClient/policiesApi";
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
 import { PolicyDetailsModal } from "./PolicyDetailsModal";
 
 /* ── Filter options ── */
@@ -109,6 +110,8 @@ export const PoliciesPage: React.FC = () => {
 
   // Filters
   const [searchText, setSearchText] = useState("");
+  const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [bindingsFilter, setBindingsFilter] = useState<string | null>(null);
@@ -179,14 +182,42 @@ export const PoliciesPage: React.FC = () => {
     return true;
   });
 
+  /* ── Client-side sort ──
+     Column indices match header order (0 = select cell): Name=1, Type=2,
+     Version=3, Status=4, Bindings=5, Last Updated=6. */
+  const sortedPolicies = (() => {
+    if (sortIndex === undefined) return filteredPolicies;
+    const cmp = (a: Policy, b: Policy): number => {
+      switch (sortIndex) {
+        case 1: return a.name.localeCompare(b.name);
+        case 2: return a.type.localeCompare(b.type);
+        case 3: return a.version - b.version;
+        case 4: return a.state.localeCompare(b.state);
+        case 5: return (a.bindings_count ?? 0) - (b.bindings_count ?? 0);
+        case 6: return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+        default: return 0;
+      }
+    };
+    return [...filteredPolicies].sort((a, b) => (sortDir === "asc" ? cmp(a, b) : -cmp(a, b)));
+  })();
+
+  const getSort = (columnIndex: number): ThProps["sort"] => ({
+    sortBy: { index: sortIndex, direction: sortDir },
+    onSort: (_e, index, direction) => {
+      setSortIndex(index);
+      setSortDir(direction);
+    },
+    columnIndex,
+  });
+
   const isAllSelected =
-    filteredPolicies.length > 0 && selectedIds.size === filteredPolicies.length;
+    sortedPolicies.length > 0 && selectedIds.size === sortedPolicies.length;
 
   const toggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredPolicies.map((p) => p.id)));
+      setSelectedIds(new Set(sortedPolicies.map((p) => p.id)));
     }
   };
 
@@ -380,7 +411,7 @@ export const PoliciesPage: React.FC = () => {
 
   return (
     <>
-      <PageSection variant="light">
+      <PageSection>
         <Flex
           justifyContent={{ default: "justifyContentSpaceBetween" }}
           alignItems={{ default: "alignItemsCenter" }}
@@ -610,20 +641,26 @@ export const PoliciesPage: React.FC = () => {
         </Toolbar>
 
         {/* Policies table */}
-        {filteredPolicies.length === 0 ? (
-          <div
-            style={{
-              padding: "3rem",
-              textAlign: "center",
-              color: "#6a6e73",
-              border: "1px solid #d2d2d2",
-              borderRadius: "4px",
-              marginTop: "1rem",
-            }}
-          >
-            {policies.length === 0
-              ? "No policies configured. Click \"Create a policy\" to get started."
-              : "No policies match the current filters."}
+        {sortedPolicies.length === 0 ? (
+          <div style={{ marginTop: "1rem" }}>
+            <BorEmptyState
+              isEmptyData={policies.length === 0}
+              itemsLabel="policies"
+              emptyTitle="No policies configured"
+              emptyBody='Click "Create a policy" to get started.'
+              action={
+                <Button variant="primary" icon={<PlusCircleIcon />} onClick={handleCreate}>
+                  Create a policy
+                </Button>
+              }
+              onClearFilters={() => {
+                setTypeFilter([]);
+                setStatusFilter([]);
+                setBindingsFilter(null);
+                setRecentlyModified(false);
+                setSearchText("");
+              }}
+            />
           </div>
         ) : (
           <Table aria-label="Policies table" variant="compact" style={{ marginTop: "1rem" }}>
@@ -635,17 +672,17 @@ export const PoliciesPage: React.FC = () => {
                     isSelected: isAllSelected,
                   }}
                 />
-                <Th>Name</Th>
-                <Th>Type</Th>
-                <Th>Version</Th>
-                <Th>Status</Th>
-                <Th>Bindings</Th>
-                <Th>Last Updated</Th>
-                <Th>Actions</Th>
+                <Th sort={getSort(1)}>Name</Th>
+                <Th sort={getSort(2)}>Type</Th>
+                <Th sort={getSort(3)}>Version</Th>
+                <Th sort={getSort(4)}>Status</Th>
+                <Th sort={getSort(5)}>Bindings</Th>
+                <Th sort={getSort(6)}>Last Updated</Th>
+                <Th screenReaderText="Actions" />
               </Tr>
             </Thead>
             <Tbody>
-              {filteredPolicies.map((policy, rowIndex) => (
+              {sortedPolicies.map((policy, rowIndex) => (
                 <Tr key={policy.id}>
                   <Td
                     select={{

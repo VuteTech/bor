@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
+import { useToast } from "../../components/ToastHost";
 import {
   PageSection,
   Title,
@@ -110,6 +111,7 @@ type SortField = "last_seen" | "name";
 /* ── Component ── */
 
 export const NodesPage: React.FC = () => {
+  const { addToast } = useToast();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -286,13 +288,31 @@ export const NodesPage: React.FC = () => {
   };
 
   /* ── Export CSV ── */
+  // Quote every field, double embedded quotes (RFC 4180), and neutralise
+  // spreadsheet formula injection by prefixing a value that starts with
+  // = + - @ (or a tab/CR) with a single quote.
+  const csvCell = (value: string): string => {
+    let v = value ?? "";
+    if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
+    return `"${v.replace(/"/g, '""')}"`;
+  };
+
   const exportCSV = () => {
     const selected = sortedNodes.filter((n) => selectedIds.has(n.id));
     const rows = selected.length > 0 ? selected : sortedNodes;
     const header = "Name,Status,Node Groups,Last Seen,Agent Version,OS,Notes";
-    const csvRows = rows.map(
-      (n) =>
-        `"${n.name}","${n.status}","${n.node_group_names?.join("; ") || ""}","${n.last_seen || ""}","${n.agent_version || ""}","${osDisplay(n)}","${n.notes || ""}"`
+    const csvRows = rows.map((n) =>
+      [
+        n.name,
+        n.status,
+        n.node_group_names?.join("; ") || "",
+        n.last_seen || "",
+        n.agent_version || "",
+        osDisplay(n),
+        n.notes || "",
+      ]
+        .map((f) => csvCell(String(f)))
+        .join(","),
     );
     const blob = new Blob([header + "\n" + csvRows.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -301,6 +321,10 @@ export const NodesPage: React.FC = () => {
     a.download = "nodes-export.csv";
     a.click();
     URL.revokeObjectURL(url);
+    addToast({
+      variant: "success",
+      title: `Exported ${rows.length} node${rows.length === 1 ? "" : "s"} to CSV`,
+    });
   };
 
   /* ── Metadata refresh ── */
@@ -310,6 +334,11 @@ export const NodesPage: React.FC = () => {
     setRefreshError(null);
     try {
       await refreshNodeMetadata(selectedNode.id);
+      addToast({
+        variant: "success",
+        title: "Metadata refresh requested",
+        detail: `${selectedNode.name} will report updated details shortly.`,
+      });
     } catch (err) {
       setRefreshError(err instanceof Error ? err.message : "Failed to request metadata refresh");
     } finally {
