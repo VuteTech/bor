@@ -436,12 +436,12 @@ export const Shell: React.FC = () => {
             {navItem("policy-bindings", "Policy Bindings")}
           </NavGroup>
           {(hasPermission("audit_log:view") ||
-            hasPermission("user:manage") ||
-            hasPermission("role:manage") ||
+            hasPermission("user:view") ||
+            hasPermission("role:view") ||
             hasPermission("user_group:view")) && (
             <NavGroup title="System">
               {hasPermission("audit_log:view") && navItem("audit-logs", "Audit Logs")}
-              {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view")) &&
+              {(hasPermission("user:view") || hasPermission("role:view") || hasPermission("user_group:view")) &&
                 navItem("settings", "Settings")}
             </NavGroup>
           )}

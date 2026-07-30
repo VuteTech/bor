@@ -19,8 +19,8 @@ import { AgentNotificationsTab } from "./AgentNotificationsTab";
 import { MFAPolicyTab } from "./MFAPolicyTab";
 
 export const SettingsPage: React.FC = () => {
-  const canUsers = hasPermission("user:manage");
-  const canRoles = hasPermission("role:manage");
+  const canUsers = hasPermission("user:view");
+  const canRoles = hasPermission("role:view");
   const canUserGroups = hasPermission("user_group:view");
   const canSettings = hasPermission("settings:manage");
 
