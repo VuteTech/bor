@@ -1288,12 +1288,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Firefox: select a policy from the tree and set its default value
   const handleFirefoxSelectPolicy = (policyDef: PolicyFieldDef) => {
     setFirefoxSelectedKey(policyDef.key);
-    // If we already have a value for this key, load it for editing
+    // Selecting a key only previews it — load its value from content if it is
+    // already configured, otherwise load a default into local state WITHOUT
+    // writing to content. The key enters the policy only when the user edits its
+    // value or clicks "Add to policy".
     const existing = extractFirefoxValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setFirefoxValue(existing);
     } else {
-      // Set default value based on type and add to content
       let defaultValue: unknown;
       if (policyDef.type === "boolean") {
         defaultValue = true;
@@ -1311,7 +1313,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = obj;
       }
       setFirefoxValue(defaultValue);
-      setContentRaw(buildFirefoxContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1346,6 +1347,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Thunderbird: select a policy from the tree and set its default value
   const handleThunderbirdSelectPolicy = (policyDef: PolicyFieldDef) => {
     setThunderbirdSelectedKey(policyDef.key);
+    // Selecting only previews the key (see handleFirefoxSelectPolicy): load its
+    // value without writing to content until the user edits it or clicks "Add".
     const existing = extractFirefoxValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setThunderbirdValue(existing);
@@ -1369,7 +1372,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = obj;
       }
       setThunderbirdValue(defaultValue);
-      setContentRaw(buildFirefoxContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1412,11 +1414,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         rules.forEach((r, i) => { if (r.protocol !== "" && !KIO_PROTOCOLS.includes(r.protocol)) customIdxs.add(i); });
         setCustomProtocolIndices(customIdxs);
       } else {
-        // Seed with one default rule
+        // Seed one default rule into the editor for preview only — don't write
+        // it to content until the user actually edits/adds a rule.
         const defaultRule: UrlRestrictionRule = { action: "open", referrerProtocol: "", referrerHost: "", referrerPath: "", protocol: "", host: "", path: "", enabled: true };
         setUrlRestrictionRules([defaultRule]);
         setCustomProtocolIndices(new Set());
-        setContentRaw(buildUrlRestrictionContent([defaultRule], contentRaw));
       }
       return;
     }
@@ -1431,11 +1433,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setKconfigValue(existing.value);
       setKconfigEnforced(existing.enforced);
     } else {
-      // Set default and add to content
+      // Preview only: load a default value/enforced into local state without
+      // writing to content until the user edits it or clicks "Add to policy".
       const defaultVal = policyDef.type === "boolean" ? "true" : policyDef.type === "int" ? "0" : "";
       setKconfigValue(defaultVal);
       setKconfigEnforced(true);
-      setContentRaw(buildKConfigContent(policyDef, defaultVal, true, contentRaw));
     }
   };
 
@@ -1481,6 +1483,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Chrome: select a policy from the tree and set its default value
   const handleChromeSelectPolicy = (policyDef: PolicyFieldDef) => {
     setChromeSelectedKey(policyDef.key);
+    // Selecting only previews the key (see handleFirefoxSelectPolicy): load its
+    // value without writing to content until the user edits it or clicks "Add".
     const existing = extractChromeValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setChromeValue(existing);
@@ -1498,7 +1502,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = {};
       }
       setChromeValue(defaultValue);
-      setContentRaw(buildChromeContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1533,6 +1536,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Edge: select a policy from the tree
   const handleEdgeSelectPolicy = (policyDef: PolicyFieldDef) => {
     setEdgeSelectedKey(policyDef.key);
+    // Selecting only previews the key (see handleFirefoxSelectPolicy): load its
+    // value without writing to content until the user edits it or clicks "Add".
     const existing = extractEdgeValue(contentRaw, policyDef.key);
     if (existing !== undefined) {
       setEdgeValue(existing);
@@ -1550,7 +1555,6 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         defaultValue = {};
       }
       setEdgeValue(defaultValue);
-      setContentRaw(buildEdgeContent(policyDef.key, defaultValue, contentRaw));
     }
   };
 
@@ -1591,8 +1595,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       let finalContent = contentRaw;
 
       if (policyType === "Firefox") {
-        // Save the current selection into content before validating
-        if (firefoxSelectedKey) {
+        // Fold the current edit into content only if the selected key is already
+        // enabled (in content); a merely-previewed key must not be saved.
+        if (firefoxSelectedKey && detectFirefoxConfiguredKeys(contentRaw).includes(firefoxSelectedKey)) {
           finalContent = buildFirefoxContent(firefoxSelectedKey, firefoxValue, contentRaw);
         }
         try {
@@ -1608,7 +1613,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Thunderbird") {
-        if (thunderbirdSelectedKey) {
+        // Fold in the current edit only if the selected key is already enabled;
+        // a merely-previewed key must not be saved.
+        if (thunderbirdSelectedKey && detectThunderbirdConfiguredKeys(contentRaw).includes(thunderbirdSelectedKey)) {
           finalContent = buildFirefoxContent(thunderbirdSelectedKey, thunderbirdValue, contentRaw);
         }
         try {
@@ -1624,12 +1631,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Kconfig") {
-        // Save the current selection into content before validating
+        // Fold the current edit into content only if the selected key is already
+        // enabled (in content); a merely-previewed key must not be saved.
+        const kconfigConfigured = detectKConfigConfiguredKeys(contentRaw);
         if (kconfigSelectedKey === "urlRestrictions") {
-          finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
+          if (kconfigConfigured.includes("urlRestrictions")) {
+            finalContent = buildUrlRestrictionContent(urlRestrictionRules, contentRaw);
+          }
         } else if (kconfigSelectedKey === "kcmRestrictions") {
-          finalContent = buildKcmRestrictionContent(kcmRestrictedModules, contentRaw);
-        } else if (kconfigSelectedKey) {
+          if (kconfigConfigured.includes("kcmRestrictions")) {
+            finalContent = buildKcmRestrictionContent(kcmRestrictedModules, contentRaw);
+          }
+        } else if (kconfigSelectedKey && kconfigConfigured.includes(kconfigSelectedKey)) {
           const def = KCONFIG_ALL_POLICIES.find(p => p.key === kconfigSelectedKey);
           if (def) {
             finalContent = buildKConfigContent(def, kconfigValue, kconfigEnforced, contentRaw);
@@ -1648,8 +1661,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Chrome") {
-        // Save the current selection into content before validating
-        if (chromeSelectedKey) {
+        // Fold in the current edit only if the selected key is already enabled;
+        // a merely-previewed key must not be saved.
+        if (chromeSelectedKey && detectChromeConfiguredKeys(contentRaw).includes(chromeSelectedKey)) {
           finalContent = buildChromeContent(chromeSelectedKey, chromeValue, contentRaw);
         }
         try {
@@ -1665,7 +1679,9 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           return;
         }
       } else if (policyType === "Edge") {
-        if (edgeSelectedKey) {
+        // Fold in the current edit only if the selected key is already enabled;
+        // a merely-previewed key must not be saved.
+        if (edgeSelectedKey && detectEdgeConfiguredKeys(contentRaw).includes(edgeSelectedKey)) {
           finalContent = buildEdgeContent(edgeSelectedKey, edgeValue, contentRaw);
         }
         try {
@@ -1912,6 +1928,24 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             </>
           )}
         </Form>
+        {isEditable && (
+          <div style={{ marginTop: "1.25rem" }}>
+            {detectFirefoxConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+              <Button variant="danger" size="sm" onClick={() => handleFirefoxRemovePolicy(policyDef.key)}>
+                Remove from policy
+              </Button>
+            ) : (
+              <>
+                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                  Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                </div>
+                <Button variant="primary" size="sm" onClick={() => setContentRaw(buildFirefoxContent(policyDef.key, firefoxValue, contentRaw))}>
+                  Add to policy
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -2138,6 +2172,24 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             </>
           )}
         </Form>
+        {isEditable && (
+          <div style={{ marginTop: "1.25rem" }}>
+            {detectThunderbirdConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+              <Button variant="danger" size="sm" onClick={() => handleThunderbirdRemovePolicy(policyDef.key)}>
+                Remove from policy
+              </Button>
+            ) : (
+              <>
+                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                  Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                </div>
+                <Button variant="primary" size="sm" onClick={() => setContentRaw(buildFirefoxContent(policyDef.key, thunderbirdValue, contentRaw))}>
+                  Add to policy
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -2575,6 +2627,28 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               labelOff="Not enforced"
             />
           </FormGroup>
+          {isEditable && (
+            <FormGroup fieldId="kc-prop-actions">
+              {detectKConfigConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+                <Button variant="danger" size="sm" onClick={() => handleKconfigRemovePolicy(policyDef.key)}>
+                  Remove from policy
+                </Button>
+              ) : (
+                <>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                    Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setContentRaw(buildKConfigContent(policyDef, kconfigValue, kconfigEnforced, contentRaw))}
+                  >
+                    Add to policy
+                  </Button>
+                </>
+              )}
+            </FormGroup>
+          )}
         </Form>
       </div>
     );
@@ -2808,13 +2882,29 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           )}
           {isEditable && (
             <FormGroup fieldId="cr-prop-actions">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => handleChromeRemovePolicy(policyDef.key)}
-              >
-                Remove Policy
-              </Button>
+              {detectChromeConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleChromeRemovePolicy(policyDef.key)}
+                >
+                  Remove from policy
+                </Button>
+              ) : (
+                <>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                    Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    isDisabled={jsonFieldInvalid}
+                    onClick={() => setContentRaw(buildChromeContent(policyDef.key, chromeValue, contentRaw))}
+                  >
+                    Add to policy
+                  </Button>
+                </>
+              )}
             </FormGroup>
           )}
         </Form>
@@ -3061,13 +3151,29 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           )}
           {isEditable && (
             <FormGroup fieldId="ed-prop-actions">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => handleEdgeRemovePolicy(policyDef.key)}
-              >
-                Remove Policy
-              </Button>
+              {detectEdgeConfiguredKeys(contentRaw).includes(policyDef.key) ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleEdgeRemovePolicy(policyDef.key)}
+                >
+                  Remove from policy
+                </Button>
+              ) : (
+                <>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                    Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    isDisabled={jsonFieldInvalid}
+                    onClick={() => setContentRaw(buildEdgeContent(policyDef.key, edgeValue, contentRaw))}
+                  >
+                    Add to policy
+                  </Button>
+                </>
+              )}
             </FormGroup>
           )}
         </Form>
