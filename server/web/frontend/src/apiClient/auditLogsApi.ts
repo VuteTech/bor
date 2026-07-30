@@ -47,6 +47,8 @@ export interface AuditLogListParams {
   resource_type?: string[];
   action?: string[];
   username?: string;
+  sort_field?: string;
+  sort_order?: "asc" | "desc";
 }
 
 /* ── API methods ── */
@@ -60,6 +62,8 @@ export async function fetchAuditLogs(
   params?.resource_type?.forEach((v) => qp.append("resource_type", v));
   params?.action?.forEach((v) => qp.append("action", v));
   if (params?.username) qp.set("username", params.username);
+  if (params?.sort_field) qp.set("sort_field", params.sort_field);
+  if (params?.sort_order) qp.set("sort_order", params.sort_order);
 
   const qs = qp.toString();
   const url = `/api/v1/audit-logs${qs ? "?" + qs : ""}`;
@@ -75,6 +79,8 @@ export async function exportAuditLogs(
   params?.resource_type?.forEach((v) => qp.append("resource_type", v));
   params?.action?.forEach((v) => qp.append("action", v));
   if (params?.username) qp.set("username", params.username);
+  if (params?.sort_field) qp.set("sort_field", params.sort_field);
+  if (params?.sort_order) qp.set("sort_order", params.sort_order);
 
   const res = await fetch(`/api/v1/audit-logs/export?${qp.toString()}`, {
     credentials: "same-origin",

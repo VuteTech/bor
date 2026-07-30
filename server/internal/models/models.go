@@ -399,6 +399,8 @@ type AuditLogListRequest struct {
 	ResourceTypes []string `json:"resource_types,omitempty"`
 	Actions       []string `json:"actions,omitempty"`
 	Username      string   `json:"username,omitempty"`
+	SortField     string   `json:"sort_field,omitempty"`
+	SortOrder     string   `json:"sort_order,omitempty"` // "asc" | "desc"
 }
 
 // AuditLogListResponse represents a paginated list of audit logs
@@ -408,6 +410,51 @@ type AuditLogListResponse struct {
 	Page       int         `json:"page"`
 	PerPage    int         `json:"per_page"`
 	TotalPages int         `json:"total_pages"`
+}
+
+// NodeListRequest represents query parameters for listing nodes (paginated).
+type NodeListRequest struct {
+	Page         int    `json:"page"`
+	PerPage      int    `json:"per_page"`
+	Search       string `json:"search,omitempty"`
+	Status       string `json:"status,omitempty"`
+	OS           string `json:"os,omitempty"`            // matches os_name
+	Desktop      string `json:"desktop,omitempty"`       // matches desktop_env
+	AgentVersion string `json:"agent_version,omitempty"` // matches agent_version
+	SortField    string `json:"sort_field,omitempty"`
+	SortOrder    string `json:"sort_order,omitempty"` // "asc" | "desc"
+}
+
+// NodeFilterOptions holds the distinct values available for node filter
+// dropdowns, so the UI can populate them without loading every node.
+type NodeFilterOptions struct {
+	OS            []string `json:"os"`
+	Desktops      []string `json:"desktops"`
+	AgentVersions []string `json:"agent_versions"`
+}
+
+// NodeListResponse represents a paginated list of nodes.
+type NodeListResponse struct {
+	Items      []*Node `json:"items"`
+	Total      int     `json:"total"`
+	Page       int     `json:"page"`
+	PerPage    int     `json:"per_page"`
+	TotalPages int     `json:"total_pages"`
+}
+
+// ClampPagination normalises page/per_page into safe bounds:
+// page >= 1, per_page in [1, 100] with a default of 25.
+func ClampPagination(page, perPage int) (clampedPage, clampedPerPage int) {
+	if perPage <= 0 {
+		perPage = 25
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	if page < 1 {
+		page = 1
+	}
+	return page, perPage
 }
 
 // PolicyBinding represents a binding between a policy and a node group

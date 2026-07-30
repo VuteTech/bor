@@ -4,6 +4,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
+import { ConfirmModal } from "../../components/ConfirmModal";
+import { useToast } from "../../components/ToastHost";
 import {
   Button,
   Spinner,
@@ -14,6 +17,9 @@ import {
   ModalFooter,
   Form,
   FormGroup,
+  FormHelperText,
+  HelperText,
+  HelperTextItem,
   TextInput,
   Switch,
   Tabs,
@@ -51,6 +57,10 @@ export const UsersTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { addToast } = useToast();
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -68,19 +78,30 @@ export const UsersTab: React.FC = () => {
   const handleToggleEnabled = async (user: User) => {
     try {
       await updateUser(user.id, { enabled: !user.enabled });
+      addToast({
+        variant: "success",
+        title: user.enabled ? "User disabled" : "User enabled",
+        detail: user.username,
+      });
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to toggle user");
     }
   };
 
-  const handleDelete = async (user: User) => {
-    if (!confirm(`Delete user "${user.username}"?`)) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
-      await deleteUser(user.id);
+      await deleteUser(deleteTarget.id);
+      addToast({ variant: "success", title: "User deleted", detail: deleteTarget.username });
+      setDeleteTarget(null);
       reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete user");
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete user");
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -102,70 +123,102 @@ export const UsersTab: React.FC = () => {
         </FlexItem>
       </Flex>
 
-      <Table aria-label="Users table" variant="compact">
-        <Thead>
-          <Tr>
-            <Th>Username</Th>
-            <Th>Email</Th>
-            <Th>Source</Th>
-            <Th>Enabled</Th>
-            <Th>Actions</Th>
-          </Tr>
-        </Thead>
-        <Tbody>
-          {users.map((u) => (
-            <Tr key={u.id}>
-              <Td>{u.username}</Td>
-              <Td>{u.email}</Td>
-              <Td>
-                <Label color={u.source === "local" ? "blue" : "purple"}>
-                  {u.source}
-                </Label>
-              </Td>
-              <Td>
-                <Label color={u.enabled ? "green" : "red"}>
-                  {u.enabled ? "Yes" : "No"}
-                </Label>
-              </Td>
-              <Td>
-                <Button
-                  variant="plain"
-                  aria-label="Edit"
-                  onClick={() => setEditUser(u)}
-                >
-                  <PencilAltIcon />
-                </Button>
-                <Button
-                  variant="plain"
-                  aria-label="Toggle"
-                  onClick={() => handleToggleEnabled(u)}
-                >
-                  {u.enabled ? "Disable" : "Enable"}
-                </Button>
-                <Button
-                  variant="plain"
-                  aria-label="Delete"
-                  isDanger
-                  onClick={() => handleDelete(u)}
-                >
-                  <TrashIcon />
-                </Button>
-              </Td>
-            </Tr>
-          ))}
-          {users.length === 0 && (
+      {users.length === 0 ? (
+        <BorEmptyState
+          isEmptyData
+          itemsLabel="users"
+          emptyTitle="No users yet"
+          emptyBody="Create a user to grant someone access to the console."
+          action={
+            <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
+              Create User
+            </Button>
+          }
+        />
+      ) : (
+        <Table aria-label="Users table" variant="compact">
+          <Thead>
             <Tr>
-              <Td colSpan={5}>No users found.</Td>
+              <Th>Username</Th>
+              <Th>Email</Th>
+              <Th>Source</Th>
+              <Th>Enabled</Th>
+              <Th screenReaderText="Actions" />
             </Tr>
-          )}
-        </Tbody>
-      </Table>
+          </Thead>
+          <Tbody>
+            {users.map((u) => (
+              <Tr key={u.id}>
+                <Td>{u.username}</Td>
+                <Td>{u.email}</Td>
+                <Td>
+                  <Label color={u.source === "local" ? "blue" : "purple"}>
+                    {u.source}
+                  </Label>
+                </Td>
+                <Td>
+                  <Label color={u.enabled ? "green" : "red"}>
+                    {u.enabled ? "Yes" : "No"}
+                  </Label>
+                </Td>
+                <Td>
+                  <Button
+                    variant="plain"
+                    aria-label={`Edit user ${u.username}`}
+                    onClick={() => setEditUser(u)}
+                  >
+                    <PencilAltIcon />
+                  </Button>
+                  <Button
+                    variant="plain"
+                    aria-label={`${u.enabled ? "Disable" : "Enable"} user ${u.username}`}
+                    onClick={() => handleToggleEnabled(u)}
+                  >
+                    {u.enabled ? "Disable" : "Enable"}
+                  </Button>
+                  <Button
+                    variant="plain"
+                    aria-label={`Delete user ${u.username}`}
+                    isDanger
+                    onClick={() => setDeleteTarget(u)}
+                  >
+                    <TrashIcon />
+                  </Button>
+                </Td>
+              </Tr>
+            ))}
+          </Tbody>
+        </Table>
+      )}
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        title="Delete user?"
+        confirmLabel="Delete"
+        isDanger
+        confirmPhrase={deleteTarget?.username}
+        confirmPhraseLabel={
+          deleteTarget ? `Type the username "${deleteTarget.username}" to confirm` : undefined
+        }
+        isBusy={deleteBusy}
+        error={deleteError}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      >
+        {deleteTarget && (
+          <p>
+            This permanently deletes the user <strong>{deleteTarget.username}</strong> and their role
+            assignments. This cannot be undone.
+          </p>
+        )}
+      </ConfirmModal>
 
       {showCreate && (
         <CreateUserModal
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
+            addToast({ variant: "success", title: "User created" });
             reload();
           }}
         />
@@ -177,6 +230,7 @@ export const UsersTab: React.FC = () => {
           onClose={() => setEditUser(null)}
           onSaved={() => {
             setEditUser(null);
+            addToast({ variant: "success", title: "User updated" });
             reload();
           }}
         />
@@ -636,13 +690,7 @@ const AdminPasswordTab: React.FC<{ userId: string }> = ({ userId }) => {
             aria-required
           />
         </FormGroup>
-        <FormGroup
-          label="Confirm new password"
-          isRequired
-          fieldId="ap-confirm"
-          helperTextInvalid="Passwords do not match"
-          validated={mismatch ? "error" : "default"}
-        >
+        <FormGroup label="Confirm new password" isRequired fieldId="ap-confirm">
           <TextInput
             id="ap-confirm"
             type="password"
@@ -652,7 +700,17 @@ const AdminPasswordTab: React.FC<{ userId: string }> = ({ userId }) => {
             validated={mismatch ? "error" : "default"}
             aria-required
             aria-invalid={mismatch || undefined}
+            aria-describedby={mismatch ? "ap-confirm-error" : undefined}
           />
+          {mismatch && (
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem id="ap-confirm-error" variant="error">
+                  Passwords do not match
+                </HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          )}
         </FormGroup>
         <Button
           type="submit"

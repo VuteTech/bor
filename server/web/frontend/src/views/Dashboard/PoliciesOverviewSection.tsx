@@ -12,34 +12,14 @@ import {
   Title,
   Label,
   LabelGroup,
-  Flex,
-  FlexItem,
 } from "@patternfly/react-core";
 
 import type { PoliciesOverview } from "../../apiClient/dashboardApi";
+import { StatCard } from "../../components/StatCard";
 
 interface PoliciesOverviewSectionProps {
   data: PoliciesOverview;
 }
-
-const StatCard: React.FC<{
-  title: string;
-  value: number | string;
-  color?: string;
-}> = ({ title, value, color }) => (
-  <Card isCompact isFlat>
-    <CardBody>
-      <Flex direction={{ default: "column" }} alignItems={{ default: "alignItemsCenter" }}>
-        <FlexItem>
-          <span style={{ fontSize: "0.85rem", color: "#6a6e73" }}>{title}</span>
-        </FlexItem>
-        <FlexItem>
-          <span style={{ fontSize: "1.75rem", fontWeight: 700, color }}>{value}</span>
-        </FlexItem>
-      </Flex>
-    </CardBody>
-  </Card>
-);
 
 const typeColor = (type: string): "blue" | "green" | "purple" | "orange" | "grey" => {
   switch (type) {
@@ -67,33 +47,21 @@ export const PoliciesOverviewSection: React.FC<PoliciesOverviewSectionProps> = (
           <StatCard title="Total Policies" value={data.totalPolicies} />
         </GridItem>
         <GridItem span={3}>
-          <StatCard
-            title="Released"
-            value={data.released}
-            color="var(--pf-t--global--text--color--status--success--default)"
-          />
+          <StatCard title="Released" value={data.released} color="green" />
         </GridItem>
         <GridItem span={3}>
-          <StatCard
-            title="Draft"
-            value={data.draft}
-            color="var(--pf-t--global--text--color--status--info--default)"
-          />
+          <StatCard title="Draft" value={data.draft} color="blue" />
         </GridItem>
         <GridItem span={3}>
-          <StatCard
-            title="Archived"
-            value={data.archived}
-            color="var(--pf-t--global--text--color--subtle)"
-          />
+          <StatCard title="Archived" value={data.archived} color="grey" />
         </GridItem>
 
         <GridItem span={12}>
-          <Card isCompact isFlat>
+          <Card isCompact>
             <CardTitle>Policy Types</CardTitle>
             <CardBody>
               {typeEntries.length === 0 ? (
-                <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>
+                <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>
                   No policies configured
                 </span>
               ) : (

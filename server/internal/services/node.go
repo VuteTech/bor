@@ -42,6 +42,43 @@ func (s *NodeService) ListNodesByStatus(ctx context.Context, status string) ([]*
 	return s.nodeRepo.ListByStatus(ctx, status)
 }
 
+// ListNodesPaged returns a page of nodes matching the filter plus the total
+// count, so the UI can render server-side pagination.
+func (s *NodeService) ListNodesPaged(ctx context.Context, req *models.NodeListRequest) (*models.NodeListResponse, error) {
+	if req.Status != "" && !isValidNodeStatus(req.Status) {
+		return nil, fmt.Errorf("invalid node status: %s", req.Status)
+	}
+	page, perPage := models.ClampPagination(req.Page, req.PerPage)
+
+	total, err := s.nodeRepo.CountFiltered(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := s.nodeRepo.ListPaged(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if nodes == nil {
+		nodes = []*models.Node{}
+	}
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = (total + perPage - 1) / perPage
+	}
+	return &models.NodeListResponse{
+		Items:      nodes,
+		Total:      total,
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// GetNodeFilterOptions returns the distinct values for node filter dropdowns.
+func (s *NodeService) GetNodeFilterOptions(ctx context.Context) (*models.NodeFilterOptions, error) {
+	return s.nodeRepo.DistinctFilterValues(ctx)
+}
+
 // GetNode retrieves a node by ID
 func (s *NodeService) GetNode(ctx context.Context, id string) (*models.Node, error) {
 	return s.nodeRepo.GetByID(ctx, id)

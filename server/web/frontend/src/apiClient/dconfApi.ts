@@ -90,8 +90,35 @@ export async function fetchDConfSchemas(nodeId?: string): Promise<DConfSchema[]>
   });
 }
 
-export async function fetchComplianceResults(): Promise<ComplianceResult[]> {
-  return apiRequest<ComplianceResult[]>("/api/v1/compliance", {
+export interface ComplianceListParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  status?: string;
+  sort_field?: string;
+  sort_order?: "asc" | "desc";
+}
+
+export interface ComplianceListResponse {
+  items: ComplianceResult[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+  status_counts: Record<string, number>;
+}
+
+// fetchCompliancePaged returns one page of compliance results plus the total
+// count and an overall per-status distribution (all applied server-side).
+export async function fetchCompliancePaged(
+  params: ComplianceListParams = {},
+): Promise<ComplianceListResponse> {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") qs.set(key, String(value));
+  }
+  const query = qs.toString();
+  return apiRequest<ComplianceListResponse>(`/api/v1/compliance${query ? `?${query}` : ""}`, {
     headers: authHeaders(),
   });
 }

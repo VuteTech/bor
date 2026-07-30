@@ -246,6 +246,148 @@ func (r *NodeRepository) Search(ctx context.Context, term string) ([]*models.Nod
 	return nodes, nil
 }
 
+// nodeSortColumns is the allowlist mapping API sort fields to SQL columns.
+// ORDER BY cannot be parameterized, so the sort column MUST come from this map
+// — never from raw request input — to prevent SQL injection.
+var nodeSortColumns = map[string]string{
+	"name":          "n.name",
+	"status":        "n.status_cached",
+	"os":            "n.os_name",
+	"agent_version": "n.agent_version",
+	"last_seen":     "n.last_seen",
+}
+
+// nodeOrderBy returns a safe ORDER BY clause from an allowlisted field and a
+// direction. Unknown fields fall back to last_seen; unknown directions to DESC.
+func nodeOrderBy(field, order string) string {
+	col, ok := nodeSortColumns[field]
+	if !ok {
+		col = "n.last_seen"
+	}
+	dir := "DESC"
+	if strings.EqualFold(order, "asc") {
+		dir = "ASC"
+	}
+	return fmt.Sprintf("ORDER BY %s %s NULLS LAST", col, dir)
+}
+
+// buildNodeFilter builds the WHERE clause and args for the status + search
+// filters. All values are passed as bind parameters.
+func buildNodeFilter(req *models.NodeListRequest) (where string, args []interface{}) {
+	var conds []string
+	if req.Status != "" {
+		args = append(args, req.Status)
+		conds = append(conds, fmt.Sprintf("n.status_cached = $%d", len(args)))
+	}
+	if req.OS != "" {
+		args = append(args, req.OS)
+		conds = append(conds, fmt.Sprintf("n.os_name = $%d", len(args)))
+	}
+	if req.Desktop != "" {
+		args = append(args, req.Desktop)
+		conds = append(conds, fmt.Sprintf("n.desktop_env = $%d", len(args)))
+	}
+	if req.AgentVersion != "" {
+		args = append(args, req.AgentVersion)
+		conds = append(conds, fmt.Sprintf("n.agent_version = $%d", len(args)))
+	}
+	if s := strings.TrimSpace(req.Search); s != "" {
+		args = append(args, "%"+s+"%")
+		p := len(args)
+		conds = append(conds, fmt.Sprintf(
+			"(n.name ILIKE $%d OR n.fqdn ILIKE $%d OR n.ip_address ILIKE $%d OR n.groups ILIKE $%d)",
+			p, p, p, p))
+	}
+	if len(conds) == 0 {
+		return "", args
+	}
+	return "WHERE " + strings.Join(conds, " AND "), args
+}
+
+// DistinctFilterValues returns the distinct non-empty os_name, desktop_env, and
+// agent_version values, for populating filter dropdowns.
+func (r *NodeRepository) DistinctFilterValues(ctx context.Context) (*models.NodeFilterOptions, error) {
+	opts := &models.NodeFilterOptions{OS: []string{}, Desktops: []string{}, AgentVersions: []string{}}
+	cols := []struct {
+		col  string
+		dest *[]string
+	}{
+		{"os_name", &opts.OS},
+		{"desktop_env", &opts.Desktops},
+		{"agent_version", &opts.AgentVersions},
+	}
+	for _, c := range cols {
+		// Column name is from a fixed local list, never request input.
+		query := fmt.Sprintf(
+			"SELECT DISTINCT %s FROM nodes WHERE %s IS NOT NULL AND %s <> '' ORDER BY %s",
+			c.col, c.col, c.col, c.col)
+		rows, err := r.db.QueryContext(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load distinct %s: %w", c.col, err)
+		}
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("failed to scan %s: %w", c.col, err)
+			}
+			*c.dest = append(*c.dest, v)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+	return opts, nil
+}
+
+// CountFiltered returns the number of nodes matching the filter.
+func (r *NodeRepository) CountFiltered(ctx context.Context, req *models.NodeListRequest) (int, error) {
+	where, args := buildNodeFilter(req)
+	query := fmt.Sprintf(`SELECT COUNT(*) %s %s`, nodeFrom, where)
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count nodes: %w", err)
+	}
+	return count, nil
+}
+
+// ListPaged returns a page of nodes matching the filter, ordered by the
+// allowlisted sort field, with group memberships populated.
+func (r *NodeRepository) ListPaged(ctx context.Context, req *models.NodeListRequest) ([]*models.Node, error) {
+	where, args := buildNodeFilter(req)
+	orderBy := nodeOrderBy(req.SortField, req.SortOrder)
+	page, perPage := models.ClampPagination(req.Page, req.PerPage)
+	offset := (page - 1) * perPage
+	args = append(args, perPage, offset)
+	query := fmt.Sprintf(`SELECT %s %s %s %s LIMIT $%d OFFSET $%d`,
+		nodeSelect, nodeFrom, where, orderBy, len(args)-1, len(args))
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list nodes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var nodes []*models.Node
+	for rows.Next() {
+		node, err := scanNode(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan node: %w", err)
+		}
+		nodes = append(nodes, node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := r.populateGroups(ctx, nodes); err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
 // Update updates an existing node
 func (r *NodeRepository) Update(ctx context.Context, node *models.Node) error {
 	setClauses := []string{}

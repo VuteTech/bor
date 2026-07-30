@@ -50,6 +50,8 @@ func (h *AuditLogHandler) List(w http.ResponseWriter, r *http.Request) {
 			req.PerPage = v
 		}
 	}
+	req.SortField = r.URL.Query().Get("sort_field")
+	req.SortOrder = r.URL.Query().Get("sort_order")
 
 	resp, err := h.auditSvc.List(r.Context(), req)
 	if err != nil {
@@ -80,6 +82,8 @@ func (h *AuditLogHandler) Export(w http.ResponseWriter, r *http.Request) {
 		ResourceTypes: r.URL.Query()["resource_type"],
 		Actions:       r.URL.Query()["action"],
 		Username:      r.URL.Query().Get("username"),
+		SortField:     r.URL.Query().Get("sort_field"),
+		SortOrder:     r.URL.Query().Get("sort_order"),
 	}
 
 	switch format {

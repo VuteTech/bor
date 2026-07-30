@@ -34,7 +34,7 @@ import {
   ToolbarGroup,
   ToolbarItem,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
+import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
 import DownloadIcon from "@patternfly/react-icons/dist/esm/icons/download-icon";
 import SyncIcon from "@patternfly/react-icons/dist/esm/icons/sync-icon";
 import TimesIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
@@ -457,8 +457,28 @@ export const AuditLogsPage: React.FC = () => {
   const [usernameInput, setUsernameInput] = useState("");
   const [exporting, setExporting] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<AuditLog | null>(null);
+  const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const canExport = hasPermission("audit_log:export");
+
+  // Column index -> server sort field. Columns: Timestamp=0, User=1,
+  // Action=2, Resource Type=3.
+  const sortFieldByIndex: Record<number, string> = {
+    0: "created_at",
+    1: "username",
+    2: "action",
+    3: "resource_type",
+  };
+  const getSort = (columnIndex: number): ThProps["sort"] => ({
+    sortBy: { index: sortIndex, direction: sortDir },
+    onSort: (_e, index, direction) => {
+      setSortIndex(index);
+      setSortDir(direction);
+      setPage(1);
+    },
+    columnIndex,
+  });
 
   const activeActions = filters.filter((f) => f.type === "action").map((f) => f.value);
   const activeResourceTypes = filters.filter((f) => f.type === "resource_type").map((f) => f.value);
@@ -494,12 +514,16 @@ export const AuditLogsPage: React.FC = () => {
     if (activeActions.length > 0) params.action = activeActions;
     if (activeResourceTypes.length > 0) params.resource_type = activeResourceTypes;
     if (activeUsernames.length > 0) params.username = activeUsernames[0];
+    if (sortIndex !== undefined) {
+      params.sort_field = sortFieldByIndex[sortIndex];
+      params.sort_order = sortDir;
+    }
     fetchAuditLogs(params)
       .then((resp) => { setLogs(resp.items || []); setTotal(resp.total); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, filters]);
+  }, [page, perPage, filters, sortIndex, sortDir]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -511,6 +535,10 @@ export const AuditLogsPage: React.FC = () => {
       if (activeActions.length > 0) params.action = activeActions;
       if (activeResourceTypes.length > 0) params.resource_type = activeResourceTypes;
       if (activeUsernames.length > 0) params.username = activeUsernames[0];
+      if (sortIndex !== undefined) {
+        params.sort_field = sortFieldByIndex[sortIndex];
+        params.sort_order = sortDir;
+      }
       await exportAuditLogs(format, params);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Export failed");
@@ -597,17 +625,19 @@ export const AuditLogsPage: React.FC = () => {
               </Toolbar>
 
               {/* ── Table ── */}
-              {loading ? (
+              {/* Spinner only on the very first load; refreshes/filters/page
+                  changes keep the table mounted so the user doesn't lose context. */}
+              {loading && logs.length === 0 ? (
                 <Spinner size="lg" aria-label="Loading" style={{ marginTop: 32 }} />
               ) : (
                 <>
                   <Table aria-label="Audit logs table" variant="compact">
                     <Thead>
                       <Tr>
-                        <Th>Timestamp</Th>
-                        <Th>User</Th>
-                        <Th>Action</Th>
-                        <Th>Resource Type</Th>
+                        <Th sort={getSort(0)}>Timestamp</Th>
+                        <Th sort={getSort(1)}>User</Th>
+                        <Th sort={getSort(2)}>Action</Th>
+                        <Th sort={getSort(3)}>Resource Type</Th>
                         <Th>Resource ID</Th>
                         <Th>Details</Th>
                         <Th>IP Address</Th>
@@ -631,14 +661,8 @@ export const AuditLogsPage: React.FC = () => {
                         return (
                           <Tr
                             key={entry.id}
-                            onClick={() => setSelectedEntry(isSelected ? null : entry)}
-                            style={{
-                              cursor: "pointer",
-                              background: isSelected
-                                ? "var(--pf-t--global--background--color--secondary--default)"
-                                : undefined,
-                            }}
-                            isHoverable
+                            isClickable
+                            onRowClick={() => setSelectedEntry(isSelected ? null : entry)}
                             isRowSelected={isSelected}
                           >
                             <Td style={{ whiteSpace: "nowrap" }}>{formatTimestamp(entry.created_at)}</Td>

@@ -2,11 +2,13 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
+import { ConfirmModal } from "../../components/ConfirmModal";
+import { useToast } from "../../components/ToastHost";
 import {
   PageSection,
-  Title,
   Alert,
   AlertActionCloseButton,
   Spinner,
@@ -23,8 +25,6 @@ import {
   TextInput,
   ActionGroup,
   Switch,
-  EmptyState,
-  EmptyStateBody,
   Label,
   FormSelect,
   FormSelectOption,
@@ -33,12 +33,12 @@ import {
   DropdownList,
   MenuToggle,
   MenuToggleElement,
+  SearchInput,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
-import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
+import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
 import {
@@ -71,6 +71,18 @@ export const PolicyBindingsPage: React.FC = () => {
   const [bindings, setBindings] = useState<PolicyBinding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { addToast } = useToast();
+
+  // Search + client-side sort
+  const [searchText, setSearchText] = useState("");
+  const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Enabling a binding pushes a policy to every node in the group, so it is
+  // confirmed first when it affects any nodes.
+  const [pendingEnable, setPendingEnable] = useState<PolicyBinding | null>(null);
+  const [toggling, setToggling] = useState(false);
 
   // Available policies and groups for the form dropdowns
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -129,14 +141,50 @@ export const PolicyBindingsPage: React.FC = () => {
     loadBindings();
   }, [loadBindings]);
 
-  /* ── Selection ── */
-  const isAllSelected = bindings.length > 0 && selectedIds.size === bindings.length;
+  /* ── Filter + sort (client-side) ──
+     Sortable column indices match the header order (index 0 = select cell):
+     Policy=1, Group=3, Priority=5, Affected Nodes=6, Updated=7. */
+  const view = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    let list = q
+      ? bindings.filter(
+          (b) =>
+            b.policy_name.toLowerCase().includes(q) || b.group_name.toLowerCase().includes(q),
+        )
+      : bindings;
+    if (sortIndex !== undefined) {
+      const cmp = (a: PolicyBinding, b: PolicyBinding): number => {
+        switch (sortIndex) {
+          case 1: return a.policy_name.localeCompare(b.policy_name);
+          case 3: return a.group_name.localeCompare(b.group_name);
+          case 5: return a.priority - b.priority;
+          case 6: return a.node_count - b.node_count;
+          case 7: return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+          default: return 0;
+        }
+      };
+      list = [...list].sort((a, b) => (sortDir === "asc" ? cmp(a, b) : -cmp(a, b)));
+    }
+    return list;
+  }, [bindings, searchText, sortIndex, sortDir]);
+
+  const getSort = (columnIndex: number): ThProps["sort"] => ({
+    sortBy: { index: sortIndex, direction: sortDir },
+    onSort: (_e, index, direction) => {
+      setSortIndex(index);
+      setSortDir(direction);
+    },
+    columnIndex,
+  });
+
+  /* ── Selection (over the visible rows) ── */
+  const isAllSelected = view.length > 0 && view.every((b) => selectedIds.has(b.id));
 
   const toggleSelectAll = () => {
     if (isAllSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(bindings.map((b) => b.id)));
+      setSelectedIds(new Set(view.map((b) => b.id)));
     }
   };
 
@@ -181,6 +229,7 @@ export const PolicyBindingsPage: React.FC = () => {
           priority: formPriority,
         });
         setIsFormOpen(false);
+        addToast({ variant: "success", title: "Binding updated" });
         loadBindings();
       } catch (err) {
         setFormError(err instanceof Error ? err.message : "Failed to save");
@@ -195,6 +244,7 @@ export const PolicyBindingsPage: React.FC = () => {
         setFormError(null);
         await createBinding({ policy_id: formPolicyId, group_id: formGroupId, priority: formPriority });
         setIsFormOpen(false);
+        addToast({ variant: "success", title: "Binding created" });
         loadBindings();
       } catch (err) {
         setFormError(err instanceof Error ? err.message : "Failed to save");
@@ -213,11 +263,11 @@ export const PolicyBindingsPage: React.FC = () => {
     setDeleteModalOpen(true);
   };
 
-  // Single: type "policy → group" label. Multiple: type "Yes".
+  // Single: type "policy to group" (keyboard-typeable). Multiple: type "Yes".
   const deletePrompt = deleteTargetIds.length === 1
     ? (() => {
         const b = bindings.find((b) => b.id === deleteTargetIds[0]);
-        return b ? `${b.policy_name} → ${b.group_name}` : "";
+        return b ? `${b.policy_name} to ${b.group_name}` : "";
       })()
     : "Yes";
   const deleteConfirmLabel = deleteTargetIds.length === 1
@@ -229,10 +279,12 @@ export const PolicyBindingsPage: React.FC = () => {
     if (!deleteValid) return;
     setDeleteLoading(true);
     setDeleteError(null);
+    const count = deleteTargetIds.length;
     try {
       await Promise.all(deleteTargetIds.map((id) => deleteBinding(id)));
       setSelectedIds(new Set());
       setDeleteModalOpen(false);
+      addToast({ variant: "success", title: `Deleted ${count} binding${count === 1 ? "" : "s"}` });
       loadBindings();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Failed to delete");
@@ -242,15 +294,41 @@ export const PolicyBindingsPage: React.FC = () => {
   };
 
   /* ── Toggle state inline ── */
-  const handleToggleState = async (binding: PolicyBinding) => {
-    const newState = binding.state === "enabled" ? "disabled" : "enabled";
+  const applyToggle = async (binding: PolicyBinding, newState: "enabled" | "disabled") => {
+    setToggling(true);
     try {
       await updateBinding(binding.id, { state: newState });
+      addToast({
+        variant: "success",
+        title: newState === "enabled" ? "Binding enabled" : "Binding disabled",
+        detail: `${binding.policy_name} to ${binding.group_name}`,
+      });
       loadBindings();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to toggle binding");
+      addToast({
+        variant: "danger",
+        title: "Couldn’t update binding",
+        detail: err instanceof Error ? err.message : String(err),
+      });
       loadBindings();
+    } finally {
+      setToggling(false);
+      setPendingEnable(null);
     }
+  };
+
+  const handleToggleState = (binding: PolicyBinding) => {
+    if (binding.state === "enabled") {
+      applyToggle(binding, "disabled");
+      return;
+    }
+    // Enabling delivers the policy to every node in the group — confirm first
+    // when that affects one or more nodes.
+    if (binding.node_count > 0) {
+      setPendingEnable(binding);
+      return;
+    }
+    applyToggle(binding, "enabled");
   };
 
   /* ── Open policy details modal ── */
@@ -279,7 +357,7 @@ export const PolicyBindingsPage: React.FC = () => {
 
   return (
     <>
-      <PageSection variant="light">
+      <PageSection>
         <Flex
           justifyContent={{ default: "justifyContentSpaceBetween" }}
           alignItems={{ default: "alignItemsCenter" }}
@@ -300,62 +378,74 @@ export const PolicyBindingsPage: React.FC = () => {
           style={{ marginBottom: "1rem" }}
         />
 
-        {bindings.length === 0 ? (
-          <EmptyState titleText="No policy bindings" headingLevel="h2" icon={CubesIcon}>
-            <EmptyStateBody>
-              Create a binding to connect a policy to a node group. Nodes get
-              policies only through group membership.
-            </EmptyStateBody>
-            <Button variant="primary" onClick={openCreateModal}>
-              Create Binding
-            </Button>
-          </EmptyState>
+        <Toolbar style={{ padding: 0, marginBottom: "0.5rem" }} clearAllFilters={() => setSearchText("")}>
+          <ToolbarContent>
+            <ToolbarItem>
+              <SearchInput
+                aria-label="Search bindings by policy or group"
+                placeholder="Search by policy or group…"
+                value={searchText}
+                onChange={(_ev, val) => setSearchText(val)}
+                onClear={() => setSearchText("")}
+              />
+            </ToolbarItem>
+            {selectedIds.size > 0 && (
+              <ToolbarItem>
+                <Dropdown
+                  isOpen={bulkOpen}
+                  onSelect={() => setBulkOpen(false)}
+                  onOpenChange={setBulkOpen}
+                  toggle={(ref: React.Ref<MenuToggleElement>) => (
+                    <MenuToggle
+                      ref={ref}
+                      onClick={() => setBulkOpen(!bulkOpen)}
+                      isExpanded={bulkOpen}
+                      variant="primary"
+                    >
+                      Actions ({selectedIds.size})
+                    </MenuToggle>
+                  )}
+                >
+                  <DropdownList>
+                    <DropdownItem
+                      key="edit"
+                      isDisabled={selectedIds.size !== 1}
+                      onClick={() => {
+                        const b = selectedBindings[0];
+                        if (b) openEditModal(b);
+                      }}
+                    >
+                      Edit
+                    </DropdownItem>
+                    <DropdownItem
+                      key="delete"
+                      isDanger
+                      onClick={() => openDeleteModal(Array.from(selectedIds))}
+                    >
+                      Delete
+                    </DropdownItem>
+                  </DropdownList>
+                </Dropdown>
+              </ToolbarItem>
+            )}
+          </ToolbarContent>
+        </Toolbar>
+
+        {view.length === 0 ? (
+          <BorEmptyState
+            isEmptyData={bindings.length === 0}
+            itemsLabel="policy bindings"
+            emptyTitle="No policy bindings"
+            emptyBody="Create a binding to connect a policy to a node group. Nodes get policies only through group membership."
+            action={
+              <Button variant="primary" onClick={openCreateModal}>
+                Create Binding
+              </Button>
+            }
+            onClearFilters={() => setSearchText("")}
+          />
         ) : (
           <>
-            {selectedIds.size > 0 && (
-              <Toolbar style={{ padding: 0, marginBottom: "0.5rem" }}>
-                <ToolbarContent>
-                  <ToolbarItem>
-                    <Dropdown
-                      isOpen={bulkOpen}
-                      onSelect={() => setBulkOpen(false)}
-                      onOpenChange={setBulkOpen}
-                      toggle={(ref: React.Ref<MenuToggleElement>) => (
-                        <MenuToggle
-                          ref={ref}
-                          onClick={() => setBulkOpen(!bulkOpen)}
-                          isExpanded={bulkOpen}
-                          variant="primary"
-                        >
-                          Actions ({selectedIds.size})
-                        </MenuToggle>
-                      )}
-                    >
-                      <DropdownList>
-                        <DropdownItem
-                          key="edit"
-                          isDisabled={selectedIds.size !== 1}
-                          onClick={() => {
-                            const b = selectedBindings[0];
-                            if (b) openEditModal(b);
-                          }}
-                        >
-                          Edit
-                        </DropdownItem>
-                        <DropdownItem
-                          key="delete"
-                          isDanger
-                          onClick={() => openDeleteModal(Array.from(selectedIds))}
-                        >
-                          Delete
-                        </DropdownItem>
-                      </DropdownList>
-                    </Dropdown>
-                  </ToolbarItem>
-                </ToolbarContent>
-              </Toolbar>
-            )}
-
             <Table aria-label="Policy bindings table" variant="compact">
               <Thead>
                 <Tr>
@@ -365,18 +455,18 @@ export const PolicyBindingsPage: React.FC = () => {
                       isSelected: isAllSelected,
                     }}
                   />
-                  <Th>Policy</Th>
+                  <Th sort={getSort(1)}>Policy</Th>
                   <Th>Policy State</Th>
-                  <Th>Group</Th>
+                  <Th sort={getSort(3)}>Group</Th>
                   <Th>Binding State</Th>
-                  <Th>Priority</Th>
-                  <Th>Affected Nodes</Th>
-                  <Th>Updated</Th>
+                  <Th sort={getSort(5)}>Priority</Th>
+                  <Th sort={getSort(6)}>Affected Nodes</Th>
+                  <Th sort={getSort(7)}>Updated</Th>
                   <Th>Actions</Th>
                 </Tr>
               </Thead>
               <Tbody>
-                {bindings.map((b, rowIndex) => (
+                {view.map((b, rowIndex) => (
                   <Tr key={b.id}>
                     <Td
                       select={{
@@ -397,9 +487,10 @@ export const PolicyBindingsPage: React.FC = () => {
                     <Td dataLabel="Binding State">
                       <Switch
                         id={`toggle-${b.id}`}
-                        aria-label="Binding state"
+                        aria-label={`${b.state === "enabled" ? "Disable" : "Enable"} binding ${b.policy_name} on ${b.group_name}`}
                         isChecked={b.state === "enabled"}
                         onChange={() => handleToggleState(b)}
+                        isDisabled={toggling}
                         hasCheckIcon
                       />
                     </Td>
@@ -574,6 +665,25 @@ export const PolicyBindingsPage: React.FC = () => {
         </Form>
         </ModalBody>
       </Modal>
+
+      {/* ── Confirm enabling a binding (delivers policy to all group nodes) ── */}
+      <ConfirmModal
+        isOpen={pendingEnable !== null}
+        title="Enable this binding?"
+        confirmLabel="Enable"
+        isBusy={toggling}
+        onConfirm={() => pendingEnable && applyToggle(pendingEnable, "enabled")}
+        onCancel={() => setPendingEnable(null)}
+      >
+        {pendingEnable && (
+          <p>
+            Enabling the binding of <strong>{pendingEnable.policy_name}</strong> to{" "}
+            <strong>{pendingEnable.group_name}</strong> will deliver this policy to all{" "}
+            <strong>{pendingEnable.node_count}</strong> node
+            {pendingEnable.node_count === 1 ? "" : "s"} in the group.
+          </p>
+        )}
+      </ConfirmModal>
 
       {/* ── Policy Details Modal (opened by clicking policy name) ── */}
       <PolicyDetailsModal

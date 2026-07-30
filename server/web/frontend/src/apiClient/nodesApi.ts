@@ -58,18 +58,52 @@ export interface NodeStatusCounts {
   unknown: number;
 }
 
-/* ── API calls ── */
-
-export async function fetchNodes(params?: {
+export interface NodeListParams {
+  page?: number;
+  per_page?: number;
   search?: string;
   status?: string;
-}): Promise<Node[]> {
+  os?: string;
+  desktop?: string;
+  agent_version?: string;
+  sort_field?: string;
+  sort_order?: "asc" | "desc";
+}
+
+export interface NodeListResponse {
+  items: Node[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+export interface NodeFilterOptions {
+  os: string[];
+  desktops: string[];
+  agent_versions: string[];
+}
+
+/* ── API calls ── */
+
+// fetchNodesPaged returns a single page of nodes plus the total count, with all
+// filtering and sorting applied server-side.
+export async function fetchNodesPaged(params: NodeListParams = {}): Promise<NodeListResponse> {
   const qs = new URLSearchParams();
-  if (params?.search) qs.set("search", params.search);
-  if (params?.status) qs.set("status", params.status);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") qs.set(key, String(value));
+  }
   const query = qs.toString();
-  const url = `/api/v1/nodes${query ? `?${query}` : ""}`;
-  return apiRequest<Node[]>(url, { headers: authHeaders() });
+  return apiRequest<NodeListResponse>(`/api/v1/nodes${query ? `?${query}` : ""}`, {
+    headers: authHeaders(),
+  });
+}
+
+// fetchNodeFilterOptions returns the distinct values for the filter dropdowns.
+export async function fetchNodeFilterOptions(): Promise<NodeFilterOptions> {
+  return apiRequest<NodeFilterOptions>("/api/v1/nodes/filter-options", {
+    headers: authHeaders(),
+  });
 }
 
 export async function fetchNode(id: string): Promise<Node> {

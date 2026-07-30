@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/VuteTech/Bor/server/internal/models"
@@ -38,41 +39,47 @@ func (h *NodeHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var nodes []*models.Node
-	var err error
-
-	// Check for search query
-	search := r.URL.Query().Get("search")
-	status := r.URL.Query().Get("status")
-
+	q := r.URL.Query()
+	search := q.Get("search")
 	if len(search) > 500 {
 		http.Error(w, `{"error":"search term too long"}`, http.StatusBadRequest)
 		return
 	}
 
-	switch {
-	case search != "":
-		nodes, err = h.nodeSvc.SearchNodes(r.Context(), search)
-	case status != "":
-		nodes, err = h.nodeSvc.ListNodesByStatus(r.Context(), status)
-	default:
-		nodes, err = h.nodeSvc.ListAllNodes(r.Context())
+	req := &models.NodeListRequest{
+		Search:       search,
+		Status:       q.Get("status"),
+		OS:           q.Get("os"),
+		Desktop:      q.Get("desktop"),
+		AgentVersion: q.Get("agent_version"),
+		SortField:    q.Get("sort_field"),
+		SortOrder:    q.Get("sort_order"),
+		Page:         atoiDefault(q.Get("page"), 1),
+		PerPage:      atoiDefault(q.Get("per_page"), 25),
 	}
 
+	resp, err := h.nodeSvc.ListNodesPaged(r.Context(), req)
 	if err != nil {
 		log.Printf("Failed to list nodes: %v", err)
 		http.Error(w, `{"error":"failed to list nodes"}`, http.StatusInternalServerError)
 		return
 	}
 
-	if nodes == nil {
-		nodes = []*models.Node{}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(nodes); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Failed to encode nodes response: %v", err)
 	}
+}
+
+// atoiDefault parses s as an int, returning def when empty or invalid.
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	if v, err := strconv.Atoi(s); err == nil {
+		return v
+	}
+	return def
 }
 
 // Get handles GET /api/v1/nodes/{id}
@@ -154,6 +161,26 @@ func (h *NodeHandler) CountByStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(counts); err != nil {
 		log.Printf("Failed to encode counts response: %v", err)
+	}
+}
+
+// FilterOptions handles GET /api/v1/nodes/filter-options
+func (h *NodeHandler) FilterOptions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	opts, err := h.nodeSvc.GetNodeFilterOptions(r.Context())
+	if err != nil {
+		log.Printf("Failed to load node filter options: %v", err)
+		http.Error(w, `{"error":"failed to load filter options"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(opts); err != nil {
+		log.Printf("Failed to encode filter options response: %v", err)
 	}
 }
 

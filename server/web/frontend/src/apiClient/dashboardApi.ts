@@ -139,11 +139,27 @@ export interface DashboardData {
 
 /* ── Fetch ── */
 
+// The nodes endpoint is paginated ({ items, total_pages }); the dashboard needs
+// the whole fleet for its aggregates, so walk every page.
+async function fetchAllNodes(): Promise<RawNode[]> {
+  const hdrs = { headers: authHeaders() };
+  const all: RawNode[] = [];
+  for (let page = 1; ; page++) {
+    const resp = await apiRequest<{ items: RawNode[]; total_pages: number }>(
+      `/api/v1/nodes?page=${page}&per_page=100`,
+      hdrs,
+    );
+    all.push(...(resp.items ?? []));
+    if (!resp.items?.length || page >= (resp.total_pages ?? 1)) break;
+  }
+  return all;
+}
+
 export async function fetchDashboardData(): Promise<DashboardData> {
   const hdrs = { headers: authHeaders() };
 
   const [nodesRes, groupsRes, policiesRes, bindingsRes] = await Promise.allSettled([
-    apiRequest<RawNode[]>("/api/v1/nodes", hdrs),
+    fetchAllNodes(),
     apiRequest<RawNodeGroup[]>("/api/v1/node-groups", hdrs),
     apiRequest<RawPolicy[]>("/api/v1/policies/all", hdrs),
     apiRequest<RawBinding[]>("/api/v1/policy-bindings", hdrs),

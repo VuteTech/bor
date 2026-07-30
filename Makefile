@@ -1,4 +1,4 @@
-.PHONY: help server server-pkcs11 agent frontend proto proto-go proto-ts clean test lint install-deps dev \
+.PHONY: help server server-pkcs11 agent frontend proto proto-go proto-ts clean test lint lint-server lint-agent lint-frontend install-deps dev \
         packages packages-agent packages-server
 
 # Versioning — override with: make packages VERSION=1.2.3
@@ -29,6 +29,7 @@ help:
 	@echo "  lint               - Run linters"
 	@echo "  lint-server        - Lint Go server code"
 	@echo "  lint-agent         - Lint Go agent code"
+	@echo "  lint-frontend      - Lint frontend accessibility (jsx-a11y)"
 	@echo "  clean              - Clean build artifacts"
 	@echo "  install-deps       - Install development dependencies"
 	@echo "  dev                - Start development environment"
@@ -150,7 +151,7 @@ test-agent:
 	cd agent && go test -v ./...
 
 # Run all linters
-lint: lint-server lint-agent
+lint: lint-server lint-agent lint-frontend
 
 # Lint server code
 lint-server:
@@ -161,6 +162,11 @@ lint-server:
 lint-agent:
 	@echo "Linting agent code..."
 	cd agent && golangci-lint run ./...
+
+# Lint frontend accessibility (eslint-plugin-jsx-a11y). Requires deps: npm install.
+lint-frontend:
+	@echo "Linting frontend accessibility..."
+	cd server/web/frontend && npm run lint
 
 # Build packages (deb, rpm, apk, archlinux) using nfpm
 packages: packages-agent packages-server

@@ -5,12 +5,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
+	"github.com/VuteTech/Bor/server/internal/services"
 )
 
 // UserRoleBindingHandler handles user role binding endpoints
@@ -111,6 +114,17 @@ func (h *UserRoleBindingHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Refuse to unassign the Super Admin role from the last Super Admin.
+	if err := h.guardLastSuperAdminBinding(r.Context(), id); err != nil {
+		if errors.Is(err, services.ErrLastSuperAdmin) {
+			http.Error(w, `{"error":"Cannot remove the Super Admin role from the last Super Admin user."}`, http.StatusConflict)
+			return
+		}
+		log.Printf("Failed to check role binding before delete: %v", err)
+		http.Error(w, `{"error":"failed to delete binding"}`, http.StatusInternalServerError)
+		return
+	}
+
 	if err := h.bindingRepo.Delete(r.Context(), id); err != nil {
 		log.Printf("Failed to delete user role binding: %v", err)
 		http.Error(w, `{"error":"failed to delete binding"}`, http.StatusInternalServerError)
@@ -118,6 +132,31 @@ func (h *UserRoleBindingHandler) Delete(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// guardLastSuperAdminBinding returns services.ErrLastSuperAdmin when removing
+// the binding identified by id would unassign the Super Admin role from the
+// only remaining Super Admin.
+func (h *UserRoleBindingHandler) guardLastSuperAdminBinding(ctx context.Context, id string) error {
+	binding, err := h.bindingRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if binding == nil {
+		return nil // already gone; let Delete handle it
+	}
+	role, err := h.roleRepo.GetByName(ctx, models.RoleSuperAdmin)
+	if err != nil || role == nil || binding.RoleID != role.ID {
+		return nil // not a Super Admin binding
+	}
+	count, err := h.bindingRepo.CountUsersWithRole(ctx, role.ID)
+	if err != nil {
+		return err
+	}
+	if count <= 1 {
+		return services.ErrLastSuperAdmin
+	}
+	return nil
 }
 
 // ServeHTTP routes requests
