@@ -9,6 +9,7 @@ import {
   ModalBody,
   ModalFooter,
   ModalVariant,
+  PageSection,
   Button,
   Tabs,
   Tab,
@@ -908,6 +909,8 @@ interface PolicyDetailsModalProps {
   onSaved: () => void;
   onDeleted?: () => void;
   policy: Policy | null; // null = create mode
+  /** Render as a full-page editor (route) instead of a modal overlay. */
+  asPage?: boolean;
 }
 
 /* ── Component ── */
@@ -918,6 +921,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   onSaved,
   onDeleted,
   policy,
+  asPage = false,
 }) => {
   const isEditMode = policy !== null;
 
@@ -3282,15 +3286,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     );
   };
 
-  return (
+  const editorTitle = isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy";
+
+  const editorBody = (
     <>
-    <Modal
-      variant={ModalVariant.large}
-      isOpen={isOpen}
-      onClose={handleClose}
-    >
-      <ModalHeader title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"} />
-      <ModalBody>
       <div aria-live="assertive" aria-atomic="true">
         {error && (
           <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
@@ -3408,8 +3407,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           )}
         </Tab>
       </Tabs>
-      </ModalBody>
-      <ModalFooter>
+    </>
+  );
+
+  const editorFooter = (
+    <>
         {isEditable && (
         <Button
           key="save"
@@ -3434,8 +3436,30 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <Button key="cancel" variant="link" onClick={handleClose}>
           Cancel
         </Button>
-      </ModalFooter>
-    </Modal>
+    </>
+  );
+
+  return (
+    <>
+    {asPage ? (
+      <PageSection isFilled style={{ display: "flex", flexDirection: "column", padding: "1.5rem 2rem" }}>
+        <Title headingLevel="h1" size="2xl" style={{ marginBottom: "1rem" }}>{editorTitle}</Title>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{editorBody}</div>
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid var(--pf-t--global--border--color--default)" }}>
+          {editorFooter}
+        </div>
+      </PageSection>
+    ) : (
+      <Modal
+        variant={ModalVariant.large}
+        isOpen={isOpen}
+        onClose={handleClose}
+      >
+        <ModalHeader title={editorTitle} />
+        <ModalBody>{editorBody}</ModalBody>
+        <ModalFooter>{editorFooter}</ModalFooter>
+      </Modal>
+    )}
 
     {/* Discard unsaved changes confirmation */}
     <Modal

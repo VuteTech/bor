@@ -3,3 +3,4 @@
 // Copyright (C) 2026 Bor contributors
 
 export { PoliciesPage } from "./PoliciesPage";
+export { PolicyEditorPage } from "./PolicyEditorPage";
