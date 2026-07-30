@@ -10,10 +10,14 @@ import {
   Form,
   FormGroup,
   TextInput,
+  InputGroup,
+  InputGroupItem,
   Button,
   ActionGroup,
   Content,
 } from "@patternfly/react-core";
+import EyeIcon from "@patternfly/react-icons/dist/esm/icons/eye-icon";
+import EyeSlashIcon from "@patternfly/react-icons/dist/esm/icons/eye-slash-icon";
 import { LiveAlert } from "../components/LiveAlert";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
@@ -41,6 +45,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [mfaMethods, setMfaMethods] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+
+  // Reflect the Caps Lock state so we can warn before a failed password attempt.
+  const trackCapsLock = (e: React.KeyboardEvent) => {
+    if (typeof e.getModifierState === "function") {
+      setCapsLockOn(e.getModifierState("CapsLock"));
+    }
+  };
 
   const resetToPhase1 = () => {
     setPhase("username");
@@ -49,6 +62,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
     setPasswordInput("");
     setMfaMethods([]);
     setErrorMsg(null);
+    setShowPassword(false);
+    setCapsLockOn(false);
   };
 
   const handleUsernameSubmit = async (ev: React.FormEvent) => {
@@ -282,14 +297,41 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
             />
           </FormGroup>
           <FormGroup label="Password" fieldId="login-password">
-            <TextInput
-              id="login-password"
-              type="password"
-              value={passwordInput}
-              onChange={(_ev, v) => setPasswordInput(v)}
-              autoFocus
-              autoComplete="current-password"
-            />
+            <InputGroup>
+              <InputGroupItem isFill>
+                <TextInput
+                  id="login-password"
+                  type={showPassword ? "text" : "password"}
+                  value={passwordInput}
+                  onChange={(_ev, v) => setPasswordInput(v)}
+                  onKeyUp={trackCapsLock}
+                  onKeyDown={trackCapsLock}
+                  onBlur={() => setCapsLockOn(false)}
+                  autoFocus
+                  autoComplete="current-password"
+                  aria-describedby={capsLockOn ? "login-capslock-hint" : undefined}
+                />
+              </InputGroupItem>
+              <InputGroupItem>
+                <Button
+                  variant="control"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((v) => !v)}
+                >
+                  {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
+                </Button>
+              </InputGroupItem>
+            </InputGroup>
+            {capsLockOn && (
+              <div
+                id="login-capslock-hint"
+                aria-live="polite"
+                style={{ marginTop: 4, fontSize: "0.85rem", color: "var(--pf-t--global--text--color--status--warning--default, #f0ab00)" }}
+              >
+                Caps Lock is on.
+              </div>
+            )}
           </FormGroup>
           <ActionGroup>
             <Button
@@ -314,7 +356,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       footerListVariants={ListVariant.inline}
       brandImgSrc={logo}
       brandImgAlt="Bor logo"
-      backgroundImgSrc={logo}
       textContent="Enterprise Linux Desktop Policy Manager"
       loginTitle="Log in to your account"
       loginSubtitle={subtitle}
