@@ -66,7 +66,10 @@ const ACTION_COLORS: Record<string, ColorStyle> = {
   delete:          { bg: "#c9190b", color: "#fff" },
   tamper_detected: { bg: "#f0ab00", color: "#1f1f1f" },
 };
-const DEFAULT_ACTION_COLOR: ColorStyle = { bg: "var(--pf-t--global--text--color--subtle)", color: "#fff" };
+// Fixed mid-gray (part of the deliberate badge palette, like the colored actions
+// above): white text stays readable in both themes. NOT the subtle *text* token,
+// which is a light gray in dark mode and gives white-on-light — unreadable.
+const DEFAULT_ACTION_COLOR: ColorStyle = { bg: "#57595c", color: "#fff" };
 
 const FILTER_TYPE_COLORS: Record<FilterType, ColorStyle> = {
   action:        { bg: "#6753ac", color: "#fff" },
