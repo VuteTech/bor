@@ -32,6 +32,9 @@ module.exports = {
   output: {
     path: OUTPUT_FOLDER,
     filename: "bor.js",
+    // Absolute so bundle/asset URLs resolve from any client route (e.g. a
+    // refresh on /audit-logs), not relative to the current path.
+    publicPath: "/",
     clean: false,
   },
   resolve: {

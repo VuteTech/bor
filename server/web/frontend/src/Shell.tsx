@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback } from "react";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   Page,
   Masthead,
@@ -27,6 +28,7 @@ import {
   DropdownList,
   PageToggleButton,
   Button,
+  Spinner,
   Tooltip,
 } from "@patternfly/react-core";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
@@ -39,6 +41,8 @@ import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 import { checkSession, logout, getMFAStatus, getPublicConfig, UserInfo } from "./apiClient/authApi";
 import { getServerVersion } from "./apiClient/systemApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
+import { onSessionExpired } from "./apiClient/session";
+import { PageHeader } from "./components/PageHeader";
 import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
 import { MFARequiredGate } from "./views/MFARequiredGate";
@@ -66,7 +70,43 @@ const PAGE_NAMES: Record<ScreenKey, string> = {
   settings:          "Settings",
 };
 
+const PAGE_SUBTITLES: Record<ScreenKey, string> = {
+  dashboard:          "Overview of fleet health and policy compliance.",
+  policies:           "Manage desktop policies for your Linux fleet. Each update creates a new version.",
+  nodes:              "Manage and monitor connected desktop agents.",
+  "node-groups":      "Manage node groups and generate enrollment tokens for agent registration.",
+  "policy-bindings":  "Bind policies to node groups. Nodes inherit policies through group membership.",
+  compliance:         "Track policy enforcement status across your fleet.",
+  "audit-logs":       "Track system changes and security events.",
+  settings:           "Manage users, roles, and system configuration.",
+};
+
+// Path <-> screen mapping. Dashboard is the index route ("/").
+const SCREEN_PATH: Record<ScreenKey, string> = {
+  dashboard:         "/",
+  policies:          "/policies",
+  nodes:             "/nodes",
+  "node-groups":     "/node-groups",
+  "policy-bindings": "/policy-bindings",
+  compliance:        "/compliance",
+  "audit-logs":      "/audit-logs",
+  settings:          "/settings",
+};
+
+function screenForPath(pathname: string): ScreenKey {
+  const exact = (Object.keys(SCREEN_PATH) as ScreenKey[]).find((k) => SCREEN_PATH[k] === pathname);
+  if (exact) return exact;
+  const prefix = (Object.keys(SCREEN_PATH) as ScreenKey[]).find(
+    (k) => SCREEN_PATH[k] !== "/" && pathname.startsWith(SCREEN_PATH[k]),
+  );
+  return prefix ?? "dashboard";
+}
+
 export const Shell: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeScreen = screenForPath(location.pathname);
+
   /* ── Theme state ── */
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     return (localStorage.getItem("bor-theme") as ThemeMode) || "system";
@@ -124,8 +164,6 @@ export const Shell: React.FC = () => {
   const [currentUserSource, setCurrentUserSource] = useState<string>("local");
   const [authChecked, setAuthChecked] = useState(false);
 
-  const [activeScreen, setActiveScreen] = useState<ScreenKey>("dashboard");
-
   /* ── Update document title on screen change (WCAG 2.4.2) ── */
   useEffect(() => {
     document.title = `${PAGE_NAMES[activeScreen]} | Bor`;
@@ -182,15 +220,27 @@ export const Shell: React.FC = () => {
     logout().catch(() => { /* best-effort server notification */ });
     setIsLoggedIn(false);
     setCurrentUser("");
-    setActiveScreen("dashboard");
     setMfaGateActive(false);
+  }, []);
+
+  /* ── Global session-expiry: drop to login but keep the URL so re-login
+        returns the user to the same page (WCAG-friendly, no lost context). ── */
+  useEffect(() => {
+    return onSessionExpired(() => {
+      clearPermissions();
+      setIsLoggedIn(false);
+      setCurrentUser("");
+      setMfaGateActive(false);
+    });
   }, []);
 
   /* ── Show login page if not signed in ── */
   if (!authChecked) {
     return (
       <PageSection>
-        <div style={{ textAlign: "center", marginTop: 120 }}>Loading...</div>
+        <div style={{ textAlign: "center", marginTop: 120 }}>
+          <Spinner size="xl" aria-label="Loading" />
+        </div>
       </PageSection>
     );
   }
@@ -350,44 +400,37 @@ export const Shell: React.FC = () => {
   );
 
   /* ── Sidebar ── */
+  // NavItem renders a real <a href> (bookmarkable, opens in a new tab), while
+  // preventDefault + Nav onSelect intercept normal clicks for SPA navigation.
+  const navItem = (key: ScreenKey, label: string) => (
+    <NavItem
+      itemId={key}
+      isActive={activeScreen === key}
+      to={SCREEN_PATH[key]}
+      preventDefault
+    >
+      {label}
+    </NavItem>
+  );
+
   const sideNavBlock = (
     <PageSidebar>
       <PageSidebarBody>
         <Nav
           onSelect={(_ev, result) => {
-            const target = result.itemId as ScreenKey;
-            setActiveScreen(target);
+            if (typeof result.to === "string") navigate(result.to);
           }}
         >
           <NavList>
-            <NavItem itemId="dashboard" isActive={activeScreen === "dashboard"}>
-              Dashboard
-            </NavItem>
-            <NavItem itemId="policies" isActive={activeScreen === "policies"}>
-              Policies
-            </NavItem>
-            <NavItem itemId="nodes" isActive={activeScreen === "nodes"}>
-              Nodes
-            </NavItem>
-            <NavItem itemId="node-groups" isActive={activeScreen === "node-groups"}>
-              Node Groups
-            </NavItem>
-            <NavItem itemId="policy-bindings" isActive={activeScreen === "policy-bindings"}>
-              Policy Bindings
-            </NavItem>
-            <NavItem itemId="compliance" isActive={activeScreen === "compliance"}>
-              Compliance
-            </NavItem>
-            {hasPermission("audit_log:view") && (
-              <NavItem itemId="audit-logs" isActive={activeScreen === "audit-logs"}>
-                Audit Logs
-              </NavItem>
-            )}
-            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view")) && (
-              <NavItem itemId="settings" isActive={activeScreen === "settings"}>
-                Settings
-              </NavItem>
-            )}
+            {navItem("dashboard", "Dashboard")}
+            {navItem("policies", "Policies")}
+            {navItem("nodes", "Nodes")}
+            {navItem("node-groups", "Node Groups")}
+            {navItem("policy-bindings", "Policy Bindings")}
+            {navItem("compliance", "Compliance")}
+            {hasPermission("audit_log:view") && navItem("audit-logs", "Audit Logs")}
+            {(hasPermission("user:manage") || hasPermission("role:manage") || hasPermission("user_group:view")) &&
+              navItem("settings", "Settings")}
           </NavList>
         </Nav>
         <div
@@ -450,53 +493,6 @@ export const Shell: React.FC = () => {
     </PageSidebar>
   );
 
-  const PAGE_SUBTITLES: Record<ScreenKey, string> = {
-    dashboard:          "Overview of fleet health and policy compliance.",
-    policies:           "Manage desktop policies for your Linux fleet. Each update creates a new version.",
-    nodes:              "Manage and monitor connected desktop agents.",
-    "node-groups":      "Manage node groups and generate enrollment tokens for agent registration.",
-    "policy-bindings":  "Bind policies to node groups. Nodes inherit policies through group membership.",
-    compliance:         "Track policy enforcement status across your fleet.",
-    "audit-logs":       "Track system changes and security events.",
-    settings:           "Manage users, roles, and system configuration.",
-  };
-
-  const subtitleStrip = PAGE_SUBTITLES[activeScreen] ? (
-    <PageSection
-      variant="light"
-      padding={{ default: "paddingSm" }}
-      style={{ borderBottom: "1px solid var(--pf-t--global--border--color--default)" }}
-    >
-      <span style={{ color: "#6a6e73", fontSize: "0.875rem" }}>
-        {PAGE_SUBTITLES[activeScreen]}
-      </span>
-    </PageSection>
-  ) : null;
-
-  /* ── Active screen content ── */
-  const renderActiveScreen = () => {
-    switch (activeScreen) {
-      case "dashboard":
-        return <DashboardPage />;
-      case "policies":
-        return <PoliciesPage />;
-      case "nodes":
-        return <NodesPage />;
-      case "node-groups":
-        return <NodeGroupsPage />;
-      case "policy-bindings":
-        return <PolicyBindingsPage />;
-      case "compliance":
-        return <CompliancePage />;
-      case "audit-logs":
-        return <AuditLogsPage />;
-      case "settings":
-        return <SettingsPage />;
-      default:
-        return null;
-    }
-  };
-
   return (
     <>
       {/* Skip navigation — first focusable element, visible on focus (WCAG 2.4.1) */}
@@ -510,8 +506,19 @@ export const Shell: React.FC = () => {
         defaultManagedSidebarIsOpen={true}
         mainContainerId="bor-main-content"
       >
-        {subtitleStrip}
-        {renderActiveScreen()}
+        <PageHeader title={PAGE_NAMES[activeScreen]} subtitle={PAGE_SUBTITLES[activeScreen]} />
+        <Routes>
+          <Route index element={<DashboardPage />} />
+          <Route path="/policies" element={<PoliciesPage />} />
+          <Route path="/nodes" element={<NodesPage />} />
+          <Route path="/node-groups" element={<NodeGroupsPage />} />
+          <Route path="/policy-bindings" element={<PolicyBindingsPage />} />
+          <Route path="/compliance" element={<CompliancePage />} />
+          <Route path="/audit-logs" element={<AuditLogsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          {/* Unknown paths fall back to the dashboard. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </Page>
       <AccountModal
         isOpen={isAccountModalOpen}
