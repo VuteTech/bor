@@ -39,7 +39,14 @@ All WCAG 2.2 AA success criteria that apply to this UI are satisfied.
 
 ## Testing
 
-- **Automated**: axe-core via `@axe-core/react` (development) or `@axe-core/playwright` (CI).
+- **Static lint gate**: `eslint-plugin-jsx-a11y` (recommended rules) runs over
+  `src/**/*.{ts,tsx}` via `make lint-frontend` / `npm run lint`
+  (`server/web/frontend/eslint.config.mjs`). Accessibility violations fail the
+  build. `jsx-a11y/no-autofocus` is a warning rather than an error: the app uses
+  `autoFocus` deliberately to place focus into freshly-opened modals and the
+  login screen, so new uses are surfaced for review without blocking.
+- **Runtime**: axe-core via `@axe-core/react` (development) or
+  `@axe-core/playwright` (CI).
 - **Keyboard**: every interactive flow operable without a mouse.
 - **Screen reader**: NVDA + Firefox on Linux; VoiceOver + Safari on macOS.
 - **Visual**: high contrast and reduced motion tested via OS settings.
