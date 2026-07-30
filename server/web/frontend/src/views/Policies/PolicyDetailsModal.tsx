@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Modal,
   ModalHeader,
@@ -850,6 +850,31 @@ function policyHasSettings(content: string): boolean {
   } catch { return false; }
 }
 
+// Canonical string form of policy content, so cosmetic JSON formatting
+// differences don't register as unsaved edits. Falls back to the raw string
+// when the content isn't valid JSON (mid-edit in the raw editor).
+function normalizePolicyContent(content: string): string {
+  try { return JSON.stringify(JSON.parse(content || "{}")); }
+  catch { return content; }
+}
+
+// Default (empty) content a freshly-selected policy type starts from. Mirrors
+// the per-type resets in handleTypeChange so the content baseline can move with
+// the type without duplicating those literals inline.
+function defaultContentForType(type: string): string {
+  switch (type) {
+    case "Dconf": return JSON.stringify({ entries: [], db_name: "local" }, null, 2);
+    case "Package": return JSON.stringify({ repositories: [], packages: [], updateCache: true, allowDowngrade: false }, null, 2);
+    case "Firefox":
+    case "Thunderbird":
+    case "Kconfig":
+    case "Chrome":
+    case "Edge":
+    case "Firewalld": return "{}";
+    default: return JSON.stringify([{}], null, 2);
+  }
+}
+
 // Extract the value for a specific Firefox policy key from content JSON
 function extractFirefoxValue(content: string, key: string): unknown {
   try {
@@ -912,8 +937,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // Track whether the policy was modified in this session (state transition or save)
   const [dirty, setDirty] = useState(false);
 
+  // Baseline of the last-persisted form values, captured on open, on type change,
+  // and after a save. Comparing the live form against it detects unsaved edits so
+  // we can warn before discarding them (close/Escape) and block lifecycle
+  // transitions that would otherwise silently drop them.
+  const baselineRef = useRef({ name: "", description: "", policyType: "Kconfig", content: "{}" });
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
   // Derived: whether policy fields are editable (create mode or DRAFT state)
   const isEditable = !isEditMode || status === "draft";
+
+  // Derived: does the live form differ from the last-persisted baseline?
+  const hasUnsavedChanges =
+    name !== baselineRef.current.name ||
+    description !== baselineRef.current.description ||
+    policyType !== baselineRef.current.policyType ||
+    normalizePolicyContent(contentRaw) !== baselineRef.current.content;
 
   // Firefox-specific state: selected policy key + its value
   const [firefoxSelectedKey, setFirefoxSelectedKey] = useState<string | null>(null);
@@ -1110,6 +1149,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     setValidationError(null);
     setShowDeleteConfirm(false);
     setDirty(false);
+    setShowDiscardConfirm(false);
+    // Capture the persisted baseline these setters just established so
+    // hasUnsavedChanges reads false until the user actually edits something.
+    baselineRef.current = policy
+      ? {
+          name: policy.name,
+          description: policy.description,
+          policyType: policy.type,
+          content: normalizePolicyContent(policy.content || "{}"),
+        }
+      : { name: "", description: "", policyType: "Kconfig", content: normalizePolicyContent("{}") };
   }, [isOpen, policy]);
 
   // When policy type changes, reset content for the target type
@@ -1155,6 +1205,14 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       setStructuredFieldsList([{}]);
       setContentRaw(JSON.stringify([{}], null, 2));
     }
+    // Content is intentionally reset for the new type, so move the content/type
+    // baseline with it — switching type shouldn't count as unsaved work. Any
+    // name/description the user already entered stays in the baseline comparison.
+    baselineRef.current = {
+      ...baselineRef.current,
+      policyType: newType,
+      content: normalizePolicyContent(defaultContentForType(newType)),
+    };
   };
 
   // Keep content in sync (non-Firefox types)
@@ -1660,6 +1718,8 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
       }
 
       setDirty(false);
+      // The just-saved values are now the persisted baseline.
+      baselineRef.current = { name, description, policyType, content: normalizePolicyContent(finalContent) };
       onSaved();
       onClose();
     } catch (err) {
@@ -1703,10 +1763,22 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     }
   };
 
-  /* ── Close handler: refresh parent list if state was changed ── */
-  const handleClose = () => {
+  /* ── Close handlers ── */
+  // Actually close: refresh the parent list if a state transition happened.
+  const finalizeClose = () => {
+    setShowDiscardConfirm(false);
     if (dirty) onSaved();
     onClose();
+  };
+
+  // Close entry point (X button, Escape, Cancel): warn first if there are
+  // unsaved edits so they aren't silently discarded.
+  const handleClose = () => {
+    if (hasUnsavedChanges) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    finalizeClose();
   };
 
   /* ── Firefox: property editor for selected policy ── */
@@ -3519,7 +3591,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 size="sm"
                 onClick={() => handleStateTransition("released")}
                 isLoading={saving}
-                isDisabled={saving || !name.trim() || !policyType || !policyHasSettings(contentRaw)}
+                isDisabled={saving || !name.trim() || !policyType || !policyHasSettings(contentRaw) || hasUnsavedChanges}
               >
                 Release
               </Button>
@@ -3533,7 +3605,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   size="sm"
                   onClick={() => handleStateTransition("draft")}
                   isLoading={saving}
-                  isDisabled={saving}
+                  isDisabled={saving || hasUnsavedChanges}
                 >
                   Unpublish
                 </Button>
@@ -3544,7 +3616,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   size="sm"
                   onClick={() => handleStateTransition("archived")}
                   isLoading={saving}
-                  isDisabled={saving}
+                  isDisabled={saving || hasUnsavedChanges}
                 >
                   Archive
                 </Button>
@@ -3558,10 +3630,17 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 size="sm"
                 onClick={() => handleStateTransition("draft")}
                 isLoading={saving}
-                isDisabled={saving}
+                isDisabled={saving || hasUnsavedChanges}
               >
                 Restore to draft
               </Button>
+            </FlexItem>
+          )}
+          {hasUnsavedChanges && (
+            <FlexItem>
+              <span style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)" }}>
+                Unsaved changes — save to enable lifecycle actions.
+              </span>
             </FlexItem>
           )}
         </Flex>
@@ -3609,6 +3688,27 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         )}
         <Button key="cancel" variant="link" onClick={handleClose}>
           Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+
+    {/* Discard unsaved changes confirmation */}
+    <Modal
+      variant={ModalVariant.small}
+      isOpen={showDiscardConfirm}
+      onClose={() => setShowDiscardConfirm(false)}
+    >
+      <ModalHeader title="Discard unsaved changes?" titleIconVariant="warning" />
+      <ModalBody>
+        You have unsaved changes to this policy. If you close now, those changes
+        will be lost.
+      </ModalBody>
+      <ModalFooter>
+        <Button key="discard" variant="danger" onClick={finalizeClose}>
+          Discard changes
+        </Button>
+        <Button key="keep" variant="link" onClick={() => setShowDiscardConfirm(false)}>
+          Keep editing
         </Button>
       </ModalFooter>
     </Modal>
