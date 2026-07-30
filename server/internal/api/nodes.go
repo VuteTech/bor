@@ -52,6 +52,7 @@ func (h *NodeHandler) List(w http.ResponseWriter, r *http.Request) {
 		OS:           q.Get("os"),
 		Desktop:      q.Get("desktop"),
 		AgentVersion: q.Get("agent_version"),
+		Group:        q.Get("group"),
 		SortField:    q.Get("sort_field"),
 		SortOrder:    q.Get("sort_order"),
 		Page:         atoiDefault(q.Get("page"), 1),
