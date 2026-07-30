@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState } from "react";
+import React from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   PageSection,
   Title,
@@ -23,9 +24,22 @@ export const SettingsPage: React.FC = () => {
   const canUserGroups = hasPermission("user_group:view");
   const canSettings = hasPermission("settings:manage");
 
-  const [activeTab, setActiveTab] = useState<string>(
-    canUsers ? "users" : canRoles ? "roles" : canUserGroups ? "user-groups" : "agent-notifications"
-  );
+  // Active tab is kept in the URL (?tab=) so it survives refresh, is
+  // bookmarkable, and works with the browser Back button.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const defaultTab = canUsers
+    ? "users"
+    : canRoles
+    ? "roles"
+    : canUserGroups
+    ? "user-groups"
+    : "agent-notifications";
+  const activeTab = searchParams.get("tab") ?? defaultTab;
+  const setActiveTab = (key: string) =>
+    setSearchParams((prev) => {
+      prev.set("tab", key);
+      return prev;
+    }, { replace: true });
 
   if (!canUsers && !canRoles && !canUserGroups && !canSettings) {
     return (

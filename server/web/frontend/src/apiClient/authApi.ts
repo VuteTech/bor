@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
+import { notifySessionExpired } from "./session";
+
 // csrfToken reads the bor_csrf cookie for double-submit CSRF protection.
 function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)bor_csrf=([^;]*)/);
@@ -59,6 +61,10 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
+    // A 401 that survived the refresh attempt means the session is truly dead.
+    // Signal the shell (which only acts on it when a user was logged in) so the
+    // user is returned to the login screen instead of seeing a raw error.
+    if (res.status === 401) notifySessionExpired();
     let detail = res.statusText;
     try {
       const b = await res.json();

@@ -6,7 +6,10 @@ import "@patternfly/patternfly/patternfly.css";
 import "./bor-theme.css";
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { Shell } from "./Shell";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ToastProvider } from "./components/ToastHost";
 
 const mountPoint = document.getElementById("app-root");
 if (!mountPoint) {
@@ -15,6 +18,12 @@ if (!mountPoint) {
 const reactRoot = createRoot(mountPoint);
 reactRoot.render(
   <React.StrictMode>
-    <Shell />
+    <BrowserRouter>
+      <ErrorBoundary>
+        <ToastProvider>
+          <Shell />
+        </ToastProvider>
+      </ErrorBoundary>
+    </BrowserRouter>
   </React.StrictMode>
 );
