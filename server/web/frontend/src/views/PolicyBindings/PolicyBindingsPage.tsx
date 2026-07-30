@@ -33,13 +33,11 @@ import {
   DropdownList,
   MenuToggle,
   MenuToggleElement,
-  SearchInput,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
 } from "@patternfly/react-core";
 import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
+import { BorToolbar } from "../../components/BorToolbar";
 
 import {
   fetchBindings,
@@ -378,58 +376,53 @@ export const PolicyBindingsPage: React.FC = () => {
           style={{ marginBottom: "1rem" }}
         />
 
-        <Toolbar style={{ padding: 0, marginBottom: "0.5rem" }} clearAllFilters={() => setSearchText("")}>
-          <ToolbarContent>
+        <BorToolbar
+          searchValue={searchText}
+          onSearchChange={setSearchText}
+          searchAriaLabel="Search bindings by policy or group"
+          searchPlaceholder="Search by policy or group…"
+          onClearAll={() => setSearchText("")}
+        >
+          {selectedIds.size > 0 && (
             <ToolbarItem>
-              <SearchInput
-                aria-label="Search bindings by policy or group"
-                placeholder="Search by policy or group…"
-                value={searchText}
-                onChange={(_ev, val) => setSearchText(val)}
-                onClear={() => setSearchText("")}
-              />
+              <Dropdown
+                isOpen={bulkOpen}
+                onSelect={() => setBulkOpen(false)}
+                onOpenChange={setBulkOpen}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle
+                    ref={ref}
+                    onClick={() => setBulkOpen(!bulkOpen)}
+                    isExpanded={bulkOpen}
+                    variant="primary"
+                  >
+                    Actions ({selectedIds.size})
+                  </MenuToggle>
+                )}
+              >
+                <DropdownList>
+                  <DropdownItem
+                    key="edit"
+                    isDisabled={selectedIds.size !== 1}
+                    onClick={() => {
+                      const b = selectedBindings[0];
+                      if (b) openEditModal(b);
+                    }}
+                  >
+                    Edit
+                  </DropdownItem>
+                  <DropdownItem
+                    key="delete"
+                    isDanger
+                    onClick={() => openDeleteModal(Array.from(selectedIds))}
+                  >
+                    Delete
+                  </DropdownItem>
+                </DropdownList>
+              </Dropdown>
             </ToolbarItem>
-            {selectedIds.size > 0 && (
-              <ToolbarItem>
-                <Dropdown
-                  isOpen={bulkOpen}
-                  onSelect={() => setBulkOpen(false)}
-                  onOpenChange={setBulkOpen}
-                  toggle={(ref: React.Ref<MenuToggleElement>) => (
-                    <MenuToggle
-                      ref={ref}
-                      onClick={() => setBulkOpen(!bulkOpen)}
-                      isExpanded={bulkOpen}
-                      variant="primary"
-                    >
-                      Actions ({selectedIds.size})
-                    </MenuToggle>
-                  )}
-                >
-                  <DropdownList>
-                    <DropdownItem
-                      key="edit"
-                      isDisabled={selectedIds.size !== 1}
-                      onClick={() => {
-                        const b = selectedBindings[0];
-                        if (b) openEditModal(b);
-                      }}
-                    >
-                      Edit
-                    </DropdownItem>
-                    <DropdownItem
-                      key="delete"
-                      isDanger
-                      onClick={() => openDeleteModal(Array.from(selectedIds))}
-                    >
-                      Delete
-                    </DropdownItem>
-                  </DropdownList>
-                </Dropdown>
-              </ToolbarItem>
-            )}
-          </ToolbarContent>
-        </Toolbar>
+          )}
+        </BorToolbar>
 
         {view.length === 0 ? (
           <BorEmptyState

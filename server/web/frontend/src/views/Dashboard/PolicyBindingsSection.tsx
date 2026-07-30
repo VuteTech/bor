@@ -71,7 +71,7 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
             <CardTitle>Coverage by Group</CardTitle>
             <CardBody>
               {groupedBindings.length === 0 ? (
-                <div style={{ padding: "1.5rem", textAlign: "center", color: "#6a6e73" }}>
+                <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
                   No policy bindings configured. Bind released policies to node groups to enforce
                   desktop configuration.
                 </div>
@@ -86,7 +86,7 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
                       >
                         <FlexItem style={{ minWidth: "180px" }}>
                           <span style={{ fontWeight: 600 }}>{groupName}</span>
-                          <div style={{ fontSize: "0.8rem", color: "#6a6e73" }}>
+                          <div style={{ fontSize: "0.8rem", color: "var(--pf-t--global--text--color--subtle)" }}>
                             {entries[0]?.nodeCount ?? 0} nodes
                           </div>
                         </FlexItem>

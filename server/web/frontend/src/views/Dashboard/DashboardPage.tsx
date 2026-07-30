@@ -102,7 +102,7 @@ export const DashboardPage: React.FC = () => {
         >
           <FlexItem>
             {lastUpdated && (
-              <span style={{ color: "#6a6e73", fontSize: "0.8rem" }}>
+              <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.8rem" }}>
                 Updated {lastUpdated.toLocaleTimeString()}
               </span>
             )}

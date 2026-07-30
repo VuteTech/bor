@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
+import { BorToolbar } from "../../components/BorToolbar";
 import { useToast } from "../../components/ToastHost";
 import {
   PageSection,
@@ -30,9 +31,6 @@ import {
   DropdownList,
   MenuToggle,
   MenuToggleElement,
-  SearchInput,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
 } from "@patternfly/react-core";
 import { Table, Thead, Tr, Th, Tbody, Td, ActionsColumn, IAction, ThProps } from "@patternfly/react-table";
@@ -310,58 +308,53 @@ export const NodeGroupsPage: React.FC = () => {
       </PageSection>
 
       <PageSection>
-        <Toolbar style={{ padding: 0, marginBottom: "0.5rem" }} clearAllFilters={() => setSearchText("")}>
-          <ToolbarContent>
+        <BorToolbar
+          searchValue={searchText}
+          onSearchChange={setSearchText}
+          searchAriaLabel="Search node groups"
+          searchPlaceholder="Search by name or description…"
+          onClearAll={() => setSearchText("")}
+        >
+          {selectedIds.size > 0 && (
             <ToolbarItem>
-              <SearchInput
-                aria-label="Search node groups"
-                placeholder="Search by name or description…"
-                value={searchText}
-                onChange={(_ev, val) => setSearchText(val)}
-                onClear={() => setSearchText("")}
-              />
+              <Dropdown
+                isOpen={bulkOpen}
+                onSelect={() => setBulkOpen(false)}
+                onOpenChange={setBulkOpen}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle
+                    ref={ref}
+                    onClick={() => setBulkOpen(!bulkOpen)}
+                    isExpanded={bulkOpen}
+                    variant="primary"
+                  >
+                    Actions ({selectedIds.size})
+                  </MenuToggle>
+                )}
+              >
+                <DropdownList>
+                  <DropdownItem
+                    key="edit"
+                    isDisabled={selectedIds.size !== 1}
+                    onClick={() => {
+                      const g = selectedGroups[0];
+                      if (g) openEditModal(g);
+                    }}
+                  >
+                    Edit
+                  </DropdownItem>
+                  <DropdownItem
+                    key="delete"
+                    isDanger
+                    onClick={() => openDeleteModal(Array.from(selectedIds))}
+                  >
+                    Delete
+                  </DropdownItem>
+                </DropdownList>
+              </Dropdown>
             </ToolbarItem>
-            {selectedIds.size > 0 && (
-              <ToolbarItem>
-                <Dropdown
-                  isOpen={bulkOpen}
-                  onSelect={() => setBulkOpen(false)}
-                  onOpenChange={setBulkOpen}
-                  toggle={(ref: React.Ref<MenuToggleElement>) => (
-                    <MenuToggle
-                      ref={ref}
-                      onClick={() => setBulkOpen(!bulkOpen)}
-                      isExpanded={bulkOpen}
-                      variant="primary"
-                    >
-                      Actions ({selectedIds.size})
-                    </MenuToggle>
-                  )}
-                >
-                  <DropdownList>
-                    <DropdownItem
-                      key="edit"
-                      isDisabled={selectedIds.size !== 1}
-                      onClick={() => {
-                        const g = selectedGroups[0];
-                        if (g) openEditModal(g);
-                      }}
-                    >
-                      Edit
-                    </DropdownItem>
-                    <DropdownItem
-                      key="delete"
-                      isDanger
-                      onClick={() => openDeleteModal(Array.from(selectedIds))}
-                    >
-                      Delete
-                    </DropdownItem>
-                  </DropdownList>
-                </Dropdown>
-              </ToolbarItem>
-            )}
-          </ToolbarContent>
-        </Toolbar>
+          )}
+        </BorToolbar>
 
         {view.length === 0 ? (
           <BorEmptyState
@@ -457,7 +450,7 @@ export const NodeGroupsPage: React.FC = () => {
                 <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied!" id="ng-id">
                   {editingGroup.id}
                 </ClipboardCopy>
-                <p style={{ marginTop: "0.25rem", color: "#6a6e73", fontSize: "0.875rem" }}>
+                <p style={{ marginTop: "0.25rem", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>
                   Use this ID for <abbr title="BOR_KERBEROS_DEFAULT_NODE_GROUP">Kerberos auto-enrollment</abbr> configuration.
                 </p>
               </FormGroup>
@@ -612,7 +605,7 @@ export const NodeGroupsPage: React.FC = () => {
                 </Alert>
               </div>
               <FormGroup label="Enrollment Command" fieldId="enroll-command">
-                <p style={{ marginBottom: "0.5rem", color: "#6a6e73", fontSize: "0.875rem" }}>
+                <p style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }}>
                   Run this command on the target machine to enroll the agent:
                 </p>
                 <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied!">

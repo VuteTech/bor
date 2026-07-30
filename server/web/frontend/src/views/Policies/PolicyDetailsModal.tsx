@@ -1831,7 +1831,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderFirefoxPropertyEditor = () => {
     if (!firefoxSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Firefox policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
@@ -1936,7 +1936,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               </Button>
             ) : (
               <>
-                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
                   Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
                 </div>
                 <Button variant="primary" size="sm" onClick={() => setContentRaw(buildFirefoxContent(policyDef.key, firefoxValue, contentRaw))}>
@@ -2069,7 +2069,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderThunderbirdPropertyEditor = () => {
     if (!thunderbirdSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Thunderbird policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
@@ -2185,7 +2185,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
               </Button>
             ) : (
               <>
-                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
                   Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
                 </div>
                 <Button variant="primary" size="sm" onClick={() => setContentRaw(buildFirefoxContent(policyDef.key, thunderbirdValue, contentRaw))}>
@@ -2342,7 +2342,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>System Settings Module Restrictions</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           Files: <code>/etc/kde5rc</code>, <code>/etc/kde6rc</code> &nbsp; Group: <code>[KDE Control Module Restrictions]</code>
           <br />
           Selected modules will be <strong>restricted</strong> (users will not be able to access them in System Settings).
@@ -2366,7 +2366,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
 
         {/* Custom module input */}
         <details style={{ marginBottom: "1rem" }}>
-          <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Add custom modules</summary>
+          <summary style={{ cursor: "pointer", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem" }}>Add custom modules</summary>
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "flex-end" }}>
             <FormGroup label="Custom module IDs" fieldId="kcm-custom-input" helperText="One per line or comma-separated" style={{ flex: 1 }}>
               <TextArea
@@ -2401,7 +2401,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 >
                   <span>
                     <strong>{mod ? mod.label : moduleId}</strong>
-                    {mod && <span style={{ color: "#6a6e73", marginLeft: "0.5rem" }}>({moduleId})</span>}
+                    {mod && <span style={{ color: "var(--pf-t--global--text--color--subtle)", marginLeft: "0.5rem" }}>({moduleId})</span>}
                     {!mod && <Label isCompact color="orange" style={{ marginLeft: "0.5rem" }}>custom</Label>}
                   </span>
                   <Button variant="plain" size="sm" onClick={() => removeModule(moduleId)} style={{ color: "#c9190b", padding: "0 0.25rem", minWidth: "auto" }} aria-label={`Remove ${moduleId}`}>
@@ -2412,7 +2412,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             })}
           </div>
         ) : (
-          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No modules restricted. Use the dropdown above to add modules.</p>
+          <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontStyle: "italic" }}>No modules restricted. Use the dropdown above to add modules.</p>
         )}
       </div>
     );
@@ -2449,7 +2449,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>URL Restrictions</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           File: <code>kdeglobals</code> &nbsp; Group: <code>[KDE URL Restrictions]</code>
         </p>
         <Button variant="secondary" size="sm" onClick={addRule} style={{ marginBottom: "1rem" }}>+ Add Rule</Button>
@@ -2513,7 +2513,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 </FormGroup>
               </div>
               <details style={{ marginTop: "0.25rem" }}>
-                <summary style={{ cursor: "pointer", color: "#6a6e73", fontSize: "0.85rem" }}>Referrer Matching (advanced)</summary>
+                <summary style={{ cursor: "pointer", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem" }}>Referrer Matching (advanced)</summary>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem", marginTop: "0.5rem" }}>
                   <FormGroup label="Referrer Protocol" fieldId={`url-ref-proto-${idx}`}>
                     <TextInput id={`url-ref-proto-${idx}`} value={rule.referrerProtocol} onChange={(_ev, val) => updateRule(idx, { referrerProtocol: val })} placeholder="blank = all" />
@@ -2530,7 +2530,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           </Card>
         ))}
         {urlRestrictionRules.length === 0 && (
-          <p style={{ color: "#6a6e73", fontStyle: "italic" }}>No rules configured. Click "+ Add Rule" to begin.</p>
+          <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontStyle: "italic" }}>No rules configured. Click "+ Add Rule" to begin.</p>
         )}
       </div>
     );
@@ -2539,7 +2539,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderKconfigPropertyEditor = () => {
     if (!kconfigSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a KDE Kiosk policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its properties.</p>
         </div>
@@ -2560,7 +2560,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           {policyDef.group}
         </p>
         <Form>
@@ -2616,7 +2616,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                   id="kc-prop-color"
                   value={rgbToHex(kconfigValue || "0,0,0")}
                   onChange={(ev) => updateKconfigValue(hexToRgb(ev.target.value))}
-                  style={{ width: "48px", height: "36px", padding: "2px", border: "1px solid #d2d2d2", borderRadius: "4px", cursor: "pointer" }}
+                  style={{ width: "48px", height: "36px", padding: "2px", border: "1px solid var(--pf-t--global--border--color--default)", borderRadius: "4px", cursor: "pointer" }}
                 />
                 <TextInput
                   id="kc-prop-color-text"
@@ -2645,7 +2645,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 </Button>
               ) : (
                 <>
-                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
                     Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
                   </div>
                   <Button
@@ -2783,7 +2783,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderChromePropertyEditor = () => {
     if (!chromeSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Chrome policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its value.</p>
         </div>
@@ -2796,7 +2796,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
         <Form>
           {policyDef.type === "boolean" && (
             <FormGroup label="Value" fieldId="cr-prop-bool">
@@ -2907,7 +2907,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 </Button>
               ) : (
                 <>
-                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
                     Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
                   </div>
                   <Button
@@ -3031,7 +3031,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                         onClick={(e) => { e.stopPropagation(); handleChromeRemovePolicy(p.key); }}
                         style={{
                           fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "#6a6e73",
+                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
                           padding: "0 0.25rem",
                           minWidth: "auto",
                           flexShrink: 0,
@@ -3057,7 +3057,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   const renderEdgePropertyEditor = () => {
     if (!edgeSelectedKey) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center", color: "#6a6e73" }}>
+        <div style={{ padding: "2rem", textAlign: "center", color: "var(--pf-t--global--text--color--subtle)" }}>
           <Title headingLevel="h3" size="lg">Select a Microsoft Edge policy</Title>
           <p style={{ marginTop: "0.5rem" }}>Choose a policy from the tree on the left to configure its value.</p>
         </div>
@@ -3070,7 +3070,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{policyDef.label}</Title>
-        <p style={{ color: "#6a6e73", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
+        <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem", marginBottom: "1rem" }}>{policyDef.description}</p>
         <Form>
           {policyDef.type === "boolean" && (
             <FormGroup label="Value" fieldId="ed-prop-bool">
@@ -3181,7 +3181,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 </Button>
               ) : (
                 <>
-                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)", fontSize: "0.85rem" }}>
+                  <div aria-live="polite" style={{ marginBottom: "0.5rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))", fontSize: "0.85rem" }}>
                     Previewing this setting — it is not part of the policy yet. Edit its value or add it below.
                   </div>
                   <Button
@@ -3297,7 +3297,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                         onClick={(e) => { e.stopPropagation(); handleEdgeRemovePolicy(p.key); }}
                         style={{
                           fontSize: "0.75rem",
-                          color: isSelected ? "#fff" : "#6a6e73",
+                          color: isSelected ? "#fff" : "var(--pf-t--global--text--color--subtle)",
                           padding: "0 0.25rem",
                           minWidth: "auto",
                           flexShrink: 0,
@@ -3345,7 +3345,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     return (
       <div>
         {structuredFieldsList.map((fields, idx) => (
-          <Card key={idx} isPlain isCompact style={{ marginBottom: "1rem", border: structuredFieldsList.length > 1 ? "1px solid #d2d2d2" : "none", borderRadius: "4px" }}>
+          <Card key={idx} isPlain isCompact style={{ marginBottom: "1rem", border: structuredFieldsList.length > 1 ? "1px solid var(--pf-t--global--border--color--default)" : "none", borderRadius: "4px" }}>
             {structuredFieldsList.length > 1 && (
               <CardTitle style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>Setting {idx + 1}</span>
@@ -3670,7 +3670,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
             <div
               style={{
                 marginTop: "0.5rem",
-                border: "1px solid #d2d2d2",
+                border: "1px solid var(--pf-t--global--border--color--default)",
                 borderRadius: "4px",
                 overflow: "hidden",
               }}
@@ -3822,7 +3822,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           )}
           {hasUnsavedChanges && (
             <FlexItem>
-              <span style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle, #6a6e73)" }}>
+              <span style={{ fontSize: "0.85rem", color: "var(--pf-t--global--text--color--subtle, var(--pf-t--global--text--color--subtle))" }}>
                 Unsaved changes — save to enable lifecycle actions.
               </span>
             </FlexItem>

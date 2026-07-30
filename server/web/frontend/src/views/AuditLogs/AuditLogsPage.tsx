@@ -66,7 +66,7 @@ const ACTION_COLORS: Record<string, ColorStyle> = {
   delete:          { bg: "#c9190b", color: "#fff" },
   tamper_detected: { bg: "#f0ab00", color: "#1f1f1f" },
 };
-const DEFAULT_ACTION_COLOR: ColorStyle = { bg: "#6a6e73", color: "#fff" };
+const DEFAULT_ACTION_COLOR: ColorStyle = { bg: "var(--pf-t--global--text--color--subtle)", color: "#fff" };
 
 const FILTER_TYPE_COLORS: Record<FilterType, ColorStyle> = {
   action:        { bg: "#6753ac", color: "#fff" },
@@ -237,7 +237,7 @@ const FilterDropdown: React.FC<{
 const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div style={{
     fontSize: "0.6875rem", fontWeight: 700, textTransform: "uppercase",
-    letterSpacing: "0.1em", color: "#6a6e73",
+    letterSpacing: "0.1em", color: "var(--pf-t--global--text--color--subtle)",
     marginTop: 20, marginBottom: 8,
     paddingBottom: 4, borderBottom: "1px solid var(--pf-t--global--border--color--default)",
   }}>
@@ -273,7 +273,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <ActionBadge action={entry.action} />
           </div>
-          <div style={{ fontSize: "0.8125rem", color: "#6a6e73", marginTop: 4 }}>
+          <div style={{ fontSize: "0.8125rem", color: "var(--pf-t--global--text--color--subtle)", marginTop: 4 }}>
             {formattedTimestamp}
           </div>
         </div>
@@ -350,7 +350,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
 
             <SectionLabel>Processes at Detection Time</SectionLabel>
             {!tamperData.processes || tamperData.processes.length === 0 ? (
-              <p style={{ color: "#6a6e73", fontSize: "0.875rem", margin: 0 }}>
+              <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem", margin: 0 }}>
                 No process identified — the modifying process had already exited.
               </p>
             ) : (
@@ -361,7 +361,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
                       <th key={h} style={{
                         textAlign: "left", padding: "4px 8px",
                         borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-                        color: "#6a6e73", fontWeight: 600, fontSize: "0.75rem",
+                        color: "var(--pf-t--global--text--color--subtle)", fontWeight: 600, fontSize: "0.75rem",
                       }}>
                         {h}
                       </th>
@@ -392,7 +392,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
                   <DescriptionListTerm>{formatKey(k)}</DescriptionListTerm>
                   <DescriptionListDescription>
                     {v === "[REDACTED]" ? (
-                      <span style={{ color: "#6a6e73", fontStyle: "italic" }}>[redacted]</span>
+                      <span style={{ color: "var(--pf-t--global--text--color--subtle)", fontStyle: "italic" }}>[redacted]</span>
                     ) : typeof v === "object" && v !== null ? (
                       <pre style={{
                         margin: 0, fontSize: "0.8125rem", fontFamily: "monospace",
@@ -683,7 +683,7 @@ export const AuditLogsPage: React.FC = () => {
                               </span>
                             </Td>
                             <Td>
-                              <span style={{ display: "inline-block", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6a6e73", fontSize: "0.875rem" }} title={detailsSummary}>
+                              <span style={{ display: "inline-block", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem" }} title={detailsSummary}>
                                 {detailsSummary || "—"}
                               </span>
                             </Td>

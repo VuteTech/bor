@@ -580,7 +580,7 @@ export const NodesPage: React.FC = () => {
             const notAfter = selectedNode.cert_not_after ? new Date(selectedNode.cert_not_after) : null;
             const msPerDay = 86_400_000;
             const daysLeft = notAfter ? Math.ceil((notAfter.getTime() - Date.now()) / msPerDay) : null;
-            const certColor = daysLeft === null ? "#6a6e73"
+            const certColor = daysLeft === null ? "var(--pf-t--global--text--color--subtle)"
               : daysLeft <= 0 ? "var(--pf-t--global--text--color--status--danger--default)"
               : daysLeft <= 30 ? "var(--pf-t--global--text--color--status--warning--default)"
               : "var(--pf-t--global--text--color--status--success--default)";
