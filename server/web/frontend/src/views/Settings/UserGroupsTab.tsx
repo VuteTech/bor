@@ -4,6 +4,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
+import { ConfirmModal } from "../../components/ConfirmModal";
+import { useToast } from "../../components/ToastHost";
 import {
   Button,
   Spinner,
@@ -53,6 +56,10 @@ export const UserGroupsTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editGroup, setEditGroup] = useState<UserGroup | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserGroup | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { addToast } = useToast();
 
   const canCreate = hasPermission("user_group:create");
   const canEdit = hasPermission("user_group:edit");
@@ -71,13 +78,19 @@ export const UserGroupsTab: React.FC = () => {
     reload();
   }, [reload]);
 
-  const handleDelete = async (group: UserGroup) => {
-    if (!confirm(`Delete user group "${group.name}"?`)) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
-      await deleteUserGroup(group.id);
+      await deleteUserGroup(deleteTarget.id);
+      addToast({ variant: "success", title: "User group deleted", detail: deleteTarget.name });
+      setDeleteTarget(null);
       reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete user group");
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete user group");
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -109,59 +122,93 @@ export const UserGroupsTab: React.FC = () => {
         </FlexItem>
       </Flex>
 
-      <Table aria-label="User groups table" variant="compact">
-        <Thead>
-          <Tr>
-            <Th>Name</Th>
-            <Th>Description</Th>
-            <Th>Created At</Th>
-            {(canEdit || canDelete) && <Th>Actions</Th>}
-          </Tr>
-        </Thead>
-        <Tbody>
-          {groups.map((g) => (
-            <Tr key={g.id}>
-              <Td>{g.name}</Td>
-              <Td>{g.description}</Td>
-              <Td>{formatDate(g.created_at)}</Td>
-              {(canEdit || canDelete) && (
-                <Td>
-                  {canEdit && (
-                    <Button
-                      variant="plain"
-                      aria-label="Edit"
-                      onClick={() => setEditGroup(g)}
-                    >
-                      <PencilAltIcon />
-                    </Button>
-                  )}
-                  {canDelete && (
-                    <Button
-                      variant="plain"
-                      aria-label="Delete"
-                      isDanger
-                      onClick={() => handleDelete(g)}
-                    >
-                      <TrashIcon />
-                    </Button>
-                  )}
-                </Td>
-              )}
-            </Tr>
-          ))}
-          {groups.length === 0 && (
+      {groups.length === 0 ? (
+        <BorEmptyState
+          isEmptyData
+          itemsLabel="user groups"
+          emptyTitle="No user groups yet"
+          emptyBody="Create a user group to assign roles to several users at once."
+          action={
+            canCreate ? (
+              <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
+                Create User Group
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <Table aria-label="User groups table" variant="compact">
+          <Thead>
             <Tr>
-              <Td colSpan={(canEdit || canDelete) ? 4 : 3}>No user groups found.</Td>
+              <Th>Name</Th>
+              <Th>Description</Th>
+              <Th>Created At</Th>
+              {(canEdit || canDelete) && <Th screenReaderText="Actions" />}
             </Tr>
-          )}
-        </Tbody>
-      </Table>
+          </Thead>
+          <Tbody>
+            {groups.map((g) => (
+              <Tr key={g.id}>
+                <Td>{g.name}</Td>
+                <Td>{g.description}</Td>
+                <Td>{formatDate(g.created_at)}</Td>
+                {(canEdit || canDelete) && (
+                  <Td>
+                    {canEdit && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Edit group ${g.name}`}
+                        onClick={() => setEditGroup(g)}
+                      >
+                        <PencilAltIcon />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Delete group ${g.name}`}
+                        isDanger
+                        onClick={() => setDeleteTarget(g)}
+                      >
+                        <TrashIcon />
+                      </Button>
+                    )}
+                  </Td>
+                )}
+              </Tr>
+            ))}
+          </Tbody>
+        </Table>
+      )}
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        title="Delete user group?"
+        confirmLabel="Delete"
+        isDanger
+        confirmPhrase={deleteTarget?.name}
+        confirmPhraseLabel={
+          deleteTarget ? `Type the group name "${deleteTarget.name}" to confirm` : undefined
+        }
+        isBusy={deleteBusy}
+        error={deleteError}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      >
+        {deleteTarget && (
+          <p>
+            This permanently deletes the group <strong>{deleteTarget.name}</strong> and its role
+            assignments. Members are not deleted. This cannot be undone.
+          </p>
+        )}
+      </ConfirmModal>
 
       {showCreate && (
         <CreateGroupModal
           onClose={() => setShowCreate(false)}
           onSaved={() => {
             setShowCreate(false);
+            addToast({ variant: "success", title: "User group created" });
             reload();
           }}
         />
@@ -173,6 +220,7 @@ export const UserGroupsTab: React.FC = () => {
           onClose={() => setEditGroup(null)}
           onSaved={() => {
             setEditGroup(null);
+            addToast({ variant: "success", title: "User group updated" });
             reload();
           }}
         />

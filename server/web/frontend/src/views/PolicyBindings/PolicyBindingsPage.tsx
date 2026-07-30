@@ -263,11 +263,11 @@ export const PolicyBindingsPage: React.FC = () => {
     setDeleteModalOpen(true);
   };
 
-  // Single: type "policy → group" label. Multiple: type "Yes".
+  // Single: type "policy to group" (keyboard-typeable). Multiple: type "Yes".
   const deletePrompt = deleteTargetIds.length === 1
     ? (() => {
         const b = bindings.find((b) => b.id === deleteTargetIds[0]);
-        return b ? `${b.policy_name} → ${b.group_name}` : "";
+        return b ? `${b.policy_name} to ${b.group_name}` : "";
       })()
     : "Yes";
   const deleteConfirmLabel = deleteTargetIds.length === 1
@@ -301,7 +301,7 @@ export const PolicyBindingsPage: React.FC = () => {
       addToast({
         variant: "success",
         title: newState === "enabled" ? "Binding enabled" : "Binding disabled",
-        detail: `${binding.policy_name} → ${binding.group_name}`,
+        detail: `${binding.policy_name} to ${binding.group_name}`,
       });
       loadBindings();
     } catch (err) {
@@ -677,8 +677,9 @@ export const PolicyBindingsPage: React.FC = () => {
       >
         {pendingEnable && (
           <p>
-            Enabling <strong>{pendingEnable.policy_name} → {pendingEnable.group_name}</strong> will
-            deliver this policy to all <strong>{pendingEnable.node_count}</strong> node
+            Enabling the binding of <strong>{pendingEnable.policy_name}</strong> to{" "}
+            <strong>{pendingEnable.group_name}</strong> will deliver this policy to all{" "}
+            <strong>{pendingEnable.node_count}</strong> node
             {pendingEnable.node_count === 1 ? "" : "s"} in the group.
           </p>
         )}

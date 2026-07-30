@@ -4,6 +4,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { LiveAlert } from "../../components/LiveAlert";
+import { BorEmptyState } from "../../components/BorEmptyState";
+import { ConfirmModal } from "../../components/ConfirmModal";
+import { useToast } from "../../components/ToastHost";
 import {
   Button,
   Spinner,
@@ -46,6 +49,10 @@ export const RolesTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editRole, setEditRole] = useState<Role | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { addToast } = useToast();
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -60,13 +67,19 @@ export const RolesTab: React.FC = () => {
     reload();
   }, [reload]);
 
-  const handleDelete = async (role: Role) => {
-    if (!confirm(`Delete role "${role.name}"?`)) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
     try {
-      await deleteRole(role.id);
+      await deleteRole(deleteTarget.id);
+      addToast({ variant: "success", title: "Role deleted", detail: deleteTarget.name });
+      setDeleteTarget(null);
       reload();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete role");
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete role");
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -88,53 +101,85 @@ export const RolesTab: React.FC = () => {
         </FlexItem>
       </Flex>
 
-      <Table aria-label="Roles table" variant="compact">
-        <Thead>
-          <Tr>
-            <Th>Role Name</Th>
-            <Th>Description</Th>
-            <Th># Permissions</Th>
-            <Th>Actions</Th>
-          </Tr>
-        </Thead>
-        <Tbody>
-          {roles.map((role) => (
-            <Tr key={role.id}>
-              <Td>{role.name}</Td>
-              <Td>{role.description}</Td>
-              <Td>{role.permission_count}</Td>
-              <Td>
-                <Button
-                  variant="plain"
-                  aria-label="Edit"
-                  onClick={() => setEditRole(role)}
-                >
-                  <PencilAltIcon />
-                </Button>
-                <Button
-                  variant="plain"
-                  aria-label="Delete"
-                  isDanger
-                  onClick={() => handleDelete(role)}
-                >
-                  <TrashIcon />
-                </Button>
-              </Td>
-            </Tr>
-          ))}
-          {roles.length === 0 && (
+      {roles.length === 0 ? (
+        <BorEmptyState
+          isEmptyData
+          itemsLabel="roles"
+          emptyTitle="No roles yet"
+          emptyBody="Create a role to grant a set of permissions to users."
+          action={
+            <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreate(true)}>
+              Create Role
+            </Button>
+          }
+        />
+      ) : (
+        <Table aria-label="Roles table" variant="compact">
+          <Thead>
             <Tr>
-              <Td colSpan={4}>No roles found.</Td>
+              <Th>Role Name</Th>
+              <Th>Description</Th>
+              <Th># Permissions</Th>
+              <Th screenReaderText="Actions" />
             </Tr>
-          )}
-        </Tbody>
-      </Table>
+          </Thead>
+          <Tbody>
+            {roles.map((role) => (
+              <Tr key={role.id}>
+                <Td>{role.name}</Td>
+                <Td>{role.description}</Td>
+                <Td>{role.permission_count}</Td>
+                <Td>
+                  <Button
+                    variant="plain"
+                    aria-label={`Edit role ${role.name}`}
+                    onClick={() => setEditRole(role)}
+                  >
+                    <PencilAltIcon />
+                  </Button>
+                  <Button
+                    variant="plain"
+                    aria-label={`Delete role ${role.name}`}
+                    isDanger
+                    onClick={() => setDeleteTarget(role)}
+                  >
+                    <TrashIcon />
+                  </Button>
+                </Td>
+              </Tr>
+            ))}
+          </Tbody>
+        </Table>
+      )}
+
+      <ConfirmModal
+        isOpen={deleteTarget !== null}
+        title="Delete role?"
+        confirmLabel="Delete"
+        isDanger
+        confirmPhrase={deleteTarget?.name}
+        confirmPhraseLabel={
+          deleteTarget ? `Type the role name "${deleteTarget.name}" to confirm` : undefined
+        }
+        isBusy={deleteBusy}
+        error={deleteError}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      >
+        {deleteTarget && (
+          <p>
+            This permanently deletes the role <strong>{deleteTarget.name}</strong> and unassigns it
+            from any users. This cannot be undone.
+          </p>
+        )}
+      </ConfirmModal>
 
       {showCreate && (
         <CreateRoleModal
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
+            addToast({ variant: "success", title: "Role created" });
             reload();
           }}
         />
@@ -146,6 +191,7 @@ export const RolesTab: React.FC = () => {
           onClose={() => setEditRole(null)}
           onSaved={() => {
             setEditRole(null);
+            addToast({ variant: "success", title: "Role updated" });
             reload();
           }}
         />

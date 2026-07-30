@@ -6,6 +6,9 @@ import React, { useState } from "react";
 import {
   Form,
   FormGroup,
+  FormHelperText,
+  HelperText,
+  HelperTextItem,
   TextInput,
   Button,
   ActionGroup,
@@ -68,13 +71,7 @@ export const PasswordTab: React.FC = () => {
             aria-required
           />
         </FormGroup>
-        <FormGroup
-          label="Confirm new password"
-          isRequired
-          fieldId="pw-confirm"
-          helperTextInvalid="Passwords do not match"
-          validated={mismatch ? "error" : "default"}
-        >
+        <FormGroup label="Confirm new password" isRequired fieldId="pw-confirm">
           <TextInput
             id="pw-confirm"
             type="password"
@@ -84,7 +81,17 @@ export const PasswordTab: React.FC = () => {
             validated={mismatch ? "error" : "default"}
             aria-required
             aria-invalid={mismatch || undefined}
+            aria-describedby={mismatch ? "pw-confirm-error" : undefined}
           />
+          {mismatch && (
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem id="pw-confirm-error" variant="error">
+                  Passwords do not match
+                </HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          )}
         </FormGroup>
         <ActionGroup>
           <Button

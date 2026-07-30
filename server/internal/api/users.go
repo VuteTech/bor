@@ -6,6 +6,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -139,6 +140,10 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.authSvc.UpdateUser(r.Context(), id, &req); err != nil {
+		if errors.Is(err, services.ErrLastSuperAdmin) {
+			http.Error(w, `{"error":"Cannot disable the last Super Admin user."}`, http.StatusConflict)
+			return
+		}
 		log.Printf("Failed to update user: %v", err)
 		http.Error(w, `{"error":"failed to update user"}`, http.StatusInternalServerError)
 		return
@@ -161,6 +166,10 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.authSvc.DeleteUser(r.Context(), id); err != nil {
+		if errors.Is(err, services.ErrLastSuperAdmin) {
+			http.Error(w, `{"error":"Cannot delete the last Super Admin user."}`, http.StatusConflict)
+			return
+		}
 		log.Printf("Failed to delete user: %v", err)
 		http.Error(w, `{"error":"failed to delete user"}`, http.StatusInternalServerError)
 		return

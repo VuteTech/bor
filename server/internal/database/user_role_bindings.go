@@ -6,6 +6,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -95,4 +97,31 @@ func (r *UserRoleBindingRepository) DeleteByUserID(ctx context.Context, userID s
 	}
 
 	return nil
+}
+
+// GetByID returns a single role binding by id, or nil if it does not exist.
+func (r *UserRoleBindingRepository) GetByID(ctx context.Context, id string) (*models.UserRoleBinding, error) {
+	b := &models.UserRoleBinding{}
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, role_id, scope_type, scope_id, created_at
+		 FROM user_role_bindings WHERE id = $1`, id).
+		Scan(&b.ID, &b.UserID, &b.RoleID, &b.ScopeType, &b.ScopeID, &b.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get role binding: %w", err)
+	}
+	return b, nil
+}
+
+// CountUsersWithRole returns the number of distinct users bound to the given role.
+func (r *UserRoleBindingRepository) CountUsersWithRole(ctx context.Context, roleID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(DISTINCT user_id) FROM user_role_bindings WHERE role_id = $1`, roleID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count users with role: %w", err)
+	}
+	return count, nil
 }

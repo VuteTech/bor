@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -974,6 +975,16 @@ func (s *AuthService) ListUsers(ctx context.Context, limit, offset int) ([]*mode
 
 // UpdateUser updates a user
 func (s *AuthService) UpdateUser(ctx context.Context, id string, req *models.UpdateUserRequest) error {
+	// Refuse to disable the last Super Admin — that would lock the system out.
+	if req.Enabled != nil && !*req.Enabled {
+		last, err := s.isLastSuperAdmin(ctx, id)
+		if err != nil {
+			return err
+		}
+		if last {
+			return ErrLastSuperAdmin
+		}
+	}
 	if err := s.userRepo.Update(ctx, id, req); err != nil {
 		return err
 	}
@@ -984,10 +995,52 @@ func (s *AuthService) UpdateUser(ctx context.Context, id string, req *models.Upd
 	return nil
 }
 
+// ErrLastSuperAdmin is returned when an operation (delete, disable, or role
+// removal) would remove the only remaining Super Admin from the system.
+var ErrLastSuperAdmin = errors.New("operation would remove the last Super Admin from the system")
+
 // DeleteUser deletes a user. After deletion, token validation fails closed
 // (the user lookup returns not-found), so outstanding tokens stop working.
 func (s *AuthService) DeleteUser(ctx context.Context, id string) error {
+	// Refuse to delete the last Super Admin, or the system could be locked out.
+	last, err := s.isLastSuperAdmin(ctx, id)
+	if err != nil {
+		return err
+	}
+	if last {
+		return ErrLastSuperAdmin
+	}
 	return s.userRepo.Delete(ctx, id)
+}
+
+// isLastSuperAdmin reports whether the user holds the Super Admin role and is
+// the only user who does — i.e. removing their admin access (delete, disable,
+// or unassigning the role) would leave the system with no administrator.
+func (s *AuthService) isLastSuperAdmin(ctx context.Context, id string) (bool, error) {
+	role, err := s.roleRepo.GetByName(ctx, models.RoleSuperAdmin)
+	if err != nil || role == nil {
+		// No Super Admin role defined — nothing to guard.
+		return false, nil
+	}
+	bindings, err := s.bindingRepo.ListByUserID(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("failed to check user roles: %w", err)
+	}
+	isSuperAdmin := false
+	for _, b := range bindings {
+		if b.RoleID == role.ID {
+			isSuperAdmin = true
+			break
+		}
+	}
+	if !isSuperAdmin {
+		return false, nil
+	}
+	count, err := s.bindingRepo.CountUsersWithRole(ctx, role.ID)
+	if err != nil {
+		return false, fmt.Errorf("failed to count super admins: %w", err)
+	}
+	return count <= 1, nil
 }
 
 // IssueTokenByUserID issues a final JWT for a user by ID without password verification.
