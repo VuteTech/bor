@@ -42,6 +42,11 @@ jobs:
           go-version-file: server/go.mod
           cache: true
 
+      # Frontend design-token guardrail (pure grep, no Node needed): bans legacy
+      # --pf-v5-* variables and ratchets raw hex literals in component code.
+      - name: Check frontend design tokens
+        run: make check-frontend-tokens
+
       - name: Lint server
         uses: golangci/golangci-lint-action@v9
         with:
