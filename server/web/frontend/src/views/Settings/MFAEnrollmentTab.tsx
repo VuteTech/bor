@@ -112,7 +112,7 @@ const keyDate: React.CSSProperties = {
 
 /* ════════════════════════════════════════════════════════════════════════ */
 
-export const MFATab: React.FC = () => {
+export const MFAEnrollmentTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [mfaStatus, setMfaStatus] = useState<MFAStatus | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -12,7 +12,7 @@ import {
   Tab,
   TabTitleText,
 } from "@patternfly/react-core";
-import { MFATab } from "./MFATab";
+import { MFAEnrollmentTab } from "./MFAEnrollmentTab";
 import { PasswordTab } from "./PasswordTab";
 
 interface AccountModalProps {
@@ -39,7 +39,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose, use
         >
           <Tab eventKey="security" title={<TabTitleText>Security</TabTitleText>}>
             <div style={{ paddingTop: 16 }}>
-              <MFATab />
+              <MFAEnrollmentTab />
             </div>
           </Tab>
           {isLocal && (

@@ -16,7 +16,7 @@ import { UsersTab } from "./UsersTab";
 import { RolesTab } from "./RolesTab";
 import { UserGroupsTab } from "./UserGroupsTab";
 import { AgentNotificationsTab } from "./AgentNotificationsTab";
-import { MFASettingsTab } from "./MFASettingsTab";
+import { MFAPolicyTab } from "./MFAPolicyTab";
 
 export const SettingsPage: React.FC = () => {
   const canUsers = hasPermission("user:manage");
@@ -85,9 +85,9 @@ export const SettingsPage: React.FC = () => {
           </Tab>
         )}
         {canSettings && (
-          <Tab eventKey="mfa-settings" title={<TabTitleText><abbr title="Multi-Factor Authentication">MFA</abbr> Settings</TabTitleText>}>
+          <Tab eventKey="mfa-settings" title={<TabTitleText><abbr title="Multi-Factor Authentication">MFA</abbr> Policy</TabTitleText>}>
             <div style={{ paddingTop: 16 }}>
-              <MFASettingsTab />
+              <MFAPolicyTab />
             </div>
           </Tab>
         )}
