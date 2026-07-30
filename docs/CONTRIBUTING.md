@@ -48,7 +48,7 @@ Bor/
 │       ├── models/         Data models and DTOs
 │       ├── pki/            Internal CA and TLS certificate management
 │       └── services/       Business logic
-│   └── web/frontend/       PatternFly 5 React app (TypeScript + Webpack)
+│   └── web/frontend/       PatternFly 6 React app (TypeScript + Webpack)
 ├── proto/                  Protocol Buffer definitions (policy + enrollment)
 ├── packaging/              nfpm packaging configs and systemd units
 └── docs/                   Project documentation
@@ -152,17 +152,24 @@ make lint-agent   # lint agent only
 4. Add a `.proto` message in `proto/policy/`
 5. Add server-side validation in `server/internal/services/`
 6. Update `server/internal/grpc/server.go` (`modelToProto`)
-7. Update the frontend policy editor in `PolicyDetailsModal.tsx`
+7. Update the frontend policy editor in `PolicyEditor.tsx`
 
 ### TypeScript / Frontend
 
-The frontend uses **PatternFly 5**, **React 18**, and **TypeScript**. All
+The frontend uses **PatternFly 6**, **React 18**, and **TypeScript**. All
 components must be functional (no class components) and use hooks.
 
+- **Read [`FRONTEND_CONVENTIONS.md`](FRONTEND_CONVENTIONS.md) first.** It is the
+  canonical list of shared primitives (one blessed way per common need:
+  toolbar, empty state, row actions, alerts/toasts, confirmations, tokens). Use
+  the primitive before hand-rolling.
+- Maintain **WCAG 2.2 AA** — see [`ACCESSIBILITY.md`](ACCESSIBILITY.md).
 - Follow the [PatternFly design guidelines](https://www.patternfly.org/).
 - Define explicit TypeScript types — avoid `any`.
 - API calls go in `src/apiClient/`. Components must not call `fetch` directly.
 - Keep components focused. Extract reusable logic into hooks or helpers.
+- Colors come from `--pf-t--*` tokens, never raw hex (enforced by
+  `make check-frontend-tokens`).
 - The Webpack build is the source of truth. Verify with `make frontend`.
 
 ### Protocol Buffers

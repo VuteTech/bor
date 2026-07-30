@@ -14,8 +14,6 @@ import {
   Flex,
   FlexItem,
   Label,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
   ToolbarFilter,
   MenuToggle,
@@ -23,7 +21,6 @@ import {
   Select,
   SelectOption,
   SelectList,
-  SearchInput,
   Dropdown,
   DropdownItem,
   DropdownList,
@@ -44,6 +41,7 @@ import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-ico
 import { fetchAllPolicies, deletePolicy, setPolicyState, Policy } from "../../apiClient/policiesApi";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
+import { BorToolbar } from "../../components/BorToolbar";
 
 /* ── Filter options ── */
 
@@ -448,23 +446,19 @@ export const PoliciesPage: React.FC = () => {
         </LiveAlert>
 
         {/* Toolbar with filters + bulk Actions */}
-        <Toolbar clearAllFilters={() => {
-          setTypeFilter([]);
-          setStatusFilter([]);
-          setBindingsFilter(null);
-          setRecentlyModified(false);
-          setSearchText("");
-        }}>
-          <ToolbarContent>
-            <ToolbarItem>
-              <SearchInput
-                placeholder="Search by name..."
-                value={searchText}
-                onChange={(_ev, val) => setSearchText(val)}
-                onClear={() => setSearchText("")}
-              />
-            </ToolbarItem>
-
+        <BorToolbar
+          searchValue={searchText}
+          onSearchChange={setSearchText}
+          searchAriaLabel="Search policies by name"
+          searchPlaceholder="Search by name..."
+          onClearAll={() => {
+            setTypeFilter([]);
+            setStatusFilter([]);
+            setBindingsFilter(null);
+            setRecentlyModified(false);
+            setSearchText("");
+          }}
+        >
             <ToolbarFilter
               chips={typeFilter}
               deleteChip={(_cat, chip) =>
@@ -634,8 +628,7 @@ export const PoliciesPage: React.FC = () => {
                 </Dropdown>
               </ToolbarItem>
             )}
-          </ToolbarContent>
-        </Toolbar>
+        </BorToolbar>
 
         {/* Policies table */}
         {sortedPolicies.length === 0 ? (

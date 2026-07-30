@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { LiveAlert } from "../../components/LiveAlert";
 import { useToast } from "../../components/ToastHost";
+import { BorToolbar } from "../../components/BorToolbar";
 import {
   PageSection,
   Title,
@@ -13,12 +14,9 @@ import {
   Spinner,
   Flex,
   FlexItem,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
   ToolbarFilter,
   Pagination,
-  SearchInput,
   MenuToggle,
   MenuToggleElement,
   Select,
@@ -755,24 +753,21 @@ export const NodesPage: React.FC = () => {
           <DrawerContent panelContent={drawerPanel}>
             <DrawerContentBody>
               {/* ── Toolbar ── */}
-              <Toolbar clearAllFilters={() => {
-                setStatusFilter("All");
-                setOsFilter("All");
-                setDesktopFilter("All");
-                setAgentVersionFilter("All");
-                setGroupFilter("All");
-              }}>
-                <ToolbarContent>
-                  <ToolbarItem>
-                    <SearchInput
-                      placeholder="Search by name, FQDN, IP, group..."
-                      value={searchValue}
-                      onChange={(_ev, val) => setSearchValue(val)}
-                      onSearch={() => setAppliedSearch(searchValue)}
-                      onClear={() => { setSearchValue(""); setAppliedSearch(""); }}
-                    />
-                  </ToolbarItem>
-
+              <BorToolbar
+                searchValue={searchValue}
+                onSearchChange={setSearchValue}
+                searchAriaLabel="Search nodes"
+                searchPlaceholder="Search by name, FQDN, IP, group..."
+                onSearch={() => setAppliedSearch(searchValue)}
+                onSearchClear={() => { setSearchValue(""); setAppliedSearch(""); }}
+                onClearAll={() => {
+                  setStatusFilter("All");
+                  setOsFilter("All");
+                  setDesktopFilter("All");
+                  setAgentVersionFilter("All");
+                  setGroupFilter("All");
+                }}
+              >
                   <ToolbarFilter
                     chips={statusFilter !== "All" ? [statusFilter] : []}
                     deleteChip={() => setStatusFilter("All")}
@@ -950,13 +945,12 @@ export const NodesPage: React.FC = () => {
                     </ToolbarItem>
                   )}
 
-                  <ToolbarItem align={{ default: "alignRight" }}>
+                  <ToolbarItem align={{ default: "alignEnd" }}>
                     <Button variant="link" onClick={exportCSV}>
                       Export CSV
                     </Button>
                   </ToolbarItem>
-                </ToolbarContent>
-              </Toolbar>
+              </BorToolbar>
 
               {total > 0 && (
                 <Pagination
