@@ -70,21 +70,21 @@ export const PoliciesOverviewSection: React.FC<PoliciesOverviewSectionProps> = (
           <StatCard
             title="Released"
             value={data.released}
-            color="var(--pf-v5-global--success-color--100)"
+            color="var(--pf-t--global--text--color--status--success--default)"
           />
         </GridItem>
         <GridItem span={3}>
           <StatCard
             title="Draft"
             value={data.draft}
-            color="var(--pf-v5-global--info-color--100)"
+            color="var(--pf-t--global--text--color--status--info--default)"
           />
         </GridItem>
         <GridItem span={3}>
           <StatCard
             title="Archived"
             value={data.archived}
-            color="var(--pf-v5-global--Color--200)"
+            color="var(--pf-t--global--text--color--subtle)"
           />
         </GridItem>
 

@@ -33,11 +33,11 @@ import { WebAuthnSetupModal } from "./WebAuthnSetupModal";
 /* ── Shared card styles ─────────────────────────────────────────────────── */
 
 const methodCard: React.CSSProperties = {
-  border: "1px solid var(--pf-v5-global--BorderColor--100)",
+  border: "1px solid var(--pf-t--global--border--color--default)",
   borderRadius: 8,
   padding: "20px 24px",
   marginBottom: 16,
-  background: "var(--pf-v5-global--BackgroundColor--100)",
+  background: "var(--pf-t--global--background--color--primary--default)",
 };
 
 const methodHeader: React.CSSProperties = {
@@ -51,12 +51,12 @@ const methodIcon: React.CSSProperties = {
   width: 36,
   height: 36,
   borderRadius: 8,
-  background: "var(--pf-v5-global--BackgroundColor--200)",
+  background: "var(--pf-t--global--background--color--secondary--default)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   flexShrink: 0,
-  color: "var(--pf-v5-global--Color--100)",
+  color: "var(--pf-t--global--text--color--regular)",
 };
 
 const methodBody: React.CSSProperties = {
@@ -66,13 +66,13 @@ const methodBody: React.CSSProperties = {
 const methodTitle: React.CSSProperties = {
   fontWeight: 600,
   fontSize: "1rem",
-  color: "var(--pf-v5-global--Color--100)",
+  color: "var(--pf-t--global--text--color--regular)",
   margin: 0,
 };
 
 const methodDesc: React.CSSProperties = {
   fontSize: "0.875rem",
-  color: "var(--pf-v5-global--Color--200)",
+  color: "var(--pf-t--global--text--color--subtle)",
   marginTop: 2,
 };
 
@@ -90,7 +90,7 @@ const keyRow: React.CSSProperties = {
   alignItems: "center",
   gap: 12,
   padding: "10px 0",
-  borderTop: "1px solid var(--pf-v5-global--BorderColor--100)",
+  borderTop: "1px solid var(--pf-t--global--border--color--default)",
 };
 
 const keyMeta: React.CSSProperties = {
@@ -101,13 +101,13 @@ const keyMeta: React.CSSProperties = {
 const keyName: React.CSSProperties = {
   fontWeight: 500,
   fontSize: "0.9375rem",
-  color: "var(--pf-v5-global--Color--100)",
+  color: "var(--pf-t--global--text--color--regular)",
   marginBottom: 1,
 };
 
 const keyDate: React.CSSProperties = {
   fontSize: "0.8125rem",
-  color: "var(--pf-v5-global--Color--200)",
+  color: "var(--pf-t--global--text--color--subtle)",
 };
 
 /* ════════════════════════════════════════════════════════════════════════ */
@@ -247,20 +247,20 @@ export const MFATab: React.FC = () => {
       <LiveAlert
         message={error}
         isInline
-        actionClose={<Button variant="plain" onClick={() => setError(null)}>&times;</Button>}
+        actionClose={<Button variant="plain" aria-label="Close" onClick={() => setError(null)}>&times;</Button>}
         style={{ marginBottom: 16 }}
       />
       <LiveAlert
         message={successMsg}
         variant="success"
         isInline
-        actionClose={<Button variant="plain" onClick={() => setSuccessMsg(null)}>&times;</Button>}
+        actionClose={<Button variant="plain" aria-label="Close" onClick={() => setSuccessMsg(null)}>&times;</Button>}
         style={{ marginBottom: 16 }}
       />
 
       {/* ── Section header ── */}
       <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: "0.875rem", color: "var(--pf-v5-global--Color--200)", margin: 0 }}>
+        <p style={{ fontSize: "0.875rem", color: "var(--pf-t--global--text--color--subtle)", margin: 0 }}>
           Add an extra layer of security to your account. After signing in with your
           password, you'll be asked for a verification from one of the methods below.
         </p>
@@ -310,7 +310,7 @@ export const MFATab: React.FC = () => {
             style={{
               marginTop: 16,
               paddingTop: 16,
-              borderTop: "1px solid var(--pf-v5-global--BorderColor--100)",
+              borderTop: "1px solid var(--pf-t--global--border--color--default)",
             }}
           >
             <Form onSubmit={handleDisable} style={{ maxWidth: 420 }}>
@@ -423,7 +423,7 @@ export const MFATab: React.FC = () => {
                     <span
                       style={{
                         fontSize: "0.875rem",
-                        color: "var(--pf-v5-global--danger-color--100)",
+                        color: "var(--pf-t--global--text--color--status--danger--default)",
                         marginRight: 4,
                       }}
                     >
@@ -472,7 +472,7 @@ export const MFATab: React.FC = () => {
                       isSmall
                       aria-label={`Remove ${cred.name}`}
                       onClick={() => setConfirmDeleteId(cred.id)}
-                      style={{ color: "var(--pf-v5-global--danger-color--100)" }}
+                      style={{ color: "var(--pf-t--global--text--color--status--danger--default)" }}
                     >
                       <TrashIcon />
                     </Button>

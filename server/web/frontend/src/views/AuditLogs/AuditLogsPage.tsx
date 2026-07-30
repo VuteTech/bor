@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Alert,
   Button,
   DescriptionList,
   DescriptionListDescription,
@@ -41,6 +40,7 @@ import SyncIcon from "@patternfly/react-icons/dist/esm/icons/sync-icon";
 import TimesIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
 
 import { hasPermission } from "../../apiClient/permissions";
+import { LiveAlert } from "../../components/LiveAlert";
 import {
   fetchAuditLogs,
   exportAuditLogs,
@@ -239,7 +239,7 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     fontSize: "0.6875rem", fontWeight: 700, textTransform: "uppercase",
     letterSpacing: "0.1em", color: "#6a6e73",
     marginTop: 20, marginBottom: 8,
-    paddingBottom: 4, borderBottom: "1px solid var(--pf-v5-global--BorderColor--100)",
+    paddingBottom: 4, borderBottom: "1px solid var(--pf-t--global--border--color--default)",
   }}>
     {children}
   </div>
@@ -340,7 +340,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
                 <SectionLabel>Tampered File</SectionLabel>
                 <code style={{
                   display: "block", fontFamily: "monospace", fontSize: "0.8125rem",
-                  wordBreak: "break-all", background: "var(--pf-v5-global--BackgroundColor--200)",
+                  wordBreak: "break-all", background: "var(--pf-t--global--background--color--secondary--default)",
                   padding: "6px 10px", borderRadius: 4,
                 }}>
                   {tamperData.file}
@@ -360,7 +360,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
                     {["PID", "Process", "User"].map((h) => (
                       <th key={h} style={{
                         textAlign: "left", padding: "4px 8px",
-                        borderBottom: "1px solid var(--pf-v5-global--BorderColor--100)",
+                        borderBottom: "1px solid var(--pf-t--global--border--color--default)",
                         color: "#6a6e73", fontWeight: 600, fontSize: "0.75rem",
                       }}>
                         {h}
@@ -397,7 +397,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
                       <pre style={{
                         margin: 0, fontSize: "0.8125rem", fontFamily: "monospace",
                         whiteSpace: "pre-wrap", wordBreak: "break-all",
-                        background: "var(--pf-v5-global--BackgroundColor--200)",
+                        background: "var(--pf-t--global--background--color--secondary--default)",
                         padding: "4px 8px", borderRadius: 4,
                       }}>
                         {JSON.stringify(v, null, 2)}
@@ -421,7 +421,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
             <pre style={{
               margin: 0, fontSize: "0.8125rem", fontFamily: "monospace",
               whiteSpace: "pre-wrap", wordBreak: "break-all",
-              background: "var(--pf-v5-global--BackgroundColor--200)",
+              background: "var(--pf-t--global--background--color--secondary--default)",
               padding: "8px 10px", borderRadius: 4,
               maxHeight: 300, overflowY: "auto",
             }}>
@@ -466,7 +466,12 @@ export const AuditLogsPage: React.FC = () => {
 
   const addFilter = (type: FilterType, value: string) => {
     if (filters.some((f) => f.type === type && f.value === value)) return;
-    setFilters((prev) => [...prev, { id: nextChipId(), type, value }]);
+    setFilters((prev) => {
+      // The server filters by a single username, so keep username single-valued:
+      // a new username replaces any existing one rather than adding a dead chip.
+      const base = type === "username" ? prev.filter((f) => f.type !== "username") : prev;
+      return [...base, { id: nextChipId(), type, value }];
+    });
     setPage(1);
   };
 
@@ -525,7 +530,7 @@ export const AuditLogsPage: React.FC = () => {
           <DrawerContentBody>
             <div style={{ padding: "1rem 1.5rem" }}>
 
-              {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+              <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
               {/* ── Toolbar ── */}
               <Toolbar clearAllFilters={filters.length > 0 ? clearAllFilters : undefined}>
@@ -593,7 +598,7 @@ export const AuditLogsPage: React.FC = () => {
 
               {/* ── Table ── */}
               {loading ? (
-                <Spinner size="lg" style={{ marginTop: 32 }} />
+                <Spinner size="lg" aria-label="Loading" style={{ marginTop: 32 }} />
               ) : (
                 <>
                   <Table aria-label="Audit logs table" variant="compact">
@@ -630,7 +635,7 @@ export const AuditLogsPage: React.FC = () => {
                             style={{
                               cursor: "pointer",
                               background: isSelected
-                                ? "var(--pf-v5-global--BackgroundColor--200)"
+                                ? "var(--pf-t--global--background--color--secondary--default)"
                                 : undefined,
                             }}
                             isHoverable

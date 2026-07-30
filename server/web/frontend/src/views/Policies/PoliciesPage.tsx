@@ -169,8 +169,8 @@ export const PoliciesPage: React.FC = () => {
     if (searchText && !p.name.toLowerCase().includes(searchText.toLowerCase())) return false;
     if (typeFilter.length > 0 && !typeFilter.includes(p.type)) return false;
     if (statusFilter.length > 0 && !statusFilter.includes(p.state)) return false;
-    if (bindingsFilter === "has") { /* Future */ }
-    else if (bindingsFilter === "none") { /* Future */ }
+    if (bindingsFilter === "has" && (p.bindings_count ?? 0) === 0) return false;
+    if (bindingsFilter === "none" && (p.bindings_count ?? 0) > 0) return false;
     if (recentlyModified) {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);

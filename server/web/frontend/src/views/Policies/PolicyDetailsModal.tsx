@@ -830,6 +830,26 @@ function detectFirefoxConfiguredKeys(content: string): string[] {
   } catch { return []; }
 }
 
+// Detect all Thunderbird policy keys set in the content JSON. Thunderbird has
+// its own catalogue, so filtering against the Firefox list would miss
+// Thunderbird-only keys (no configured indicator, no auto-select).
+function detectThunderbirdConfiguredKeys(content: string): string[] {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    return THUNDERBIRD_ALL_POLICIES.filter(p => p.key in parsed).map(p => p.key);
+  } catch { return []; }
+}
+
+// Whether a policy's content JSON has at least one setting. Empty content is the
+// object "{}" (a non-empty string), so a bare string-emptiness check would let
+// an empty policy be released.
+function policyHasSettings(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content || "{}");
+    return !!parsed && typeof parsed === "object" && Object.keys(parsed).length > 0;
+  } catch { return false; }
+}
+
 // Extract the value for a specific Firefox policy key from content JSON
 function extractFirefoxValue(content: string, key: string): unknown {
   try {
@@ -1023,7 +1043,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           setEdgeExpandedGroups(new Set());
         }
       } else if (policy.type === "Thunderbird") {
-        const configuredKeys = detectFirefoxConfiguredKeys(policy.content);
+        const configuredKeys = detectThunderbirdConfiguredKeys(policy.content);
         if (configuredKeys.length > 0) {
           setThunderbirdSelectedKey(configuredKeys[0]);
           setThunderbirdValue(extractFirefoxValue(policy.content, configuredKeys[0]));
@@ -2023,7 +2043,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   /* ── Thunderbird: tree view + property editor layout ── */
   const renderThunderbirdForm = () => {
     const tree = buildThunderbirdTree();
-    const configuredKeys = detectFirefoxConfiguredKeys(contentRaw);
+    const configuredKeys = detectThunderbirdConfiguredKeys(contentRaw);
 
     return (
       <div style={{ display: "flex", minHeight: "400px" }}>
@@ -3499,7 +3519,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
                 size="sm"
                 onClick={() => handleStateTransition("released")}
                 isLoading={saving}
-                isDisabled={saving || !name.trim() || !policyType || !contentRaw.trim()}
+                isDisabled={saving || !name.trim() || !policyType || !policyHasSettings(contentRaw)}
               >
                 Release
               </Button>

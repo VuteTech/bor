@@ -37,10 +37,10 @@ const StatCard: React.FC<{
   color?: "green" | "red" | "blue" | "grey";
 }> = ({ title, value, icon, color }) => {
   const colorMap: Record<string, string> = {
-    green: "var(--pf-v5-global--success-color--100)",
-    red: "var(--pf-v5-global--danger-color--100)",
-    blue: "var(--pf-v5-global--info-color--100)",
-    grey: "var(--pf-v5-global--Color--200)",
+    green: "var(--pf-t--global--text--color--status--success--default)",
+    red: "var(--pf-t--global--text--color--status--danger--default)",
+    blue: "var(--pf-t--global--text--color--status--info--default)",
+    grey: "var(--pf-t--global--text--color--subtle)",
   };
 
   return (
@@ -90,9 +90,9 @@ const CertExpiryList: React.FC<{ entries: CertExpiryEntry[]; emptyText: string }
         const label = e.daysUntilExpiry <= 0
           ? `Expired ${Math.abs(e.daysUntilExpiry)}d ago`
           : `${e.daysUntilExpiry}d remaining`;
-        const color = e.daysUntilExpiry <= 0 ? "var(--pf-v5-global--danger-color--100)"
-          : e.daysUntilExpiry <= 30 ? "var(--pf-v5-global--warning-color--100)"
-          : "var(--pf-v5-global--Color--200)";
+        const color = e.daysUntilExpiry <= 0 ? "var(--pf-t--global--text--color--status--danger--default)"
+          : e.daysUntilExpiry <= 30 ? "var(--pf-t--global--text--color--status--warning--default)"
+          : "var(--pf-t--global--text--color--subtle)";
         return (
           <DescriptionListGroup key={e.id}>
             <DescriptionListTerm>{e.name}</DescriptionListTerm>
@@ -210,11 +210,11 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
           <>
             {data.certsExpired.length > 0 && (
               <GridItem span={6}>
-                <Card isCompact isFlat style={{ borderLeft: "3px solid var(--pf-v5-global--danger-color--100)" }}>
+                <Card isCompact isFlat style={{ borderLeft: "3px solid var(--pf-t--global--text--color--status--danger--default)" }}>
                   <CardTitle>
                     <Flex alignItems={{ default: "alignItemsCenter" }} spaceItems={{ default: "spaceItemsSm" }}>
                       <FlexItem>
-                        <ExclamationCircleIcon color="var(--pf-v5-global--danger-color--100)" />
+                        <ExclamationCircleIcon color="var(--pf-t--global--text--color--status--danger--default)" />
                       </FlexItem>
                       <FlexItem>
                         Expired Certificates ({data.certsExpired.length})
@@ -229,11 +229,11 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             )}
             {data.certsExpiringSoon.length > 0 && (
               <GridItem span={data.certsExpired.length > 0 ? 6 : 12}>
-                <Card isCompact isFlat style={{ borderLeft: "3px solid var(--pf-v5-global--warning-color--100)" }}>
+                <Card isCompact isFlat style={{ borderLeft: "3px solid var(--pf-t--global--text--color--status--warning--default)" }}>
                   <CardTitle>
                     <Flex alignItems={{ default: "alignItemsCenter" }} spaceItems={{ default: "spaceItemsSm" }}>
                       <FlexItem>
-                        <ExclamationTriangleIcon color="var(--pf-v5-global--warning-color--100)" />
+                        <ExclamationTriangleIcon color="var(--pf-t--global--text--color--status--warning--default)" />
                       </FlexItem>
                       <FlexItem>
                         Certificates Expiring Soon ({data.certsExpiringSoon.length})
