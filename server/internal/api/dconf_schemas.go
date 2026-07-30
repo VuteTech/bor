@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/VuteTech/Bor/server/internal/database"
+	"github.com/VuteTech/Bor/server/internal/models"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 )
 
@@ -142,6 +143,16 @@ func NewComplianceHandler(dconfRepo *database.DConfRepository) *ComplianceHandle
 	return &ComplianceHandler{dconfRepo: dconfRepo}
 }
 
+// complianceListResponse is the paginated compliance list envelope.
+type complianceListResponse struct {
+	Items        []*database.ComplianceRow `json:"items"`
+	Total        int                       `json:"total"`
+	Page         int                       `json:"page"`
+	PerPage      int                       `json:"per_page"`
+	TotalPages   int                       `json:"total_pages"`
+	StatusCounts map[string]int            `json:"status_counts"`
+}
+
 // List handles GET /api/v1/compliance
 func (h *ComplianceHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -149,19 +160,55 @@ func (h *ComplianceHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.dconfRepo.ListComplianceResults(r.Context())
+	q := r.URL.Query()
+	req := &database.ComplianceListParams{
+		Search:    q.Get("search"),
+		Status:    q.Get("status"),
+		SortField: q.Get("sort_field"),
+		SortOrder: q.Get("sort_order"),
+		Page:      atoiDefault(q.Get("page"), 1),
+		PerPage:   atoiDefault(q.Get("per_page"), 25),
+	}
+
+	results, err := h.dconfRepo.ListComplianceResultsPaged(r.Context(), req)
 	if err != nil {
 		log.Printf("Failed to list compliance results: %v", err)
 		http.Error(w, `{"error":"failed to list compliance results"}`, http.StatusInternalServerError)
 		return
 	}
-
 	if results == nil {
 		results = []*database.ComplianceRow{}
 	}
 
+	total, err := h.dconfRepo.CountComplianceFiltered(r.Context(), req)
+	if err != nil {
+		log.Printf("Failed to count compliance results: %v", err)
+		http.Error(w, `{"error":"failed to count compliance results"}`, http.StatusInternalServerError)
+		return
+	}
+
+	statusCounts, err := h.dconfRepo.CountComplianceByStatusFiltered(r.Context(), req.Search)
+	if err != nil {
+		log.Printf("Failed to count compliance by status: %v", err)
+		http.Error(w, `{"error":"failed to count compliance results"}`, http.StatusInternalServerError)
+		return
+	}
+
+	page, perPage := models.ClampPagination(req.Page, req.PerPage)
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = (total + perPage - 1) / perPage
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results); err != nil {
+	if err := json.NewEncoder(w).Encode(complianceListResponse{
+		Items:        results,
+		Total:        total,
+		Page:         page,
+		PerPage:      perPage,
+		TotalPages:   totalPages,
+		StatusCounts: statusCounts,
+	}); err != nil {
 		log.Printf("Failed to encode compliance response: %v", err)
 	}
 }

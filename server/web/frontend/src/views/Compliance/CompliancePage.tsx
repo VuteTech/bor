@@ -15,6 +15,7 @@ import {
   ToolbarContent,
   ToolbarItem,
   SearchInput,
+  Pagination,
   MenuToggle,
   MenuToggleElement,
   Select,
@@ -27,7 +28,7 @@ import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import {
-  fetchComplianceResults,
+  fetchCompliancePaged,
   fetchDConfSchemas,
   ComplianceResult,
   ComplianceStatus,
@@ -54,6 +55,10 @@ const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow
 };
 
 const ALL_STATUSES: ComplianceStatus[] = ["unknown", "compliant", "non_compliant", "inapplicable", "error"];
+
+// Maps the sortable table column index to the server-side sort field.
+// Column indices (0 = expand toggle): Node=1, Policy=2, Status=3, Reported=5.
+const SORT_FIELD_BY_INDEX: Record<number, string> = { 1: "node", 2: "policy", 3: "status", 5: "reported" };
 
 function formatDate(raw: string): string {
   if (!raw) return "—";
@@ -145,16 +150,32 @@ export const CompliancePage: React.FC = () => {
   const [sortIndex, setSortIndex] = useState<number | undefined>(undefined);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
+  // Server-side pagination
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+  const [total, setTotal] = useState(0);
+  // Overall per-status distribution (server-computed over the search-filtered set).
+  const [counts, setCounts] = useState<Record<string, number>>({});
+
   const load = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       else setRefreshing(true);
       setError(null);
-      const [data, schemaData] = await Promise.all([
-        fetchComplianceResults(),
+      const [resp, schemaData] = await Promise.all([
+        fetchCompliancePaged({
+          page,
+          per_page: perPage,
+          search: searchText || undefined,
+          status: statusFilter !== "All" ? statusFilter : undefined,
+          sort_field: sortIndex !== undefined ? SORT_FIELD_BY_INDEX[sortIndex] : undefined,
+          sort_order: sortDir,
+        }),
         fetchDConfSchemas().catch(() => [] as DConfSchema[]),
       ]);
-      setResults(data);
+      setResults(resp.items);
+      setTotal(resp.total);
+      setCounts(resp.status_counts ?? {});
       setSchemas(schemaData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load compliance results");
@@ -162,37 +183,17 @@ export const CompliancePage: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [page, perPage, searchText, statusFilter, sortIndex, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
+  // Reset to the first page whenever the filters/search/sort change.
+  useEffect(() => {
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText, statusFilter, sortIndex, sortDir]);
+
   const summaryIndex = useMemo(() => buildSummaryIndex(schemas), [schemas]);
-
-  const filtered = useMemo(() => {
-    const search = searchText.toLowerCase();
-    return results.filter(r => {
-      if (statusFilter !== "All" && r.status !== statusFilter) return false;
-      if (search && !r.node_name.toLowerCase().includes(search) && !r.policy_name.toLowerCase().includes(search)) return false;
-      return true;
-    });
-  }, [results, searchText, statusFilter]);
-
-  /* ── Client-side sort ──
-     Column indices match header order (0 = expand toggle): Node=1, Policy=2,
-     Status=3, Reported=5. */
-  const sorted = useMemo(() => {
-    if (sortIndex === undefined) return filtered;
-    const cmp = (a: ComplianceResult, b: ComplianceResult): number => {
-      switch (sortIndex) {
-        case 1: return a.node_name.localeCompare(b.node_name);
-        case 2: return a.policy_name.localeCompare(b.policy_name);
-        case 3: return (STATUS_LABELS[a.status] ?? a.status).localeCompare(STATUS_LABELS[b.status] ?? b.status);
-        case 5: return new Date(a.reported_at).getTime() - new Date(b.reported_at).getTime();
-        default: return 0;
-      }
-    };
-    return [...filtered].sort((a, b) => (sortDir === "asc" ? cmp(a, b) : -cmp(a, b)));
-  }, [filtered, sortIndex, sortDir]);
 
   const getSort = (columnIndex: number): ThProps["sort"] => ({
     sortBy: { index: sortIndex, direction: sortDir },
@@ -202,15 +203,6 @@ export const CompliancePage: React.FC = () => {
     },
     columnIndex,
   });
-
-  /* ── status summary counts ── */
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const r of results) {
-      c[r.status] = (c[r.status] ?? 0) + 1;
-    }
-    return c;
-  }, [results]);
 
   const rowKey = (r: ComplianceResult) => `${r.node_id}-${r.policy_id}`;
 
@@ -323,9 +315,9 @@ export const CompliancePage: React.FC = () => {
         </ToolbarContent>
       </Toolbar>
 
-      {sorted.length === 0 ? (
+      {results.length === 0 ? (
         <BorEmptyState
-          isEmptyData={results.length === 0}
+          isEmptyData={total === 0 && searchText === "" && statusFilter === "All"}
           itemsLabel="compliance results"
           emptyTitle="No compliance data yet"
           emptyBody="Agents will report status here when they apply policies."
@@ -344,7 +336,7 @@ export const CompliancePage: React.FC = () => {
               <Th sort={getSort(5)}>Reported</Th>
             </Tr>
           </Thead>
-          {sorted.map((r, idx) => {
+          {results.map((r, idx) => {
             const key = rowKey(r);
             const isExpanded = expandedRows.has(key);
             const hasItems = (r.items?.length ?? 0) > 0;
@@ -389,6 +381,21 @@ export const CompliancePage: React.FC = () => {
             );
           })}
         </Table>
+      )}
+
+      {total > 0 && (
+        <Pagination
+          itemCount={total}
+          page={page}
+          perPage={perPage}
+          onSetPage={(_ev, p) => setPage(p)}
+          onPerPageSelect={(_ev, pp) => {
+            setPerPage(pp);
+            setPage(1);
+          }}
+          variant="bottom"
+          aria-label="Compliance pagination"
+        />
       )}
     </PageSection>
   );

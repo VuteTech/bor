@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/VuteTech/Bor/server/internal/models"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -193,6 +195,136 @@ func (r *DConfRepository) ListComplianceResults(ctx context.Context) ([]*Complia
 		results = append(results, &cr)
 	}
 	return results, rows.Err()
+}
+
+// complianceBaseFrom is the shared FROM + binding-liveness WHERE for compliance
+// queries: only results whose policy still has an enabled binding to a group
+// containing the node are counted (stale results are excluded).
+const complianceBaseFrom = `
+	FROM compliance_results cr
+	JOIN nodes    n ON n.id = cr.node_id
+	JOIN policies p ON p.id = cr.policy_id
+	WHERE EXISTS (
+		SELECT 1
+		FROM policy_bindings pb
+		JOIN node_group_members ngm ON ngm.node_group_id = pb.group_id
+		WHERE pb.policy_id = cr.policy_id
+		  AND ngm.node_id  = cr.node_id
+		  AND pb.state     = 'enabled'
+	)`
+
+// ComplianceListParams are the query parameters for a paginated compliance list.
+type ComplianceListParams struct {
+	Page, PerPage                        int
+	Search, Status, SortField, SortOrder string
+}
+
+// complianceSortColumns allowlists sort fields to SQL columns (ORDER BY cannot
+// be parameterized, so the column must come from this fixed map).
+var complianceSortColumns = map[string]string{
+	"node":     "n.name",
+	"policy":   "p.name",
+	"status":   "cr.status",
+	"reported": "cr.reported_at",
+}
+
+func complianceOrderBy(field, order string) string {
+	col, ok := complianceSortColumns[field]
+	if !ok {
+		col = "cr.reported_at"
+	}
+	dir := "DESC"
+	if strings.EqualFold(order, "asc") {
+		dir = "ASC"
+	}
+	return fmt.Sprintf("ORDER BY %s %s", col, dir)
+}
+
+// buildComplianceFilter returns the extra AND conditions (appended to the base
+// WHERE) plus bind args, with placeholders starting at $1. When includeStatus
+// is false the status filter is skipped (used for the status-count overview).
+func buildComplianceFilter(search, status string, includeStatus bool) (sql string, args []interface{}) {
+	var sb strings.Builder
+	i := 1
+	if s := strings.TrimSpace(search); s != "" {
+		args = append(args, "%"+s+"%")
+		fmt.Fprintf(&sb, " AND (n.name ILIKE $%d OR p.name ILIKE $%d)", i, i)
+		i++
+	}
+	if includeStatus && status != "" {
+		args = append(args, status)
+		fmt.Fprintf(&sb, " AND cr.status = $%d", i)
+	}
+	return sb.String(), args
+}
+
+// ListComplianceResultsPaged returns a page of compliance results matching the
+// filter, ordered by the allowlisted sort field.
+func (r *DConfRepository) ListComplianceResultsPaged(ctx context.Context, req *ComplianceListParams) ([]*ComplianceRow, error) {
+	filter, args := buildComplianceFilter(req.Search, req.Status, true)
+	page, perPage := models.ClampPagination(req.Page, req.PerPage)
+	offset := (page - 1) * perPage
+	args = append(args, perPage, offset)
+	query := `SELECT cr.node_id, n.name, cr.policy_id, p.name, cr.status, cr.message, cr.items_json, cr.reported_at` +
+		complianceBaseFrom + filter + " " + complianceOrderBy(req.SortField, req.SortOrder) +
+		fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("dconf: list compliance results: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var results []*ComplianceRow
+	for rows.Next() {
+		var cr ComplianceRow
+		var itemsJSON []byte
+		var reportedAt time.Time
+		if err := rows.Scan(&cr.NodeID, &cr.NodeName, &cr.PolicyID, &cr.PolicyName, &cr.Status, &cr.Message, &itemsJSON, &reportedAt); err != nil {
+			return nil, fmt.Errorf("dconf: scan compliance row: %w", err)
+		}
+		if len(itemsJSON) > 0 {
+			cr.Items = json.RawMessage(itemsJSON)
+		}
+		cr.ReportedAt = reportedAt.UTC().Format(time.RFC3339)
+		results = append(results, &cr)
+	}
+	return results, rows.Err()
+}
+
+// CountComplianceFiltered returns the number of compliance results matching the
+// search + status filter (respecting binding liveness).
+func (r *DConfRepository) CountComplianceFiltered(ctx context.Context, req *ComplianceListParams) (int, error) {
+	filter, args := buildComplianceFilter(req.Search, req.Status, true)
+	query := `SELECT COUNT(*)` + complianceBaseFrom + filter
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("dconf: count compliance results: %w", err)
+	}
+	return count, nil
+}
+
+// CountComplianceByStatusFiltered returns per-status counts over the
+// search-filtered set (ignoring the status filter), for the overview chips.
+func (r *DConfRepository) CountComplianceByStatusFiltered(ctx context.Context, search string) (map[string]int, error) {
+	filter, args := buildComplianceFilter(search, "", false)
+	query := `SELECT cr.status, COUNT(*)` + complianceBaseFrom + filter + " GROUP BY cr.status"
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("dconf: count compliance by status: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("dconf: scan compliance status count: %w", err)
+		}
+		counts[status] = count
+	}
+	return counts, rows.Err()
 }
 
 // ListSchemas returns all schemas in the catalogue.
