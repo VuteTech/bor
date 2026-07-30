@@ -36,6 +36,7 @@ import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-i
 import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { SearchableSelect } from "../../components/SearchableSelect";
 
 /* ── types ── */
 
@@ -822,7 +823,6 @@ interface AddCOPRModalProps {
 const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, triggerRef }) => {
   const idPrefix = useId();
   const [coprAddress, setCOPRAddress] = useState("");
-  const [chrootOpen, setChrootOpen] = useState(false);
   const [chroot, setChroot] = useState("fedora-42-x86_64");
   const [customChroot, setCustomChroot] = useState("");
   const [fetchState, setFetchState] = useState<FetchState>("idle");
@@ -831,11 +831,6 @@ const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, tri
   const parsed = parseCOPRAddress(coprAddress);
   const effectiveChroot = chroot === "_custom" ? customChroot.trim() : chroot;
   const canSubmit = parsed !== null && effectiveChroot !== "" && fetchState !== "fetching";
-
-  const currentChrootLabel =
-    chroot === "_custom"
-      ? `Custom: ${customChroot || "…"}`
-      : (FEDORA_CHROOTS.find(c => c.value === chroot)?.label ?? chroot);
 
   const handleClose = () => {
     setCOPRAddress("");
@@ -915,31 +910,17 @@ const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, tri
           </FormGroup>
 
           <FormGroup label="Chroot" fieldId={`${idPrefix}-chroot`} isRequired>
-            <Select
+            <SearchableSelect
               id={`${idPrefix}-chroot`}
-              isOpen={chrootOpen}
-              onOpenChange={setChrootOpen}
+              ariaLabel="Select chroot"
+              placeholder="Select a chroot"
               selected={chroot}
-              onSelect={(_ev, val) => { setChroot(val as string); setChrootOpen(false); }}
-              toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle
-                  ref={ref}
-                  onClick={() => setChrootOpen(v => !v)}
-                  isExpanded={chrootOpen}
-                  aria-label="Select chroot"
-                  style={{ width: "100%" }}
-                >
-                  {currentChrootLabel}
-                </MenuToggle>
-              )}
-            >
-              <SelectList>
-                {FEDORA_CHROOTS.map(c => (
-                  <SelectOption key={c.value} value={c.value}>{c.label}</SelectOption>
-                ))}
-                <SelectOption value="_custom">Custom…</SelectOption>
-              </SelectList>
-            </Select>
+              onSelect={setChroot}
+              options={[
+                ...FEDORA_CHROOTS.map(c => ({ value: c.value, label: c.label })),
+                { value: "_custom", label: "Custom…" },
+              ]}
+            />
             {chroot === "_custom" && (
               <TextInput
                 style={{ marginTop: "0.5rem" }}

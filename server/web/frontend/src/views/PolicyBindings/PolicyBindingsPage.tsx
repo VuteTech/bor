@@ -36,8 +36,9 @@ import {
   MenuToggleElement,
   ToolbarItem,
 } from "@patternfly/react-core";
-import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
+import { Table, Thead, Tr, Th, Tbody, Td, ThProps, ActionsColumn, IAction } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
+import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-icon";
 import { BorToolbar } from "../../components/BorToolbar";
 
 import {
@@ -449,7 +450,7 @@ export const PolicyBindingsPage: React.FC = () => {
                   <Th sort={getSort(5)}>Priority</Th>
                   <Th sort={getSort(6)}>Affected Nodes</Th>
                   <Th sort={getSort(7)}>Updated</Th>
-                  <Th>Actions</Th>
+                  <Th screenReaderText="Actions" />
                 </Tr>
               </Thead>
               <Tbody>
@@ -488,24 +489,25 @@ export const PolicyBindingsPage: React.FC = () => {
                       </Label>
                     </Td>
                     <Td dataLabel="Updated">{formatDate(b.updated_at)}</Td>
-                    <Td dataLabel="Actions">
-                      <Flex>
-                        <FlexItem>
-                          <Button variant="plain" size="sm" onClick={() => openEditModal(b)}>
-                            Edit
-                          </Button>
-                        </FlexItem>
-                        <FlexItem>
-                          <Button
+                    <Td dataLabel="Actions" isActionCell>
+                      <ActionsColumn
+                        items={[
+                          { title: "Edit", onClick: () => openEditModal(b) },
+                          { isSeparator: true },
+                          { title: "Delete", isDanger: true, onClick: () => openDeleteModal([b.id]) },
+                        ] as IAction[]}
+                        actionsToggle={({ onToggle, isOpen, isDisabled, toggleRef }) => (
+                          <MenuToggle
+                            ref={toggleRef}
+                            aria-label={`Actions for binding ${b.policy_name} on ${b.group_name}`}
                             variant="plain"
-                            size="sm"
-                            isDanger
-                            onClick={() => openDeleteModal([b.id])}
-                          >
-                            Delete
-                          </Button>
-                        </FlexItem>
-                      </Flex>
+                            onClick={onToggle}
+                            isExpanded={isOpen}
+                            isDisabled={isDisabled}
+                            icon={<EllipsisVIcon />}
+                          />
+                        )}
+                      />
                     </Td>
                   </Tr>
                 ))}
