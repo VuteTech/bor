@@ -404,23 +404,30 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full guide.
 - [x] Automatic certificate renewal (ECDSA P-256, 90-day lifetime)
 - [x] FIPS 140-3 validated builds (`GOFIPS140=v1.0.0`, CAVP A6650)
 - [x] PKCS#11 HSM support for CA private key (`-tags pkcs11`)
+- [x] Kerberos-based agent enrollment (AD / FreeIPA, token-free)
 - [x] Firefox ESR policy enforcement (RPM/DEB + Flatpak)
+- [x] Thunderbird policy enforcement
 - [x] Chrome / Chromium policy enforcement (including Flatpak)
+- [x] Microsoft Edge policy enforcement
 - [x] KDE Plasma KConfig (Kiosk) enforcement + KCM module restrictions
+- [x] dconf (GNOME) policy enforcement
+- [x] polkit rule enforcement
+- [x] firewalld policy enforcement
+- [x] Package management policies (packages + repositories)
 - [x] Tamper protection (file watcher restores managed files)
 - [x] RBAC with roles and permissions
+- [x] Web UI MFA (TOTP + WebAuthn)
+- [x] LDAP / Active Directory authentication
 - [x] Audit log
+- [x] Persistent compliance reporting (database storage)
+- [x] Prometheus metrics endpoint
 - [x] Desktop notifications on policy change
 - [x] Many-to-many node group membership
-- [x] LDAP / Active Directory authentication
 - [x] deb / rpm / apk / Arch Linux packaging
 
 ### Planned
 
-- [ ] Persistent compliance reporting (database storage)
-- [ ] Prometheus metrics endpoint
-- [ ] AD / FreeIPA LDAP enrollment (Kerberos)
-- [ ] Additional policy types: dconf, systemd units, firewalld, polkit, packages
+- [ ] systemd unit policies
 - [ ] Agent auto-update mechanism
 - [ ] Multi-tenancy
 
