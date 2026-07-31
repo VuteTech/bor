@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { LiveAlert } from "../../components/LiveAlert";
 import { useToast } from "../../components/ToastHost";
 import { BorToolbar } from "../../components/BorToolbar";
@@ -864,8 +864,8 @@ export const NodesPage: React.FC = () => {
                 }}
               >
                   <ToolbarFilter
-                    chips={statusFilter !== "All" ? [statusFilter] : []}
-                    deleteChip={() => setStatusFilter("All")}
+                    labels={statusFilter !== "All" ? [statusFilter] : []}
+                    deleteLabel={() => setStatusFilter("All")}
                     categoryName="Status"
                   >
                     <Select
@@ -889,8 +889,8 @@ export const NodesPage: React.FC = () => {
                   </ToolbarFilter>
 
                   <ToolbarFilter
-                    chips={groupFilter !== "All" ? [groupLabel(groupFilter)] : []}
-                    deleteChip={() => setGroupFilter("All")}
+                    labels={groupFilter !== "All" ? [groupLabel(groupFilter)] : []}
+                    deleteLabel={() => setGroupFilter("All")}
                     categoryName="Group"
                   >
                     <SearchableSelect
@@ -908,8 +908,8 @@ export const NodesPage: React.FC = () => {
                   </ToolbarFilter>
 
                   <ToolbarFilter
-                    chips={osFilter !== "All" ? [osFilter] : []}
-                    deleteChip={() => setOsFilter("All")}
+                    labels={osFilter !== "All" ? [osFilter] : []}
+                    deleteLabel={() => setOsFilter("All")}
                     categoryName="OS"
                   >
                     <SearchableSelect
@@ -923,8 +923,8 @@ export const NodesPage: React.FC = () => {
                   </ToolbarFilter>
 
                   <ToolbarFilter
-                    chips={desktopFilter !== "All" ? [desktopFilter] : []}
-                    deleteChip={() => setDesktopFilter("All")}
+                    labels={desktopFilter !== "All" ? [desktopFilter] : []}
+                    deleteLabel={() => setDesktopFilter("All")}
                     categoryName="Desktop"
                   >
                     <SearchableSelect
@@ -938,8 +938,8 @@ export const NodesPage: React.FC = () => {
                   </ToolbarFilter>
 
                   <ToolbarFilter
-                    chips={agentVersionFilter !== "All" ? [agentVersionFilter] : []}
-                    deleteChip={() => setAgentVersionFilter("All")}
+                    labels={agentVersionFilter !== "All" ? [agentVersionFilter] : []}
+                    deleteLabel={() => setAgentVersionFilter("All")}
                     categoryName="Agent Version"
                   >
                     <SearchableSelect

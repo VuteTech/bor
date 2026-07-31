@@ -160,8 +160,7 @@ const ValueWidget: React.FC<ValueWidgetProps> = ({ keyDef, value, onChange, rowI
         id={`${rowId}-value-bool`}
         isChecked={checked}
         onChange={(_ev, v) => onChange(v ? "true" : "false")}
-        label="true"
-        labelOff="false"
+        label={checked ? "true" : "false"}
         isDisabled={disabled}
       />
     );

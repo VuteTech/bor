@@ -20,6 +20,9 @@ import {
   TextArea,
   FormSelect,
   FormSelectOption,
+  FormHelperText,
+  HelperText,
+  HelperTextItem,
   DescriptionList,
   DescriptionListGroup,
   DescriptionListTerm,
@@ -52,6 +55,16 @@ import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "./FirewalldPolicyEditor";
 import { PolicyTreePanel } from "./PolicyTreePanel";
+
+function FieldHelp({ children }: { children: React.ReactNode }) {
+  return (
+    <FormHelperText>
+      <HelperText>
+        <HelperTextItem>{children}</HelperTextItem>
+      </HelperText>
+    </FormHelperText>
+  );
+}
 
 /* ── Known policy types and their config schemas ── */
 
@@ -1851,8 +1864,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 id="ff-prop-bool"
                 isChecked={firefoxValue === true}
                 onChange={(_ev, checked) => updateFirefoxValue(checked)}
-                label="Enabled"
-                labelOff="Disabled"
+                label={firefoxValue === true ? "Enabled" : "Disabled"}
               />
             </FormGroup>
           )}
@@ -1890,8 +1902,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                         id={`ff-prop-${field.key}`}
                         isChecked={objVal[field.key] === true}
                         onChange={(_ev, checked) => updateFirefoxValue({ ...objVal, [field.key]: checked })}
-                        label="Yes"
-                        labelOff="No"
+                        label={objVal[field.key] === true ? "Yes" : "No"}
                       />
                     )}
                     {field.type === "string" && (
@@ -2000,8 +2011,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 id="tb-prop-bool"
                 isChecked={thunderbirdValue === true}
                 onChange={(_ev, checked) => updateThunderbirdValue(checked)}
-                label="Enabled"
-                labelOff="Disabled"
+                label={thunderbirdValue === true ? "Enabled" : "Disabled"}
               />
             </FormGroup>
           )}
@@ -2050,8 +2060,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                         id={`tb-prop-${field.key}`}
                         isChecked={objVal[field.key] === true}
                         onChange={(_ev, checked) => updateThunderbirdValue({ ...objVal, [field.key]: checked })}
-                        label="Yes"
-                        labelOff="No"
+                        label={objVal[field.key] === true ? "Yes" : "No"}
                       />
                     )}
                     {field.type === "string" && (
@@ -2192,7 +2201,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
         <details style={{ marginBottom: "1rem" }}>
           <summary style={{ cursor: "pointer", color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem" }}>Add custom modules</summary>
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", alignItems: "flex-end" }}>
-            <FormGroup label="Custom module IDs" fieldId="kcm-custom-input" helperText="One per line or comma-separated" style={{ flex: 1 }}>
+            <FormGroup label="Custom module IDs" fieldId="kcm-custom-input" style={{ flex: 1 }}>
               <TextArea
                 id="kcm-custom-input"
                 value={kcmCustomInput}
@@ -2200,6 +2209,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 rows={2}
                 placeholder="kcm_example, kcm_other"
               />
+              <FieldHelp>One per line or comma-separated</FieldHelp>
             </FormGroup>
             <Button variant="secondary" size="sm" onClick={addCustomModules} style={{ marginBottom: "0.25rem" }}>Add</Button>
           </div>
@@ -2296,7 +2306,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                     <FormSelectOption value="redirect" label="redirect" />
                   </FormSelect>
                 </FormGroup>
-                <FormGroup label="Protocol" fieldId={`url-protocol-${idx}`} helperText="Without ! suffix = prefix-matches (e.g. http matches https)">
+                <FormGroup label="Protocol" fieldId={`url-protocol-${idx}`}>
                   <FormSelect
                     id={`url-protocol-${idx}`}
                     value={customProtocolIndices.has(idx) ? "__custom__" : KIO_PROTOCOLS.includes(rule.protocol) ? rule.protocol : rule.protocol === "" ? "" : "__custom__"}
@@ -2323,17 +2333,20 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                       style={{ marginTop: "0.5rem" }}
                     />
                   )}
+                  <FieldHelp>Without ! suffix = prefix-matches (e.g. http matches https)</FieldHelp>
                 </FormGroup>
                 <FormGroup label="Access" fieldId={`url-enabled-${idx}`}>
-                  <Switch id={`url-enabled-${idx}`} isChecked={rule.enabled} onChange={(_ev, checked) => updateRule(idx, { enabled: checked })} label="Allow" labelOff="Deny" />
+                  <Switch id={`url-enabled-${idx}`} isChecked={rule.enabled} onChange={(_ev, checked) => updateRule(idx, { enabled: checked })} label={rule.enabled ? "Allow" : "Deny"} />
                 </FormGroup>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <FormGroup label="Host" fieldId={`url-host-${idx}`} helperText="*.example.com, blank = all">
+                <FormGroup label="Host" fieldId={`url-host-${idx}`}>
                   <TextInput id={`url-host-${idx}`} value={rule.host} onChange={(_ev, val) => updateRule(idx, { host: val })} placeholder="blank = all" />
+                  <FieldHelp>*.example.com, blank = all</FieldHelp>
                 </FormGroup>
-                <FormGroup label="Path" fieldId={`url-path-${idx}`} helperText="/path, blank = all, ! = exact only">
+                <FormGroup label="Path" fieldId={`url-path-${idx}`}>
                   <TextInput id={`url-path-${idx}`} value={rule.path} onChange={(_ev, val) => updateRule(idx, { path: val })} placeholder="blank = all" />
+                  <FieldHelp>/path, blank = all, ! = exact only</FieldHelp>
                 </FormGroup>
               </div>
               <details style={{ marginTop: "0.25rem" }}>
@@ -2394,8 +2407,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 id="kc-prop-bool"
                 isChecked={kconfigValue === "true"}
                 onChange={(_ev, checked) => updateKconfigValue(checked ? "true" : "false")}
-                label="true"
-                labelOff="false"
+                label={kconfigValue === "true" ? "true" : "false"}
               />
             </FormGroup>
           )}
@@ -2457,8 +2469,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
               id="kc-prop-enforced"
               isChecked={kconfigEnforced}
               onChange={(_ev, checked) => updateKconfigEnforced(checked)}
-              label="Enforced [$i]"
-              labelOff="Not enforced"
+              label={kconfigEnforced ? "Enforced [$i]" : "Not enforced"}
             />
           </FormGroup>
           {isEditable && (
@@ -2539,8 +2550,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 id="cr-prop-bool"
                 isChecked={chromeValue === true}
                 onChange={(_ev, checked) => updateChromeValue(checked)}
-                label="Enabled"
-                labelOff="Disabled"
+                label={chromeValue === true ? "Enabled" : "Disabled"}
               />
             </FormGroup>
           )}
@@ -2590,7 +2600,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
             </FormGroup>
           )}
           {policyDef.type === "list" && (
-            <FormGroup label="Value" fieldId="cr-prop-list" helperText="One item per line">
+            <FormGroup label="Value" fieldId="cr-prop-list">
               <TextArea
                 id="cr-prop-list"
                 value={((chromeValue as string[]) || []).join("\n")}
@@ -2598,10 +2608,11 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 rows={5}
                 placeholder="One item per line"
               />
+              <FieldHelp>One item per line</FieldHelp>
             </FormGroup>
           )}
           {policyDef.type === "json" && (
-            <FormGroup label="Value (JSON)" fieldId="cr-prop-json" helperText="Enter a valid JSON object or array">
+            <FormGroup label="Value (JSON)" fieldId="cr-prop-json">
               <TextArea
                 id="cr-prop-json"
                 validated={jsonFieldInvalid ? "error" : "default"}
@@ -2623,6 +2634,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
                 placeholder="{}"
               />
+              <FieldHelp>Enter a valid JSON object or array</FieldHelp>
               {jsonFieldInvalid && (
                 <div id="cr-prop-json-error" aria-live="polite" style={{ color: "var(--pf-t--global--text--color--status--danger--default, #c9190b)", fontSize: "0.85rem", marginTop: 4 }}>
                   Invalid JSON — fix it before saving.
@@ -2713,8 +2725,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 id="ed-prop-bool"
                 isChecked={edgeValue === true}
                 onChange={(_ev, checked) => updateEdgeValue(checked)}
-                label="Enabled"
-                labelOff="Disabled"
+                label={edgeValue === true ? "Enabled" : "Disabled"}
               />
             </FormGroup>
           )}
@@ -2764,7 +2775,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
             </FormGroup>
           )}
           {policyDef.type === "list" && (
-            <FormGroup label="Value" fieldId="ed-prop-list" helperText="One item per line">
+            <FormGroup label="Value" fieldId="ed-prop-list">
               <TextArea
                 id="ed-prop-list"
                 value={((edgeValue as string[]) || []).join("\n")}
@@ -2772,10 +2783,11 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 rows={5}
                 placeholder="One item per line"
               />
+              <FieldHelp>One item per line</FieldHelp>
             </FormGroup>
           )}
           {policyDef.type === "json" && (
-            <FormGroup label="Value (JSON)" fieldId="ed-prop-json" helperText="Enter a valid JSON object or array">
+            <FormGroup label="Value (JSON)" fieldId="ed-prop-json">
               <TextArea
                 id="ed-prop-json"
                 validated={jsonFieldInvalid ? "error" : "default"}
@@ -2797,6 +2809,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
                 style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
                 placeholder="{}"
               />
+              <FieldHelp>Enter a valid JSON object or array</FieldHelp>
               {jsonFieldInvalid && (
                 <div id="ed-prop-json-error" aria-live="polite" style={{ color: "var(--pf-t--global--text--color--status--danger--default, #c9190b)", fontSize: "0.85rem", marginTop: 4 }}>
                   Invalid JSON — fix it before saving.

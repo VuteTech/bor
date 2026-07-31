@@ -90,8 +90,7 @@ export const MFAPolicyTab: React.FC = () => {
             id="mfa-required"
             isChecked={mfaRequired}
             onChange={(_ev, v) => setMfaRequired(v)}
-            label="Enabled"
-            labelOff="Disabled"
+            label={mfaRequired ? "Enabled" : "Disabled"}
           />
           <FormHelperText>
             <HelperText>

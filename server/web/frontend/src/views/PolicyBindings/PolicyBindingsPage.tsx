@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import { ConfirmModal } from "../../components/ConfirmModal";
@@ -562,8 +562,7 @@ export const PolicyBindingsPage: React.FC = () => {
             <FormGroup label="Binding State" fieldId="bind-state">
               <Switch
                 id="bind-state"
-                label="Enabled"
-                labelOff="Disabled"
+                label={formState === "enabled" ? "Enabled" : "Disabled"}
                 isChecked={formState === "enabled"}
                 onChange={(_ev, val) => setFormState(val ? "enabled" : "disabled")}
                 aria-label="Binding state"
