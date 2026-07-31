@@ -114,6 +114,11 @@ jobs:
       - name: Install dependencies
         run: cd server/web/frontend && npm ci
 
+      # Webpack builds via babel-loader (type-stripping only), so tsc is the
+      # only real typecheck the frontend gets.
+      - name: Typecheck
+        run: cd server/web/frontend && npm run typecheck
+
       - name: Build
         run: cd server/web/frontend && npm run build
 
