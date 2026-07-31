@@ -12,7 +12,7 @@ export const protobufPackage = "bor.ui";
  * FieldUi carries display metadata for policy editor UI generation.
  * Attach it to any field in a *Policy message via (bor.ui.field).
  * The protoc-gen-bor-ui plugin reads these options and generates
- * *_ui.ts files consumed by PolicyDetailsModal.tsx.
+ * *_ui.ts files consumed by PolicyEditor.tsx.
  */
 export interface FieldUi {
   /**

@@ -9,6 +9,7 @@ import {
   ModalBody,
   ModalFooter,
   ModalVariant,
+  PageSection,
   Button,
   Tabs,
   Tab,
@@ -902,8 +903,7 @@ function removeFirefoxContentKey(key: string, existingContent: string): string {
 
 /* ── Props ── */
 
-interface PolicyDetailsModalProps {
-  isOpen: boolean;
+interface PolicyEditorProps {
   onClose: () => void;
   onSaved: () => void;
   onDeleted?: () => void;
@@ -912,8 +912,7 @@ interface PolicyDetailsModalProps {
 
 /* ── Component ── */
 
-export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
-  isOpen,
+export const PolicyEditor: React.FC<PolicyEditorProps> = ({
   onClose,
   onSaved,
   onDeleted,
@@ -993,10 +992,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
   // the DConfPolicyEditor reads/writes via contentRaw directly.
   // (No extra state needed — DConfPolicyEditor is driven by contentRaw.)
 
-  // Reset form when modal opens or policy changes
+  // Initialize the form from the target policy. The editor is mounted fresh by
+  // its route for each create/edit, so this runs on mount (and if `policy`
+  // changes underneath it).
   useEffect(() => {
-    if (!isOpen) return;
-
     if (policy) {
       setName(policy.name);
       setDescription(policy.description);
@@ -1167,7 +1166,7 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           content: normalizePolicyContent(policy.content || "{}"),
         }
       : { name: "", description: "", policyType: "Kconfig", content: normalizePolicyContent("{}") };
-  }, [isOpen, policy]);
+  }, [policy]);
 
   // Clear the Chrome/Edge JSON-invalid flag whenever the edited key changes so a
   // stale error doesn't linger on a different (or no) selection.
@@ -3282,15 +3281,10 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
     );
   };
 
-  return (
+  const editorTitle = isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy";
+
+  const editorBody = (
     <>
-    <Modal
-      variant={ModalVariant.large}
-      isOpen={isOpen}
-      onClose={handleClose}
-    >
-      <ModalHeader title={isEditMode ? `Edit Policy: ${policy?.name}` : "Create Policy"} />
-      <ModalBody>
       <div aria-live="assertive" aria-atomic="true">
         {error && (
           <Alert variant="danger" isInline title="Error" style={{ marginBottom: "1rem" }}>
@@ -3408,8 +3402,11 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
           )}
         </Tab>
       </Tabs>
-      </ModalBody>
-      <ModalFooter>
+    </>
+  );
+
+  const editorFooter = (
+    <>
         {isEditable && (
         <Button
           key="save"
@@ -3434,8 +3431,18 @@ export const PolicyDetailsModal: React.FC<PolicyDetailsModalProps> = ({
         <Button key="cancel" variant="link" onClick={handleClose}>
           Cancel
         </Button>
-      </ModalFooter>
-    </Modal>
+    </>
+  );
+
+  return (
+    <>
+    <PageSection isFilled style={{ display: "flex", flexDirection: "column", padding: "1.5rem 2rem" }}>
+      <Title headingLevel="h1" size="2xl" style={{ marginBottom: "1rem" }}>{editorTitle}</Title>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{editorBody}</div>
+      <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid var(--pf-t--global--border--color--default)" }}>
+        {editorFooter}
+      </div>
+    </PageSection>
 
     {/* Discard unsaved changes confirmation */}
     <Modal

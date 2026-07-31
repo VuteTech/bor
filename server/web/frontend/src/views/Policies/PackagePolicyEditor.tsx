@@ -10,6 +10,7 @@ import {
   CardBody,
   CardTitle,
   Checkbox,
+  ExpandableSection,
   Form,
   FormGroup,
   FormHelperText,
@@ -27,9 +28,6 @@ import {
   SelectOption,
   Spinner,
   Switch,
-  Tab,
-  Tabs,
-  TabTitleText,
   TextInput,
   Title,
 } from "@patternfly/react-core";
@@ -38,6 +36,7 @@ import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-i
 import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { SearchableSelect } from "../../components/SearchableSelect";
 
 /* ── types ── */
 
@@ -824,7 +823,6 @@ interface AddCOPRModalProps {
 const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, triggerRef }) => {
   const idPrefix = useId();
   const [coprAddress, setCOPRAddress] = useState("");
-  const [chrootOpen, setChrootOpen] = useState(false);
   const [chroot, setChroot] = useState("fedora-42-x86_64");
   const [customChroot, setCustomChroot] = useState("");
   const [fetchState, setFetchState] = useState<FetchState>("idle");
@@ -833,11 +831,6 @@ const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, tri
   const parsed = parseCOPRAddress(coprAddress);
   const effectiveChroot = chroot === "_custom" ? customChroot.trim() : chroot;
   const canSubmit = parsed !== null && effectiveChroot !== "" && fetchState !== "fetching";
-
-  const currentChrootLabel =
-    chroot === "_custom"
-      ? `Custom: ${customChroot || "…"}`
-      : (FEDORA_CHROOTS.find(c => c.value === chroot)?.label ?? chroot);
 
   const handleClose = () => {
     setCOPRAddress("");
@@ -917,31 +910,17 @@ const AddCOPRModal: React.FC<AddCOPRModalProps> = ({ isOpen, onClose, onAdd, tri
           </FormGroup>
 
           <FormGroup label="Chroot" fieldId={`${idPrefix}-chroot`} isRequired>
-            <Select
+            <SearchableSelect
               id={`${idPrefix}-chroot`}
-              isOpen={chrootOpen}
-              onOpenChange={setChrootOpen}
+              ariaLabel="Select chroot"
+              placeholder="Select a chroot"
               selected={chroot}
-              onSelect={(_ev, val) => { setChroot(val as string); setChrootOpen(false); }}
-              toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle
-                  ref={ref}
-                  onClick={() => setChrootOpen(v => !v)}
-                  isExpanded={chrootOpen}
-                  aria-label="Select chroot"
-                  style={{ width: "100%" }}
-                >
-                  {currentChrootLabel}
-                </MenuToggle>
-              )}
-            >
-              <SelectList>
-                {FEDORA_CHROOTS.map(c => (
-                  <SelectOption key={c.value} value={c.value}>{c.label}</SelectOption>
-                ))}
-                <SelectOption value="_custom">Custom…</SelectOption>
-              </SelectList>
-            </Select>
+              onSelect={setChroot}
+              options={[
+                ...FEDORA_CHROOTS.map(c => ({ value: c.value, label: c.label })),
+                { value: "_custom", label: "Custom…" },
+              ]}
+            />
             {chroot === "_custom" && (
               <TextInput
                 style={{ marginTop: "0.5rem" }}
@@ -1053,7 +1032,12 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
   isDisabled,
 }) => {
   const idPrefix = useId();
-  const [activeTab, setActiveTab] = useState<string | number>(0);
+  // Each configuration section is an independently collapsible disclosure
+  // (flattened from the former nested Repositories/Packages/Options tabs).
+  // All start expanded so nothing is hidden on open.
+  const [reposExpanded, setReposExpanded] = useState(true);
+  const [pkgsExpanded, setPkgsExpanded] = useState(true);
+  const [optionsExpanded, setOptionsExpanded] = useState(true);
   const [parseError, setParseError] = useState<string | null>(null);
   const [ppaModalOpen, setPPAModalOpen] = useState(false);
   const [ppaWarning, setPPAWarning] = useState<string | null>(null);
@@ -1197,14 +1181,13 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
     <div>
       <LiveAlert message={parseError} variant="danger" style={{ marginBottom: "0.75rem" }} />
 
-      <Tabs
-        activeKey={activeTab}
-        onSelect={(_ev, key) => setActiveTab(key)}
-        aria-label="Package policy sections"
-        style={{ marginBottom: "1rem" }}
+      {/* ── Repositories section ── */}
+      <ExpandableSection
+        displaySize="lg"
+        toggleText={`Repositories (${repos.length})`}
+        isExpanded={reposExpanded}
+        onToggle={(_ev, expanded) => setReposExpanded(expanded)}
       >
-        {/* ── Repositories tab ── */}
-        <Tab eventKey={0} title={<TabTitleText>Repositories ({repos.length})</TabTitleText>}>
           <div style={{ paddingTop: "1rem" }}>
             <LiveAlert
               message={ppaWarning}
@@ -1306,10 +1289,15 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               triggerRef={ympButtonRef}
             />
           </div>
-        </Tab>
+      </ExpandableSection>
 
-        {/* ── Packages tab ── */}
-        <Tab eventKey={1} title={<TabTitleText>Packages ({pkgs.length})</TabTitleText>}>
+      {/* ── Packages section ── */}
+      <ExpandableSection
+        displaySize="lg"
+        toggleText={`Packages (${pkgs.length})`}
+        isExpanded={pkgsExpanded}
+        onToggle={(_ev, expanded) => setPkgsExpanded(expanded)}
+      >
           <div style={{ paddingTop: "1rem" }}>
             {pkgs.length === 0 ? (
               <p style={{ color: "var(--pf-t--global--text--color--subtle)", marginBottom: "1rem" }}>
@@ -1354,10 +1342,15 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               </Button>
             </div>
           </div>
-        </Tab>
+      </ExpandableSection>
 
-        {/* ── Options tab ── */}
-        <Tab eventKey={2} title={<TabTitleText>Options</TabTitleText>}>
+      {/* ── Options section ── */}
+      <ExpandableSection
+        displaySize="lg"
+        toggleText="Options"
+        isExpanded={optionsExpanded}
+        onToggle={(_ev, expanded) => setOptionsExpanded(expanded)}
+      >
           <div style={{ paddingTop: "1rem" }}>
             <Form>
               <FormGroup label="Refresh package cache" fieldId={`${idPrefix}-update-cache`}>
@@ -1380,8 +1373,7 @@ export const PackagePolicyEditor: React.FC<PackagePolicyEditorProps> = ({
               </FormGroup>
             </Form>
           </div>
-        </Tab>
-      </Tabs>
+      </ExpandableSection>
     </div>
   );
 };

@@ -24,6 +24,12 @@ interface BorToolbarProps {
   searchPlaceholder?: string;
   /** Commit handler (Enter / search button). Omit for instant-filter pages. */
   onSearch?: () => void;
+  /**
+   * Handler for the search box's clear (✕) button. Defaults to
+   * `onSearchChange("")`. Commit-on-Enter pages that keep a separate "applied"
+   * search term should pass this to also reset that term on clear.
+   */
+  onSearchClear?: () => void;
   /** Clears the search and any active filters (wired to Toolbar's clear-all). */
   onClearAll: () => void;
   /** Extra toolbar items after the search box (filter controls, bulk actions). */
@@ -36,6 +42,7 @@ export const BorToolbar: React.FC<BorToolbarProps> = ({
   searchAriaLabel,
   searchPlaceholder,
   onSearch,
+  onSearchClear,
   onClearAll,
   children,
 }) => (
@@ -48,7 +55,7 @@ export const BorToolbar: React.FC<BorToolbarProps> = ({
           value={searchValue}
           onChange={(_ev, val) => onSearchChange(val)}
           onSearch={onSearch ? () => onSearch() : undefined}
-          onClear={() => onSearchChange("")}
+          onClear={onSearchClear ?? (() => onSearchChange(""))}
         />
       </ToolbarItem>
       {children}

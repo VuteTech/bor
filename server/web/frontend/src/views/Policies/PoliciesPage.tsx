@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   PageSection,
   Title,
@@ -14,8 +14,6 @@ import {
   Flex,
   FlexItem,
   Label,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
   ToolbarFilter,
   MenuToggle,
@@ -23,7 +21,6 @@ import {
   Select,
   SelectOption,
   SelectList,
-  SearchInput,
   Dropdown,
   DropdownItem,
   DropdownList,
@@ -44,7 +41,7 @@ import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-ico
 import { fetchAllPolicies, deletePolicy, setPolicyState, Policy } from "../../apiClient/policiesApi";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
-import { PolicyDetailsModal } from "./PolicyDetailsModal";
+import { BorToolbar } from "../../components/BorToolbar";
 
 /* ── Filter options ── */
 
@@ -105,6 +102,7 @@ interface ActionFeedback {
 }
 
 export const PoliciesPage: React.FC = () => {
+  const navigate = useNavigate();
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,10 +129,6 @@ export const PoliciesPage: React.FC = () => {
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
-
-  // Create/Edit modal (PolicyDetailsModal)
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
 
   // Delete modal (type-to-confirm)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -235,20 +229,15 @@ export const PoliciesPage: React.FC = () => {
     });
   };
 
-  /* ── Create / Edit ── */
+  /* ── Create / Edit ──
+     Editing is now a full-page route (/policies/new, /policies/:id/edit)
+     rather than an overlay modal. */
   const handleCreate = () => {
-    setSelectedPolicy(null);
-    setIsModalOpen(true);
+    navigate("/policies/new");
   };
 
   const handleEdit = (policy: Policy) => {
-    setSelectedPolicy(policy);
-    setIsModalOpen(true);
-  };
-
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedPolicy(null);
+    navigate(`/policies/${policy.id}/edit`);
   };
 
   /* ── Lifecycle actions (release / unpublish / archive / restore) ── */
@@ -457,23 +446,19 @@ export const PoliciesPage: React.FC = () => {
         </LiveAlert>
 
         {/* Toolbar with filters + bulk Actions */}
-        <Toolbar clearAllFilters={() => {
-          setTypeFilter([]);
-          setStatusFilter([]);
-          setBindingsFilter(null);
-          setRecentlyModified(false);
-          setSearchText("");
-        }}>
-          <ToolbarContent>
-            <ToolbarItem>
-              <SearchInput
-                placeholder="Search by name..."
-                value={searchText}
-                onChange={(_ev, val) => setSearchText(val)}
-                onClear={() => setSearchText("")}
-              />
-            </ToolbarItem>
-
+        <BorToolbar
+          searchValue={searchText}
+          onSearchChange={setSearchText}
+          searchAriaLabel="Search policies by name"
+          searchPlaceholder="Search by name..."
+          onClearAll={() => {
+            setTypeFilter([]);
+            setStatusFilter([]);
+            setBindingsFilter(null);
+            setRecentlyModified(false);
+            setSearchText("");
+          }}
+        >
             <ToolbarFilter
               chips={typeFilter}
               deleteChip={(_cat, chip) =>
@@ -643,8 +628,7 @@ export const PoliciesPage: React.FC = () => {
                 </Dropdown>
               </ToolbarItem>
             )}
-          </ToolbarContent>
-        </Toolbar>
+        </BorToolbar>
 
         {/* Policies table */}
         {sortedPolicies.length === 0 ? (
@@ -752,15 +736,6 @@ export const PoliciesPage: React.FC = () => {
           </Table>
         )}
       </PageSection>
-
-      {/* ── Create / Edit Modal ── */}
-      <PolicyDetailsModal
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onSaved={loadPolicies}
-        onDeleted={() => { handleModalClose(); loadPolicies(); }}
-        policy={selectedPolicy}
-      />
 
       {/* ── Delete Confirmation Modal ── */}
       <Modal

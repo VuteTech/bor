@@ -6,6 +6,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { LiveAlert } from "../../components/LiveAlert";
 import { useToast } from "../../components/ToastHost";
+import { BorToolbar } from "../../components/BorToolbar";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   PageSection,
   Title,
@@ -13,12 +15,9 @@ import {
   Spinner,
   Flex,
   FlexItem,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
   ToolbarFilter,
   Pagination,
-  SearchInput,
   MenuToggle,
   MenuToggleElement,
   Select,
@@ -49,6 +48,7 @@ import {
   ModalBody,
   ModalVariant,
   TextInput,
+  TextArea,
   Form,
   FormGroup,
   ActionGroup,
@@ -57,6 +57,7 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
 import SearchIcon from "@patternfly/react-icons/dist/esm/icons/search-icon";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
+import PencilAltIcon from "@patternfly/react-icons/dist/esm/icons/pencil-alt-icon";
 
 import {
   fetchNodesPaged,
@@ -66,6 +67,7 @@ import {
   removeNodeFromGroup,
   deleteNode,
   revokeNodeCertificate,
+  updateNode,
   Node,
   NodeStatus,
   NodeFilterOptions,
@@ -133,13 +135,9 @@ export const NodesPage: React.FC = () => {
   const [statusOpen, setStatusOpen] = useState(false);
   // Group filter: "All", "none" (unassigned), or a group id. Seeded from ?group=.
   const [groupFilter, setGroupFilter] = useState<string>(() => searchParams.get("group") ?? "All");
-  const [groupOpen, setGroupOpen] = useState(false);
   const [osFilter, setOsFilter] = useState<string>("All");
-  const [osOpen, setOsOpen] = useState(false);
   const [desktopFilter, setDesktopFilter] = useState<string>("All");
-  const [desktopOpen, setDesktopOpen] = useState(false);
   const [agentVersionFilter, setAgentVersionFilter] = useState<string>("All");
-  const [agentVersionOpen, setAgentVersionOpen] = useState(false);
 
   // Sort
   const [sortField, setSortField] = useState<SortField>("last_seen");
@@ -158,6 +156,18 @@ export const NodesPage: React.FC = () => {
   // Drawer
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
+
+  // Inline note editing (in the detail drawer)
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
+
+  // Reset the note editor whenever the selected node changes (or the drawer closes).
+  useEffect(() => {
+    setEditingNotes(false);
+    setNotesError(null);
+  }, [selectedNode?.id]);
 
   // Selection (for bulk actions)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -361,6 +371,33 @@ export const NodesPage: React.FC = () => {
       setRefreshError(err instanceof Error ? err.message : "Failed to request metadata refresh");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  /* ── Note editing ── */
+  const startEditNotes = () => {
+    setNotesDraft(selectedNode?.notes ?? "");
+    setNotesError(null);
+    setEditingNotes(true);
+  };
+
+  const saveNotes = async () => {
+    if (!selectedNode) return;
+    const nodeId = selectedNode.id;
+    const value = notesDraft;
+    setSavingNotes(true);
+    setNotesError(null);
+    try {
+      await updateNode(nodeId, { notes: value });
+      // Patch only the note locally so computed fields (groups, etc.) are kept.
+      setSelectedNode((prev) => (prev && prev.id === nodeId ? { ...prev, notes: value } : prev));
+      setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, notes: value } : n)));
+      setEditingNotes(false);
+      addToast({ variant: "success", title: "Note saved" });
+    } catch (err) {
+      setNotesError(err instanceof Error ? err.message : "Failed to save note");
+    } finally {
+      setSavingNotes(false);
     }
   };
 
@@ -570,11 +607,67 @@ export const NodesPage: React.FC = () => {
                   : "Never"}
               </DescriptionListDescription>
             </DescriptionListGroup>
-            <DescriptionListGroup>
-              <DescriptionListTerm>Notes</DescriptionListTerm>
-              <DescriptionListDescription>{selectedNode.notes || "—"}</DescriptionListDescription>
-            </DescriptionListGroup>
           </DescriptionList>
+
+          {/* ── Notes (editable) ── */}
+          <Flex
+            justifyContent={{ default: "justifyContentSpaceBetween" }}
+            alignItems={{ default: "alignItemsCenter" }}
+            style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}
+          >
+            <FlexItem>
+              <Title headingLevel="h3" size="md">Notes</Title>
+            </FlexItem>
+            {!editingNotes && (
+              <FlexItem>
+                <Button
+                  variant="link"
+                  isInline
+                  icon={<PencilAltIcon />}
+                  onClick={startEditNotes}
+                  aria-label="Edit note"
+                >
+                  Edit
+                </Button>
+              </FlexItem>
+            )}
+          </Flex>
+          {editingNotes ? (
+            <div>
+              <TextArea
+                aria-label={`Notes for ${selectedNode.name}`}
+                value={notesDraft}
+                onChange={(_ev, v) => setNotesDraft(v)}
+                rows={4}
+                placeholder="Add a note about this node…"
+                aria-invalid={notesError ? true : undefined}
+                aria-describedby={notesError ? "node-notes-error" : undefined}
+              />
+              <LiveAlert
+                id="node-notes-error"
+                message={notesError}
+                variant="danger"
+                isInline
+                style={{ marginTop: "0.5rem" }}
+              />
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <Button variant="primary" onClick={saveNotes} isLoading={savingNotes} isDisabled={savingNotes}>
+                  Save
+                </Button>
+                <Button
+                  variant="link"
+                  onClick={() => { setEditingNotes(false); setNotesError(null); }}
+                  isDisabled={savingNotes}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p style={{ whiteSpace: "pre-wrap", color: selectedNode.notes ? undefined : "var(--pf-t--global--text--color--subtle)" }}>
+              {selectedNode.notes || "No note yet."}
+            </p>
+          )}
 
           {selectedNode.cert_serial && (() => {
             const notAfter = selectedNode.cert_not_after ? new Date(selectedNode.cert_not_after) : null;
@@ -755,24 +848,21 @@ export const NodesPage: React.FC = () => {
           <DrawerContent panelContent={drawerPanel}>
             <DrawerContentBody>
               {/* ── Toolbar ── */}
-              <Toolbar clearAllFilters={() => {
-                setStatusFilter("All");
-                setOsFilter("All");
-                setDesktopFilter("All");
-                setAgentVersionFilter("All");
-                setGroupFilter("All");
-              }}>
-                <ToolbarContent>
-                  <ToolbarItem>
-                    <SearchInput
-                      placeholder="Search by name, FQDN, IP, group..."
-                      value={searchValue}
-                      onChange={(_ev, val) => setSearchValue(val)}
-                      onSearch={() => setAppliedSearch(searchValue)}
-                      onClear={() => { setSearchValue(""); setAppliedSearch(""); }}
-                    />
-                  </ToolbarItem>
-
+              <BorToolbar
+                searchValue={searchValue}
+                onSearchChange={setSearchValue}
+                searchAriaLabel="Search nodes"
+                searchPlaceholder="Search by name, FQDN, IP, group..."
+                onSearch={() => setAppliedSearch(searchValue)}
+                onSearchClear={() => { setSearchValue(""); setAppliedSearch(""); }}
+                onClearAll={() => {
+                  setStatusFilter("All");
+                  setOsFilter("All");
+                  setDesktopFilter("All");
+                  setAgentVersionFilter("All");
+                  setGroupFilter("All");
+                }}
+              >
                   <ToolbarFilter
                     chips={statusFilter !== "All" ? [statusFilter] : []}
                     deleteChip={() => setStatusFilter("All")}
@@ -803,25 +893,18 @@ export const NodesPage: React.FC = () => {
                     deleteChip={() => setGroupFilter("All")}
                     categoryName="Group"
                   >
-                    <Select
-                      isOpen={groupOpen}
+                    <SearchableSelect
+                      ariaLabel="Filter by group"
+                      placeholder="Filter by group"
+                      emptyValue="All"
                       selected={groupFilter}
-                      onSelect={(_ev, val) => { setGroupFilter(val as string); setGroupOpen(false); }}
-                      onOpenChange={setGroupOpen}
-                      toggle={(ref: React.Ref<MenuToggleElement>) => (
-                        <MenuToggle ref={ref} onClick={() => setGroupOpen(!groupOpen)} isExpanded={groupOpen}>
-                          Group: {groupFilter === "All" ? "All" : groupLabel(groupFilter)}
-                        </MenuToggle>
-                      )}
-                    >
-                      <SelectList>
-                        <SelectOption value="All">All Groups</SelectOption>
-                        <SelectOption value="none">Unassigned</SelectOption>
-                        {nodeGroups.map((g) => (
-                          <SelectOption key={g.id} value={g.id}>{g.name}</SelectOption>
-                        ))}
-                      </SelectList>
-                    </Select>
+                      onSelect={setGroupFilter}
+                      options={[
+                        { value: "All", label: "All Groups" },
+                        { value: "none", label: "Unassigned" },
+                        ...nodeGroups.map((g) => ({ value: g.id, label: g.name })),
+                      ]}
+                    />
                   </ToolbarFilter>
 
                   <ToolbarFilter
@@ -829,23 +912,14 @@ export const NodesPage: React.FC = () => {
                     deleteChip={() => setOsFilter("All")}
                     categoryName="OS"
                   >
-                    <Select
-                      isOpen={osOpen}
+                    <SearchableSelect
+                      ariaLabel="Filter by OS"
+                      placeholder="Filter by OS"
+                      emptyValue="All"
                       selected={osFilter}
-                      onSelect={(_ev, val) => { setOsFilter(val as string); setOsOpen(false); }}
-                      onOpenChange={setOsOpen}
-                      toggle={(ref: React.Ref<MenuToggleElement>) => (
-                        <MenuToggle ref={ref} onClick={() => setOsOpen(!osOpen)} isExpanded={osOpen}>
-                          OS: {osFilter}
-                        </MenuToggle>
-                      )}
-                    >
-                      <SelectList>
-                        {osOptions.map((o) => (
-                          <SelectOption key={o} value={o}>{o}</SelectOption>
-                        ))}
-                      </SelectList>
-                    </Select>
+                      onSelect={setOsFilter}
+                      options={osOptions.map((o) => ({ value: o, label: o }))}
+                    />
                   </ToolbarFilter>
 
                   <ToolbarFilter
@@ -853,23 +927,14 @@ export const NodesPage: React.FC = () => {
                     deleteChip={() => setDesktopFilter("All")}
                     categoryName="Desktop"
                   >
-                    <Select
-                      isOpen={desktopOpen}
+                    <SearchableSelect
+                      ariaLabel="Filter by desktop"
+                      placeholder="Filter by desktop"
+                      emptyValue="All"
                       selected={desktopFilter}
-                      onSelect={(_ev, val) => { setDesktopFilter(val as string); setDesktopOpen(false); }}
-                      onOpenChange={setDesktopOpen}
-                      toggle={(ref: React.Ref<MenuToggleElement>) => (
-                        <MenuToggle ref={ref} onClick={() => setDesktopOpen(!desktopOpen)} isExpanded={desktopOpen}>
-                          Desktop: {desktopFilter}
-                        </MenuToggle>
-                      )}
-                    >
-                      <SelectList>
-                        {desktopOptions.map((d) => (
-                          <SelectOption key={d} value={d}>{d}</SelectOption>
-                        ))}
-                      </SelectList>
-                    </Select>
+                      onSelect={setDesktopFilter}
+                      options={desktopOptions.map((d) => ({ value: d, label: d }))}
+                    />
                   </ToolbarFilter>
 
                   <ToolbarFilter
@@ -877,23 +942,14 @@ export const NodesPage: React.FC = () => {
                     deleteChip={() => setAgentVersionFilter("All")}
                     categoryName="Agent Version"
                   >
-                    <Select
-                      isOpen={agentVersionOpen}
+                    <SearchableSelect
+                      ariaLabel="Filter by agent version"
+                      placeholder="Filter by agent version"
+                      emptyValue="All"
                       selected={agentVersionFilter}
-                      onSelect={(_ev, val) => { setAgentVersionFilter(val as string); setAgentVersionOpen(false); }}
-                      onOpenChange={setAgentVersionOpen}
-                      toggle={(ref: React.Ref<MenuToggleElement>) => (
-                        <MenuToggle ref={ref} onClick={() => setAgentVersionOpen(!agentVersionOpen)} isExpanded={agentVersionOpen}>
-                          Agent: {agentVersionFilter}
-                        </MenuToggle>
-                      )}
-                    >
-                      <SelectList>
-                        {agentVersionOptions.map((v) => (
-                          <SelectOption key={v} value={v}>{v}</SelectOption>
-                        ))}
-                      </SelectList>
-                    </Select>
+                      onSelect={setAgentVersionFilter}
+                      options={agentVersionOptions.map((v) => ({ value: v, label: v }))}
+                    />
                   </ToolbarFilter>
 
                   {selectedIds.size > 0 && (
@@ -950,13 +1006,12 @@ export const NodesPage: React.FC = () => {
                     </ToolbarItem>
                   )}
 
-                  <ToolbarItem align={{ default: "alignRight" }}>
+                  <ToolbarItem align={{ default: "alignEnd" }}>
                     <Button variant="link" onClick={exportCSV}>
                       Export CSV
                     </Button>
                   </ToolbarItem>
-                </ToolbarContent>
-              </Toolbar>
+              </BorToolbar>
 
               {total > 0 && (
                 <Pagination

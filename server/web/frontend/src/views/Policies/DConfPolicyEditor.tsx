@@ -41,6 +41,7 @@ import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   fetchDConfSchemas,
   DConfSchema,
@@ -282,11 +283,6 @@ export const DConfPolicyEditor: React.FC<DConfPolicyEditorProps> = ({
   const [loadingSchemas, setLoadingSchemas] = useState(true);
   const [schemaError, setSchemaError] = useState<string | null>(null);
 
-  // Schema search/select open states per row (indexed by row index)
-  const [schemaOpenIdx, setSchemaOpenIdx] = useState<number | null>(null);
-  const [keyOpenIdx, setKeyOpenIdx] = useState<number | null>(null);
-  const [schemaSearch, setSchemaSearch] = useState<Record<number, string>>({});
-
   const idPrefix = useId();
 
   // Load schemas on mount
@@ -331,8 +327,6 @@ export const DConfPolicyEditor: React.FC<DConfPolicyEditorProps> = ({
     const path = schema?.path ?? "";
     // Reset key/value when schema changes
     updateEntry(idx, { schema_id: schemaId, path, key: "", value: "" });
-    setSchemaOpenIdx(null);
-    setSchemaSearch(prev => ({ ...prev, [idx]: "" }));
   };
 
   const setKeyForRow = (idx: number, keyName: string) => {
@@ -341,7 +335,6 @@ export const DConfPolicyEditor: React.FC<DConfPolicyEditorProps> = ({
     const keyDef = schema?.keys.find(k => k.name === keyName);
     const defVal = keyDef ? defaultValueForKey(keyDef) : "";
     updateEntry(idx, { key: keyName, value: defVal });
-    setKeyOpenIdx(null);
   };
 
   if (loadingSchemas) {
@@ -385,12 +378,6 @@ export const DConfPolicyEditor: React.FC<DConfPolicyEditorProps> = ({
         const schema = schemaMap.get(entry.schema_id);
         const keyDef = schema?.keys.find(k => k.name === entry.key);
 
-        // Filter schemas by search term
-        const search = (schemaSearch[idx] ?? "").toLowerCase();
-        const filteredSchemas = search
-          ? schemas.filter(s => s.schema_id.toLowerCase().includes(search) || s.path.toLowerCase().includes(search))
-          : schemas;
-
         return (
           <div
             key={idx}
@@ -406,87 +393,37 @@ export const DConfPolicyEditor: React.FC<DConfPolicyEditorProps> = ({
 
               {/* Schema select */}
               <FormGroup label="Schema" fieldId={`${rowId}-schema`} isRequired>
-                <Select
+                <SearchableSelect
                   id={`${rowId}-schema`}
-                  isOpen={schemaOpenIdx === idx}
-                  onOpenChange={open => setSchemaOpenIdx(open ? idx : null)}
-                  selected={entry.schema_id || undefined}
-                  onSelect={(_ev, val) => setSchemaForRow(idx, val as string)}
-                  toggle={(ref: React.Ref<MenuToggleElement>) => (
-                    <MenuToggle
-                      ref={ref}
-                      onClick={() => setSchemaOpenIdx(v => v === idx ? null : idx)}
-                      isExpanded={schemaOpenIdx === idx}
-                      isDisabled={isDisabled}
-                      style={{ width: "100%", maxWidth: "100%" }}
-                      aria-label="Select GSettings schema"
-                    >
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block", maxWidth: "100%" }}>
-                        {entry.schema_id || "(choose schema)"}
-                      </span>
-                    </MenuToggle>
-                  )}
-                >
-                  <div style={{ padding: "0.25rem 0.5rem" }}>
-                    <TextInput
-                      id={`${rowId}-schema-search`}
-                      value={schemaSearch[idx] ?? ""}
-                      onChange={(_ev, v) => setSchemaSearch(prev => ({ ...prev, [idx]: v }))}
-                      placeholder="Search schemas…"
-                      aria-label="Search GSettings schemas"
-                    />
-                  </div>
-                  <SelectList style={{ maxHeight: "18rem", overflowY: "auto" }}>
-                    {filteredSchemas.slice(0, 200).map(s => (
-                      <SelectOption
-                        key={s.schema_id}
-                        value={s.schema_id}
-                        description={s.path || (s.relocatable ? "(relocatable)" : "")}
-                      >
-                        {s.schema_id}
-                      </SelectOption>
-                    ))}
-                    {filteredSchemas.length === 0 && (
-                      <SelectOption value="" isDisabled>No matching schemas</SelectOption>
-                    )}
-                  </SelectList>
-                </Select>
+                  ariaLabel="Select GSettings schema"
+                  placeholder="(choose schema)"
+                  selected={entry.schema_id}
+                  onSelect={(val) => setSchemaForRow(idx, val)}
+                  isDisabled={isDisabled}
+                  options={schemas.map(s => ({
+                    value: s.schema_id,
+                    label: s.schema_id,
+                    description: s.path || (s.relocatable ? "(relocatable)" : ""),
+                  }))}
+                />
               </FormGroup>
 
               {/* Key select */}
               <FormGroup label="Key" fieldId={`${rowId}-key`} isRequired>
                 {schema ? (
-                  <Select
+                  <SearchableSelect
                     id={`${rowId}-key`}
-                    isOpen={keyOpenIdx === idx}
-                    onOpenChange={open => setKeyOpenIdx(open ? idx : null)}
-                    selected={entry.key || undefined}
-                    onSelect={(_ev, val) => setKeyForRow(idx, val as string)}
-                    toggle={(ref: React.Ref<MenuToggleElement>) => (
-                      <MenuToggle
-                        ref={ref}
-                        onClick={() => setKeyOpenIdx(v => v === idx ? null : idx)}
-                        isExpanded={keyOpenIdx === idx}
-                        isDisabled={isDisabled || !entry.schema_id}
-                        style={{ width: "100%" }}
-                        aria-label="Select GSettings key"
-                      >
-                        {entry.key || "(choose key)"}
-                      </MenuToggle>
-                    )}
-                  >
-                    <SelectList style={{ maxHeight: "18rem", overflowY: "auto" }}>
-                      {schema.keys.map(k => (
-                        <SelectOption
-                          key={k.name}
-                          value={k.name}
-                          description={k.summary || k.type}
-                        >
-                          {k.name}
-                        </SelectOption>
-                      ))}
-                    </SelectList>
-                  </Select>
+                    ariaLabel="Select GSettings key"
+                    placeholder="(choose key)"
+                    selected={entry.key}
+                    onSelect={(val) => setKeyForRow(idx, val)}
+                    isDisabled={isDisabled || !entry.schema_id}
+                    options={schema.keys.map(k => ({
+                      value: k.name,
+                      label: k.name,
+                      description: k.summary || k.type,
+                    }))}
+                  />
                 ) : (
                   <TextInput
                     id={`${rowId}-key-text`}

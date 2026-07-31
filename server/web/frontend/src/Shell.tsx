@@ -48,7 +48,7 @@ import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
 import { MFARequiredGate } from "./views/MFARequiredGate";
 import { DashboardPage } from "./views/Dashboard";
-import { PoliciesPage } from "./views/Policies";
+import { PoliciesPage, PolicyEditorPage } from "./views/Policies";
 import { NodesPage } from "./views/Nodes";
 import { NodeGroupsPage } from "./views/NodeGroups";
 import { PolicyBindingsPage } from "./views/PolicyBindings";
@@ -523,6 +523,8 @@ export const Shell: React.FC = () => {
         <Routes>
           <Route index element={<DashboardPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
+          <Route path="/policies/new" element={<PolicyEditorPage />} />
+          <Route path="/policies/:policyId/edit" element={<PolicyEditorPage />} />
           <Route path="/nodes" element={<NodesPage />} />
           <Route path="/node-groups" element={<NodeGroupsPage />} />
           <Route path="/policy-bindings" element={<PolicyBindingsPage />} />

@@ -16,7 +16,7 @@ option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/borui;borui";
 // FieldUi carries display metadata for policy editor UI generation.
 // Attach it to any field in a *Policy message via (bor.ui.field).
 // The protoc-gen-bor-ui plugin reads these options and generates
-// *_ui.ts files consumed by PolicyDetailsModal.tsx.
+// *_ui.ts files consumed by PolicyEditor.tsx.
 message FieldUi {
   // group is the section name shown in the tree-view editor (required on
   // top-level *Policy fields; omitted on sub-message fields).

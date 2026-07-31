@@ -1,4 +1,4 @@
-.PHONY: help server server-pkcs11 agent frontend proto proto-go proto-ts clean test lint lint-server lint-agent lint-frontend install-deps dev \
+.PHONY: help server server-pkcs11 agent frontend proto proto-go proto-ts clean test lint lint-server lint-agent lint-frontend check-frontend-tokens install-deps dev \
         packages packages-agent packages-server
 
 # Versioning — override with: make packages VERSION=1.2.3
@@ -30,6 +30,7 @@ help:
 	@echo "  lint-server        - Lint Go server code"
 	@echo "  lint-agent         - Lint Go agent code"
 	@echo "  lint-frontend      - Lint frontend accessibility (jsx-a11y)"
+	@echo "  check-frontend-tokens - Ban --pf-v5-* vars and ratchet raw hex in frontend src"
 	@echo "  clean              - Clean build artifacts"
 	@echo "  install-deps       - Install development dependencies"
 	@echo "  dev                - Start development environment"
@@ -151,7 +152,7 @@ test-agent:
 	cd agent && go test -v ./...
 
 # Run all linters
-lint: lint-server lint-agent lint-frontend
+lint: lint-server lint-agent lint-frontend check-frontend-tokens
 
 # Lint server code
 lint-server:
@@ -167,6 +168,12 @@ lint-agent:
 lint-frontend:
 	@echo "Linting frontend accessibility..."
 	cd server/web/frontend && npm run lint
+
+# Frontend design-token guardrail: ban legacy --pf-v5-* variables and ratchet
+# raw hex colour literals in component code. Pure grep, no npm deps needed.
+check-frontend-tokens:
+	@echo "Checking frontend design tokens..."
+	./scripts/check-frontend-tokens.sh
 
 # Build packages (deb, rpm, apk, archlinux) using nfpm
 packages: packages-agent packages-server

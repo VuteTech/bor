@@ -19,6 +19,7 @@ import {
   DrawerPanelContent,
   Flex,
   FlexItem,
+  Label,
   Menu,
   MenuContent,
   MenuItem,
@@ -37,7 +38,6 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
 import DownloadIcon from "@patternfly/react-icons/dist/esm/icons/download-icon";
 import SyncIcon from "@patternfly/react-icons/dist/esm/icons/sync-icon";
-import TimesIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
 
 import { hasPermission } from "../../apiClient/permissions";
 import { LiveAlert } from "../../components/LiveAlert";
@@ -56,30 +56,43 @@ const KNOWN_RESOURCE_TYPES = [
   "user-groups", "policy-bindings", "managed_file", "settings",
 ];
 
-// ─── Color definitions ────────────────────────────────────────────────────────
+// ─── Badge colors ─────────────────────────────────────────────────────────────
+// Audit badges render as PF6 <Label>s, so their fill/text contrast is theme-aware
+// in both light and dark mode (PatternFly picks the on-color text token). Each
+// action / filter type maps to a PF Label colour; the detail-panel accent reuses
+// the matching `nonstatus--*` token (the same token PF uses for the Label fill),
+// so the accent border and the row badge stay in sync.
 
-interface ColorStyle { bg: string; color: string }
+type LabelColor = "blue" | "teal" | "green" | "orange" | "purple" | "red" | "grey" | "yellow";
 
-const ACTION_COLORS: Record<string, ColorStyle> = {
-  create:          { bg: "#3e8635", color: "#fff" },
-  update:          { bg: "#0066cc", color: "#fff" },
-  delete:          { bg: "#c9190b", color: "#fff" },
-  tamper_detected: { bg: "#f0ab00", color: "#1f1f1f" },
+const ACTION_LABEL_COLOR: Record<string, LabelColor> = {
+  create: "green",
+  update: "blue",
+  delete: "red",
+  tamper_detected: "orange",
 };
-// Fixed mid-gray (part of the deliberate badge palette, like the colored actions
-// above): white text stays readable in both themes. NOT the subtle *text* token,
-// which is a light gray in dark mode and gives white-on-light — unreadable.
-const DEFAULT_ACTION_COLOR: ColorStyle = { bg: "#57595c", color: "#fff" };
+const DEFAULT_ACTION_LABEL_COLOR: LabelColor = "grey";
 
-const FILTER_TYPE_COLORS: Record<FilterType, ColorStyle> = {
-  action:        { bg: "#6753ac", color: "#fff" },
-  resource_type: { bg: "#009596", color: "#fff" },
-  username:      { bg: "#4f5d75", color: "#fff" },
+const FILTER_LABEL_COLOR: Record<Exclude<FilterType, "action">, LabelColor> = {
+  resource_type: "teal",
+  username: "grey",
 };
 
-function chipColor(type: FilterType, value: string): ColorStyle {
-  if (type === "action") return ACTION_COLORS[value] ?? DEFAULT_ACTION_COLOR;
-  return FILTER_TYPE_COLORS[type];
+function actionLabelColor(action: string): LabelColor {
+  return ACTION_LABEL_COLOR[action] ?? DEFAULT_ACTION_LABEL_COLOR;
+}
+
+function chipLabelColor(chip: FilterChip): LabelColor {
+  // Action chips inherit their action value's colour (matching the row badge);
+  // other filter types use a fixed per-type colour.
+  if (chip.type === "action") return actionLabelColor(chip.value);
+  return FILTER_LABEL_COLOR[chip.type];
+}
+
+// PF spells the grey token "gray"; every other colour matches the Label name.
+function labelAccentToken(color: LabelColor): string {
+  const token = color === "grey" ? "gray" : color;
+  return `var(--pf-t--global--color--nonstatus--${token}--default)`;
 }
 
 // ─── Filter chip types ────────────────────────────────────────────────────────
@@ -156,38 +169,20 @@ function renderValue(val: unknown): string {
 
 // ─── Shared small components ──────────────────────────────────────────────────
 
-const ActionBadge: React.FC<{ action: string }> = ({ action }) => {
-  const { bg, color } = ACTION_COLORS[action] ?? DEFAULT_ACTION_COLOR;
-  return (
-    <span style={{
-      background: bg, color, borderRadius: 9999,
-      padding: "2px 10px", fontSize: "0.75rem", fontWeight: 600,
-      whiteSpace: "nowrap", display: "inline-block",
-    }}>
-      {action}
-    </span>
-  );
-};
+const ActionBadge: React.FC<{ action: string }> = ({ action }) => (
+  <Label color={actionLabelColor(action)} isCompact>{action}</Label>
+);
 
-const FilterPill: React.FC<{ chip: FilterChip; onRemove: () => void }> = ({ chip, onRemove }) => {
-  const { bg, color } = chipColor(chip.type, chip.value);
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      background: bg, color, borderRadius: 9999,
-      padding: "2px 6px 2px 10px", fontSize: "0.8rem", fontWeight: 500,
-    }}>
-      {chip.value}
-      <button
-        aria-label={`Remove filter ${chip.value}`}
-        onClick={onRemove}
-        style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, display: "flex", alignItems: "center", opacity: 0.8, lineHeight: 1 }}
-      >
-        <TimesIcon style={{ fontSize: "0.7rem" }} />
-      </button>
-    </span>
-  );
-};
+const FilterPill: React.FC<{ chip: FilterChip; onRemove: () => void }> = ({ chip, onRemove }) => (
+  <Label
+    color={chipLabelColor(chip)}
+    isCompact
+    onClose={onRemove}
+    closeBtnAriaLabel={`Remove filter ${chip.value}`}
+  >
+    {chip.value}
+  </Label>
+);
 
 const FilterDropdown: React.FC<{
   label: string; options: string[]; activeValues: string[]; onAdd: (v: string) => void;
@@ -251,7 +246,7 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 // ─── Detail panel content ─────────────────────────────────────────────────────
 
 const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ entry, onClose }) => {
-  const { bg: accentBg } = ACTION_COLORS[entry.action] ?? DEFAULT_ACTION_COLOR;
+  const accentBg = labelAccentToken(actionLabelColor(entry.action));
   const tamperData = entry.action === "tamper_detected" ? parseTamperDetails(entry.details) : null;
   const bodyDetails = tamperData ? null : parseBodyDetails(entry.details);
   const resourceName = extractResourceName(bodyDetails);
@@ -592,7 +587,7 @@ export const AuditLogsPage: React.FC = () => {
                     </Button>
                   </ToolbarItem>
                   {canExport && (
-                    <ToolbarGroup align={{ default: "alignRight" }}>
+                    <ToolbarGroup align={{ default: "alignEnd" }}>
                       <ToolbarItem>
                         <Button variant="secondary" icon={<DownloadIcon />} onClick={() => handleExport("csv")} isDisabled={exporting} isLoading={exporting}>
                           Export CSV
