@@ -9,7 +9,7 @@
  */
 
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Card, CardBody, Flex, FlexItem } from "@patternfly/react-core";
 
 export type StatColor = "green" | "red" | "blue" | "orange" | "grey";

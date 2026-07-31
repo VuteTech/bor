@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router";
 import {
   PageSection,
   Title,
@@ -460,11 +460,11 @@ export const PoliciesPage: React.FC = () => {
           }}
         >
             <ToolbarFilter
-              chips={typeFilter}
-              deleteChip={(_cat, chip) =>
+              labels={typeFilter}
+              deleteLabel={(_cat, chip) =>
                 setTypeFilter((prev) => prev.filter((f) => f !== chip))
               }
-              deleteChipGroup={() => setTypeFilter([])}
+              deleteLabelGroup={() => setTypeFilter([])}
               categoryName="Type"
             >
               <Select
@@ -494,11 +494,11 @@ export const PoliciesPage: React.FC = () => {
             </ToolbarFilter>
 
             <ToolbarFilter
-              chips={statusFilter}
-              deleteChip={(_cat, chip) =>
+              labels={statusFilter}
+              deleteLabel={(_cat, chip) =>
                 setStatusFilter((prev) => prev.filter((f) => f !== chip))
               }
-              deleteChipGroup={() => setStatusFilter([])}
+              deleteLabelGroup={() => setStatusFilter([])}
               categoryName="Status"
             >
               <Select
@@ -528,8 +528,8 @@ export const PoliciesPage: React.FC = () => {
             </ToolbarFilter>
 
             <ToolbarFilter
-              chips={bindingsFilter ? [bindingsFilter === "has" ? "Has bindings" : "No bindings"] : []}
-              deleteChip={() => setBindingsFilter(null)}
+              labels={bindingsFilter ? [bindingsFilter === "has" ? "Has bindings" : "No bindings"] : []}
+              deleteLabel={() => setBindingsFilter(null)}
               categoryName="Bindings"
             >
               <Select

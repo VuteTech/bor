@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import {
   PageSection,
   Title,
