@@ -29,8 +29,8 @@ interface RawNode {
   os_version?: string;
   desktop_env?: string;
   agent_version?: string;
-  node_group_id?: string;
-  node_group_name?: string;
+  node_group_ids?: string[] | null;
+  node_group_names?: string[] | null;
   last_seen?: string;
   cert_not_after?: string;
 }
@@ -215,20 +215,20 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     }
   }
 
-  /* Nodes & Groups */
-  const nodesWithoutGroup = rawNodes.filter((n) => !n.node_group_id).length;
+  /* Nodes & Groups — membership is many-to-many (node_group_ids array) */
+  const nodesWithoutGroup = rawNodes.filter((n) => !n.node_group_ids?.length).length;
 
   const groupOnline: Record<string, number> = {};
   const groupOffline: Record<string, number> = {};
   const groupTotal: Record<string, number> = {};
   for (const node of rawNodes) {
-    if (!node.node_group_id) continue;
-    const gid = node.node_group_id;
-    groupTotal[gid] = (groupTotal[gid] || 0) + 1;
-    if (node.status === "online") {
-      groupOnline[gid] = (groupOnline[gid] || 0) + 1;
-    } else {
-      groupOffline[gid] = (groupOffline[gid] || 0) + 1;
+    for (const gid of node.node_group_ids ?? []) {
+      groupTotal[gid] = (groupTotal[gid] || 0) + 1;
+      if (node.status === "online") {
+        groupOnline[gid] = (groupOnline[gid] || 0) + 1;
+      } else {
+        groupOffline[gid] = (groupOffline[gid] || 0) + 1;
+      }
     }
   }
 

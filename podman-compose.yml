@@ -46,6 +46,9 @@ services:
     build:
       context: .
       dockerfile: server/Containerfile
+      args:
+        # Shown in the UI sidebar and /api/v1/version. Override in .env.
+        VERSION: ${BOR_VERSION:-dev}
     container_name: bor-server
     depends_on:
       postgres:
