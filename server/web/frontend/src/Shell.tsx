@@ -315,13 +315,6 @@ export const Shell: React.FC = () => {
       <MastheadContent>
         <Toolbar id="masthead-toolbar" isFullHeight isStatic>
           <ToolbarContent>
-            {/* Separator + current page name */}
-            <ToolbarItem style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.3)" }} />
-              <span style={{ color: "#fff", fontSize: "1rem", fontWeight: 400, opacity: 0.9 }}>
-                {PAGE_NAMES[activeScreen]}
-              </span>
-            </ToolbarItem>
             <ToolbarItem align={{ default: "alignEnd" }} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
               <Tooltip
                 content={isHighContrast ? "High contrast on (click to disable)" : "High contrast off (click to enable)"}

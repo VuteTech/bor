@@ -14,6 +14,8 @@
 #
 # The ratchet is keyed on {file, value} counts (not line numbers), so it is
 # stable against unrelated edits but still catches any newly introduced hex.
+# Only count increases (or brand-new file/value pairs) fail; decreases pass
+# with a reminder to refresh the baseline.
 #
 # Usage:
 #   scripts/check-frontend-tokens.sh            verify (CI mode; non-zero on regressions)
@@ -64,21 +66,30 @@ if [ ! -f "$BASELINE" ]; then
   exit 1
 fi
 
-added="$(comm -13 <(sort "$BASELINE") <(printf '%s\n' "$current" | sort) || true)"
-removed="$(comm -23 <(sort "$BASELINE") <(printf '%s\n' "$current" | sort) || true)"
+# Lines are "count file<TAB>hex"; compare counts per {file, hex} pair.
+increased="$(awk '
+  NR==FNR { base[$2 FS $3] = $1; next }
+  $1 > base[$2 FS $3] + 0 { printf "    + %s  %s (now %d, baseline %d)\n", $2, $3, $1, base[$2 FS $3] + 0 }
+' "$BASELINE" <(printf '%s\n' "$current"))"
 
-if [ -n "$added" ]; then
+decreased="$(awk '
+  NR==FNR { cur[$2 FS $3] = $1; next }
+  cur[$2 FS $3] + 0 < $1 { printf "    - %s  %s (was %d, now %d)\n", $2, $3, $1, cur[$2 FS $3] + 0 }
+' <(printf '%s\n' "$current") "$BASELINE")"
+
+if [ -n "$increased" ]; then
   echo "✗ New raw hex colour literal(s) in component code. Prefer a --pf-t--* token;"
   echo "  if genuinely unavoidable, justify it in review and run --update to accept it:"
-  echo "$added" | sed 's/^/    + /'
+  echo "$increased"
   status=1
-elif [ -z "$removed" ]; then
+elif [ -z "$decreased" ]; then
   echo "✓ No new raw hex literals beyond the reviewed baseline."
 fi
 
-if [ -n "$removed" ]; then
-  echo "ℹ Hex was removed (good) — the baseline has stale entries. Refresh with --update:"
-  echo "$removed" | sed 's/^/    - /'
+if [ -n "$decreased" ]; then
+  echo "ℹ Hex was removed (good). Not a failure — but refresh the baseline with"
+  echo "  --update when convenient so the ratchet tightens:"
+  echo "$decreased"
 fi
 
 exit "$status"

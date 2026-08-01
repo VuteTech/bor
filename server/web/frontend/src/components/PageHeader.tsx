@@ -23,30 +23,38 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, subtitle, actions
   <PageSection
     style={{
       borderBottom: "1px solid var(--pf-t--global--border--color--default)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: "1rem",
-      flexWrap: "wrap",
     }}
   >
-    <div>
-      <Title headingLevel="h1" size="xl">
-        {title}
-      </Title>
-      {subtitle && (
-        <Content
-          component="p"
-          style={{
-            marginTop: "0.25rem",
-            color: "var(--pf-t--global--text--color--subtle)",
-            fontSize: "0.875rem",
-          }}
-        >
-          {subtitle}
-        </Content>
-      )}
+    {/* The flex row must sit inside PF's injected PageBody wrapper — styles on
+        the PageSection itself would treat that wrapper as the flex item and
+        shrink-wrap the title instead of spanning the full row. */}
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "1rem",
+        flexWrap: "wrap",
+      }}
+    >
+      <div>
+        <Title headingLevel="h1" size="xl">
+          {title}
+        </Title>
+        {subtitle && (
+          <Content
+            component="p"
+            style={{
+              marginTop: "0.25rem",
+              color: "var(--pf-t--global--text--color--subtle)",
+              fontSize: "0.875rem",
+            }}
+          >
+            {subtitle}
+          </Content>
+        )}
+      </div>
+      {actions && <div>{actions}</div>}
     </div>
-    {actions && <div>{actions}</div>}
   </PageSection>
 );
