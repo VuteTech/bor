@@ -80,8 +80,16 @@ export async function fetchPolkitActions(nodeId?: string): Promise<PolkitAction[
 export function parsePolkitContent(raw: string): PolkitPolicyContent {
   try {
     const parsed = JSON.parse(raw || "{}") as Partial<PolkitPolicyContent> & { file_prefix?: string };
+    const rules = Array.isArray(parsed.rules) ? parsed.rules : [];
     return {
-      rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+      // Normalize sparse rules: content created via the API (protojson-style)
+      // legitimately omits empty arrays, and the editor assumes they exist.
+      rules: rules.map((r) => ({
+        ...r,
+        action_ids: r.action_ids ?? [],
+        action_prefixes: r.action_prefixes ?? [],
+        action_conditions: r.action_conditions ?? [],
+      })),
     };
   } catch {
     return { rules: [] };
