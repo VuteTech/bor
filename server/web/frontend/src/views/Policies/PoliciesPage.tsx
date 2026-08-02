@@ -39,6 +39,9 @@ import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-i
 import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-icon";
 
 import { fetchAllPolicies, deletePolicy, setPolicyState, Policy } from "../../apiClient/policiesApi";
+import { downloadPolicyExport, importPolicies, ImportReport, OnConflict } from "../../apiClient/exportApi";
+import { ImportReportModal } from "./ImportReportModal";
+import { useToast } from "../../components/ToastHost";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import { BorToolbar } from "../../components/BorToolbar";
@@ -133,6 +136,18 @@ export const PoliciesPage: React.FC = () => {
   // Delete modal (type-to-confirm)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
+
+  // Export / import (bor.dev/v1 YAML bundles)
+  const { addToast } = useToast();
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState("");
+  const [importBundle, setImportBundle] = useState("");
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importDone, setImportDone] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importOnConflict, setImportOnConflict] = useState<OnConflict>("error");
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -335,6 +350,64 @@ export const PoliciesPage: React.FC = () => {
   };
 
   /* ── Row actions ── */
+  /* ── Export / import handlers ── */
+  const handleExport = async (ids: string[]) => {
+    try {
+      await downloadPolicyExport(ids, true);
+    } catch (e) {
+      addToast({ variant: "danger", title: "Export failed", detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const runImportDryRun = useCallback(async (bundle: string, mode: OnConflict) => {
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      setImportReport(await importPolicies(bundle, { dryRun: true, onConflict: mode }));
+    } catch (e) {
+      setImportReport(null);
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportBusy(false);
+    }
+  }, []);
+
+  const handleImportFile = (file: File) => {
+    file.text().then((text) => {
+      setImportFileName(file.name);
+      setImportBundle(text);
+      setImportReport(null);
+      setImportDone(null);
+      setImportError(null);
+      setImportModalOpen(true);
+      runImportDryRun(text, importOnConflict);
+    });
+  };
+
+  const handleImportConflictChange = (mode: OnConflict) => {
+    setImportOnConflict(mode);
+    runImportDryRun(importBundle, mode);
+  };
+
+  const confirmImport = async () => {
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      const rep = await importPolicies(importBundle, { dryRun: false, onConflict: importOnConflict });
+      setImportReport(rep);
+      if (rep.ok) {
+        setImportDone(`Imported: ${rep.created} created, ${rep.updated} updated, ${rep.skipped} skipped.`);
+        loadPolicies();
+      } else {
+        setImportError("Some documents failed — see details below.");
+      }
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const rowActions = (policy: Policy): IAction[] => {
     const enabled = policy.enabled_bindings_count ?? 0;
     const bindingsBlock = (verb: string) =>
@@ -370,6 +443,7 @@ export const PoliciesPage: React.FC = () => {
       title: policy.state === "draft" ? "Edit" : "View details",
       onClick: () => handleEdit(policy),
     });
+    items.push({ title: "Export policy", onClick: () => handleExport([policy.id]) });
     items.push({ isSeparator: true });
     items.push({ title: "Delete", isDanger: true, onClick: () => openDeleteModal([policy.id]) });
     return items;
@@ -414,7 +488,23 @@ export const PoliciesPage: React.FC = () => {
           <FlexItem>
             <Button variant="primary" icon={<PlusCircleIcon />} onClick={handleCreate}>
               Create a policy
+            </Button>{" "}
+            <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
+              Import&hellip;
             </Button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".yaml,.yml,.json,application/yaml,application/json"
+              style={{ display: "none" }}
+              aria-hidden="true"
+              tabIndex={-1}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportFile(f);
+                e.target.value = "";
+              }}
+            />
           </FlexItem>
         </Flex>
       </PageSection>
@@ -618,6 +708,12 @@ export const PoliciesPage: React.FC = () => {
                       Edit
                     </DropdownItem>
                     <DropdownItem
+                      key="export"
+                      onClick={() => handleExport(Array.from(selectedIds))}
+                    >
+                      Export selected
+                    </DropdownItem>
+                    <DropdownItem
                       key="delete"
                       isDanger
                       onClick={() => openDeleteModal(Array.from(selectedIds))}
@@ -736,6 +832,20 @@ export const PoliciesPage: React.FC = () => {
           </Table>
         )}
       </PageSection>
+
+      {/* ── Import preview / report modal ── */}
+      <ImportReportModal
+        isOpen={importModalOpen}
+        fileName={importFileName}
+        report={importReport}
+        isBusy={importBusy}
+        completedMessage={importDone}
+        errorMessage={importError}
+        onConflict={importOnConflict}
+        onConflictChange={handleImportConflictChange}
+        onConfirm={confirmImport}
+        onClose={() => setImportModalOpen(false)}
+      />
 
       {/* ── Delete Confirmation Modal ── */}
       <Modal

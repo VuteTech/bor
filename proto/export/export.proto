@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+// Policy export/import envelope (YAML/JSON wire format).
+// See docs/policy-export-import-plan.md. One Resource per YAML document;
+// on the wire the active PolicySpec/BindingSpec submessage is presented
+// under the key "spec" (rewritten by the export package based on kind).
+syntax = "proto3";
+
+package bor.export.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/export;exportpb";
+
+import "google/protobuf/struct.proto";
+
+// ResourceMetadata identifies a resource within a bundle.
+message ResourceMetadata {
+  // Slug identifier, unique within the file (DNS-1123-style).
+  string name = 1;
+  // Human-readable policy name; wins over `name` on import.
+  string display_name = 2;
+  string description = 3;
+}
+
+// PolicySpec carries one policy. Content is the exact protojson document the
+// server stores and validates against proto/policy/*.proto.
+message PolicySpec {
+  string type = 1;
+  google.protobuf.Struct content = 2;
+}
+
+// BindingSpec references its policy by in-file slug (or display name of a
+// policy already on the server) and the node group by name — never by UUID.
+message BindingSpec {
+  string policy = 1;
+  string group = 2;
+  int32 priority = 3;
+}
+
+// Resource is one YAML document in a bundle.
+message Resource {
+  // Must be "bor.dev/v1".
+  string api_version = 1;
+  // "Policy" or "PolicyBinding".
+  string kind = 2;
+  ResourceMetadata metadata = 3;
+  // Exactly one of the following is set, matching kind.
+  PolicySpec policy = 4;
+  BindingSpec binding = 5;
+}
