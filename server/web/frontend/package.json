@@ -33,7 +33,7 @@
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "globals": "^15.15.0",
-    "html-webpack-plugin": "^5.6.7",
+    "html-webpack-plugin": "^5.6.8",
     "style-loader": "^4.0.0",
     "ts-proto": "^2.11.8",
     "typescript": "^5.7.3",
