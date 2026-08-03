@@ -307,3 +307,9 @@ func (s *PolicyService) DeprecatePolicy(ctx context.Context, id string, req *mod
 
 	return s.policyRepo.GetByID(ctx, id)
 }
+
+// ValidatePolicyContentByType runs the type-specific content validator.
+// Exported for the policy import boundary (internal/export via internal/api).
+func ValidatePolicyContentByType(policyType, content string) error {
+	return validatePolicyContent(policyType, content)
+}

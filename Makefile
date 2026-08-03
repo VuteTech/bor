@@ -116,6 +116,9 @@ proto-go:
 	mkdir -p server/pkg/grpc/audit
 	protoc --go_out=server/pkg/grpc/audit --go_opt=paths=source_relative \
 		-I proto/audit proto/audit/audit.proto
+	mkdir -p server/pkg/grpc/export
+	protoc --go_out=server/pkg/grpc/export --go_opt=paths=source_relative \
+		-I proto/export proto/export/export.proto
 
 proto-ts:
 	@echo "Generating TypeScript protobuf types..."

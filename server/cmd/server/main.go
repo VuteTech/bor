@@ -423,6 +423,13 @@ func main() {
 	mux.Handle("/api/v1/policies/all", authMiddleware(policyPerms(auditMw(http.HandlerFunc(policyHandler.ServeHTTP)))))
 	mux.Handle("/api/v1/policies/all/", authMiddleware(policyPerms(auditMw(http.HandlerFunc(policyHandler.ServeHTTP)))))
 
+	// Policy export/import (bor.dev/v1 YAML envelope). Export needs view;
+	// import creates drafts and needs create. Both are audit-logged by the
+	// handler itself (exports are GETs, which the audit middleware skips).
+	exportHandler := api.NewExportHandler(policySvc, policyBindingSvc, nodeGroupSvc, auditSvc)
+	mux.Handle("/api/v1/policies/export", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(exportHandler.Export))))
+	mux.Handle("/api/v1/policies/import", authMiddleware(api.RequirePermission(az, "policy", "create")(http.HandlerFunc(exportHandler.Import))))
+
 	// Node routes — method-based permission checking
 	nodePerms := api.RequireMethodPermission(az, []api.MethodPermission{
 		{Method: http.MethodGet, Resource: "node", Action: "view"},
