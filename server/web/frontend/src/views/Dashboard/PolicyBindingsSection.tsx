@@ -86,7 +86,7 @@ export const PolicyBindingsSection: React.FC<PolicyBindingsSectionProps> = ({ da
                       >
                         <FlexItem style={{ minWidth: "180px" }}>
                           <span style={{ fontWeight: 600 }}>{groupName}</span>
-                          <div style={{ fontSize: "0.8rem", color: "var(--pf-t--global--text--color--subtle)" }}>
+                          <div className="bor-text-secondary">
                             {entries[0]?.nodeCount ?? 0} nodes
                           </div>
                         </FlexItem>
