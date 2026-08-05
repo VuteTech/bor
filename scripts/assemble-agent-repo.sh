@@ -183,6 +183,64 @@ jq -n \
     files: ($files | sort_by(.path))
   }' > "$OUT_DIR/manifest.json"
 
+# ── Static instructions page (served at /agent/) ────────────────────────────
+# Self-contained; the instance URL is filled in client-side, so the page is
+# identical for every deployment. The full wizard lives in the web UI.
+log "generating index.html"
+SIGNED_TEXT="signed"
+[ "$SIGNED" = true ] || SIGNED_TEXT="UNSIGNED (development build)"
+cat > "$OUT_DIR/index.html" <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bor agent packages</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  pre { background: #f4f4f4; padding: 0.75rem; overflow-x: auto; border-radius: 4px; }
+  code { font-size: 0.9em; }
+  @media (prefers-color-scheme: dark) { body { background: #151515; color: #e0e0e0; } pre { background: #242424; } a { color: #95d5b2; } }
+</style>
+</head>
+<body>
+<h1>Bor agent packages</h1>
+<p>bor-agent <strong>${VERSION}</strong> — repository ${SIGNED_TEXT}, served by
+this Bor instance. The full deploy wizard (platform picker, enrollment
+tokens) is in the web UI: <em>Nodes &rarr; Deploy agent</em>.</p>
+<p>Files &amp; checksums: <a href="manifest.json">manifest.json</a> ·
+Signing key: <a href="repo-key.asc">repo-key.asc</a> ·
+Instance CA: <a href="ca.crt">ca.crt</a></p>
+<h2>Debian / Ubuntu</h2>
+<pre><code>sudo install -d -m 755 /etc/apt/keyrings
+curl -fsS <span class="origin">ORIGIN</span>/agent/repo-key.asc | sudo tee /etc/apt/keyrings/bor.asc &gt;/dev/null
+printf 'Types: deb\nURIs: <span class="origin">ORIGIN</span>/agent/deb/\nSuites: ./\nSigned-By: /etc/apt/keyrings/bor.asc\n' | sudo tee /etc/apt/sources.list.d/bor.sources &gt;/dev/null
+sudo apt-get update &amp;&amp; sudo apt-get install -y bor-agent</code></pre>
+<h2>RHEL / Fedora</h2>
+<pre><code>cat &lt;&lt;REPO | sudo tee /etc/yum.repos.d/bor.repo &gt;/dev/null
+[bor]
+name=Bor Agent
+baseurl=<span class="origin">ORIGIN</span>/agent/rpm/
+enabled=1
+gpgcheck=0
+repo_gpgcheck=1
+gpgkey=<span class="origin">ORIGIN</span>/agent/repo-key.asc
+REPO
+sudo dnf install -y bor-agent</code></pre>
+<p>SUSE uses the same rpm repository via <code>zypper addrepo</code>; Alpine
+and Arch packages are direct downloads — paths in
+<a href="manifest.json">manifest.json</a>. If this instance uses its
+auto-generated certificate, trust <a href="ca.crt">ca.crt</a> first. Details:
+<code>docs/agent-packages.md</code> in the Bor repository.</p>
+<script>
+  for (const el of document.querySelectorAll(".origin")) {
+    el.textContent = window.location.origin;
+  }
+</script>
+</body>
+</html>
+EOF
+
 # Restore the tracked placeholder (see the note at the top of this section).
 touch "$OUT_DIR/.gitkeep"
 

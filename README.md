@@ -96,57 +96,21 @@ internal CA (ECDSA P-384) and a server TLS certificate (ECDSA P-256) under
 
 Log in at `https://localhost:8443` with the admin credentials set in `.env`.
 
-### Install the agent (from package)
+### Deploy agents — from your own server
 
-Download the appropriate package for your distribution from the
-[releases page](https://github.com/VuteTech/Bor/releases) and install it:
+Every Bor instance ships the agent packages for all supported platforms and
+serves them itself: download links, apt/dnf/zypper repositories and a
+**Deploy agent** wizard in the web UI (the download icon in the masthead, or
+the button on the Nodes page). The wizard produces a single copy-paste
+script that trusts the server CA, sets up the signed repository, installs
+the agent, enrolls it with a one-time token and starts the service — managed
+nodes never need internet access. A static version of the instructions is
+served by the instance itself at `https://your-hostname:8443/agent/`.
 
-```bash
-# Debian / Ubuntu
-sudo dpkg -i bor-agent_<version>_amd64.deb
-
-# Fedora / RHEL
-sudo rpm -i bor-agent-<version>.x86_64.rpm
-
-# Arch Linux
-sudo pacman -U bor-agent-<version>-x86_64.pkg.tar.zst
-```
-
-### Configure and enroll the agent
-
-1. Edit `/etc/bor/config.yaml` (installed by the package):
-
-   ```yaml
-   server:
-     address: "your-server"
-     enrollment_port: 8443
-     policy_port: 8444
-     insecure_skip_verify: true   # set false after deploying a trusted cert
-   ```
-
-2. Generate an enrollment token in the web UI (Node Groups page).
-
-3. Enroll the agent:
-
-   ```bash
-   sudo bor-agent --token <ENROLLMENT_TOKEN>
-   ```
-
-   The agent generates an ECDSA P-256 key pair, sends a CSR to the server,
-   and stores the signed certificate, private key, and CA cert in
-   `/var/lib/bor/agent/`. After enrollment, start it as a service:
-
-   ```bash
-   sudo systemctl enable --now bor-agent
-   ```
-
-4. To re-enroll (e.g. after a CA rotation or to move a node to a different
-   group), pass a new token — the old certificates are removed automatically
-   before re-enrollment begins:
-
-   ```bash
-   sudo bor-agent --token <NEW_TOKEN>
-   ```
+See [docs/agent-packages.md](docs/agent-packages.md) for the per-platform
+details, repository signing and key rotation, and air-gap notes. Packages
+can also be downloaded manually from
+[getbor.dev/download](https://getbor.dev/download/).
 
 ---
 
