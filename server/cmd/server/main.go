@@ -366,6 +366,13 @@ func main() {
 		policyHub.PublishResync(b.GroupID)
 	}
 
+	// Agent package repository — local downloads, the deploy wizard manifest
+	// and the /agent/* apt/dnf endpoints (docs/agent-package-downloads-plan.md).
+	// The counter is registered on the metrics server below.
+	agentPackageDownloads := metrics.NewAgentPackageDownloads()
+	agentRepoHandler := api.NewAgentRepoHandler(cfg.AgentRepo.Dir, caCertFile, Version, agentPackageDownloads)
+	agentRepoHandler.LogStartup()
+
 	// Setup HTTP routes
 	mux := http.NewServeMux()
 
@@ -385,6 +392,12 @@ func main() {
 	mux.Handle("/api/v1/auth/webauthn/finish", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthFinish)))
 	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
 	mux.HandleFunc("/api/v1/auth/refresh", authHandler.Refresh)
+
+	// Agent package downloads — public by design: apt/dnf on managed nodes
+	// cannot send JWTs, and the payload matches the public release assets.
+	// The handler serves nothing when no repository is installed.
+	mux.HandleFunc("/agent/ca.crt", agentRepoHandler.ServeCACert)
+	mux.HandleFunc("/agent/", agentRepoHandler.ServeFiles)
 
 	// Protected routes — all require authentication AND specific permissions.
 	// Deny-by-default: routes without explicit permission middleware are not accessible.
@@ -437,6 +450,10 @@ func main() {
 		{Method: http.MethodPut, Resource: "node", Action: "edit"},
 		{Method: http.MethodDelete, Resource: "node", Action: "delete"},
 	})
+	// Manifest for the deploy-agent wizard (gated like the node screens it
+	// serves; the raw files above stay public for package managers).
+	mux.Handle("/api/v1/agent-packages", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(agentRepoHandler.ManifestAPI))))
+
 	mux.Handle("/api/v1/nodes", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.List))))
 	mux.Handle("/api/v1/nodes/status-counts", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.CountByStatus))))
 	mux.Handle("/api/v1/nodes/filter-options", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.FilterOptions))))
@@ -720,7 +737,7 @@ func main() {
 		nodeRepo, policyRepo, policyBindingRepo,
 		auditLogRepo, userRepo, dconfRepo,
 	)
-	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector)
+	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector, agentPackageDownloads)
 
 	// Start both servers.
 	go func() {

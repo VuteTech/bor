@@ -20,18 +20,29 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	Database DatabaseConfig
-	Server   ServerConfig
-	Security SecurityConfig
-	LDAP     LDAPConfig
-	Kerberos KerberosConfig
-	TLS      TLSConfig
-	CA       CAConfig
-	WebAuthn WebAuthnConfig
-	Metrics  MetricsConfig
-	Audit    AuditConfig
-	UI       UIConfig
-	ACME     ACMEConfig
+	Database  DatabaseConfig
+	Server    ServerConfig
+	Security  SecurityConfig
+	LDAP      LDAPConfig
+	Kerberos  KerberosConfig
+	TLS       TLSConfig
+	CA        CAConfig
+	WebAuthn  WebAuthnConfig
+	Metrics   MetricsConfig
+	Audit     AuditConfig
+	UI        UIConfig
+	ACME      ACMEConfig
+	AgentRepo AgentRepoConfig
+}
+
+// AgentRepoConfig locates the static agent package repository that the
+// server offers at /agent/* (download links, the deploy wizard and the
+// locally-hosted apt/dnf repositories). The tree is assembled and signed at
+// release build time (scripts/assemble-agent-repo.sh) and shipped inside the
+// bor-server package and container image. When the directory is missing or
+// holds no manifest.json the feature is off and /agent/* returns 404.
+type AgentRepoConfig struct {
+	Dir string // BOR_AGENT_REPO_DIR – default /usr/share/bor/agent-repo
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -353,6 +364,9 @@ type fileConfig struct {
 	UI struct {
 		PrivacyPolicyURL string `yaml:"privacy_policy_url"`
 	} `yaml:"ui"`
+	AgentRepo struct {
+		Dir string `yaml:"dir"`
+	} `yaml:"agent_repo"`
 	ACME struct {
 		Enabled      bool     `yaml:"enabled"`
 		DirectoryURL string   `yaml:"directory_url"`
@@ -613,6 +627,9 @@ func Load() (*Config, error) {
 			TLSCertFile: metricsTLSCert,
 			TLSKeyFile:  metricsTLSKey,
 		},
+		AgentRepo: AgentRepoConfig{
+			Dir: getEnv("BOR_AGENT_REPO_DIR", fc.AgentRepo.Dir),
+		},
 		UI: UIConfig{
 			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),
 		},
@@ -666,6 +683,7 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.AttrMemberOf = "memberOf"
 	fc.LDAP.PageSize = 500
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
+	fc.AgentRepo.Dir = "/usr/share/bor/agent-repo"
 	fc.ACME.HTTPPort = 80
 	fc.ACME.CacheDir = "/var/lib/bor/acme"
 	fc.Audit.RetentionDays = 365

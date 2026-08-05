@@ -243,3 +243,14 @@ ldap:
 #ui:
 #  # Show a Privacy Policy link in the sidebar footer (GDPR Article 13).
 #  privacy_policy_url: "https://example.com/privacy"
+
+# Agent package repository.
+#
+# Directory with the static agent package repository served at /agent/*
+# (download links, the deploy-agent wizard and the locally-hosted apt/dnf
+# repositories). Installed by the bor-server package; assembled and signed at
+# release build time. When the directory is missing or holds no
+# manifest.json, the feature is off and /agent/* returns 404.
+#
+#agent_repo:
+#  dir: /usr/share/bor/agent-repo
