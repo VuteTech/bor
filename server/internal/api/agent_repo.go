@@ -157,7 +157,7 @@ func (h *AgentRepoHandler) ServeFiles(w http.ResponseWriter, r *http.Request) {
 
 	// statusRecorder is shared with the audit middleware (audit_middleware.go).
 	rec := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
-	http.ServeFileFS(rec, r, h.fsys, name)
+	http.ServeFileFS(rec, r, h.fsys, name) //nolint:gosec // G703: name is fs.ValidPath-checked and h.fsys is an os.Root-backed FS — traversal and symlink escapes are structurally impossible (proven by TestAgentRepoServeFiles)
 
 	if r.Method == http.MethodGet && rec.statusCode < 300 {
 		if format, arch, ok := agentRepoPackageLabels(name); ok && h.downloads != nil {
