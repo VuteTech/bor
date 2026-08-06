@@ -196,6 +196,10 @@ jobs:
       contents: read
     env:
       BOR_RELEASE_GPG_KEY: ${{ secrets.BOR_RELEASE_GPG_KEY }}
+      # Passphrase of the release key (when protected) — consumed directly by
+      # scripts/assemble-agent-repo.sh via the environment, enabling loopback
+      # pinentry. Never passed on a command line.
+      SIGN_KEY_PASSPHRASE: ${{ secrets.BOR_RELEASE_GPG_PASSPHRASE }}
     steps:
       - uses: actions/checkout@v6
 

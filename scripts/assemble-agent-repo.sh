@@ -26,6 +26,11 @@
 #   SIGN_KEY_ID   GPG key id/fingerprint in the current keyring. Empty = the
 #                 repos are assembled unsigned (manifest records signed:false;
 #                 CI signs whenever the release key secret is available).
+#   SIGN_KEY_PASSPHRASE
+#                 Passphrase of the signing key, when it has one. Enables
+#                 non-interactive loopback pinentry — without it a protected
+#                 key fails in CI with "Inappropriate ioctl for device"
+#                 (gpg trying to prompt on a nonexistent TTY).
 #
 # Requires: apt-ftparchive (apt-utils), createrepo_c, jq, gzip, sha256sum,
 # and gpg when SIGN_KEY_ID is set. CI installs these; locally the tooling is
@@ -109,17 +114,29 @@ createrepo_c --quiet "$OUT_DIR/rpm"
 SIGNED=false
 if [ -n "$SIGN_KEY_ID" ]; then
   log "signing with key $SIGN_KEY_ID"
+  GPG_SIGN=(gpg --batch --yes --local-user "$SIGN_KEY_ID")
+  PASSFILE=""
+  if [ -n "${SIGN_KEY_PASSPHRASE:-}" ]; then
+    # Passphrase-protected key: loopback pinentry, passphrase via a 0600 file
+    # (never argv — process listings). Requires GnuPG >= 2.1.12.
+    PASSFILE=$(mktemp)
+    chmod 600 "$PASSFILE"
+    printf '%s' "$SIGN_KEY_PASSPHRASE" > "$PASSFILE"
+    trap '[ -n "$PASSFILE" ] && rm -f "$PASSFILE"' EXIT
+    GPG_SIGN+=(--pinentry-mode loopback --passphrase-file "$PASSFILE")
+  fi
   # apt: InRelease (inline) + Release.gpg (detached, for older apt).
-  gpg --batch --yes --local-user "$SIGN_KEY_ID" \
+  "${GPG_SIGN[@]}" \
     --clearsign -o "$OUT_DIR/deb/InRelease" "$OUT_DIR/deb/Release"
-  gpg --batch --yes --local-user "$SIGN_KEY_ID" \
+  "${GPG_SIGN[@]}" \
     --armor --detach-sign -o "$OUT_DIR/deb/Release.gpg" "$OUT_DIR/deb/Release"
   # dnf/zypper: detached signature over repomd.xml (repo_gpgcheck=1).
-  gpg --batch --yes --local-user "$SIGN_KEY_ID" \
+  "${GPG_SIGN[@]}" \
     --armor --detach-sign -o "$OUT_DIR/rpm/repodata/repomd.xml.asc" \
     "$OUT_DIR/rpm/repodata/repomd.xml"
-  # Public key, served to clients for Signed-By= / gpgkey=.
+  # Public key, served to clients for Signed-By= / gpgkey= (no passphrase needed).
   gpg --batch --export --armor "$SIGN_KEY_ID" > "$OUT_DIR/repo-key.asc"
+  [ -n "$PASSFILE" ] && rm -f "$PASSFILE" && PASSFILE=""
   SIGNED=true
 else
   log "WARNING: SIGN_KEY_ID not set — assembling UNSIGNED repositories (dev only)"
