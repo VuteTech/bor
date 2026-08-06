@@ -45,6 +45,15 @@ contents:
     file_info:
       mode: 0750
 
+  # Agent package repository served at /agent/* (download links, the deploy
+  # wizard, locally-hosted apt/dnf repos). Assembled and signed at build time
+  # by scripts/assemble-agent-repo.sh from every architecture's bor-agent
+  # packages; in checkouts that never ran it the directory holds only the
+  # tracked placeholder and the server keeps the feature off.
+  - src: builds/agent-repo
+    dst: /usr/share/bor/agent-repo
+    type: tree
+
 overrides:
   deb:
     depends:

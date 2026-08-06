@@ -1,5 +1,10 @@
-# Package builds
-/builds/
+# Package builds — everything is generated, EXCEPT the tracked placeholder
+# builds/agent-repo/.gitkeep, which keeps the Containerfile's
+# `COPY builds/agent-repo/` valid on checkouts that never assembled the repo.
+/builds/*
+!/builds/agent-repo
+/builds/agent-repo/*
+!/builds/agent-repo/.gitkeep
 
 # Go
 *.exe

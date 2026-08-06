@@ -19,11 +19,14 @@ import (
 // addr is the listen address in host:port form (e.g. "127.0.0.1:9090").
 // When bearerToken is non-empty every request must carry
 // "Authorization: Bearer <token>"; otherwise no authentication is applied.
+// Every collector in cs is registered on the server's registry.
 //
 // The returned *http.Server is not started — call ListenAndServe in a goroutine.
-func NewServer(addr, bearerToken string, collector prometheus.Collector) *http.Server {
+func NewServer(addr, bearerToken string, cs ...prometheus.Collector) *http.Server {
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(collector)
+	for _, c := range cs {
+		reg.MustRegister(c)
+	}
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 

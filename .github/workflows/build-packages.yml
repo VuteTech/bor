@@ -122,10 +122,141 @@ jobs:
       - name: Build
         run: cd server/web/frontend && npm run build
 
-  build-packages:
-    name: Build Packages (${{ matrix.arch }})
+  # Agent packages first: the server packages EMBED the assembled agent
+  # repository (all architectures), so the pipeline is
+  # build-agent-packages → assemble-agent-repo → build-server-packages.
+  build-agent-packages:
+    name: Build Agent Packages (${{ matrix.arch }})
     runs-on: ubuntu-latest
     needs: [build-server-backend, build-agent, build-server-frontend]
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        arch: [amd64, arm64, ppc64le]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Install nfpm
+        # Pinned: nfpm >= v2.47.0 requires Go 1.26, newer than our toolchain.
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      - name: Determine version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+            APK_VERSION="${VERSION}"
+          else
+            # deb/rpm/archlinux accept alphanumeric+dots and require a digit start.
+            VERSION="0.0.0.git${SHORT_SHA}"
+            # apk (Alpine) requires strictly numeric dot-components (e.g. 1.2.3).
+            # Use the numeric prefix only; the SHA is dropped for apk.
+            APK_VERSION="0.0.0"
+          fi
+          echo "version=${VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "apk_version=${APK_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}"     >> "$GITHUB_OUTPUT"
+
+      - name: Build agent packages
+        run: make packages-agent VERSION=${{ steps.version.outputs.version }} APK_VERSION=${{ steps.version.outputs.apk_version }} ARCH=${{ matrix.arch }}
+
+      - name: Upload agent packages as workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          path: builds/
+          retention-days: 30
+
+      - name: Upload agent packages to GitHub release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: builds/*
+
+  # Assembles the static agent package repository (apt flat repo + dnf
+  # repodata + manifest.json) from all three architectures' bor-agent
+  # packages and signs it when the release key is available. The tree ships
+  # inside the bor-server packages and the container image at
+  # /usr/share/bor/agent-repo. docs/agent-package-downloads-plan.md.
+  assemble-agent-repo:
+    name: Assemble Agent Repo
+    runs-on: ubuntu-latest
+    needs: build-agent-packages
+    permissions:
+      contents: read
+    env:
+      BOR_RELEASE_GPG_KEY: ${{ secrets.BOR_RELEASE_GPG_KEY }}
+      # Passphrase of the release key (when protected) — consumed directly by
+      # scripts/assemble-agent-repo.sh via the environment, enabling loopback
+      # pinentry. Never passed on a command line.
+      SIGN_KEY_PASSPHRASE: ${{ secrets.BOR_RELEASE_GPG_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Determine version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+            APK_VERSION="${VERSION}"
+          else
+            VERSION="0.0.0.git${SHORT_SHA}"
+            APK_VERSION="0.0.0"
+          fi
+          echo "version=${VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "apk_version=${APK_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download built agent packages (all architectures)
+        uses: actions/download-artifact@v7
+        with:
+          pattern: agent-packages-${{ steps.version.outputs.version }}-*
+          path: builds
+          merge-multiple: true
+
+      - name: Install repo tooling
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends apt-utils createrepo-c jq
+
+      # Signing is skipped (with a loud script warning) when the secret is
+      # absent — forks and PRs assemble unsigned; releases must sign.
+      - name: Import release signing key
+        id: gpg
+        run: |
+          if [ -n "$BOR_RELEASE_GPG_KEY" ]; then
+            printf '%s' "$BOR_RELEASE_GPG_KEY" | gpg --batch --import
+            echo "key_id=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')" >> "$GITHUB_OUTPUT"
+          else
+            echo "key_id=" >> "$GITHUB_OUTPUT"
+            echo "::warning::BOR_RELEASE_GPG_KEY not set — assembling unsigned agent repositories"
+          fi
+
+      - name: Assemble repository
+        run: make agent-repo VERSION=${{ steps.version.outputs.version }} APK_VERSION=${{ steps.version.outputs.apk_version }} SIGN_KEY_ID=${{ steps.gpg.outputs.key_id }}
+
+      - name: Upload agent repo tree as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-repo-${{ steps.version.outputs.version }}
+          path: builds/agent-repo/
+          retention-days: 30
+
+  # Server packages embed the assembled agent repository (requirement: a
+  # single bor-server package carries both the server and the agent files).
+  build-server-packages:
+    name: Build Server Packages (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: assemble-agent-repo
     permissions:
       contents: write
     strategy:
@@ -161,36 +292,39 @@ jobs:
             VERSION="${VERSION#v}"
             APK_VERSION="${VERSION}"
           else
-            # deb/rpm/archlinux accept alphanumeric+dots and require a digit start.
             VERSION="0.0.0.git${SHORT_SHA}"
-            # apk (Alpine) requires strictly numeric dot-components (e.g. 1.2.3).
-            # Use the numeric prefix only; the SHA is dropped for apk.
             APK_VERSION="0.0.0"
           fi
           echo "version=${VERSION}"         >> "$GITHUB_OUTPUT"
           echo "apk_version=${APK_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}"     >> "$GITHUB_OUTPUT"
 
-      - name: Build packages
-        run: make packages VERSION=${{ steps.version.outputs.version }} APK_VERSION=${{ steps.version.outputs.apk_version }} ARCH=${{ matrix.arch }}
+      - name: Download assembled agent repository
+        uses: actions/download-artifact@v7
+        with:
+          name: agent-repo-${{ steps.version.outputs.version }}
+          path: builds/agent-repo
 
-      - name: Upload packages as workflow artifacts
+      - name: Build server packages
+        run: make packages-server VERSION=${{ steps.version.outputs.version }} APK_VERSION=${{ steps.version.outputs.apk_version }} ARCH=${{ matrix.arch }}
+
+      - name: Upload server packages as workflow artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
-          path: builds/
+          name: server-packages-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          path: |
+            builds/bor-server*
           retention-days: 30
 
-      - name: Upload packages to GitHub release
+      - name: Upload server packages to GitHub release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
-          files: builds/*
+          files: builds/bor-server*
 
   build-image:
     name: Build Container Image
     runs-on: ubuntu-latest
-    needs: [build-server-backend, build-agent, build-server-frontend]
+    needs: [assemble-agent-repo]
     permissions:
       contents: read
       packages: write
@@ -205,12 +339,26 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
+            PKG_VERSION="${VERSION}"
           else
             VERSION="${SHORT_SHA}"
+            # Package/artifact naming uses the nfpm-compatible scheme (see
+            # the build-packages job) — needed to locate the agent-repo artifact.
+            PKG_VERSION="0.0.0.git${SHORT_SHA}"
           fi
           echo "version=${VERSION}"           >> "$GITHUB_OUTPUT"
+          echo "pkg_version=${PKG_VERSION}"   >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}"       >> "$GITHUB_OUTPUT"
           echo "repo_lc=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      # The image ships the agent package repository at /usr/share/bor/agent-repo
+      # (Containerfile COPYs builds/agent-repo). Without this step the tracked
+      # placeholder keeps the COPY valid but the feature off.
+      - name: Download agent package repository
+        uses: actions/download-artifact@v7
+        with:
+          name: agent-repo-${{ steps.version.outputs.pkg_version }}
+          path: builds/agent-repo
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

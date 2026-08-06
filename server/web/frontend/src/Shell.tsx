@@ -44,6 +44,7 @@ import { getServerVersion } from "./apiClient/systemApi";
 import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
 import { onSessionExpired } from "./apiClient/session";
 import { PageHeader } from "./components/PageHeader";
+import { DeployAgentProvider, DeployAgentMastheadButton } from "./components/DeployAgentModal";
 import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
 import { MFARequiredGate } from "./views/MFARequiredGate";
@@ -316,6 +317,7 @@ export const Shell: React.FC = () => {
         <Toolbar id="masthead-toolbar" isFullHeight isStatic>
           <ToolbarContent>
             <ToolbarItem align={{ default: "alignEnd" }} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <DeployAgentMastheadButton />
               <Tooltip
                 content={isHighContrast ? "High contrast on (click to disable)" : "High contrast off (click to enable)"}
                 position="bottom"
@@ -500,7 +502,7 @@ export const Shell: React.FC = () => {
   );
 
   return (
-    <>
+    <DeployAgentProvider>
       {/* Skip navigation — first focusable element, visible on focus (WCAG 2.4.1) */}
       <a href="#bor-main-content" className="bor-skip-nav">
         Skip to main content
@@ -536,6 +538,6 @@ export const Shell: React.FC = () => {
           setTimeout(() => accountModalTriggerRef.current?.focus(), 0);
         }}
       />
-    </>
+    </DeployAgentProvider>
   );
 };

@@ -199,6 +199,21 @@ packages-server: server frontend
 	VERSION=$(VERSION)     ARCH=$(ARCH) nfpm package --config packaging/nfpm-server.yaml --packager archlinux  --target builds/
 	@echo "Server packages written to builds/"
 
+# Assemble the static agent package repository (apt/dnf metadata + manifest)
+# from the bor-agent packages already present in builds/. The tree ships
+# inside the bor-server package and the container image at
+# /usr/share/bor/agent-repo — run this BEFORE packages-server so the server
+# package carries the repo (CI does; without it the server package contains
+# only the placeholder and the feature stays off).
+# Set SIGN_KEY_ID to a GPG key id to sign (CI does; unsigned = dev only).
+# Requires apt-ftparchive, createrepo_c and jq — Debian-family tooling; on
+# other distros run scripts/assemble-agent-repo.sh inside a debian container.
+agent-repo:
+	@echo "Assembling agent package repository (version=$(VERSION))..."
+	VERSION=$(VERSION) APK_VERSION=$(APK_VERSION) PACKAGES_DIR=builds \
+		OUT_DIR=builds/agent-repo SIGN_KEY_ID=$(SIGN_KEY_ID) \
+		scripts/assemble-agent-repo.sh
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
@@ -237,6 +252,7 @@ dev:
 # Build Docker images
 docker:
 	@echo "Building Docker images..."
+	@mkdir -p builds/agent-repo
 	podman build -t bor-server:latest -f server/Containerfile .
 
 # Format code

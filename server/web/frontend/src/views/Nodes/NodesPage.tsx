@@ -8,6 +8,7 @@ import { LiveAlert } from "../../components/LiveAlert";
 import { useToast } from "../../components/ToastHost";
 import { BorToolbar } from "../../components/BorToolbar";
 import { SearchableSelect } from "../../components/SearchableSelect";
+import { useDeployAgent } from "../../components/DeployAgentModal";
 import {
   PageSection,
   Title,
@@ -43,6 +44,8 @@ import {
   DescriptionListDescription,
   EmptyState,
   EmptyStateBody,
+  EmptyStateFooter,
+  EmptyStateActions,
   Modal,
   ModalHeader,
   ModalBody,
@@ -118,6 +121,7 @@ type SortField = "last_seen" | "name";
 
 export const NodesPage: React.FC = () => {
   const { addToast } = useToast();
+  const deployAgent = useDeployAgent();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1007,6 +1011,11 @@ export const NodesPage: React.FC = () => {
                   )}
 
                   <ToolbarItem align={{ default: "alignEnd" }}>
+                    {deployAgent.available && (
+                      <Button variant="secondary" onClick={deployAgent.open}>
+                        Deploy agent
+                      </Button>
+                    )}
                     <Button variant="link" onClick={exportCSV}>
                       Export CSV
                     </Button>
@@ -1036,6 +1045,15 @@ export const NodesPage: React.FC = () => {
                       ? "No nodes match the current filters. Try adjusting your search or filters."
                       : "No nodes registered yet. Nodes will appear here once agents connect."}
                   </EmptyStateBody>
+                  {!appliedSearch && activeFilters.length === 0 && deployAgent.available && (
+                    <EmptyStateFooter>
+                      <EmptyStateActions>
+                        <Button variant="primary" onClick={deployAgent.open}>
+                          Deploy your first agent
+                        </Button>
+                      </EmptyStateActions>
+                    </EmptyStateFooter>
+                  )}
                 </EmptyState>
               ) : (
                 <Table aria-label="Nodes table" variant="compact">

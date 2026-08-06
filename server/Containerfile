@@ -113,6 +113,12 @@ RUN mkdir -p /var/lib/bor/pki/ui /var/lib/bor/acme && chown -R 1001:1001 /var/li
 
 COPY --from=builder /opt/app-root/src/server /usr/local/bin/server
 
+# Agent package repository served at /agent/* (downloads, deploy wizard,
+# local apt/dnf repos). CI populates builds/agent-repo before building; on
+# local builds the directory holds only the tracked .gitkeep placeholder and
+# the server's graceful-absence handling keeps the feature off.
+COPY builds/agent-repo/ /usr/share/bor/agent-repo/
+
 EXPOSE 8443
 USER 1001
 
