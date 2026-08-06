@@ -303,7 +303,7 @@ export const Shell: React.FC = () => {
                   fontFamily: "RedHatDisplay, Overpass, Arial, sans-serif",
                   fontSize: "1.125rem",
                   fontWeight: 600,
-                  color: "#fff",
+                  color: "var(--bor--masthead--text)",
                   letterSpacing: "0.02em",
                 }}
               >
@@ -328,7 +328,7 @@ export const Shell: React.FC = () => {
                   aria-pressed={isHighContrast}
                   onClick={() => setIsHighContrast(v => !v)}
                   style={{
-                    color: "#fff",
+                    color: "var(--bor--masthead--text)",
                     padding: "0.375rem",
                     ...(isHighContrast && {
                       backgroundColor: "rgba(255,255,255,0.2)",
@@ -360,7 +360,7 @@ export const Shell: React.FC = () => {
                       : "Switch to light theme"
                   }
                   onClick={cycleTheme}
-                  style={{ color: "#fff", padding: "0.375rem" }}
+                  style={{ color: "var(--bor--masthead--text)", padding: "0.375rem" }}
                 >
                   {themeMode === "light" ? (
                     <SunIcon />
@@ -455,8 +455,8 @@ export const Shell: React.FC = () => {
           {serverVersion && (
             <div
               style={{
-                fontSize: "0.7rem",
-                color: "#777",
+                fontSize: "0.75rem",
+                color: "var(--bor--sidebar--text--muted)",
                 textAlign: "center",
                 fontFamily: "monospace",
               }}
@@ -468,7 +468,7 @@ export const Shell: React.FC = () => {
           <div
             style={{
               fontSize: "0.75rem",
-              color: "#999",
+              color: "var(--bor--sidebar--text--muted)",
               textAlign: "center",
               lineHeight: "1.4",
             }}
@@ -478,7 +478,7 @@ export const Shell: React.FC = () => {
               href="https://getbor.dev"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: "var(--pf-t--global--color--brand--default)", textDecoration: "none" }}
+              style={{ color: "var(--bor--sidebar--text)", textDecoration: "underline" }}
             >
               getbor.dev
             </a>
@@ -489,7 +489,7 @@ export const Shell: React.FC = () => {
                   href={privacyPolicyURL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: "#999", textDecoration: "none" }}
+                  style={{ color: "var(--bor--sidebar--text)", textDecoration: "underline" }}
                 >
                   Privacy Policy
                 </a>

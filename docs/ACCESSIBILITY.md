@@ -17,6 +17,8 @@ All WCAG 2.2 AA success criteria that apply to this UI are satisfied.
 | Color is never the sole status differentiator — text labels accompany all colored indicators | 1.4.1 |
 | Light / Dark / System theme toggle; persisted across sessions | 1.4.3 |
 | High contrast mode (manual toggle + `prefers-contrast: more` auto-apply) | 1.4.3 / 1.4.11 |
+| Masthead/sidebar text driven by per-theme `--bor--*` semantic properties; nav group titles 7.9:1, links 9.4:1, footer 6.6:1 in light theme (issue #138 fix — previously titles/footer fell to 1.65:1 / 2.5:1) | 1.4.3 |
+| Secondary text standardized at 14 px via `.bor-text-secondary` (PF subtle token, theme-aware) | 1.4.3 |
 | OS Windows High Contrast (`forced-colors: active`) compatible | 1.4.11 |
 | Semantic structure via PF6 Nav, Table, Form (built-in ARIA roles) | 1.3.1 |
 | All tables have an accessible name via `aria-label` | 1.3.1 |

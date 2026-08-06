@@ -780,7 +780,7 @@ export const PoliciesPage: React.FC = () => {
                   <Td dataLabel="Name">
                     <strong>{policy.name}</strong>
                     {policy.description && (
-                      <div style={{ fontSize: "0.8rem", color: "var(--pf-t--global--text--color--subtle)" }}>
+                      <div className="bor-text-secondary">
                         {policy.description}
                       </div>
                     )}
@@ -802,7 +802,7 @@ export const PoliciesPage: React.FC = () => {
                   <Td dataLabel="Bindings">
                     {policy.bindings_count ?? 0}
                     {(policy.enabled_bindings_count ?? 0) > 0 && (
-                      <span style={{ fontSize: "0.8rem", color: "var(--pf-t--global--text--color--subtle)" }}>
+                      <span className="bor-text-secondary">
                         {" "}({policy.enabled_bindings_count} enabled)
                       </span>
                     )}
@@ -934,7 +934,7 @@ export const PoliciesPage: React.FC = () => {
                 </ul>
               )}
               {confirmLifecycle.skipped > 0 && (
-                <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.9rem" }}>
+                <p className="bor-text-secondary">
                   {confirmLifecycle.skipped} selected {confirmLifecycle.skipped === 1 ? "policy is" : "policies are"}{" "}
                   not eligible and will be skipped.
                 </p>

@@ -660,7 +660,7 @@ export const PolkitPolicyEditor: React.FC<PolkitPolicyEditorProps> = ({
                   label="Action variable conditions"
                   fieldId={`${ruleId}-action-conditions`}
                   labelHelp={
-                    <span style={{ fontSize: "0.8rem", color: "var(--pf-t--global--text--color--subtle)" }}>
+                    <span className="bor-text-secondary">
                       Filter on action.lookup() values (e.g. drive_removable == true). All conditions must match.
                     </span>
                   }

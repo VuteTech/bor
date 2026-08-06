@@ -13,6 +13,28 @@
   --pf-t--global--color--brand--500: #0a1a14;
 }
 
+/* ── Semantic surface layer: masthead + sidebar ───────────────────────────── */
+/* Every masthead/sidebar color below derives from these per-theme values.    */
+/* Component rules are written ONCE (further down) and reference only these   */
+/* properties, so a new sidebar element can no longer miss a theme            */
+/* (issue #138: NavGroup section titles kept PF's near-black default on the   */
+/* dark green sidebar in light + HC themes).                                  */
+:root {
+  --bor--masthead--bg: #1b4332;
+  --bor--masthead--text: #ffffff;
+
+  --bor--sidebar--bg: #1b4332;
+  /* Contrast on #1b4332:                                                    */
+  --bor--sidebar--text: #d8f3dc;          /* nav links          9.4:1  AAA   */
+  --bor--sidebar--text--title: #b7e4c7;   /* NavGroup titles    7.9:1  AAA   */
+  --bor--sidebar--text--muted: #95d5b2;   /* version / footer   6.6:1  AA    */
+  --bor--sidebar--text--strong: #ffffff;  /* emphasis          11.1:1  AAA   */
+  /* Text sitting on the hover / current backgrounds below                   */
+  --bor--sidebar--accent-text: #ffffff;
+  --bor--sidebar--hover-bg: rgba(82, 183, 136, 0.18);
+  --bor--sidebar--current-bg: rgba(82, 183, 136, 0.22);
+}
+
 /* ── Skip navigation link ─────────────────────────────────────────────────── */
 /* Visually hidden until focused — lets keyboard users jump past navigation   */
 .bor-skip-nav {
@@ -33,29 +55,47 @@
   top: 0;
 }
 
-/* ── Masthead ─────────────────────────────────────────────────────────────── */
+/* ── Masthead (theme-independent rules; values from the semantic layer) ───── */
 /* !important because @patternfly/react-styles injects component CSS after    */
 /* this file in the bundle, overriding same-specificity custom properties.    */
 .pf-v6-c-masthead {
-  --pf-v6-c-masthead--BackgroundColor: #1b4332 !important;
+  --pf-v6-c-masthead--BackgroundColor: var(--bor--masthead--bg) !important;
 }
 
-/* Nav toggle button (hamburger) — always white on the dark green masthead */
+/* Nav toggle button (hamburger) — always readable on the dark masthead */
 .pf-v6-c-masthead .pf-v6-c-button.pf-m-plain {
-  color: #ffffff !important;
+  color: var(--bor--masthead--text) !important;
 }
 
-/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+/* ── Sidebar (theme-independent rules; values from the semantic layer) ────── */
 .pf-v6-c-page__sidebar {
-  --pf-v6-c-page__sidebar--BackgroundColor: #1b4332 !important;
+  --pf-v6-c-page__sidebar--BackgroundColor: var(--bor--sidebar--bg) !important;
 }
 
-/* Nav links — light text on dark forest sidebar, ~9:1 contrast */
 .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
-  --pf-v6-c-nav__link--Color: #d8f3dc;
-  --pf-v6-c-nav__link--hover--Color: #ffffff;
-  --pf-v6-c-nav__link--hover--BackgroundColor: rgba(82, 183, 136, 0.18);
-  --pf-v6-c-nav__link--m-current--BackgroundColor: rgba(82, 183, 136, 0.22);
+  --pf-v6-c-nav__link--Color: var(--bor--sidebar--text);
+  --pf-v6-c-nav__link--hover--Color: var(--bor--sidebar--accent-text);
+  --pf-v6-c-nav__link--hover--BackgroundColor: var(--bor--sidebar--hover-bg);
+  /* PF's default m-current color is text--color--regular (#151515 in light
+     mode) — unreadable on the tinted current background. */
+  --pf-v6-c-nav__link--m-current--Color: var(--bor--sidebar--accent-text);
+  --pf-v6-c-nav__link--m-current--BackgroundColor: var(--bor--sidebar--current-bg);
+}
+
+/* NavGroup section titles ("Fleet" / "Policy" / "System") — issue #138 (1–3).
+   PF default is text--color--regular (#151515), invisible on the dark bg. */
+.pf-v6-c-page__sidebar .pf-v6-c-nav__section-title {
+  --pf-v6-c-nav__section-title--Color: var(--bor--sidebar--text--title);
+}
+
+/* ── Secondary text utility — issue #138 (5) ──────────────────────────────── */
+/* The one blessed way to render de-emphasized helper text (table description
+   lines, meta rows). Replaces ad-hoc `fontSize: 0.8rem` inline styles:
+   14 px instead of 12.8 px, explicit body weight, theme-aware subtle color. */
+.bor-text-secondary {
+  font-size: var(--pf-t--global--font--size--sm);            /* 0.875rem */
+  font-weight: var(--pf-t--global--font--weight--body--default);
+  color: var(--pf-t--global--text--color--subtle);
 }
 
 /* ── Primary buttons ──────────────────────────────────────────────────────── */
@@ -85,15 +125,14 @@
   /* PF6 dark-mode brand alias tokens */
   --pf-t--global--dark--color--brand--100: #95d5b2;
   --pf-t--global--dark--color--brand--200: #74c69d;
+
+  /* Masthead/sidebar keep the forest branding, one step darker. The sidebar
+     text values inherit from :root — on #122b21 every ratio only improves
+     (links 10.5:1, titles 10.7:1, muted 9.0:1). */
+  --bor--masthead--bg: #122b21;
+  --bor--sidebar--bg: #122b21;
 }
 
-/* Dark mode: masthead stays dark forest for consistent branding */
-:root:where(.pf-v6-theme-dark) .pf-v6-c-masthead {
-  --pf-v6-c-masthead--BackgroundColor: #122b21 !important;
-}
-:root:where(.pf-v6-theme-dark) .pf-v6-c-page__sidebar {
-  --pf-v6-c-page__sidebar--BackgroundColor: #122b21 !important;
-}
 :root:where(.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
   --pf-v6-c-button--m-primary--BackgroundColor: #52b788 !important;
 }
@@ -146,26 +185,18 @@
   /* All borders become opaque black for maximum visibility */
   --pf-t--global--border--color--default: #000000;
   --pf-t--global--border--color--strong: #000000;
-}
 
-/* HC masthead: pure black — maximum contrast */
-:root:where(.bor-theme-hc) .pf-v6-c-masthead {
-  --pf-v6-c-masthead--BackgroundColor: #000000 !important;
-}
-:root:where(.bor-theme-hc) .pf-v6-c-masthead .pf-v6-c-button.pf-m-plain {
-  color: #ffffff !important;
-}
-
-/* HC sidebar: black bg, white text, yellow active/hover */
-:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar {
-  --pf-v6-c-page__sidebar--BackgroundColor: #000000 !important;
-}
-:root:where(.bor-theme-hc) .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
-  --pf-v6-c-nav__link--Color: #ffffff;
-  --pf-v6-c-nav__link--hover--Color: #000000;
-  --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
-  --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
-  --pf-v6-c-nav__link--m-current--Color: #000000;
+  /* Masthead/sidebar: pure black, white text, yellow interactive (21:1 /
+     19.6:1). Applies identically with or without dark mode on top. */
+  --bor--masthead--bg: #000000;
+  --bor--sidebar--bg: #000000;
+  --bor--sidebar--text: #ffffff;
+  --bor--sidebar--text--title: #ffffff;
+  --bor--sidebar--text--muted: #ffffff;
+  --bor--sidebar--text--strong: #ffffff;
+  --bor--sidebar--accent-text: #000000;
+  --bor--sidebar--hover-bg: #ffff00;
+  --bor--sidebar--current-bg: #ffff00;
 }
 
 /* HC primary button: black bg, white text, explicit border */
@@ -195,17 +226,12 @@
   --pf-t--global--color--brand--500: #3fff3f;
   --pf-t--global--border--color--default: #ffffff;
   --pf-t--global--border--color--strong: #ffffff;
+  /* Sidebar values are inherited from .bor-theme-hc above (already black/
+     white/yellow), so nothing to redefine here. */
 }
 :root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-button.pf-m-primary {
   --pf-v6-c-button--m-primary--BackgroundColor: #ffff00 !important;
   color: #000000 !important;
-}
-:root:where(.bor-theme-hc.pf-v6-theme-dark) .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
-  --pf-v6-c-nav__link--Color: #ffffff;
-  --pf-v6-c-nav__link--hover--Color: #000000;
-  --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
-  --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
-  --pf-v6-c-nav__link--m-current--Color: #000000;
 }
 :root:where(.bor-theme-hc.pf-v6-theme-dark) :focus-visible {
   outline: 3px solid #ffff00 !important;
@@ -225,18 +251,18 @@
     --pf-t--global--color--brand--300: #003300;
     --pf-t--global--border--color--default: #000000;
     --pf-t--global--border--color--strong: #000000;
-  }
-  .pf-v6-c-masthead {
-    --pf-v6-c-masthead--BackgroundColor: #000000 !important;
-  }
-  .pf-v6-c-page__sidebar {
-    --pf-v6-c-page__sidebar--BackgroundColor: #000000 !important;
-  }
-  .pf-v6-c-page__sidebar .pf-v6-c-nav__link {
-    --pf-v6-c-nav__link--hover--BackgroundColor: #ffff00;
-    --pf-v6-c-nav__link--hover--Color: #000000;
-    --pf-v6-c-nav__link--m-current--BackgroundColor: #ffff00;
-    --pf-v6-c-nav__link--m-current--Color: #000000;
+
+    /* Same values as .bor-theme-hc — media queries cannot reuse the class
+       block, so the semantic properties are flipped here a second time. */
+    --bor--masthead--bg: #000000;
+    --bor--sidebar--bg: #000000;
+    --bor--sidebar--text: #ffffff;
+    --bor--sidebar--text--title: #ffffff;
+    --bor--sidebar--text--muted: #ffffff;
+    --bor--sidebar--text--strong: #ffffff;
+    --bor--sidebar--accent-text: #000000;
+    --bor--sidebar--hover-bg: #ffff00;
+    --bor--sidebar--current-bg: #ffff00;
   }
   .pf-v6-c-button.pf-m-primary {
     --pf-v6-c-button--m-primary--BackgroundColor: #000000 !important;
