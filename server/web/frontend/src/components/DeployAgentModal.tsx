@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 /**
- * DeployAgentModal — the "Deploy agent" wizard (issue #143).
+ * DeployAgentModal — the "Deploy agent" wizard (issue 143).
  *
  * One dialog, opened from the masthead download button or the Nodes page:
  * pick a platform and architecture, get a copy-paste bootstrap built from
