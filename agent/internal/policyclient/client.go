@@ -125,7 +125,7 @@ func (c *Client) ReportCompliance(ctx context.Context, policyID string, complian
 	resp, err := c.client.ReportCompliance(ctx, &pb.ReportComplianceRequest{
 		ClientId:   c.clientID,
 		PolicyId:   policyID,
-		Compliant:  compliant,
+		Compliant:  compliant, //nolint:staticcheck // SA1019: deprecated field still populated so servers that predate the status field keep working
 		Message:    message,
 		ReportedAt: timestamppb.Now(),
 	})
@@ -338,7 +338,7 @@ func (c *Client) ReportComplianceWithStatus(ctx context.Context, policyID string
 	resp, err := c.client.ReportCompliance(ctx, &pb.ReportComplianceRequest{
 		ClientId:   c.clientID,
 		PolicyId:   policyID,
-		Compliant:  compliant,
+		Compliant:  compliant, //nolint:staticcheck // SA1019: deprecated field still populated so servers that predate the status field keep working
 		Message:    message,
 		ReportedAt: timestamppb.Now(),
 		Status:     status,
