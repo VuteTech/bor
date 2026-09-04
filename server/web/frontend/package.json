@@ -18,7 +18,7 @@
     "@simplewebauthn/browser": "^13.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router": "^8.3.0"
+    "react-router": "^8.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
