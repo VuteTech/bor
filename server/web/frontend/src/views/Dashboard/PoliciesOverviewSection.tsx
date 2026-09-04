@@ -10,29 +10,16 @@ import {
   Grid,
   GridItem,
   Title,
-  Label,
   LabelGroup,
 } from "@patternfly/react-core";
 
 import type { PoliciesOverview } from "../../apiClient/dashboardApi";
 import { StatCard } from "../../components/StatCard";
+import { PolicyTypeLabel } from "../../components/PolicyTypeLabel";
 
 interface PoliciesOverviewSectionProps {
   data: PoliciesOverview;
 }
-
-const typeColor = (type: string): "blue" | "green" | "purple" | "orange" | "grey" => {
-  switch (type) {
-    case "firefox":
-      return "orange";
-    case "chrome":
-      return "blue";
-    case "kconfig":
-      return "purple";
-    default:
-      return "grey";
-  }
-};
 
 export const PoliciesOverviewSection: React.FC<PoliciesOverviewSectionProps> = ({ data }) => {
   const typeEntries = Object.entries(data.byType).sort((a, b) => b[1] - a[1]);
@@ -67,9 +54,7 @@ export const PoliciesOverviewSection: React.FC<PoliciesOverviewSectionProps> = (
               ) : (
                 <LabelGroup>
                   {typeEntries.map(([type, count]) => (
-                    <Label key={type} color={typeColor(type)}>
-                      {type} &nbsp;·&nbsp; {count}
-                    </Label>
+                    <PolicyTypeLabel key={type} type={type} suffix={<>&nbsp;·&nbsp;{count}</>} />
                   ))}
                 </LabelGroup>
               )}

@@ -4,3 +4,4 @@
 
 export { PoliciesPage } from "./PoliciesPage";
 export { PolicyEditorPage } from "./PolicyEditorPage";
+export { PolicyCreateWizard } from "./wizard/PolicyCreateWizard";

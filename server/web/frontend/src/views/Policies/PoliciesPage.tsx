@@ -45,10 +45,13 @@ import { useToast } from "../../components/ToastHost";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import { BorToolbar } from "../../components/BorToolbar";
+import { PolicyTypeIcon } from "../../components/PolicyTypeIcon";
+import { PolicyTypeLabel } from "../../components/PolicyTypeLabel";
+import { POLICY_TYPE_LIST, policyTypeLabel } from "../../policyTypes/registry";
 
 /* ── Filter options ── */
 
-const TYPE_OPTIONS = ["Kconfig", "Dconf", "Firefox", "Thunderbird", "Polkit", "Chrome", "Edge", "Package", "Firewalld", "SessionAccess"];
+const TYPE_OPTIONS = POLICY_TYPE_LIST.map((t) => t.id);
 const STATUS_OPTIONS = ["draft", "released", "archived"];
 
 const statusLabelColor = (status: string): "green" | "red" | "blue" | "orange" | "grey" => {
@@ -550,10 +553,11 @@ export const PoliciesPage: React.FC = () => {
           }}
         >
             <ToolbarFilter
-              labels={typeFilter}
-              deleteLabel={(_cat, chip) =>
-                setTypeFilter((prev) => prev.filter((f) => f !== chip))
-              }
+              labels={typeFilter.map((t) => ({ key: t, node: policyTypeLabel(t) }))}
+              deleteLabel={(_cat, chip) => {
+                const key = typeof chip === "string" ? chip : chip.key;
+                setTypeFilter((prev) => prev.filter((f) => f !== key));
+              }}
               deleteLabelGroup={() => setTypeFilter([])}
               categoryName="Type"
             >
@@ -575,8 +579,14 @@ export const PoliciesPage: React.FC = () => {
               >
                 <SelectList>
                   {TYPE_OPTIONS.map((t) => (
-                    <SelectOption key={t} value={t} hasCheckbox isSelected={typeFilter.includes(t)}>
-                      {t}
+                    <SelectOption
+                      key={t}
+                      value={t}
+                      hasCheckbox
+                      isSelected={typeFilter.includes(t)}
+                      icon={<PolicyTypeIcon type={t} size="sm" />}
+                    >
+                      {policyTypeLabel(t)}
                     </SelectOption>
                   ))}
                 </SelectList>
@@ -753,6 +763,7 @@ export const PoliciesPage: React.FC = () => {
             <Thead>
               <Tr>
                 <Th
+                  aria-label="Select all policies"
                   select={{
                     onSelect: toggleSelectAll,
                     isSelected: isAllSelected,
@@ -786,7 +797,7 @@ export const PoliciesPage: React.FC = () => {
                     )}
                   </Td>
                   <Td dataLabel="Type">
-                    <Label color="blue" isCompact>{policy.type}</Label>
+                    <PolicyTypeLabel type={policy.type} isCompact />
                   </Td>
                   <Td dataLabel="Version">v{policy.version}</Td>
                   <Td dataLabel="Status">

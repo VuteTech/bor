@@ -3,7 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate, useLocation } from "react-router";
+import { useParams, useNavigate, useLocation, Navigate } from "react-router";
 import {
   PageSection,
   Spinner,
@@ -18,12 +18,12 @@ import { fetchPolicy, Policy } from "../../apiClient/policiesApi";
 import { PolicyEditor } from "./PolicyEditor";
 
 /**
- * PolicyEditorPage is the full-page route wrapper around PolicyEditor.
- * It is mounted at `/policies/new` (create) and `/policies/:policyId/edit`
- * (edit/view), loading the target policy before rendering the editor. Saving
- * or cancelling returns to wherever the user came from (the policies list, or
- * the policy-bindings page when opened from there); that page re-fetches on
- * mount, so no explicit refresh is needed here.
+ * PolicyEditorPage is the full-page route wrapper around PolicyEditor, mounted
+ * at `/policies/:policyId/edit` (edit/view). It loads the target policy before
+ * rendering the editor. Saving or cancelling returns to wherever the user came
+ * from (the policies list, or the policy-bindings page when opened from
+ * there); that page re-fetches on mount, so no explicit refresh is needed
+ * here. Creation lives in the wizard at `/policies/new`.
  */
 export const PolicyEditorPage: React.FC = () => {
   const { policyId } = useParams<{ policyId: string }>();
@@ -34,16 +34,11 @@ export const PolicyEditorPage: React.FC = () => {
   const from = (location.state as { from?: string } | null)?.from ?? "/policies";
 
   const [policy, setPolicy] = useState<Policy | null>(null);
-  const [loading, setLoading] = useState<boolean>(!!policyId);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Create mode: no policy to load.
-    if (!policyId) {
-      setPolicy(null);
-      setLoading(false);
-      return;
-    }
+    if (!policyId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -94,6 +89,11 @@ export const PolicyEditorPage: React.FC = () => {
         </Button>
       </PageSection>
     );
+  }
+
+  // No id (or a policy that never loaded): creation has its own route.
+  if (!policyId || !policy) {
+    return <Navigate to="/policies/new" replace />;
   }
 
   // The editor's Cancel button routes through its own unsaved-changes guard

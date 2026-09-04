@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import { ConfirmModal } from "../../components/ConfirmModal";
@@ -138,6 +138,21 @@ export const PolicyBindingsPage: React.FC = () => {
     loadBindings();
   }, [loadBindings]);
 
+  // `?policy=<id>` (the create wizard's "Assign to a node group") opens the
+  // form with that policy chosen, then drops the parameter so a refresh or
+  // Back does not reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const presetHandledRef = useRef(false);
+  useEffect(() => {
+    const preset = searchParams.get("policy");
+    if (!preset || presetHandledRef.current) return;
+    presetHandledRef.current = true;
+    void openCreateModal(preset);
+    setSearchParams({}, { replace: true });
+    // openCreateModal is a plain closure; the ref guard makes this run once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams]);
+
   /* ── Filter + sort (client-side) ──
      Sortable column indices match the header order (index 0 = select cell):
      Policy=1, Group=3, Priority=5, Affected Nodes=6, Updated=7. */
@@ -194,9 +209,9 @@ export const PolicyBindingsPage: React.FC = () => {
   };
 
   /* ── Create / Edit ── */
-  const openCreateModal = async () => {
+  const openCreateModal = async (presetPolicyId = "") => {
     setEditingBinding(null);
-    setFormPolicyId("");
+    setFormPolicyId(presetPolicyId);
     setFormGroupId("");
     setFormState("disabled");
     setFormPriority(0);
@@ -356,7 +371,7 @@ export const PolicyBindingsPage: React.FC = () => {
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
-            <Button variant="primary" icon={<PlusCircleIcon />} onClick={openCreateModal}>
+            <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => openCreateModal()}>
               Create Binding
             </Button>
           </FlexItem>
@@ -426,7 +441,7 @@ export const PolicyBindingsPage: React.FC = () => {
             emptyTitle="No policy bindings"
             emptyBody="Create a binding to connect a policy to a node group. Nodes get policies only through group membership."
             action={
-              <Button variant="primary" onClick={openCreateModal}>
+              <Button variant="primary" onClick={() => openCreateModal()}>
                 Create Binding
               </Button>
             }
