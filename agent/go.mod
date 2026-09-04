@@ -8,7 +8,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	google.golang.org/grpc v1.83.2
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
