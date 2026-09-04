@@ -48,7 +48,7 @@ import { BorToolbar } from "../../components/BorToolbar";
 
 /* ── Filter options ── */
 
-const TYPE_OPTIONS = ["Kconfig", "Dconf", "Firefox", "Thunderbird", "Polkit", "Chrome", "Edge", "Package", "Firewalld"];
+const TYPE_OPTIONS = ["Kconfig", "Dconf", "Firefox", "Thunderbird", "Polkit", "Chrome", "Edge", "Package", "Firewalld", "SessionAccess"];
 const STATUS_OPTIONS = ["draft", "released", "archived"];
 
 const statusLabelColor = (status: string): "green" | "red" | "blue" | "orange" | "grey" => {

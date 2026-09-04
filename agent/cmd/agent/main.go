@@ -23,10 +23,12 @@ import (
 
 	"github.com/VuteTech/Bor/agent/internal/config"
 	"github.com/VuteTech/Bor/agent/internal/filewatcher"
+	"github.com/VuteTech/Bor/agent/internal/logind"
 	"github.com/VuteTech/Bor/agent/internal/notify"
 	"github.com/VuteTech/Bor/agent/internal/policy"
 	"github.com/VuteTech/Bor/agent/internal/policyclient"
 	"github.com/VuteTech/Bor/agent/internal/procinfo"
+	"github.com/VuteTech/Bor/agent/internal/sessionaccess"
 	"github.com/VuteTech/Bor/agent/internal/sysinfo"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"github.com/godbus/dbus/v5"
@@ -173,6 +175,71 @@ var firewalldSnapshotStaging map[string]firewalldCacheEntry
 // polkitActionsReported tracks whether the polkit action catalogue has been
 // reported to the server in this agent session.
 var polkitActionsReported bool
+
+// sessionAccessCacheEntry holds a SessionAccess policy with its binding
+// priority and name.
+type sessionAccessCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.SessionAccessPolicy
+}
+
+// sessionAccessCache maps policy ID → SessionAccess policy for all active
+// SessionAccess policies.
+var sessionAccessCache = make(map[string]sessionAccessCacheEntry)
+
+// sessionAccessSnapshotStaging accumulates SessionAccess policies during a SNAPSHOT.
+var sessionAccessSnapshotStaging map[string]sessionAccessCacheEntry
+
+// sessionLogind wraps loginctl for session enumeration and lock/terminate.
+var sessionLogind = logind.New()
+
+// sessionEnforcer runs the Layer-1 session access enforcement loop. Started
+// once in main(); rules are refreshed by syncAllSessionAccess.
+var sessionEnforcer = sessionaccess.New(sessionLogind, sessionaccess.NewNotifyAlerter())
+
+// sessionPamManaged tracks whether Bor currently owns a pam_time managed block
+// in /etc/security/time.conf, so the file watcher watches it only while it is
+// under management.
+var sessionPamManaged bool
+
+// sessionAccessMu serialises everything that touches SessionAccess state:
+// sessionAccessCache, sessionPamManaged, the time.conf write and the enforcer
+// rule swap. syncAllSessionAccess is reached from both the policy-stream
+// goroutine and the file watcher's tamper goroutine, so without this the cache
+// could be iterated and written concurrently.
+var sessionAccessMu sync.Mutex
+
+// sessionAccessPut stores a policy in the cache under sessionAccessMu.
+func sessionAccessPut(e sessionAccessCacheEntry) {
+	sessionAccessMu.Lock()
+	defer sessionAccessMu.Unlock()
+	sessionAccessCache[e.id] = e
+}
+
+// sessionAccessRemove deletes a policy from the cache under sessionAccessMu and
+// reports whether it was present.
+func sessionAccessRemove(id string) bool {
+	sessionAccessMu.Lock()
+	defer sessionAccessMu.Unlock()
+	if _, ok := sessionAccessCache[id]; !ok {
+		return false
+	}
+	delete(sessionAccessCache, id)
+	return true
+}
+
+// sessionAccessReplace swaps the whole cache (snapshot completion) under
+// sessionAccessMu; a nil map installs an empty cache.
+func sessionAccessReplace(m map[string]sessionAccessCacheEntry) {
+	sessionAccessMu.Lock()
+	defer sessionAccessMu.Unlock()
+	if m == nil {
+		m = make(map[string]sessionAccessCacheEntry)
+	}
+	sessionAccessCache = m
+}
 
 // packageNotifier handles desktop notifications for Package policy changes.
 var packageNotifier = notify.New()
@@ -395,6 +462,19 @@ To follow the agent logs:
 		log.Println("File watcher started")
 	}
 
+	// Start the session access enforcement loop (Layer 1: logind actions,
+	// warnings, re-lock watchdog). It idles until SessionAccess policies
+	// arrive and refresh its rules via syncAllSessionAccess.
+	if sessionLogind.Available() {
+		go sessionEnforcer.Run(ctx)
+		// Event-driven re-lock: kick the enforcer the instant a session is
+		// unlocked so a denied session is re-locked within milliseconds
+		// instead of at the next poll. Polling remains the backstop.
+		go logind.WatchLockChanges(ctx, sessionEnforcer.Kick)
+	} else {
+		log.Println("Warning: loginctl not available; SessionAccess policies will report an error and cannot be enforced")
+	}
+
 	// Detect package manager repo format once at startup.
 	repoFormat = policy.DetectRepoFormat()
 	if repoFormat == policy.RepoFormatUnknown {
@@ -590,6 +670,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				packageSnapshotStaging = nil
 				firewalldCache = make(map[string]firewalldCacheEntry)
 				firewalldSnapshotStaging = nil
+				sessionAccessReplace(nil)
+				sessionAccessSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
 				syncAllFirefox(ctx, client, cfg)
 				syncAllThunderbird(ctx, client, cfg)
@@ -598,6 +680,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				syncAllDConf(ctx, client, cfg)
 				syncAllPolkit(ctx, client, cfg)
 				syncAllFirewalld(ctx, client, cfg)
+				syncAllSessionAccess(ctx, client, cfg)
 				go triggerPackageSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
@@ -670,6 +753,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firewalldSnapshotStaging = make(map[string]firewalldCacheEntry)
 			}
 			firewalldSnapshotStaging[pi.ID] = firewalldCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FirewalldPolicy}
+		case "SessionAccess":
+			if sessionAccessSnapshotStaging == nil {
+				sessionAccessSnapshotStaging = make(map[string]sessionAccessCacheEntry)
+			}
+			sessionAccessSnapshotStaging[pi.ID] = sessionAccessCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SessionAccessPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -755,6 +843,10 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			firewalldSnapshotStaging = nil
 
+			// Swap SessionAccess staging into cache.
+			sessionAccessReplace(sessionAccessSnapshotStaging)
+			sessionAccessSnapshotStaging = nil
+
 			kconfigChanged := syncAllKConfig(ctx, client, cfg)
 			syncAllFirefox(ctx, client, cfg)
 			syncAllThunderbird(ctx, client, cfg)
@@ -763,6 +855,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			syncAllDConf(ctx, client, cfg)
 			syncAllPolkit(ctx, client, cfg)
 			syncAllFirewalld(ctx, client, cfg)
+			syncAllSessionAccess(ctx, client, cfg)
 			go triggerPackageSync(ctx, client, cfg)
 
 			if *postInitialSync {
@@ -831,6 +924,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "Firewalld":
 			firewalldCache[pi.ID] = firewalldCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FirewalldPolicy}
 			syncAllFirewalld(ctx, client, cfg)
+		case "SessionAccess":
+			sessionAccessPut(sessionAccessCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SessionAccessPolicy})
+			syncAllSessionAccess(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -881,6 +977,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := firewalldCache[pi.ID]; ok {
 			delete(firewalldCache, pi.ID)
 			syncAllFirewalld(ctx, client, cfg)
+		} else if sessionAccessRemove(pi.ID) {
+			syncAllSessionAccess(ctx, client, cfg)
 		} else {
 			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
 		}
@@ -1013,6 +1111,163 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 		len(ids), result.Status.String(), result.Message)
 	for _, id := range ids {
 		_ = client.ReportComplianceWithStatus(ctx, id, result.Status, result.Message, nil)
+	}
+}
+
+// syncAllSessionAccess recompiles all cached SessionAccess policies, refreshes
+// the Layer-1 enforcer's rule set, applies the Layer-2 pam_time managed block,
+// and reports per-policy compliance. Enforcement actions (locks/logoffs/
+// warnings) happen asynchronously in the enforcer loop and go to the log, not
+// compliance — compliance reflects enforcement *state* (tooling present,
+// config valid), not events.
+func syncAllSessionAccess(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	sessionAccessMu.Lock()
+	defer sessionAccessMu.Unlock()
+
+	sources := make([]policy.SessionPolicySource, 0, len(sessionAccessCache))
+	ids := make([]string, 0, len(sessionAccessCache))
+	for _, e := range sessionAccessCache {
+		sources = append(sources, policy.SessionPolicySource{Name: e.name, Policy: e.policy})
+		ids = append(ids, e.id)
+	}
+
+	rules, warnings := policy.CompileSessionAccess(sources)
+	sessionEnforcer.SetRules(rules)
+
+	pam := applySessionPam(cfg, sources)
+
+	status, message := sessionAccessCompliance(rules, warnings, &pam)
+	log.Printf("SessionAccess policies synced (%d policies, %d rules): %s — %s",
+		len(ids), len(rules), status.String(), message)
+	for _, id := range ids {
+		_ = client.ReportComplianceWithStatus(ctx, id, status, message, nil)
+	}
+}
+
+// sessionPamResult describes the outcome of applying the Layer-2 pam_time
+// layer, feeding both logging and compliance.
+type sessionPamResult struct {
+	anyEnforcePam   bool
+	manager         policy.PamManager
+	moduleAvailable bool
+	lineCount       int
+	warnings        []string
+	// state is a short label for compliance: "disabled" | "applied" |
+	// "missing: pam_time" | "unsupported: authselect" |
+	// "unsupported: unknown pam stack" | "error: …".
+	state string
+	err   error
+}
+
+// applySessionPam reconciles /etc/security/time.conf and the PAM account stack
+// with the current SessionAccess policies. The managed block encodes the full
+// weekly schedule, so enforcement stays correct even while the agent is not
+// running. When no policy requests PAM, or the module/stack is unmanageable,
+// it tears any prior Bor artifacts down (fail open) rather than leaving stale
+// denials.
+func applySessionPam(cfg *config.Config, sources []policy.SessionPolicySource) sessionPamResult {
+	res := sessionPamResult{}
+	for _, s := range sources {
+		if s.Policy != nil && (s.Policy.EnforcePam == nil || s.Policy.GetEnforcePam()) {
+			res.anyEnforcePam = true
+			break
+		}
+	}
+
+	if !res.anyEnforcePam {
+		teardownSessionPam(cfg)
+		res.state = "disabled"
+		return res
+	}
+
+	lines, warns := policy.RenderTimeConfLines(sources, policy.SystemGroupMembers)
+	res.lineCount = len(lines)
+	res.warnings = warns
+	res.moduleAvailable = policy.PamTimeModuleAvailable()
+	res.manager = policy.DetectPamManager()
+
+	if !res.moduleAvailable {
+		teardownSessionPam(cfg)
+		res.state = "missing: pam_time"
+		return res
+	}
+
+	switch res.manager {
+	case policy.PamManagerDebian:
+		suppressManagedWrites(cfg, policy.TimeConfPath)
+		defer updateWatcher(cfg)
+		if len(lines) == 0 {
+			// PAM requested but no restricted users → nothing to enforce.
+			teardownSessionPam(cfg)
+			res.state = "applied (no restricted users)"
+			return res
+		}
+		if err := policy.EnablePamTimeDebian(); err != nil {
+			res.err = err
+			res.state = "error: " + err.Error()
+			return res
+		}
+		if err := policy.WriteTimeConf(lines); err != nil {
+			res.err = err
+			res.state = "error: " + err.Error()
+			return res
+		}
+		sessionPamManaged = true
+		res.state = "applied"
+	case policy.PamManagerAuthselect:
+		// v1 does not edit system-auth behind authselect's back; Layer 1 still
+		// enforces. Leave the account stack untouched and do not write inert
+		// time.conf rules.
+		teardownSessionPam(cfg)
+		res.state = "unsupported: authselect"
+	default:
+		teardownSessionPam(cfg)
+		res.state = "unsupported: unknown pam stack"
+	}
+	return res
+}
+
+// teardownSessionPam removes any Bor pam_time artifacts, in fail-open order:
+// strip the time.conf denials first, then remove pam_time from the stack.
+func teardownSessionPam(cfg *config.Config) {
+	suppressManagedWrites(cfg, policy.TimeConfPath)
+	defer updateWatcher(cfg)
+	if err := policy.WriteTimeConf(nil); err != nil {
+		log.Printf("session access: failed to strip time.conf managed block: %v", err)
+	}
+	if policy.DetectPamManager() == policy.PamManagerDebian {
+		if err := policy.DisablePamTimeDebian(); err != nil {
+			log.Printf("session access: failed to disable pam_time: %v", err)
+		}
+	}
+	sessionPamManaged = false
+}
+
+// sessionAccessCompliance derives the compliance status shared by all bound
+// SessionAccess policies from the enforcement tooling and config health.
+func sessionAccessCompliance(rules []policy.SessionRule, warnings []string, pam *sessionPamResult) (status pb.ComplianceStatus, message string) {
+	pamMsg := "PAM " + pam.state
+	base := fmt.Sprintf("layer 1 (logind) enforcing %d rule(s); %s", len(rules), pamMsg)
+
+	allWarnings := append(append([]string(nil), warnings...), pam.warnings...)
+
+	switch {
+	case !sessionLogind.Available():
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+			"logind (loginctl) unavailable: SessionAccess cannot be enforced on this node"
+	case pam.err != nil:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, base
+	case pam.anyEnforcePam && !pam.moduleAvailable:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+			base + "; pam_time module not installed but PAM enforcement is enabled"
+	case pam.anyEnforcePam && (pam.manager == policy.PamManagerAuthselect || pam.manager == policy.PamManagerUnknown):
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT,
+			base + "; PAM layer requires a one-time admin step on this node (Layer 1 still enforced)"
+	case len(allWarnings) > 0:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT,
+			fmt.Sprintf("%s; %d configuration issue(s): %s", base, len(allWarnings), strings.Join(allWarnings, "; "))
+	default:
+		return pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, base
 	}
 }
 
@@ -1807,6 +2062,12 @@ func getManagedPaths(cfg *config.Config) []string {
 		paths = append(paths, zoneFiles...)
 	}
 
+	// SessionAccess Layer 2: the pam_time managed block, watched only while a
+	// managed block is present on this node.
+	if sessionPamManaged {
+		paths = append(paths, policy.TimeConfPath)
+	}
+
 	return paths
 }
 
@@ -1866,6 +2127,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllEdge(ctx, client, cfg)
 	case strings.HasPrefix(path, cfg.Firewalld.ZonesDir+string(filepath.Separator)):
 		syncAllFirewalld(ctx, client, cfg)
+	case path == policy.TimeConfPath:
+		syncAllSessionAccess(ctx, client, cfg)
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
 	default:

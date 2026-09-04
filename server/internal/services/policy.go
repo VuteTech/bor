@@ -286,6 +286,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateEdgeContent(content)
 	case "Firewalld":
 		return ValidateFirewalldContent(content)
+	case "SessionAccess":
+		return ValidateSessionAccessContent(content)
 	}
 	return nil
 }

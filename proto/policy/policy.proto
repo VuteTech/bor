@@ -13,6 +13,7 @@ import "firewalld.proto";
 import "kconfig.proto";
 import "package.proto";
 import "polkit.proto";
+import "session_access.proto";
 import "thunderbird.proto";
 
 // PolicyService manages desktop policies
@@ -93,6 +94,7 @@ message Policy {
     ThunderbirdPolicy  thunderbird_policy  = 17;
     EdgePolicy         edge_policy         = 18;
     FirewalldPolicy    firewalld_policy    = 19;
+    SessionAccessPolicy session_access_policy = 20;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

@@ -99,21 +99,22 @@ func (c *Client) Close() error {
 
 // PolicyInfo holds the policy data returned from the server.
 type PolicyInfo struct {
-	ID                string
-	Name              string
-	Type              string
-	Content           string // kept for compatibility / fallback
-	Version           int32
-	Priority          int32                 // max binding priority across enabled bindings for this node
-	KConfigPolicy     *pb.KConfigPolicy     // populated from typed_content for Kconfig type
-	FirefoxPolicy     *pb.FirefoxPolicy     // populated from typed_content for Firefox type
-	ChromePolicy      *pb.ChromePolicy      // populated from typed_content for Chrome type
-	DConfPolicy       *pb.DConfPolicy       // populated from typed_content for Dconf type
-	PolkitPolicy      *pb.PolkitPolicy      // populated from typed_content for Polkit type
-	PackagePolicy     *pb.PackagePolicy     // populated from typed_content for Package type
-	ThunderbirdPolicy *pb.ThunderbirdPolicy // populated from typed_content for Thunderbird type
-	EdgePolicy        *pb.EdgePolicy        // populated from typed_content for Edge type
-	FirewalldPolicy   *pb.FirewalldPolicy   // populated from typed_content for Firewalld type
+	ID                  string
+	Name                string
+	Type                string
+	Content             string // kept for compatibility / fallback
+	Version             int32
+	Priority            int32                   // max binding priority across enabled bindings for this node
+	KConfigPolicy       *pb.KConfigPolicy       // populated from typed_content for Kconfig type
+	FirefoxPolicy       *pb.FirefoxPolicy       // populated from typed_content for Firefox type
+	ChromePolicy        *pb.ChromePolicy        // populated from typed_content for Chrome type
+	DConfPolicy         *pb.DConfPolicy         // populated from typed_content for Dconf type
+	PolkitPolicy        *pb.PolkitPolicy        // populated from typed_content for Polkit type
+	PackagePolicy       *pb.PackagePolicy       // populated from typed_content for Package type
+	ThunderbirdPolicy   *pb.ThunderbirdPolicy   // populated from typed_content for Thunderbird type
+	EdgePolicy          *pb.EdgePolicy          // populated from typed_content for Edge type
+	FirewalldPolicy     *pb.FirewalldPolicy     // populated from typed_content for Firewalld type
+	SessionAccessPolicy *pb.SessionAccessPolicy // populated from typed_content for SessionAccess type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -124,7 +125,7 @@ func (c *Client) ReportCompliance(ctx context.Context, policyID string, complian
 	resp, err := c.client.ReportCompliance(ctx, &pb.ReportComplianceRequest{
 		ClientId:   c.clientID,
 		PolicyId:   policyID,
-		Compliant:  compliant,
+		Compliant:  compliant, //nolint:staticcheck // SA1019: deprecated field still populated so servers that predate the status field keep working
 		Message:    message,
 		ReportedAt: timestamppb.Now(),
 	})
@@ -318,6 +319,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if fwp := p.GetFirewalldPolicy(); fwp != nil {
 				pi.FirewalldPolicy = fwp
 			}
+			if sap := p.GetSessionAccessPolicy(); sap != nil {
+				pi.SessionAccessPolicy = sap
+			}
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
@@ -334,7 +338,7 @@ func (c *Client) ReportComplianceWithStatus(ctx context.Context, policyID string
 	resp, err := c.client.ReportCompliance(ctx, &pb.ReportComplianceRequest{
 		ClientId:   c.clientID,
 		PolicyId:   policyID,
-		Compliant:  compliant,
+		Compliant:  compliant, //nolint:staticcheck // SA1019: deprecated field still populated so servers that predate the status field keep working
 		Message:    message,
 		ReportedAt: timestamppb.Now(),
 		Status:     status,
