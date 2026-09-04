@@ -49,7 +49,7 @@ import { LoginPage } from "./views/LoginPage";
 import { AccountModal } from "./views/Settings/AccountModal";
 import { MFARequiredGate } from "./views/MFARequiredGate";
 import { DashboardPage } from "./views/Dashboard";
-import { PoliciesPage, PolicyEditorPage } from "./views/Policies";
+import { PoliciesPage, PolicyEditorPage, PolicyCreateWizard } from "./views/Policies";
 import { NodesPage } from "./views/Nodes";
 import { NodeGroupsPage } from "./views/NodeGroups";
 import { PolicyBindingsPage } from "./views/PolicyBindings";
@@ -95,6 +95,16 @@ const SCREEN_PATH: Record<ScreenKey, string> = {
   settings:          "/settings",
 };
 
+// Routes that keep their parent's nav highlight but carry their own page
+// title/subtitle (the Shell renders the single page <h1>).
+const ROUTE_TITLES: { path: string; title: string; subtitle: string }[] = [
+  {
+    path: "/policies/new",
+    title: "Create a policy",
+    subtitle: "Choose a type, give it a name, configure it, review, and create it as a draft.",
+  },
+];
+
 function screenForPath(pathname: string): ScreenKey {
   const exact = (Object.keys(SCREEN_PATH) as ScreenKey[]).find((k) => SCREEN_PATH[k] === pathname);
   if (exact) return exact;
@@ -108,6 +118,7 @@ export const Shell: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const activeScreen = screenForPath(location.pathname);
+  const routeTitle = ROUTE_TITLES.find((r) => r.path === location.pathname);
 
   /* ── Theme state ── */
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -168,8 +179,8 @@ export const Shell: React.FC = () => {
 
   /* ── Update document title on screen change (WCAG 2.4.2) ── */
   useEffect(() => {
-    document.title = `${PAGE_NAMES[activeScreen]} | Bor`;
-  }, [activeScreen]);
+    document.title = `${routeTitle?.title ?? PAGE_NAMES[activeScreen]} | Bor`;
+  }, [activeScreen, routeTitle]);
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -514,11 +525,11 @@ export const Shell: React.FC = () => {
         defaultManagedSidebarIsOpen={true}
         mainContainerId="bor-main-content"
       >
-        <PageHeader title={PAGE_NAMES[activeScreen]} subtitle={PAGE_SUBTITLES[activeScreen]} />
+        <PageHeader title={routeTitle?.title ?? PAGE_NAMES[activeScreen]} subtitle={routeTitle?.subtitle ?? PAGE_SUBTITLES[activeScreen]} />
         <Routes>
           <Route index element={<DashboardPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
-          <Route path="/policies/new" element={<PolicyEditorPage />} />
+          <Route path="/policies/new" element={<PolicyCreateWizard />} />
           <Route path="/policies/:policyId/edit" element={<PolicyEditorPage />} />
           <Route path="/nodes" element={<NodesPage />} />
           <Route path="/node-groups" element={<NodeGroupsPage />} />
