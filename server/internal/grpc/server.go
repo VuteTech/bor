@@ -580,6 +580,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		} else {
 			pol.TypedContent = &pb.Policy_FirewalldPolicy{FirewalldPolicy: &fwPol}
 		}
+	case "SessionAccess":
+		var saPol pb.SessionAccessPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &saPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal SessionAccess typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_SessionAccessPolicy{SessionAccessPolicy: &saPol}
+		}
 	}
 
 	return pol

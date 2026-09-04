@@ -54,6 +54,7 @@ import { DConfPolicyEditor } from "./DConfPolicyEditor";
 import { PackagePolicyEditor } from "./PackagePolicyEditor";
 import { PolkitPolicyEditor } from "./PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "./FirewalldPolicyEditor";
+import { SessionAccessPolicyEditor } from "./SessionAccessPolicyEditor";
 import { PolicyTreePanel } from "./PolicyTreePanel";
 
 function FieldHelp({ children }: { children: React.ReactNode }) {
@@ -78,6 +79,7 @@ const POLICY_TYPES: { value: string; label: string; isDisabled?: boolean }[] = [
   { value: "Edge", label: "Edge" },
   { value: "Package", label: "Package" },
   { value: "Firewalld", label: "Firewall (firewalld)" },
+  { value: "SessionAccess", label: "Session Access" },
 ];
 
 interface PolicyTypeConfig {
@@ -886,6 +888,7 @@ function defaultContentForType(type: string): string {
     case "Chrome":
     case "Edge":
     case "Firewalld": return "{}";
+    case "SessionAccess": return JSON.stringify({ rules: [], enforcePam: true, includeSsh: false }, null, 2);
     default: return JSON.stringify([{}], null, 2);
   }
 }
@@ -1120,6 +1123,8 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
         // Polkit editor reads contentRaw directly — nothing extra to initialise.
       } else if (policy.type === "Firewalld") {
         // Firewalld editor reads contentRaw directly — nothing extra to initialise.
+      } else if (policy.type === "SessionAccess") {
+        // SessionAccess editor reads contentRaw directly — nothing extra to initialise.
       } else {
         try {
           const parsed = JSON.parse(policy.content || "{}");
@@ -1229,6 +1234,8 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
       setContentRaw(JSON.stringify({ repositories: [], packages: [], updateCache: true, allowDowngrade: false }, null, 2));
     } else if (newType === "Firewalld") {
       setContentRaw("{}");
+    } else if (newType === "SessionAccess") {
+      setContentRaw(JSON.stringify({ rules: [], enforcePam: true, includeSsh: false }, null, 2));
     } else {
       setStructuredFieldsList([{}]);
       setContentRaw(JSON.stringify([{}], null, 2));
@@ -1745,6 +1752,49 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
           }
         } catch {
           setError("Firewalld policy content is not valid JSON");
+          setSaving(false);
+          return;
+        }
+      } else if (policyType === "SessionAccess") {
+        try {
+          type SaWin = { days?: string[]; start?: string; end?: string };
+          type SaRule = { users?: string[]; groups?: string[]; windows?: SaWin[] };
+          const parsed = JSON.parse(finalContent) as { rules?: SaRule[] };
+          if (!parsed || !Array.isArray(parsed.rules) || parsed.rules.length === 0) {
+            setError("Add at least one rule before saving");
+            setSaving(false);
+            return;
+          }
+          // Mirror the server's structural checks so the admin sees the
+          // problem immediately instead of after a round trip.
+          for (const [i, rule] of parsed.rules.entries()) {
+            const targets = [...(rule.users ?? []), ...(rule.groups ?? [])].filter((t) => t.trim() !== "");
+            if (targets.length === 0) {
+              setError(`Rule ${i + 1}: add at least one user or group`);
+              setSaving(false);
+              return;
+            }
+            const windows = rule.windows ?? [];
+            if (windows.length === 0) {
+              setError(`Rule ${i + 1}: add at least one allowed period`);
+              setSaving(false);
+              return;
+            }
+            for (const [w, win] of windows.entries()) {
+              if (!win.days || win.days.length === 0) {
+                setError(`Rule ${i + 1}, period ${w + 1}: select at least one day`);
+                setSaving(false);
+                return;
+              }
+              if (!win.start || !win.end) {
+                setError(`Rule ${i + 1}, period ${w + 1}: set both a start and an end time`);
+                setSaving(false);
+                return;
+              }
+            }
+          }
+        } catch {
+          setError("Session access policy content is not valid JSON");
           setSaving(false);
           return;
         }
@@ -3207,6 +3257,17 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
       return (
         <div style={{ padding: "1rem 0" }}>
           <FirewalldPolicyEditor
+            contentRaw={contentRaw}
+            onChange={(newRaw) => { setContentRaw(newRaw); }}
+            isDisabled={!isEditable}
+          />
+        </div>
+      );
+    }
+    if (policyType === "SessionAccess") {
+      return (
+        <div style={{ padding: "1rem 0" }}>
+          <SessionAccessPolicyEditor
             contentRaw={contentRaw}
             onChange={(newRaw) => { setContentRaw(newRaw); }}
             isDisabled={!isEditable}
