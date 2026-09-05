@@ -48,6 +48,8 @@ func newContentMessage(policyType string) proto.Message {
 		return &pb.FirewalldPolicy{}
 	case "SessionAccess":
 		return &pb.SessionAccessPolicy{}
+	case "Flatpak":
+		return &pb.FlatpakPolicy{}
 	}
 	return nil
 }

@@ -587,6 +587,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 		} else {
 			pol.TypedContent = &pb.Policy_SessionAccessPolicy{SessionAccessPolicy: &saPol}
 		}
+	case "Flatpak":
+		var fpPol pb.FlatpakPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &fpPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Flatpak typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_FlatpakPolicy{FlatpakPolicy: &fpPol}
+		}
 	}
 
 	return pol

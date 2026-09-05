@@ -115,6 +115,7 @@ type PolicyInfo struct {
 	EdgePolicy          *pb.EdgePolicy          // populated from typed_content for Edge type
 	FirewalldPolicy     *pb.FirewalldPolicy     // populated from typed_content for Firewalld type
 	SessionAccessPolicy *pb.SessionAccessPolicy // populated from typed_content for SessionAccess type
+	FlatpakPolicy       *pb.FlatpakPolicy       // populated from typed_content for Flatpak type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -321,6 +322,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if sap := p.GetSessionAccessPolicy(); sap != nil {
 				pi.SessionAccessPolicy = sap
+			}
+			if fpp := p.GetFlatpakPolicy(); fpp != nil {
+				pi.FlatpakPolicy = fpp
 			}
 		}
 

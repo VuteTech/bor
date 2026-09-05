@@ -10,6 +10,7 @@ import type { DConfPolicy } from "./dconf";
 import type { EdgePolicy } from "./edge";
 import type { FirefoxPolicy } from "./firefox";
 import type { FirewalldPolicy } from "./firewalld";
+import type { FlatpakPolicy } from "./flatpak";
 import type { KConfigPolicy } from "./kconfig";
 import type { PackagePolicy } from "./package";
 import type { PolkitPolicy } from "./polkit";
@@ -66,8 +67,9 @@ export interface Policy {
   thunderbird_policy?: ThunderbirdPolicy | undefined;
   edge_policy?: EdgePolicy | undefined;
   firewalld_policy?: FirewalldPolicy | undefined;
-  session_access_policy?:
-    | SessionAccessPolicy
+  session_access_policy?: SessionAccessPolicy | undefined;
+  flatpak_policy?:
+    | FlatpakPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority

@@ -103,14 +103,23 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
     <Tbody>
       {items.map((item, i) => {
         const isPolkit = item.schema_id?.startsWith("polkit:");
+        const flatpakKind = item.schema_id === "flatpak:app"
+          ? "Flatpak app"
+          : item.schema_id === "flatpak:remote"
+            ? "Flatpak remote"
+            : null;
         const label = isPolkit
           ? (item.schema_id.slice("polkit:".length) || item.key)
-          : (summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key);
+          : flatpakKind
+            ? `${flatpakKind} · ${item.key}`
+            : (summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key);
         const subtitle = isPolkit
           ? item.key
-          : summaryIndex.has(`${item.schema_id}/${item.key}`)
-            ? `${item.schema_id} / ${item.key}`
-            : item.schema_id;
+          : flatpakKind
+            ? item.schema_id
+            : summaryIndex.has(`${item.schema_id}/${item.key}`)
+              ? `${item.schema_id} / ${item.key}`
+              : item.schema_id;
         return (
           <Tr key={i}>
             <Td dataLabel="Key">

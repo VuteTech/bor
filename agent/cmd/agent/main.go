@@ -8,6 +8,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -171,6 +172,42 @@ var firewalldCache = make(map[string]firewalldCacheEntry)
 
 // firewalldSnapshotStaging accumulates Firewalld policies during a SNAPSHOT.
 var firewalldSnapshotStaging map[string]firewalldCacheEntry
+
+// flatpakCacheEntry holds a Flatpak policy alongside its binding priority and name.
+type flatpakCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.FlatpakPolicy
+}
+
+// flatpakCache maps policy ID → Flatpak policy + priority for all active Flatpak policies.
+var flatpakCache = make(map[string]flatpakCacheEntry)
+
+// flatpakSnapshotStaging accumulates Flatpak policies during a SNAPSHOT.
+var flatpakSnapshotStaging map[string]flatpakCacheEntry
+
+// flatpakSyncMu ensures only one Flatpak sync (which may download and install
+// applications for minutes) runs at a time. Syncs are always go-dispatched so
+// they never block the gRPC stream goroutine; the auto-update ticker takes the
+// same mutex.
+var flatpakSyncMu sync.Mutex
+
+// flatpakLastDesired / flatpakLastIDs hold the merged desired state and the
+// policy IDs computed by the most recent sync. The auto-update ticker uses
+// them (under flatpakSyncMu) instead of touching the stream-owned cache.
+var (
+	flatpakLastDesired policy.FlatpakDesired
+	flatpakLastIDs     []string
+)
+
+// flatpakUpdaterCancel stops the auto-update ticker goroutine; nil when no
+// ticker is running. flatpakUpdaterInterval is the interval it was started
+// with, so a changed interval restarts it. Both are guarded by flatpakSyncMu.
+var (
+	flatpakUpdaterCancel   context.CancelFunc
+	flatpakUpdaterInterval time.Duration
+)
 
 // polkitActionsReported tracks whether the polkit action catalogue has been
 // reported to the server in this agent session.
@@ -495,6 +532,16 @@ To follow the agent logs:
 		}
 	}
 
+	// Probe flatpak once at startup so the journal explains INAPPLICABLE results.
+	if !policy.FlatpakAvailable(cfg.Flatpak.Binary) {
+		log.Println("Warning: flatpak not installed; Flatpak policies will be INAPPLICABLE on this node")
+	} else if ver, verr := flatpakProbeVersion(ctx, cfg); verr != nil {
+		log.Printf("Warning: flatpak is installed but unusable (%v); Flatpak policies will report ERROR", verr)
+	} else {
+		log.Printf("flatpak %s available", ver)
+	}
+	defer stopFlatpakUpdater()
+
 	// Run the policy enforcement loop — prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
@@ -670,6 +717,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				packageSnapshotStaging = nil
 				firewalldCache = make(map[string]firewalldCacheEntry)
 				firewalldSnapshotStaging = nil
+				flatpakCache = make(map[string]flatpakCacheEntry)
+				flatpakSnapshotStaging = nil
 				sessionAccessReplace(nil)
 				sessionAccessSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
@@ -682,6 +731,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				syncAllFirewalld(ctx, client, cfg)
 				syncAllSessionAccess(ctx, client, cfg)
 				go triggerPackageSync(ctx, client, cfg)
+				go triggerFlatpakSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -758,6 +808,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				sessionAccessSnapshotStaging = make(map[string]sessionAccessCacheEntry)
 			}
 			sessionAccessSnapshotStaging[pi.ID] = sessionAccessCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SessionAccessPolicy}
+		case "Flatpak":
+			if flatpakSnapshotStaging == nil {
+				flatpakSnapshotStaging = make(map[string]flatpakCacheEntry)
+			}
+			flatpakSnapshotStaging[pi.ID] = flatpakCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FlatpakPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -843,6 +898,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			firewalldSnapshotStaging = nil
 
+			// Swap Flatpak staging into cache.
+			if flatpakSnapshotStaging != nil {
+				flatpakCache = flatpakSnapshotStaging
+			} else {
+				flatpakCache = make(map[string]flatpakCacheEntry)
+			}
+			flatpakSnapshotStaging = nil
+
 			// Swap SessionAccess staging into cache.
 			sessionAccessReplace(sessionAccessSnapshotStaging)
 			sessionAccessSnapshotStaging = nil
@@ -857,6 +920,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			syncAllFirewalld(ctx, client, cfg)
 			syncAllSessionAccess(ctx, client, cfg)
 			go triggerPackageSync(ctx, client, cfg)
+			go triggerFlatpakSync(ctx, client, cfg)
 
 			if *postInitialSync {
 				// Resync from a live admin change — notify if content changed.
@@ -927,6 +991,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "SessionAccess":
 			sessionAccessPut(sessionAccessCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SessionAccessPolicy})
 			syncAllSessionAccess(ctx, client, cfg)
+		case "Flatpak":
+			flatpakCache[pi.ID] = flatpakCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FlatpakPolicy}
+			go triggerFlatpakSync(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -977,6 +1044,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := firewalldCache[pi.ID]; ok {
 			delete(firewalldCache, pi.ID)
 			syncAllFirewalld(ctx, client, cfg)
+		} else if _, ok := flatpakCache[pi.ID]; ok {
+			delete(flatpakCache, pi.ID)
+			go triggerFlatpakSync(ctx, client, cfg)
 		} else if sessionAccessRemove(pi.ID) {
 			syncAllSessionAccess(ctx, client, cfg)
 		} else {
@@ -1860,6 +1930,227 @@ func packageItemsToProto(items []policy.ComplianceItem) []*pb.ComplianceItemResu
 	return result
 }
 
+// flatpakOptions builds the policy.FlatpakOptions for this node from the
+// agent configuration and the merged desired state.
+func flatpakOptions(cfg *config.Config, desired *policy.FlatpakDesired) policy.FlatpakOptions {
+	return policy.FlatpakOptions{
+		Binary:           cfg.Flatpak.Binary,
+		StateDir:         cfg.Flatpak.StateDir,
+		StateFile:        cfg.Flatpak.StateFile,
+		ProxyURL:         cfg.Flatpak.ProxyURL,
+		Installation:     desired.Installation,
+		OperationTimeout: desired.OperationTimeout,
+	}
+}
+
+// flatpakProbeVersion runs `flatpak --version` with the node defaults (used
+// by the startup probe).
+func flatpakProbeVersion(ctx context.Context, cfg *config.Config) (string, error) {
+	opts := flatpakOptions(cfg, &policy.FlatpakDesired{})
+	return policy.FlatpakVersion(ctx, &opts)
+}
+
+// triggerFlatpakSync serialises concurrent Flatpak sync requests. Installs
+// can take minutes, so every dispatch site calls this with `go`; concurrent
+// triggers queue on flatpakSyncMu and the next runner picks up the latest
+// cache state.
+func triggerFlatpakSync(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	flatpakSyncMu.Lock()
+	defer flatpakSyncMu.Unlock()
+	syncAllFlatpak(ctx, client, cfg)
+}
+
+// syncAllFlatpak enforces all active Flatpak policies in two phases:
+//  1. Remotes (fast: managed files + remote-add/remote-modify) — reported immediately.
+//  2. Applications (slow: downloads) — reported when every operation finished.
+//
+// Must be called with flatpakSyncMu held.
+func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	entries := make([]policy.FlatpakEntry, 0, len(flatpakCache))
+	ids := make([]string, 0, len(flatpakCache))
+	for _, e := range flatpakCache {
+		entries = append(entries, policy.FlatpakEntry{Priority: e.priority, Policy: e.policy})
+		ids = append(ids, e.id)
+	}
+	desired := policy.MergeFlatpakEntries(entries)
+	opts := flatpakOptions(cfg, &desired)
+	flatpakLastDesired = desired
+	flatpakLastIDs = ids
+
+	// Suppress the watcher for the files this sync writes or removes.
+	existing, _ := policy.ListBorManagedFlatpakFiles(opts.StateDir)
+	toSuppress := policy.FlatpakDesiredFiles(&opts, &desired)
+	toSuppress = append(toSuppress, existing...)
+	suppressManagedWrites(cfg, toSuppress...)
+	defer updateWatcher(cfg)
+
+	if len(entries) == 0 {
+		stopFlatpakUpdaterLocked()
+		policy.CleanupFlatpak(ctx, &opts)
+		log.Println("Flatpak policies synced (0 policies): managed remotes and files removed")
+		return
+	}
+
+	report := func(status pb.ComplianceStatus, msg string, items []*pb.ComplianceItemResult) {
+		for _, id := range ids {
+			_ = client.ReportComplianceWithStatus(ctx, id, status, msg, items)
+		}
+	}
+
+	if !policy.FlatpakAvailable(opts.Binary) {
+		stopFlatpakUpdaterLocked()
+		msg := "flatpak is not installed on this node"
+		log.Printf("Flatpak policies synced (%d policies): INAPPLICABLE — %s", len(ids), msg)
+		report(pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, msg, nil)
+		return
+	}
+	if _, err := policy.FlatpakVersion(ctx, &opts); err != nil {
+		stopFlatpakUpdaterLocked()
+		msg := "flatpak is installed but unusable: " + err.Error()
+		log.Printf("Flatpak policies synced (%d policies): ERROR — %s", len(ids), msg)
+		report(pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, msg, nil)
+		return
+	}
+
+	// ── Phase 1: remotes ─────────────────────────────────────────────────
+	remoteItems, err := policy.SyncFlatpakRemotes(ctx, &opts, &desired)
+	if err != nil {
+		stopFlatpakUpdaterLocked()
+		status := pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR
+		var inapp *policy.FlatpakInapplicableError
+		if errors.As(err, &inapp) {
+			status = pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE
+		}
+		log.Printf("Flatpak policies synced (%d policies): %s — %v", len(ids), status.String(), err)
+		report(status, err.Error(), nil)
+		return
+	}
+	remoteStatus, remoteMsg := policy.RollupFlatpakCompliance(remoteItems)
+	if len(desired.Apps) > 0 && remoteStatus == pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+		remoteMsg = "remotes configured; applying applications"
+	}
+	report(remoteStatus, remoteMsg, flatpakItemsToProto(remoteItems))
+
+	// ── Phase 2: applications ────────────────────────────────────────────
+	appItems, err := policy.SyncFlatpakApps(ctx, &opts, &desired)
+	if err != nil {
+		var inapp *policy.FlatpakInapplicableError
+		if errors.As(err, &inapp) {
+			appItems = []policy.ComplianceItem{{Key: "app:installation", Status: pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, Message: err.Error()}}
+		} else {
+			appItems = []policy.ComplianceItem{{Key: "app:installation", Status: pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, Message: err.Error()}}
+		}
+	}
+	allItems := make([]policy.ComplianceItem, 0, len(remoteItems)+len(appItems))
+	allItems = append(allItems, remoteItems...)
+	allItems = append(allItems, appItems...)
+	status, msg := policy.RollupFlatpakCompliance(allItems)
+	log.Printf("Flatpak policies synced (%d policies, %d remotes, %d apps): %s — %s",
+		len(ids), len(desired.Remotes), len(desired.Apps), status.String(), msg)
+	report(status, msg, flatpakItemsToProto(allItems))
+
+	ensureFlatpakUpdaterLocked(ctx, client, cfg, &desired)
+}
+
+// flatpakItemsToProto converts Flatpak ComplianceItems ("remote:<name>",
+// "app:<id>") to proto results with schema_id "flatpak:remote" / "flatpak:app".
+func flatpakItemsToProto(items []policy.ComplianceItem) []*pb.ComplianceItemResult {
+	result := make([]*pb.ComplianceItemResult, 0, len(items))
+	for _, it := range items {
+		schemaID, key := policy.SplitFlatpakItemKey(it.Key)
+		result = append(result, &pb.ComplianceItemResult{
+			SchemaId: schemaID,
+			Key:      key,
+			Status:   it.Status,
+			Message:  it.Message,
+		})
+	}
+	return result
+}
+
+// ensureFlatpakUpdaterLocked starts, restarts or stops the auto-update ticker
+// to match the merged desired state. Must be called with flatpakSyncMu held.
+func ensureFlatpakUpdaterLocked(ctx context.Context, client *policyclient.Client, cfg *config.Config, desired *policy.FlatpakDesired) {
+	if !desired.AutoUpdate {
+		stopFlatpakUpdaterLocked()
+		return
+	}
+	if flatpakUpdaterCancel != nil && flatpakUpdaterInterval == desired.AutoUpdateInterval {
+		return
+	}
+	stopFlatpakUpdaterLocked()
+	tickCtx, cancel := context.WithCancel(ctx)
+	flatpakUpdaterCancel = cancel
+	flatpakUpdaterInterval = desired.AutoUpdateInterval
+	log.Printf("Flatpak auto-update enabled (every %v)", desired.AutoUpdateInterval)
+	go runFlatpakUpdater(tickCtx, client, cfg, desired.AutoUpdateInterval)
+}
+
+// stopFlatpakUpdaterLocked cancels the ticker. Must be called with flatpakSyncMu held.
+func stopFlatpakUpdaterLocked() {
+	if flatpakUpdaterCancel != nil {
+		flatpakUpdaterCancel()
+		flatpakUpdaterCancel = nil
+		flatpakUpdaterInterval = 0
+		log.Println("Flatpak auto-update stopped")
+	}
+}
+
+// stopFlatpakUpdater cancels the ticker (agent shutdown).
+func stopFlatpakUpdater() {
+	flatpakSyncMu.Lock()
+	defer flatpakSyncMu.Unlock()
+	stopFlatpakUpdaterLocked()
+}
+
+// runFlatpakUpdater is the auto-update ticker goroutine.
+func runFlatpakUpdater(ctx context.Context, client *policyclient.Client, cfg *config.Config, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			flatpakUpdateTick(ctx, client, cfg)
+		}
+	}
+}
+
+// flatpakUpdateTick runs `flatpak update` (and --unused when enabled) under
+// flatpakSyncMu, then re-verifies the desired apps and re-reports compliance.
+func flatpakUpdateTick(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
+	flatpakSyncMu.Lock()
+	defer flatpakSyncMu.Unlock()
+	if ctx.Err() != nil || len(flatpakLastIDs) == 0 {
+		return
+	}
+	desired := flatpakLastDesired
+	opts := flatpakOptions(cfg, &desired)
+	if !policy.FlatpakAvailable(opts.Binary) {
+		return
+	}
+	suppressManagedWrites(cfg)
+	defer updateWatcher(cfg)
+
+	var items []policy.ComplianceItem
+	if err := policy.FlatpakUpdateAll(ctx, &opts, desired.UninstallUnused); err != nil {
+		log.Printf("Flatpak auto-update failed: %v", err)
+		items = append(items, policy.ComplianceItem{Key: "app:auto-update", Status: pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, Message: err.Error()})
+	} else {
+		log.Println("Flatpak auto-update completed")
+	}
+	appItems, err := policy.CheckFlatpakApps(ctx, &opts, &desired)
+	if err != nil {
+		items = append(items, policy.ComplianceItem{Key: "app:installation", Status: pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, Message: err.Error()})
+	}
+	items = append(items, appItems...)
+	status, msg := policy.RollupFlatpakCompliance(items)
+	for _, id := range flatpakLastIDs {
+		_ = client.ReportComplianceWithStatus(ctx, id, status, msg, flatpakItemsToProto(items))
+	}
+}
+
 // polkitRuleKey returns a short, stable key for a rule description
 // suitable for use in the schema_id field of a ComplianceItemResult.
 func polkitRuleKey(desc string) string {
@@ -2062,6 +2353,14 @@ func getManagedPaths(cfg *config.Config) []string {
 		paths = append(paths, zoneFiles...)
 	}
 
+	// Flatpak: rendered remote definitions under /etc/bor/flatpak/, watched
+	// only while Flatpak policies are active.
+	if len(flatpakCache) > 0 {
+		if fpFiles, err := policy.ListBorManagedFlatpakFiles(cfg.Flatpak.StateDir); err == nil {
+			paths = append(paths, fpFiles...)
+		}
+	}
+
 	// SessionAccess Layer 2: the pam_time managed block, watched only while a
 	// managed block is present on this node.
 	if sessionPamManaged {
@@ -2127,6 +2426,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		syncAllEdge(ctx, client, cfg)
 	case strings.HasPrefix(path, cfg.Firewalld.ZonesDir+string(filepath.Separator)):
 		syncAllFirewalld(ctx, client, cfg)
+	case cfg.Flatpak.StateDir != "" && strings.HasPrefix(path, cfg.Flatpak.StateDir+string(filepath.Separator)):
+		go triggerFlatpakSync(ctx, client, cfg)
 	case path == policy.TimeConfPath:
 		syncAllSessionAccess(ctx, client, cfg)
 	case isBorManagedRepoPath(path):

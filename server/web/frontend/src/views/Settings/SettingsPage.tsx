@@ -17,12 +17,14 @@ import { RolesTab } from "./RolesTab";
 import { UserGroupsTab } from "./UserGroupsTab";
 import { AgentNotificationsTab } from "./AgentNotificationsTab";
 import { MFAPolicyTab } from "./MFAPolicyTab";
+import { FlatpakRepositoriesTab } from "./FlatpakRepositoriesTab";
 
 export const SettingsPage: React.FC = () => {
   const canUsers = hasPermission("user:view");
   const canRoles = hasPermission("role:view");
   const canUserGroups = hasPermission("user_group:view");
   const canSettings = hasPermission("settings:manage");
+  const canFlatpak = hasPermission("flatpak_repo:view");
 
   // Active tab is kept in the URL (?tab=) so it survives refresh, is
   // bookmarkable, and works with the browser Back button.
@@ -33,7 +35,9 @@ export const SettingsPage: React.FC = () => {
     ? "roles"
     : canUserGroups
     ? "user-groups"
-    : "agent-notifications";
+    : canSettings
+    ? "agent-notifications"
+    : "flatpak-repos";
   const activeTab = searchParams.get("tab") ?? defaultTab;
   const setActiveTab = (key: string) =>
     setSearchParams((prev) => {
@@ -41,7 +45,7 @@ export const SettingsPage: React.FC = () => {
       return prev;
     }, { replace: true });
 
-  if (!canUsers && !canRoles && !canUserGroups && !canSettings) {
+  if (!canUsers && !canRoles && !canUserGroups && !canSettings && !canFlatpak) {
     return (
       <PageSection>
         <Title headingLevel="h1">Access Denied</Title>
@@ -88,6 +92,13 @@ export const SettingsPage: React.FC = () => {
           <Tab eventKey="mfa-settings" title={<TabTitleText><abbr title="Multi-Factor Authentication">MFA</abbr> Policy</TabTitleText>}>
             <div style={{ paddingTop: 16 }}>
               <MFAPolicyTab />
+            </div>
+          </Tab>
+        )}
+        {canFlatpak && (
+          <Tab eventKey="flatpak-repos" title={<TabTitleText>Flatpak Repositories</TabTitleText>}>
+            <div style={{ paddingTop: 16 }}>
+              <FlatpakRepositoriesTab />
             </div>
           </Tab>
         )}

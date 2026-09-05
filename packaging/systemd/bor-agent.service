@@ -9,6 +9,10 @@ Type=simple
 ExecStart=/usr/bin/bor-agent
 Restart=on-failure
 RestartSec=30
+# Long-running enforcement steps (flatpak installs, package transactions) are
+# cancelled through the agent's context on stop; give them time to wind down
+# cleanly before systemd escalates to SIGKILL.
+TimeoutStopSec=120
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=bor-agent

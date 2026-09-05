@@ -1,0 +1,191 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// FlatpakScope selects which Flatpak installation an entry targets.
+enum FlatpakScope {
+  // Treated as SYSTEM.
+  FLATPAK_SCOPE_UNSPECIFIED = 0;
+  // The system installation (/var/lib/flatpak) or the named installation
+  // selected by FlatpakPolicy.installation.
+  FLATPAK_SCOPE_SYSTEM = 1;
+  // Each user's ~/.local/share/flatpak. Accepted by the server; Phase-1
+  // agents report it as INAPPLICABLE.
+  FLATPAK_SCOPE_USER = 2;
+}
+
+// FlatpakAppState mirrors PackageState for idempotent app management.
+enum FlatpakAppState {
+  FLATPAK_APP_STATE_UNSPECIFIED = 0;
+  // Installed at any version.
+  FLATPAK_APP_STATE_PRESENT = 1;
+  // Not installed.
+  FLATPAK_APP_STATE_ABSENT = 2;
+  // Installed and updated on every sync (flatpak install --or-update).
+  FLATPAK_APP_STATE_LATEST = 3;
+}
+
+// FlatpakFilterMode controls the local filter file attached to a remote.
+enum FlatpakFilterMode {
+  // No filter.
+  FLATPAK_FILTER_MODE_NONE = 0;
+  // "deny *" followed by "allow runtime/*" and one allow line per ref.
+  FLATPAK_FILTER_MODE_ALLOWLIST = 1;
+  // One deny line per ref.
+  FLATPAK_FILTER_MODE_DENYLIST = 2;
+}
+
+// FlatpakRemoteEntry describes one remote to configure on the node. The agent
+// renders /etc/bor/flatpak/<name>.flatpakrepo (plus .filter and .gpg when
+// needed) and drives `flatpak remote-add --from` / `flatpak remote-modify`.
+// Deduplicated by name when merging; the higher-priority policy wins.
+message FlatpakRemoteEntry {
+  // Remote name, e.g. "flathub". Must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$
+  string name = 1;
+
+  // Repository URL. https:// or oci+https:// only.
+  string url = 2;
+
+  // Display title.
+  string title = 3;
+
+  // When false the remote stays configured but is disabled (--disable).
+  bool enabled = 4;
+
+  // Require GPG verification. false yields a persistent NON_COMPLIANT item.
+  bool gpg_verify = 5;
+
+  // Binary GPG public keyring (base64 in JSON). At most 64 KiB.
+  bytes gpg_key_data = 6;
+
+  // Optional 40-character hex fingerprint of the signing key (format-checked).
+  string gpg_key_id = 7;
+
+  // Remote subset, e.g. "verified", "floss", "verified_floss". Empty = all.
+  string subset = 8;
+
+  // Default branch, e.g. "stable". Empty = remote default.
+  string default_branch = 9;
+
+  // Remote priority (--prio). 0 = Flatpak default (1). Higher wins.
+  int32 priority = 10;
+
+  // Local filter mode.
+  FlatpakFilterMode filter_mode = 11;
+
+  // Ref globs for the filter, e.g. "app/org.gnome.*", "org.signal.Signal/*/stable".
+  repeated string filter_refs = 12;
+
+  // Hide the remote from app stores (--no-enumerate).
+  bool no_enumerate = 13;
+
+  // Do not use the remote to satisfy runtime dependencies (--no-use-for-deps).
+  bool no_use_for_deps = 14;
+
+  // OSTree collection ID, e.g. "org.flathub.Stable".
+  string collection_id = 15;
+
+  // Homepage URL shown by app stores.
+  string homepage = 16;
+
+  // One-line comment shown by app stores.
+  string comment = 17;
+}
+
+// FlatpakAppEntry declares the desired state of one application.
+message FlatpakAppEntry {
+  // Reverse-DNS application ID, e.g. "org.mozilla.firefox".
+  string app_id = 1;
+
+  // Remote to install from. Empty lets flatpak pick by priority.
+  string remote = 2;
+
+  // Branch, e.g. "stable". Empty = remote default branch.
+  string branch = 3;
+
+  // Desired state.
+  FlatpakAppState state = 4;
+
+  // Installation scope. Default SYSTEM.
+  FlatpakScope scope = 5;
+
+  // When true, an app missing from its remote maps to INAPPLICABLE rather
+  // than NON_COMPLIANT.
+  bool optional = 6;
+
+  // With ABSENT: also delete the app's data directory (--delete-data).
+  bool delete_data = 7;
+
+  // Phase 2: mask the app from updates (flatpak mask). Not yet enforced.
+  bool mask_updates = 8;
+
+  // Phase 2: pin to an OSTree commit (flatpak update --commit). Not yet enforced.
+  string commit = 9;
+
+  // Display name cached from the catalog for the UI. Ignored by the agent.
+  string display_name = 10;
+}
+
+// FlatpakPolicy manages Flatpak remotes, applications and installation
+// options on agent nodes.
+//
+// Merge semantics across bound policies (sorted by binding priority):
+//   - remotes are deduplicated by name; the higher-priority policy wins;
+//   - apps are deduplicated by (app_id, scope); the higher-priority policy wins;
+//   - auto_update and uninstall_unused are OR-ed;
+//   - installation, auto_update_interval_hours and operation_timeout_minutes
+//     come from the highest-priority policy that sets them.
+message FlatpakPolicy {
+  // Remotes to configure on the node.
+  repeated FlatpakRemoteEntry remotes = 1;
+
+  // Applications and their desired state.
+  repeated FlatpakAppEntry apps = 2;
+
+  // Named system installation (--installation=NAME). Empty = default system
+  // installation (--system).
+  string installation = 3;
+
+  // Run `flatpak update` periodically on the agent.
+  bool auto_update = 4;
+
+  // Auto-update interval in hours. 0 = default (24). Range 1..168.
+  int32 auto_update_interval_hours = 5;
+
+  // Run `flatpak uninstall --unused` after changes and updates.
+  bool uninstall_unused = 6;
+
+  // Per install/update/uninstall deadline in minutes. 0 = default (30). Range 5..240.
+  int32 operation_timeout_minutes = 7;
+
+  // ── Phase 2 fields: accepted by the server, not yet enforced by agents ──
+
+  // Delete system remotes that are not listed in this policy.
+  bool remove_unmanaged_remotes = 8;
+
+  // Uninstall system apps that are not listed in this policy.
+  bool remove_unlisted_apps = 9;
+
+  // `flatpak config --set languages` (two-letter codes).
+  repeated string languages = 10;
+
+  // `flatpak config --set extra-languages`.
+  repeated string extra_languages = 11;
+
+  // Install the flatpak package via PackageKit before applying.
+  bool ensure_flatpak_installed = 12;
+
+  // Require admin authentication for every local system-install action.
+  bool restrict_local_admin_changes = 13;
+
+  // `flatpak config --set report-os-info`.
+  optional bool report_os_info = 14;
+
+  // Field numbers 15-20 are reserved for future use.
+}

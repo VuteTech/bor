@@ -254,3 +254,14 @@ ldap:
 #
 #agent_repo:
 #  dir: /usr/share/bor/agent-repo
+
+# Flatpak application catalog (Settings → Flatpak repositories).
+#
+# The server periodically downloads the AppStream catalog of every registered
+# Flatpak repository (Flathub is seeded) so the policy editor can search
+# applications by name. refresh_enabled: false disables all outbound catalog
+# downloads (air-gapped servers); catalogs can still be uploaded in the UI.
+#
+#flatpak_catalog:
+#  refresh_enabled: true
+#  max_download_mb: 64

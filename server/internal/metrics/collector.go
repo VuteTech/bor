@@ -22,6 +22,7 @@ type repos struct {
 	auditLogs      *database.AuditLogRepository
 	users          *database.UserRepository
 	compliance     *database.DConfRepository
+	flatpak        *database.FlatpakCatalogRepository
 }
 
 // BorCollector implements prometheus.Collector and emits Bor-specific metrics
@@ -48,6 +49,10 @@ type BorCollector struct {
 
 	// ── Audit metrics ─────────────────────────────────────────────────────
 	auditEventsTotal *prometheus.Desc
+
+	// ── Flatpak catalog metrics ───────────────────────────────────────────
+	flatpakAppsTotal   *prometheus.Desc
+	flatpakLastSuccess *prometheus.Desc
 }
 
 // NewBorCollector creates a new BorCollector wired to the given repositories.
@@ -58,6 +63,7 @@ func NewBorCollector(
 	auditLogRepo *database.AuditLogRepository,
 	userRepo *database.UserRepository,
 	dconfRepo *database.DConfRepository,
+	flatpakRepo *database.FlatpakCatalogRepository,
 ) *BorCollector {
 	return &BorCollector{
 		repos: repos{
@@ -67,6 +73,7 @@ func NewBorCollector(
 			auditLogs:      auditLogRepo,
 			users:          userRepo,
 			compliance:     dconfRepo,
+			flatpak:        flatpakRepo,
 		},
 
 		nodesTotal: prometheus.NewDesc(
@@ -113,6 +120,16 @@ func NewBorCollector(
 			"Total number of audit log entries, partitioned by action. This is a snapshot count, not a monotonic counter.",
 			[]string{"action"}, nil,
 		),
+		flatpakAppsTotal: prometheus.NewDesc(
+			"bor_flatpak_catalog_apps_total",
+			"Applications indexed in the server-side Flatpak catalog, by repository.",
+			[]string{"repo"}, nil,
+		),
+		flatpakLastSuccess: prometheus.NewDesc(
+			"bor_flatpak_catalog_last_success_timestamp",
+			"Unix timestamp of the last successful Flatpak catalog refresh, by repository (0 = never).",
+			[]string{"repo"}, nil,
+		),
 	}
 }
 
@@ -126,6 +143,8 @@ func (c *BorCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.complianceTotal
 	ch <- c.usersTotal
 	ch <- c.auditEventsTotal
+	ch <- c.flatpakAppsTotal
+	ch <- c.flatpakLastSuccess
 }
 
 // Collect runs all DB queries and emits the current metric values.
@@ -141,6 +160,7 @@ func (c *BorCollector) Collect(ch chan<- prometheus.Metric) {
 	c.collectCompliance(ctx, ch)
 	c.collectUsers(ctx, ch)
 	c.collectAuditEvents(ctx, ch)
+	c.collectFlatpakCatalog(ctx, ch)
 }
 
 func (c *BorCollector) collectNodes(ctx context.Context, ch chan<- prometheus.Metric) {
@@ -236,5 +256,24 @@ func (c *BorCollector) collectAuditEvents(ctx context.Context, ch chan<- prometh
 	for action, count := range counts {
 		ch <- prometheus.MustNewConstMetric(c.auditEventsTotal, prometheus.GaugeValue,
 			float64(count), action)
+	}
+}
+
+func (c *BorCollector) collectFlatpakCatalog(ctx context.Context, ch chan<- prometheus.Metric) {
+	if c.repos.flatpak == nil {
+		return
+	}
+	stats, err := c.repos.flatpak.ListRepoStats(ctx)
+	if err != nil {
+		log.Printf("metrics: flatpak ListRepoStats: %v", err)
+		return
+	}
+	for _, st := range stats {
+		ch <- prometheus.MustNewConstMetric(c.flatpakAppsTotal, prometheus.GaugeValue, float64(st.AppCount), st.Name)
+		var ts float64
+		if st.LastSuccessAt != nil {
+			ts = float64(st.LastSuccessAt.Unix())
+		}
+		ch <- prometheus.MustNewConstMetric(c.flatpakLastSuccess, prometheus.GaugeValue, ts, st.Name)
 	}
 }

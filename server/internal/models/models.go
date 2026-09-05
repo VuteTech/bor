@@ -605,3 +605,187 @@ type WebAuthnCredential struct {
 type RenameWebAuthnCredentialRequest struct {
 	Name string `json:"name"`
 }
+
+// ─── Flatpak catalog ─────────────────────────────────────────────────────────
+
+// FlatpakRepository is a Flatpak remote registered on the server whose
+// AppStream catalog is indexed for the policy editor (Settings → Flatpak
+// repositories). It is server state only; nodes receive remotes through
+// Flatpak policies.
+type FlatpakRepository struct {
+	ID                  string     `json:"id" db:"id"`
+	Name                string     `json:"name" db:"name"`
+	Title               string     `json:"title" db:"title"`
+	URL                 string     `json:"url" db:"url"`
+	FlatpakrepoURL      string     `json:"flatpakrepo_url" db:"flatpakrepo_url"`
+	Homepage            string     `json:"homepage" db:"homepage"`
+	Comment             string     `json:"comment" db:"comment"`
+	Description         string     `json:"description" db:"description"`
+	IconURL             string     `json:"icon_url" db:"icon_url"`
+	HasGPGKey           bool       `json:"has_gpg_key"`
+	GPGKey              []byte     `json:"-" db:"gpg_key"`
+	GPGKeyID            string     `json:"gpg_key_id" db:"gpg_key_id"`
+	CollectionID        string     `json:"collection_id" db:"collection_id"`
+	DefaultBranch       string     `json:"default_branch" db:"default_branch"`
+	Subset              string     `json:"subset" db:"subset"`
+	AppstreamURL        string     `json:"appstream_url" db:"appstream_url"`
+	Arches              []string   `json:"arches"`
+	CatalogEnabled      bool       `json:"catalog_enabled" db:"catalog_enabled"`
+	RefreshIntervalS    int        `json:"refresh_interval_s" db:"refresh_interval_s"`
+	Builtin             bool       `json:"builtin" db:"builtin"`
+	LastRefreshAt       *time.Time `json:"last_refresh_at" db:"last_refresh_at"`
+	LastRefreshStatus   string     `json:"last_refresh_status" db:"last_refresh_status"`
+	LastRefreshError    string     `json:"last_refresh_error" db:"last_refresh_error"`
+	LastRefreshETag     string     `json:"-" db:"last_refresh_etag"`
+	LastRefreshModified string     `json:"-" db:"last_refresh_modified"`
+	AppCount            int        `json:"app_count" db:"app_count"`
+	CreatedBy           string     `json:"created_by,omitempty" db:"created_by"`
+	CreatedAt           time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at"`
+}
+
+// FlatpakRepositoryRequest is the create/update payload for a repository.
+type FlatpakRepositoryRequest struct {
+	Name             string   `json:"name"`
+	Title            string   `json:"title"`
+	URL              string   `json:"url"`
+	FlatpakrepoURL   string   `json:"flatpakrepo_url"`
+	Homepage         string   `json:"homepage"`
+	Comment          string   `json:"comment"`
+	Description      string   `json:"description"`
+	IconURL          string   `json:"icon_url"`
+	GPGKeyData       string   `json:"gpg_key_data"` // base64; "" on update = keep
+	ClearGPGKey      bool     `json:"clear_gpg_key"`
+	GPGKeyID         string   `json:"gpg_key_id"`
+	CollectionID     string   `json:"collection_id"`
+	DefaultBranch    string   `json:"default_branch"`
+	Subset           string   `json:"subset"`
+	AppstreamURL     string   `json:"appstream_url"`
+	Arches           []string `json:"arches"`
+	CatalogEnabled   bool     `json:"catalog_enabled"`
+	RefreshIntervalS int      `json:"refresh_interval_s"`
+}
+
+// FlatpakRepositoryListResponse is returned by GET /api/v1/flatpak-repos.
+type FlatpakRepositoryListResponse struct {
+	Items          []*FlatpakRepository `json:"items"`
+	RefreshEnabled bool                 `json:"refresh_enabled"`
+}
+
+// FlatpakRemoteInfo is the parsed content of a .flatpakrepo file
+// (POST /api/v1/flatpak-remote-info).
+type FlatpakRemoteInfo struct {
+	Name          string `json:"name"`
+	Title         string `json:"title"`
+	URL           string `json:"url"`
+	Homepage      string `json:"homepage"`
+	Comment       string `json:"comment"`
+	Description   string `json:"description"`
+	IconURL       string `json:"icon_url"`
+	GPGKeyData    string `json:"gpg_key_data"` // base64
+	CollectionID  string `json:"collection_id"`
+	DefaultBranch string `json:"default_branch"`
+	Subset        string `json:"subset"`
+	Warning       string `json:"warning"`
+}
+
+// FlatpakCatalogRepo is the policy-editor view of a repository
+// (GET /api/v1/flatpak-catalog/repos). The GPG key is public data and is
+// copied into policies so they stay self-contained.
+type FlatpakCatalogRepo struct {
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Title             string `json:"title"`
+	URL               string `json:"url"`
+	Homepage          string `json:"homepage"`
+	Comment           string `json:"comment"`
+	Subset            string `json:"subset"`
+	CollectionID      string `json:"collection_id"`
+	DefaultBranch     string `json:"default_branch"`
+	GPGKeyData        string `json:"gpg_key_data"` // base64 or ""
+	AppCount          int    `json:"app_count"`
+	CatalogEnabled    bool   `json:"catalog_enabled"`
+	LastRefreshStatus string `json:"last_refresh_status"`
+}
+
+// FlatpakCatalogEntry is one AppStream component as parsed from a remote's
+// catalog, before it is stored in flatpak_catalog_apps.
+type FlatpakCatalogEntry struct {
+	AppID           string
+	Arch            string
+	Branch          string
+	Ref             string
+	Kind            string
+	Name            string
+	Summary         string
+	Description     string
+	Developer       string
+	ProjectLicense  string
+	Homepage        string
+	Categories      []string
+	Keywords        []string
+	Runtime         string
+	LatestVersion   string
+	LatestReleaseAt *time.Time
+	Verified        bool
+	IconFile        string
+	ContentRating   string
+}
+
+// FlatpakCatalogApp is a catalog search hit.
+type FlatpakCatalogApp struct {
+	RepoID          string     `json:"repo_id"`
+	RepoName        string     `json:"repo_name"`
+	AppID           string     `json:"app_id"`
+	Arch            string     `json:"arch"`
+	Branch          string     `json:"branch"`
+	Ref             string     `json:"ref"`
+	Kind            string     `json:"kind"`
+	Name            string     `json:"name"`
+	Summary         string     `json:"summary"`
+	Developer       string     `json:"developer"`
+	ProjectLicense  string     `json:"project_license"`
+	Homepage        string     `json:"homepage"`
+	Categories      []string   `json:"categories"`
+	LatestVersion   string     `json:"latest_version"`
+	LatestReleaseAt *time.Time `json:"latest_release_at"`
+	Verified        bool       `json:"verified"`
+	Runtime         string     `json:"runtime"`
+	HasIcon         bool       `json:"has_icon"`
+}
+
+// FlatpakCatalogAppDetail extends FlatpakCatalogApp for the detail endpoint.
+type FlatpakCatalogAppDetail struct {
+	FlatpakCatalogApp
+	Description   string   `json:"description"`
+	Keywords      []string `json:"keywords"`
+	ContentRating string   `json:"content_rating"`
+	Branches      []string `json:"branches"`
+}
+
+// FlatpakCatalogSearchRequest holds the query parameters of a catalog search.
+type FlatpakCatalogSearchRequest struct {
+	Search   string
+	Repo     string   // repository name; "" = all enabled
+	Kinds    []string // component kinds; empty = desktop + console applications
+	Verified *bool
+	Arch     string // "" = prefer x86_64, one row per (repo, app, branch)
+	Page     int
+	PerPage  int
+}
+
+// FlatpakCatalogSearchResponse is a page of catalog search hits.
+type FlatpakCatalogSearchResponse struct {
+	Items      []*FlatpakCatalogApp `json:"items"`
+	Total      int                  `json:"total"`
+	Page       int                  `json:"page"`
+	PerPage    int                  `json:"per_page"`
+	TotalPages int                  `json:"total_pages"`
+}
+
+// FlatpakRepoStats is the per-repository summary used by the metrics collector.
+type FlatpakRepoStats struct {
+	Name          string
+	AppCount      int
+	LastSuccessAt *time.Time
+}

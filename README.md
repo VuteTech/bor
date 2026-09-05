@@ -19,6 +19,7 @@ an encrypted gRPC stream and enforces them locally.
 - Firefox ESR — system-wide `policies.json` (RPM/DEB and Flatpak)
 - Google Chrome / Chromium — managed JSON in `/etc/opt/chrome/` and `/etc/chromium/` (including Flatpak)
 - KDE Plasma — KDE Kiosk (`kconfig` files under `/etc/xdg/`, KCM module restrictions)
+- Flatpak — remotes, application install/update/removal, with a server-side Flathub catalog
 
 ---
 
@@ -297,6 +298,8 @@ variable — never store it in a YAML file.
 | Variable | Default | Description |
 |---|---|---|
 | `BOR_ADMIN_TOKEN` | — | Static token for gRPC enrollment calls (optional) |
+| `BOR_FLATPAK_CATALOG_REFRESH` | `true` | Download AppStream catalogs for the Flatpak app catalog (Settings → Flatpak repositories). `false` for air-gapped servers; uploads still work. |
+| `BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB` | `64` | Maximum compressed catalog size accepted per download/upload. |
 | `LDAP_ENABLED` | `false` | Enable LDAP authentication |
 | `LDAP_HOST` | `localhost` | LDAP server hostname |
 | `LDAP_PORT` | `389` | LDAP server port |
@@ -377,6 +380,7 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full guide.
 - [x] dconf (GNOME) policy enforcement
 - [x] polkit rule enforcement
 - [x] firewalld policy enforcement
+- [x] Flatpak remotes and application management (Flathub catalog on the server)
 - [x] Package management policies (packages + repositories)
 - [x] Tamper protection (file watcher restores managed files)
 - [x] RBAC with roles and permissions

@@ -444,10 +444,13 @@ export const Shell: React.FC = () => {
           {(hasPermission("audit_log:view") ||
             hasPermission("user:view") ||
             hasPermission("role:view") ||
-            hasPermission("user_group:view")) && (
+            hasPermission("user_group:view") ||
+            hasPermission("settings:manage") ||
+            hasPermission("flatpak_repo:view")) && (
             <NavGroup title="System">
               {hasPermission("audit_log:view") && navItem("audit-logs", "Audit Logs")}
-              {(hasPermission("user:view") || hasPermission("role:view") || hasPermission("user_group:view")) &&
+              {(hasPermission("user:view") || hasPermission("role:view") || hasPermission("user_group:view") ||
+                hasPermission("settings:manage") || hasPermission("flatpak_repo:view")) &&
                 navItem("settings", "Settings")}
             </NavGroup>
           )}

@@ -288,6 +288,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateFirewalldContent(content)
 	case "SessionAccess":
 		return ValidateSessionAccessContent(content)
+	case "Flatpak":
+		return ValidateFlatpakContent(content)
 	}
 	return nil
 }
