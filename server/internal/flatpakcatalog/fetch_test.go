@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,13 @@ import (
 // and rewrites every host to it, so allowlist logic sees the real hostnames.
 func testFetcher(t *testing.T, srv *httptest.Server) *Fetcher {
 	t.Helper()
-	f := NewFetcher(1)
+	f := NewFetcher(1, false)
+	// Test hosts (mirror.example, ...) resolve to a public TEST-NET address so
+	// the address policy accepts them; the round-tripper below then rewrites
+	// the connection to the httptest server.
+	f.lookup = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
+	}
 	tr := srv.Client().Transport.(*http.Transport).Clone()
 	f.transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		req = req.Clone(req.Context())
@@ -122,5 +129,117 @@ func TestAppstreamURL(t *testing.T) {
 	oci := &models.FlatpakRepository{URL: "oci+https://registry.fedoraproject.org"}
 	if _, err := AppstreamURL(oci, "x86_64"); !errors.Is(err, ErrNoAppstreamURL) {
 		t.Errorf("oci without override: %v", err)
+	}
+}
+
+func TestValidateHTTPSURL(t *testing.T) {
+	good := []string{
+		"https://dl.flathub.org/repo/",
+		"https://dl.flathub.org/repo/flathub.flatpakrepo",
+		"https://mirror.example:8443/as/x86_64/appstream.xml.gz?x=1",
+		"https://203.0.113.10/repo/",
+		" https://dl.flathub.org/repo/ ",
+	}
+	for _, u := range good {
+		if _, err := ValidateHTTPSURL(u); err != nil {
+			t.Errorf("%q rejected: %v", u, err)
+		}
+	}
+	bad := []string{
+		"", "dl.flathub.org/repo/", "http://dl.flathub.org/repo/", "ftp://x/", "file:///etc/passwd",
+		"https://user:pw@dl.flathub.org/repo/", "https://dl.flathub.org/repo/ x", "https://[::1]/repo/",
+		"https://dl.flathub.org/repo/\"; ls", "https://-bad.example/", "https://exa mple.com/",
+		"https://" + strings.Repeat("a", 300) + ".example/",
+	}
+	for _, u := range bad {
+		if _, err := ValidateHTTPSURL(u); err == nil {
+			t.Errorf("%q accepted", u)
+		}
+	}
+}
+
+func TestIPPolicy(t *testing.T) {
+	strict := ipPolicy{}
+	lan := ipPolicy{allowPrivate: true}
+	cases := []struct {
+		ip          string
+		strictOK    bool
+		allowPrivOK bool
+	}{
+		{"203.0.113.10", true, true},
+		{"2606:4700::1111", true, true},
+		{"127.0.0.1", false, false},
+		{"::1", false, false},
+		{"0.0.0.0", false, false},
+		{"0.1.2.3", false, false},
+		{"169.254.169.254", false, false},
+		{"fe80::1", false, false},
+		{"224.0.0.1", false, false},
+		{"255.255.255.255", false, false},
+		{"10.1.2.3", false, true},
+		{"172.16.5.5", false, true},
+		{"192.168.122.1", false, true},
+		{"100.64.0.1", false, true},
+		{"198.18.0.1", false, true},
+		{"fd00::1", false, true},
+		{"::ffff:192.168.1.1", false, true},
+		{"::ffff:127.0.0.1", false, false},
+	}
+	for _, c := range cases {
+		ip := net.ParseIP(c.ip)
+		if ip == nil {
+			t.Fatalf("bad test ip %q", c.ip)
+		}
+		if got := strict.check(ip) == nil; got != c.strictOK {
+			t.Errorf("strict %s: allowed=%v want %v", c.ip, got, c.strictOK)
+		}
+		if got := lan.check(ip) == nil; got != c.allowPrivOK {
+			t.Errorf("allowPrivate %s: allowed=%v want %v", c.ip, got, c.allowPrivOK)
+		}
+	}
+}
+
+func TestFetcher_BlockedTargets(t *testing.T) {
+	called := false
+	f := NewFetcher(1, false)
+	f.transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		called = true
+		return nil, errors.New("must not be reached")
+	})
+	f.lookup = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		switch host {
+		case "internal.example":
+			return []net.IPAddr{{IP: net.ParseIP("10.0.0.5")}}, nil
+		case "rebind.example":
+			return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}, {IP: net.ParseIP("169.254.169.254")}}, nil
+		}
+		return nil, errors.New("nxdomain")
+	}
+	ctx := context.Background()
+	for _, u := range []string{
+		"https://127.0.0.1/repo/", "https://169.254.169.254/latest/meta-data/", "https://10.0.0.5/repo/",
+		"https://internal.example/repo/", "https://rebind.example/repo/", "https://nxdomain.example/repo/",
+	} {
+		if _, _, err := f.GetSmall(ctx, u, 100); err == nil {
+			t.Errorf("%s: expected an error", u)
+		} else if !strings.Contains(u, "nxdomain") && !errors.Is(err, ErrBlockedAddress) {
+			t.Errorf("%s: expected ErrBlockedAddress, got %v", u, err)
+		}
+		if _, err := f.OpenConditional(ctx, u, "", ""); err == nil {
+			t.Errorf("%s: OpenConditional expected an error", u)
+		}
+	}
+	if called {
+		t.Error("transport was used for a blocked target")
+	}
+
+	// The same private host is acceptable once private networks are allowed.
+	f2 := NewFetcher(1, true)
+	f2.lookup = f.lookup
+	f2.transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: http.Header{}, Request: r}, nil
+	})
+	if data, _, err := f2.GetSmall(ctx, "https://internal.example/repo/x.flatpakrepo", 100); err != nil || string(data) != "ok" {
+		t.Errorf("private target with allowPrivate: %v %q", err, data)
 	}
 }

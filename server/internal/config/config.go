@@ -53,6 +53,10 @@ type AgentRepoConfig struct {
 type FlatpakCatalogConfig struct {
 	RefreshEnabled bool // BOR_FLATPAK_CATALOG_REFRESH – default true
 	MaxDownloadMB  int  // BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB – default 64
+	// AllowPrivateNetworks lets catalog fetches contact repositories on
+	// RFC 1918 / CGNAT addresses (LAN mirrors). Loopback, link-local and
+	// multicast addresses are refused regardless (SSRF hardening).
+	AllowPrivateNetworks bool // BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS – default false
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -378,8 +382,9 @@ type fileConfig struct {
 		Dir string `yaml:"dir"`
 	} `yaml:"agent_repo"`
 	FlatpakCatalog struct {
-		RefreshEnabled bool `yaml:"refresh_enabled"`
-		MaxDownloadMB  int  `yaml:"max_download_mb"`
+		RefreshEnabled       bool `yaml:"refresh_enabled"`
+		MaxDownloadMB        int  `yaml:"max_download_mb"`
+		AllowPrivateNetworks bool `yaml:"allow_private_networks"`
 	} `yaml:"flatpak_catalog"`
 	ACME struct {
 		Enabled      bool     `yaml:"enabled"`
@@ -657,8 +662,9 @@ func Load() (*Config, error) {
 			Dir: getEnv("BOR_AGENT_REPO_DIR", fc.AgentRepo.Dir),
 		},
 		FlatpakCatalog: FlatpakCatalogConfig{
-			RefreshEnabled: getEnvBool("BOR_FLATPAK_CATALOG_REFRESH", fc.FlatpakCatalog.RefreshEnabled),
-			MaxDownloadMB:  flatpakMaxDownloadMB,
+			RefreshEnabled:       getEnvBool("BOR_FLATPAK_CATALOG_REFRESH", fc.FlatpakCatalog.RefreshEnabled),
+			MaxDownloadMB:        flatpakMaxDownloadMB,
+			AllowPrivateNetworks: getEnvBool("BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS", fc.FlatpakCatalog.AllowPrivateNetworks),
 		},
 		UI: UIConfig{
 			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),

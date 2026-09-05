@@ -300,6 +300,7 @@ variable — never store it in a YAML file.
 | `BOR_ADMIN_TOKEN` | — | Static token for gRPC enrollment calls (optional) |
 | `BOR_FLATPAK_CATALOG_REFRESH` | `true` | Download AppStream catalogs for the Flatpak app catalog (Settings → Flatpak repositories). `false` for air-gapped servers; uploads still work. |
 | `BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB` | `64` | Maximum compressed catalog size accepted per download/upload. |
+| `BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS` | `false` | Allow catalog fetches from repositories on private networks (internal mirrors). Loopback, link-local and multicast addresses are always refused. |
 | `LDAP_ENABLED` | `false` | Enable LDAP authentication |
 | `LDAP_HOST` | `localhost` | LDAP server hostname |
 | `LDAP_PORT` | `389` | LDAP server port |

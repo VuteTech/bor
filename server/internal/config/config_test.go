@@ -121,6 +121,9 @@ func TestLoad_FlatpakCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
+	if cfg.FlatpakCatalog.AllowPrivateNetworks {
+		t.Error("FlatpakCatalog.AllowPrivateNetworks should default to false")
+	}
 	if !cfg.FlatpakCatalog.RefreshEnabled {
 		t.Error("FlatpakCatalog.RefreshEnabled should default to true")
 	}

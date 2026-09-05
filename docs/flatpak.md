@@ -94,6 +94,13 @@ remote the server indexes:
   `appstream.xml.gz` downloaded elsewhere — the path for air-gapped servers.
 - The server-wide switch `BOR_FLATPAK_CATALOG_REFRESH=false` disables all
   outbound catalog fetches; uploads keep working.
+- Catalog fetches only accept `https://` URLs with a plain host name or IPv4
+  address, follow redirects only to the same host, and refuse loopback,
+  link-local (including cloud metadata) and multicast addresses. Repositories
+  on private networks (an internal mirror) are refused unless
+  `BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS=true` is set; the host name is
+  resolved and checked by the server itself, so DNS rebinding cannot bypass
+  the check.
 
 The catalog feeds the policy editor's search and provides ready-made remote
 definitions. Policies stay **self-contained**: adding a remote "from server

@@ -380,7 +380,7 @@ func main() {
 	// policy editor can search apps. The counter is registered on the metrics
 	// server below; the manager is stopped in the shutdown block.
 	flatpakRefreshes := metrics.NewFlatpakCatalogRefreshes()
-	flatpakFetcher := flatpakcatalog.NewFetcher(cfg.FlatpakCatalog.MaxDownloadMB)
+	flatpakFetcher := flatpakcatalog.NewFetcher(cfg.FlatpakCatalog.MaxDownloadMB, cfg.FlatpakCatalog.AllowPrivateNetworks)
 	flatpakManager := flatpakcatalog.NewManager(flatpakRepo, flatpakFetcher, auditSvc, flatpakRefreshes, cfg.FlatpakCatalog.RefreshEnabled)
 	flatpakManager.Start(context.Background())
 	if !cfg.FlatpakCatalog.RefreshEnabled {

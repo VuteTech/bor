@@ -265,3 +265,5 @@ ldap:
 #flatpak_catalog:
 #  refresh_enabled: true
 #  max_download_mb: 64
+#  # Allow repositories on private networks (internal mirrors). Default false.
+#  allow_private_networks: false
