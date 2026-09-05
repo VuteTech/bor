@@ -31,6 +31,7 @@ import { FirefoxMarkIcon } from "../icons/policyTypes/FirefoxMarkIcon";
 import { ThunderbirdMarkIcon } from "../icons/policyTypes/ThunderbirdMarkIcon";
 import { ChromeMarkIcon } from "../icons/policyTypes/ChromeMarkIcon";
 import { KdeMarkIcon } from "../icons/policyTypes/KdeMarkIcon";
+import { FlatpakMarkIcon } from "../icons/policyTypes/FlatpakMarkIcon";
 
 export type PolicyTypeId =
   | "Firefox"
@@ -42,7 +43,8 @@ export type PolicyTypeId =
   | "Polkit"
   | "Firewalld"
   | "SessionAccess"
-  | "Package";
+  | "Package"
+  | "Flatpak";
 
 export type PolicyTypeCategory = "browsers" | "desktop" | "system";
 
@@ -383,6 +385,37 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
       return null;
     },
   },
+  Flatpak: {
+    id: "Flatpak",
+    label: "Flatpak apps",
+    technicalName: "flatpak",
+    category: "system",
+    tagline: "Remotes, apps and update settings for Flatpak",
+    description:
+      "Flatpak remotes to configure on each node (Flathub or your own repositories, with subsets and allow/deny filters) and the applications that must be present, kept up to date or removed. Apps are picked from the server-indexed catalog.",
+    manages: [
+      "Flatpak remotes in the system installation",
+      "/etc/bor/flatpak/*.flatpakrepo, *.filter and *.gpg",
+      "Installed Flatpak applications and periodic updates",
+    ],
+    appliesTo: ["Nodes with flatpak installed (inapplicable elsewhere)"],
+    examples: [
+      "Install Firefox and LibreOffice from Flathub everywhere",
+      "Allow only verified Flathub apps on shared desktops",
+      "Add an internal remote and keep its apps updated nightly",
+    ],
+    docsHref: `${DOCS_BASE}/flatpak.md`,
+    Icon: FlatpakMarkIcon,
+    defaultContent: () => pretty({ remotes: [], apps: [], autoUpdate: false, uninstallUnused: false }),
+    validateContent: (content) => {
+      const parsed = parseObject(content) as { remotes?: unknown[]; apps?: unknown[] } | null;
+      if (!parsed) return "Flatpak policy content is not valid JSON";
+      const remotes = Array.isArray(parsed.remotes) ? parsed.remotes.length : 0;
+      const apps = Array.isArray(parsed.apps) ? parsed.apps.length : 0;
+      if (remotes + apps === 0) return "Add at least one remote or application before saving";
+      return null;
+    },
+  },
 };
 
 /** Display order: by category, then the order used across the UI. */
@@ -397,6 +430,7 @@ export const POLICY_TYPE_ORDER: PolicyTypeId[] = [
   "Firewalld",
   "SessionAccess",
   "Package",
+  "Flatpak",
 ];
 
 export const POLICY_TYPE_LIST: PolicyTypeDef[] = POLICY_TYPE_ORDER.map((id) => POLICY_TYPES[id]);

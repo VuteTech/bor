@@ -26,6 +26,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
+	"github.com/VuteTech/Bor/server/internal/flatpakcatalog"
 	grpcserver "github.com/VuteTech/Bor/server/internal/grpc"
 	"github.com/VuteTech/Bor/server/internal/metrics"
 	"github.com/VuteTech/Bor/server/internal/models"
@@ -176,6 +177,7 @@ func main() {
 	polkitRepo := database.NewPolkitRepository(db)
 	go seedPolkitBuiltinActions(context.Background(), polkitRepo)
 	settingsRepo := database.NewSettingsRepository(db)
+	flatpakRepo := database.NewFlatpakCatalogRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
 	mfaRepo := database.NewMFARepository(db)
 	webauthnRepo := database.NewWebAuthnRepository(db)
@@ -373,6 +375,22 @@ func main() {
 	agentRepoHandler := api.NewAgentRepoHandler(cfg.AgentRepo.Dir, caCertFile, Version, agentPackageDownloads)
 	agentRepoHandler.LogStartup()
 
+	// Flatpak application catalog (docs/flatpak-policy-plan.md): indexes the
+	// AppStream feed of every registered remote (Flathub is seeded) so the
+	// policy editor can search apps. The counter is registered on the metrics
+	// server below; the manager is stopped in the shutdown block.
+	flatpakRefreshes := metrics.NewFlatpakCatalogRefreshes()
+	flatpakFetcher := flatpakcatalog.NewFetcher(cfg.FlatpakCatalog.MaxDownloadMB, cfg.FlatpakCatalog.AllowPrivateNetworks)
+	flatpakManager := flatpakcatalog.NewManager(flatpakRepo, flatpakFetcher, auditSvc, flatpakRefreshes, cfg.FlatpakCatalog.RefreshEnabled)
+	flatpakManager.Start(context.Background())
+	if !cfg.FlatpakCatalog.RefreshEnabled {
+		log.Println("Flatpak catalog refresh disabled (BOR_FLATPAK_CATALOG_REFRESH=false); catalogs can still be uploaded")
+	}
+	flatpakSvc := services.NewFlatpakRepoService(flatpakRepo, flatpakManager, flatpakFetcher)
+	flatpakReposHandler := api.NewFlatpakReposHandler(flatpakSvc)
+	flatpakCatalogHandler := api.NewFlatpakCatalogHandler(flatpakSvc)
+	flatpakRemoteInfoHandler := api.NewFlatpakRemoteInfoHandler(flatpakSvc)
+
 	// Setup HTTP routes
 	mux := http.NewServeMux()
 
@@ -526,6 +544,26 @@ func main() {
 	// Settings routes
 	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(api.RequirePermission(az, "settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
 	mux.Handle("/api/v1/settings/mfa", authMiddleware(api.RequirePermission(az, "settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
+
+	// Flatpak repositories (server catalog sources) and the read-only catalog
+	// used by the policy editor.
+	flatpakRepoPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+		{Method: http.MethodGet, Resource: "flatpak_repo", Action: "view"},
+		{Method: http.MethodPost, Resource: "flatpak_repo", Action: "create"},
+		{Method: http.MethodPut, Resource: "flatpak_repo", Action: "edit"},
+		{Method: http.MethodDelete, Resource: "flatpak_repo", Action: "delete"},
+	})
+	flatpakRepoActionPerms := api.RequirePermission(az, "flatpak_repo", "refresh")
+	mux.Handle("/api/v1/flatpak-repos", authMiddleware(flatpakRepoPerms(auditMw(flatpakReposHandler))))
+	mux.Handle("/api/v1/flatpak-repos/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/refresh") || strings.HasSuffix(r.URL.Path, "/catalog-upload")) {
+			flatpakRepoActionPerms(auditMw(flatpakReposHandler)).ServeHTTP(w, r)
+			return
+		}
+		flatpakRepoPerms(auditMw(flatpakReposHandler)).ServeHTTP(w, r)
+	})))
+	mux.Handle("/api/v1/flatpak-catalog/", authMiddleware(api.RequirePermission(az, "policy", "view")(flatpakCatalogHandler)))
+	mux.Handle("/api/v1/flatpak-remote-info", authMiddleware(api.RequirePermission(az, "policy", "view")(flatpakRemoteInfoHandler)))
 
 	// DConf schema catalogue — readable by anyone with policy:view
 	mux.Handle("/api/v1/dconf/schemas", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(dconfHandler.ListSchemas))))
@@ -735,9 +773,9 @@ func main() {
 	// ─── Prometheus metrics server (plain HTTP, separate port) ───────────
 	metricsCollector := metrics.NewBorCollector(
 		nodeRepo, policyRepo, policyBindingRepo,
-		auditLogRepo, userRepo, dconfRepo,
+		auditLogRepo, userRepo, dconfRepo, flatpakRepo,
 	)
-	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector, agentPackageDownloads)
+	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector, agentPackageDownloads, flatpakRefreshes)
 
 	// Start both servers.
 	go func() {
@@ -775,6 +813,7 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down server...")
+	flatpakManager.Stop()
 	enrollGrpcSrv.GracefulStop()
 	policyGrpcSrv.GracefulStop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

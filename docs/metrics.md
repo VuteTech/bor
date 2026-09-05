@@ -52,7 +52,7 @@ Environment variables always take precedence over the YAML file.
 
 ## Metrics reference
 
-All Bor metrics are **Gauges** — they reflect the current state of the database at scrape time, not monotonically increasing counters. Each scrape runs a set of lightweight `COUNT … GROUP BY` queries against PostgreSQL; the typical overhead is a few milliseconds.
+Most Bor metrics are **Gauges** — they reflect the current state of the database at scrape time. The exceptions are the event counters `bor_agent_package_downloads_total` and `bor_flatpak_catalog_refresh_total`. Each scrape runs a set of lightweight `COUNT … GROUP BY` queries against PostgreSQL; the typical overhead is a few milliseconds.
 
 In addition to the Bor-specific metrics below, the endpoint also exposes the standard Go runtime (`go_*`) and process (`process_*`) metric families.
 
@@ -218,6 +218,43 @@ bor_audit_events_total{action="tamper_detected"}  6
 ```
 
 ---
+
+### Flatpak catalog metrics
+
+#### `bor_flatpak_catalog_apps_total`
+
+Applications indexed in the server-side Flatpak catalog (Settings → Flatpak repositories), per repository.
+
+| Label | Values |
+|-------|--------|
+| `repo` | repository name, e.g. `flathub` |
+
+```
+bor_flatpak_catalog_apps_total{repo="flathub"} 3264
+```
+
+#### `bor_flatpak_catalog_last_success_timestamp`
+
+Unix timestamp of the last successful catalog refresh (scheduled, manual or uploaded) per repository; `0` when the catalog was never refreshed. Alert when `time() - bor_flatpak_catalog_last_success_timestamp` exceeds a few refresh intervals.
+
+| Label | Values |
+|-------|--------|
+| `repo` | repository name |
+
+#### `bor_flatpak_catalog_refresh_total`
+
+**Counter.** Catalog refresh attempts by repository and outcome.
+
+| Label | Values |
+|-------|--------|
+| `repo` | repository name |
+| `outcome` | `ok`, `unchanged` (HTTP 304), `error`, `upload` |
+
+```
+bor_flatpak_catalog_refresh_total{repo="flathub",outcome="ok"}        12
+bor_flatpak_catalog_refresh_total{repo="flathub",outcome="unchanged"} 30
+bor_flatpak_catalog_refresh_total{repo="flathub",outcome="error"}     1
+```
 
 ## Alerting examples
 

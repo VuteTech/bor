@@ -255,6 +255,55 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     return rows;
   }
 
+  if (policyType === "Flatpak") {
+    type FpRemote = { name?: string; url?: string; subset?: string; filterMode?: string | number; filterRefs?: string[]; enabled?: boolean; gpgVerify?: boolean; priority?: number };
+    type FpApp = { appId?: string; displayName?: string; remote?: string; branch?: string; state?: string | number; scope?: string | number; optional?: boolean };
+    const fp = raw as {
+      remotes?: FpRemote[]; apps?: FpApp[]; installation?: string; autoUpdate?: boolean;
+      autoUpdateIntervalHours?: number; uninstallUnused?: boolean; operationTimeoutMinutes?: number;
+    };
+    const remotes = Array.isArray(fp.remotes) ? fp.remotes : [];
+    const apps = Array.isArray(fp.apps) ? fp.apps : [];
+    const filterLabel = (m: string | number | undefined, refs: string[] | undefined) => {
+      const mode = typeof m === "number" ? ["none", "allowlist", "denylist"][m] ?? "none" : String(m ?? "").replace("FLATPAK_FILTER_MODE_", "").toLowerCase() || "none";
+      if (mode === "none") return "";
+      return `, ${mode} (${(refs ?? []).length} refs)`;
+    };
+    const stateLabel = (s: string | number | undefined) =>
+      typeof s === "number" ? ["unspecified", "present", "absent", "latest"][s] ?? "unspecified" : String(s ?? "").replace("FLATPAK_APP_STATE_", "").toLowerCase() || "unspecified";
+    const scopeLabel = (s: string | number | undefined) => {
+      const v = typeof s === "number" ? ["", "system", "user"][s] ?? "" : String(s ?? "").replace("FLATPAK_SCOPE_", "").toLowerCase();
+      return v === "user" ? " [user]" : "";
+    };
+    rows.push({ setting: "Remotes", value: `${remotes.length} defined`, locked: null });
+    for (const r of remotes) {
+      const bits = [r.url ?? ""];
+      if (r.subset) bits.push(`subset ${r.subset}`);
+      if (r.enabled === false) bits.push("disabled");
+      if (r.gpgVerify === false) bits.push("GPG verification off");
+      if (r.priority) bits.push(`priority ${r.priority}`);
+      rows.push({ setting: `  Remote › ${r.name ?? "(unnamed)"}`, value: bits.join(", ") + filterLabel(r.filterMode, r.filterRefs), locked: null });
+    }
+    for (const a of apps) {
+      const target = a.remote ? ` from ${a.remote}` : "";
+      const branch = a.branch ? `//${a.branch}` : "";
+      const opt = a.optional ? " (optional)" : "";
+      const label = a.displayName ? `${a.displayName} (${a.appId ?? ""})` : (a.appId ?? "(unnamed)");
+      rows.push({ setting: `App › ${label}${scopeLabel(a.scope)}`, value: `${stateLabel(a.state)}${target}${branch}${opt}`, locked: null });
+    }
+    if (fp.installation) rows.push({ setting: "Options › Installation", value: fp.installation, locked: null });
+    if (fp.autoUpdate !== undefined) {
+      rows.push({
+        setting: "Options › Automatic updates",
+        value: fp.autoUpdate ? `every ${fp.autoUpdateIntervalHours || 24} h` : "off",
+        locked: null,
+      });
+    }
+    if (fp.uninstallUnused !== undefined) rows.push({ setting: "Options › Remove unused runtimes", value: fp.uninstallUnused ? "yes" : "no", locked: null });
+    if (fp.operationTimeoutMinutes) rows.push({ setting: "Options › Operation timeout", value: `${fp.operationTimeoutMinutes} min`, locked: null });
+    return rows;
+  }
+
   if (policyType === "SessionAccess") {
     type SaWin = { days?: string[]; start?: string; end?: string };
     type SaRule = { description?: string; users?: string[]; groups?: string[]; windows?: SaWin[]; endAction?: string; warnMinutes?: number[] };

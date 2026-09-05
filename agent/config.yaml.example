@@ -80,3 +80,16 @@ chrome:
   chromium_browser_policies_path: "/etc/chromium-browser/policies/managed"
   # Flatpak Chromium (org.chromium.Chromium) — set empty to disable
   flatpak_chromium_policies_path: "/var/lib/flatpak/extension/org.chromium.Chromium.Extension.system-policies/x86_64/1/policies/managed"
+
+# Flatpak policy enforcement (remotes and applications via the flatpak CLI).
+# All values are optional; the defaults shown are used when the section is absent.
+#flatpak:
+#  # flatpak executable name or absolute path.
+#  binary: "flatpak"
+#  # Directory for the Bor-rendered remote definitions (*.flatpakrepo, *.filter, *.gpg).
+#  # These files are tamper-protected by the agent.
+#  state_dir: "/etc/bor/flatpak"
+#  # Record of remotes Bor created or adopted, used to undo changes when a policy is unbound.
+#  state_file: "/var/lib/bor/agent/flatpak-state.json"
+#  # Optional HTTP(S) proxy for flatpak downloads, e.g. "http://proxy.example.com:3128".
+#  proxy_url: ""

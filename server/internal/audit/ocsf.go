@@ -221,6 +221,8 @@ func activityForAction(action string) (activityID int, activityName string) {
 		return ocsfActivityDelete, "Delete"
 	case "tamper_detected":
 		return ocsfActivityUpdate, "Modify"
+	case "flatpakrepo.refresh", "flatpakrepo.upload":
+		return ocsfActivityUpdate, "Update"
 	default:
 		return ocsfActivityOther, "Other"
 	}

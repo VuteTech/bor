@@ -113,3 +113,39 @@ func TestLoad_AdminToken(t *testing.T) {
 		t.Errorf("Security.AdminToken = %q, want %q", cfg.Security.AdminToken, "secret123")
 	}
 }
+
+func TestLoad_FlatpakCatalog(t *testing.T) {
+	os.Unsetenv("BOR_FLATPAK_CATALOG_REFRESH")
+	os.Unsetenv("BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.FlatpakCatalog.AllowPrivateNetworks {
+		t.Error("FlatpakCatalog.AllowPrivateNetworks should default to false")
+	}
+	if !cfg.FlatpakCatalog.RefreshEnabled {
+		t.Error("FlatpakCatalog.RefreshEnabled should default to true")
+	}
+	if cfg.FlatpakCatalog.MaxDownloadMB != 64 {
+		t.Errorf("FlatpakCatalog.MaxDownloadMB = %d, want 64", cfg.FlatpakCatalog.MaxDownloadMB)
+	}
+
+	t.Setenv("BOR_FLATPAK_CATALOG_REFRESH", "false")
+	t.Setenv("BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB", "128")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.FlatpakCatalog.RefreshEnabled {
+		t.Error("BOR_FLATPAK_CATALOG_REFRESH=false not honoured")
+	}
+	if cfg.FlatpakCatalog.MaxDownloadMB != 128 {
+		t.Errorf("MaxDownloadMB = %d, want 128", cfg.FlatpakCatalog.MaxDownloadMB)
+	}
+
+	t.Setenv("BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB", "zero")
+	if _, err := Load(); err == nil {
+		t.Error("expected error for non-numeric BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB")
+	}
+}

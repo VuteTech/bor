@@ -23,6 +23,7 @@ through PatternFly's `createIcon`, so it behaves like any
 | Firewalld | `ShieldAltIcon` (generic) | `@patternfly/react-icons` | MIT / CC BY 4.0 as above | — |
 | SessionAccess | `UserClockIcon` (generic) | `@patternfly/react-icons` | MIT / CC BY 4.0 as above | — |
 | Package | `CubesIcon` (generic) | `@patternfly/react-icons` | MIT / CC BY 4.0 as above | — |
+| Flatpak | `FlatpakMarkIcon` | Simple Icons `flatpak` v16.29.0 | CC0-1.0 (`LICENSE.CC0-1.0.md`) | Flatpak project |
 | unknown type | `CogIcon` (generic) | `@patternfly/react-icons` | MIT / CC BY 4.0 as above | — |
 
 The Simple Icons artwork is dedicated to the public domain under CC0 1.0;

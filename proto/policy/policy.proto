@@ -10,6 +10,7 @@ import "dconf.proto";
 import "edge.proto";
 import "firefox.proto";
 import "firewalld.proto";
+import "flatpak.proto";
 import "kconfig.proto";
 import "package.proto";
 import "polkit.proto";
@@ -95,6 +96,7 @@ message Policy {
     EdgePolicy         edge_policy         = 18;
     FirewalldPolicy    firewalld_policy    = 19;
     SessionAccessPolicy session_access_policy = 20;
+    FlatpakPolicy       flatpak_policy        = 21;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

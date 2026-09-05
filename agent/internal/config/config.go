@@ -22,6 +22,7 @@ type Config struct {
 	Chrome      ChromeConfig      `yaml:"chrome"`
 	Edge        EdgeConfig        `yaml:"edge"`
 	Firewalld   FirewalldConfig   `yaml:"firewalld"`
+	Flatpak     FlatpakConfig     `yaml:"flatpak"`
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
@@ -79,6 +80,16 @@ type EdgeConfig struct {
 // managed zone XML into ZonesDir and reloads firewalld.
 type FirewalldConfig struct {
 	ZonesDir string `yaml:"zones_dir"`
+}
+
+// FlatpakConfig holds Flatpak enforcement settings. The agent renders the
+// managed remote definitions (.flatpakrepo, .filter, .gpg) into StateDir and
+// drives the flatpak CLI for remotes and applications.
+type FlatpakConfig struct {
+	Binary    string `yaml:"binary"`     // flatpak executable (default "flatpak", resolved via PATH)
+	StateDir  string `yaml:"state_dir"`  // managed remote files (default /etc/bor/flatpak)
+	StateFile string `yaml:"state_file"` // created/adopted remote record (default /var/lib/bor/agent/flatpak-state.json)
+	ProxyURL  string `yaml:"proxy_url"`  // optional http(s) proxy exported to flatpak for downloads
 }
 
 // ChromeConfig holds Chrome/Chromium policy directory settings.
@@ -169,6 +180,11 @@ func DefaultConfig() *Config {
 		},
 		Firewalld: FirewalldConfig{
 			ZonesDir: "/etc/firewalld/zones",
+		},
+		Flatpak: FlatpakConfig{
+			Binary:    "flatpak",
+			StateDir:  "/etc/bor/flatpak",
+			StateFile: "/var/lib/bor/agent/flatpak-state.json",
 		},
 		KConfig: KConfigConfig{
 			ConfigPath: "/etc/bor/xdg",

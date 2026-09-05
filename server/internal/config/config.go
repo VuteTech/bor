@@ -20,19 +20,20 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	Database  DatabaseConfig
-	Server    ServerConfig
-	Security  SecurityConfig
-	LDAP      LDAPConfig
-	Kerberos  KerberosConfig
-	TLS       TLSConfig
-	CA        CAConfig
-	WebAuthn  WebAuthnConfig
-	Metrics   MetricsConfig
-	Audit     AuditConfig
-	UI        UIConfig
-	ACME      ACMEConfig
-	AgentRepo AgentRepoConfig
+	Database       DatabaseConfig
+	Server         ServerConfig
+	Security       SecurityConfig
+	LDAP           LDAPConfig
+	Kerberos       KerberosConfig
+	TLS            TLSConfig
+	CA             CAConfig
+	WebAuthn       WebAuthnConfig
+	Metrics        MetricsConfig
+	Audit          AuditConfig
+	UI             UIConfig
+	ACME           ACMEConfig
+	AgentRepo      AgentRepoConfig
+	FlatpakCatalog FlatpakCatalogConfig
 }
 
 // AgentRepoConfig locates the static agent package repository that the
@@ -43,6 +44,19 @@ type Config struct {
 // holds no manifest.json the feature is off and /agent/* returns 404.
 type AgentRepoConfig struct {
 	Dir string // BOR_AGENT_REPO_DIR – default /usr/share/bor/agent-repo
+}
+
+// FlatpakCatalogConfig controls the server-side Flatpak application catalog
+// (Settings → Flatpak repositories). RefreshEnabled=false disables every
+// outbound AppStream download — the right setting for air-gapped servers;
+// catalogs can still be uploaded by hand through the UI.
+type FlatpakCatalogConfig struct {
+	RefreshEnabled bool // BOR_FLATPAK_CATALOG_REFRESH – default true
+	MaxDownloadMB  int  // BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB – default 64
+	// AllowPrivateNetworks lets catalog fetches contact repositories on
+	// RFC 1918 / CGNAT addresses (LAN mirrors). Loopback, link-local and
+	// multicast addresses are refused regardless (SSRF hardening).
+	AllowPrivateNetworks bool // BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS – default false
 }
 
 // AuditConfig holds configuration for audit event forwarding.
@@ -367,6 +381,11 @@ type fileConfig struct {
 	AgentRepo struct {
 		Dir string `yaml:"dir"`
 	} `yaml:"agent_repo"`
+	FlatpakCatalog struct {
+		RefreshEnabled       bool `yaml:"refresh_enabled"`
+		MaxDownloadMB        int  `yaml:"max_download_mb"`
+		AllowPrivateNetworks bool `yaml:"allow_private_networks"`
+	} `yaml:"flatpak_catalog"`
 	ACME struct {
 		Enabled      bool     `yaml:"enabled"`
 		DirectoryURL string   `yaml:"directory_url"`
@@ -545,6 +564,18 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid BOR_REFRESH_LIFETIME: %w", err)
 	}
 
+	flatpakMaxDownloadMB := fc.FlatpakCatalog.MaxDownloadMB
+	if v := os.Getenv("BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB: %q", v)
+		}
+		flatpakMaxDownloadMB = n
+	}
+	if flatpakMaxDownloadMB <= 0 {
+		flatpakMaxDownloadMB = 64
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -630,6 +661,11 @@ func Load() (*Config, error) {
 		AgentRepo: AgentRepoConfig{
 			Dir: getEnv("BOR_AGENT_REPO_DIR", fc.AgentRepo.Dir),
 		},
+		FlatpakCatalog: FlatpakCatalogConfig{
+			RefreshEnabled:       getEnvBool("BOR_FLATPAK_CATALOG_REFRESH", fc.FlatpakCatalog.RefreshEnabled),
+			MaxDownloadMB:        flatpakMaxDownloadMB,
+			AllowPrivateNetworks: getEnvBool("BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS", fc.FlatpakCatalog.AllowPrivateNetworks),
+		},
 		UI: UIConfig{
 			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),
 		},
@@ -684,6 +720,8 @@ func defaultFileConfig() fileConfig {
 	fc.LDAP.PageSize = 500
 	fc.Metrics.ListenAddr = "127.0.0.1:9090"
 	fc.AgentRepo.Dir = "/usr/share/bor/agent-repo"
+	fc.FlatpakCatalog.RefreshEnabled = true
+	fc.FlatpakCatalog.MaxDownloadMB = 64
 	fc.ACME.HTTPPort = 80
 	fc.ACME.CacheDir = "/var/lib/bor/acme"
 	fc.Audit.RetentionDays = 365

@@ -57,7 +57,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({ type, name, description,
 
   return (
     <>
-      <LiveAlert message={error} variant="danger" isInline title="The policy could not be created" style={{ marginBottom: "1rem" }}>
+      {/* LiveAlert shows whenever a title is set, so only pass the title while there is an error. */}
+      <LiveAlert message={error} variant="danger" isInline title={error ? "The policy could not be created" : undefined} style={{ marginBottom: "1rem" }}>
         {error}
       </LiveAlert>
 

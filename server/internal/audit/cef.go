@@ -108,6 +108,8 @@ func cefSeverity(action string) int {
 		return 6
 	case "create", "update":
 		return 3
+	case "flatpakrepo.refresh", "flatpakrepo.upload":
+		return 2
 	default:
 		return 1
 	}
