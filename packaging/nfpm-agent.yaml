@@ -41,6 +41,16 @@ contents:
     file_info:
       mode: 0750
 
+# Disk encryption (DiskEncryption policy type): cryptsetup drives the LUKS2
+# operations; clevis and tpm2-tools are only needed when a policy enables the
+# Tang or TPM2 protectors, so they stay suggestions.
+recommends:
+  - cryptsetup
+suggests:
+  - clevis-luks
+  - clevis-dracut
+  - tpm2-tools
+
 scripts:
   postinstall: packaging/scripts/postinstall-agent.sh
   preremove: packaging/scripts/preremove-agent.sh

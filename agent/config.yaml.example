@@ -93,3 +93,19 @@ chrome:
 #  state_file: "/var/lib/bor/agent/flatpak-state.json"
 #  # Optional HTTP(S) proxy for flatpak downloads, e.g. "http://proxy.example.com:3128".
 #  proxy_url: ""
+
+# Disk encryption (LUKS2) policy enforcement: inventory, recovery-key escrow,
+# TPM2 and Tang/Clevis protectors. All values are optional; the defaults
+# shown are used when the section is absent.
+#disk_encryption:
+#  # Rotation crash-recovery state (progress only - never holds keys).
+#  state_file: "/var/lib/bor/agent/luks-state.json"
+#  # One-time provisioning credentials placed by the installer
+#  # (<luks-uuid>.key, mode 0600); consumed and wiped during adoption.
+#  bootstrap_dir: "/etc/bor/luks-bootstrap"
+#  # Root-only tmpfs work directory (Clevis TMPDIR, adopt lock).
+#  run_dir: "/run/bor/luks"
+#  # Tool binaries, resolved via PATH when not absolute.
+#  cryptsetup: "cryptsetup"
+#  cryptenroll: "systemd-cryptenroll"
+#  clevis: "clevis"

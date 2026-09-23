@@ -25,6 +25,7 @@ import (
 	"github.com/VuteTech/Bor/agent/internal/config"
 	"github.com/VuteTech/Bor/agent/internal/filewatcher"
 	"github.com/VuteTech/Bor/agent/internal/logind"
+	"github.com/VuteTech/Bor/agent/internal/luks"
 	"github.com/VuteTech/Bor/agent/internal/notify"
 	"github.com/VuteTech/Bor/agent/internal/policy"
 	"github.com/VuteTech/Bor/agent/internal/policyclient"
@@ -347,6 +348,12 @@ func main() {
 	enrollTokenFile := flag.String("token-file", "", "path to file containing the enrollment token (one line, trimmed)")
 	flag.Parse()
 
+	// Subcommands run before the daemon start-up path.
+	if flag.Arg(0) == "luks" {
+		runLuksCommand(flag.Args()[1:], *configPath)
+		return
+	}
+
 	// Resolve enrollment token: --token-file > BOR_ENROLLMENT_TOKEN > --token
 	resolvedToken := resolveEnrollToken(*enrollToken, *enrollTokenFile)
 
@@ -542,6 +549,10 @@ To follow the agent logs:
 	}
 	defer stopFlatpakUpdater()
 
+	// Probe the disk-encryption tooling once at startup.
+	logDiskEncryptionProbe(ctx, cfg)
+	defer stopDiskEncTicker()
+
 	// Run the policy enforcement loop — prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
@@ -600,7 +611,12 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 				Cooldown: time.Duration(agentCfg.NotifyCooldown) * time.Second,
 				Message:  packageNotifyConfig.Message,
 			}
+			diskEncInventoryEnabled = agentCfg.DiskEncryptionInventory
 		}
+
+		// Report the LUKS inventory on connect (read-only; works without a
+		// DiskEncryption policy when the server setting allows it).
+		go reportDiskEncryptionInventory(ctx, client, cfg)
 
 		// Send heartbeat on connect to report current metadata.
 		go sendHeartbeat(ctx, client)
@@ -651,8 +667,9 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		var postInitialSync bool
 		err := client.SubscribePolicyUpdates(ctx, lastRevision,
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
-				// Don't let METADATA_REQUEST overwrite the last known revision.
-				if updateType != "METADATA_REQUEST" {
+				// Don't let targeted server-to-agent commands overwrite the
+				// last known revision.
+				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" {
 					lastRevision = revision
 				}
 				handlePolicyUpdate(ctx, client, cfg, updateType, pi, snapshotComplete, &postInitialSync)
@@ -688,6 +705,13 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 	case "METADATA_REQUEST":
 		// Server is requesting fresh system metadata.
 		go sendHeartbeat(ctx, client)
+		go reportDiskEncryptionInventory(ctx, client, cfg)
+		return
+
+	case "DISK_ENCRYPTION_TASK":
+		// Server pushed a disk-encryption task (e.g. a recovery-key
+		// rotation); fetch and run it via a full sync.
+		go triggerDiskEncryptionSync(ctx, client, cfg)
 		return
 
 	case "SNAPSHOT":
@@ -719,6 +743,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				firewalldSnapshotStaging = nil
 				flatpakCache = make(map[string]flatpakCacheEntry)
 				flatpakSnapshotStaging = nil
+				diskEncCache = make(map[string]diskEncCacheEntry)
+				diskEncSnapshotStaging = nil
 				sessionAccessReplace(nil)
 				sessionAccessSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
@@ -732,6 +758,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				syncAllSessionAccess(ctx, client, cfg)
 				go triggerPackageSync(ctx, client, cfg)
 				go triggerFlatpakSync(ctx, client, cfg)
+				go triggerDiskEncryptionSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -813,6 +840,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				flatpakSnapshotStaging = make(map[string]flatpakCacheEntry)
 			}
 			flatpakSnapshotStaging[pi.ID] = flatpakCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FlatpakPolicy}
+		case "DiskEncryption":
+			if diskEncSnapshotStaging == nil {
+				diskEncSnapshotStaging = make(map[string]diskEncCacheEntry)
+			}
+			diskEncSnapshotStaging[pi.ID] = diskEncCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DiskEncryptionPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -906,6 +938,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			flatpakSnapshotStaging = nil
 
+			// Swap DiskEncryption staging into cache.
+			if diskEncSnapshotStaging != nil {
+				diskEncCache = diskEncSnapshotStaging
+			} else {
+				diskEncCache = make(map[string]diskEncCacheEntry)
+			}
+			diskEncSnapshotStaging = nil
+
 			// Swap SessionAccess staging into cache.
 			sessionAccessReplace(sessionAccessSnapshotStaging)
 			sessionAccessSnapshotStaging = nil
@@ -921,6 +961,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			syncAllSessionAccess(ctx, client, cfg)
 			go triggerPackageSync(ctx, client, cfg)
 			go triggerFlatpakSync(ctx, client, cfg)
+			go triggerDiskEncryptionSync(ctx, client, cfg)
 
 			if *postInitialSync {
 				// Resync from a live admin change — notify if content changed.
@@ -994,6 +1035,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "Flatpak":
 			flatpakCache[pi.ID] = flatpakCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.FlatpakPolicy}
 			go triggerFlatpakSync(ctx, client, cfg)
+		case "DiskEncryption":
+			diskEncCache[pi.ID] = diskEncCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DiskEncryptionPolicy}
+			go triggerDiskEncryptionSync(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -1047,6 +1091,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := flatpakCache[pi.ID]; ok {
 			delete(flatpakCache, pi.ID)
 			go triggerFlatpakSync(ctx, client, cfg)
+		} else if _, ok := diskEncCache[pi.ID]; ok {
+			delete(diskEncCache, pi.ID)
+			go triggerDiskEncryptionSync(ctx, client, cfg)
 		} else if sessionAccessRemove(pi.ID) {
 			syncAllSessionAccess(ctx, client, cfg)
 		} else {
@@ -2367,6 +2414,9 @@ func getManagedPaths(cfg *config.Config) []string {
 		paths = append(paths, policy.TimeConfPath)
 	}
 
+	// Disk encryption MANAGE mode: the dracut drop-in and crypttab.
+	paths = append(paths, diskEncManagedPaths()...)
+
 	return paths
 }
 
@@ -2430,6 +2480,11 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		go triggerFlatpakSync(ctx, client, cfg)
 	case path == policy.TimeConfPath:
 		syncAllSessionAccess(ctx, client, cfg)
+	case path == luks.DracutDropInPath || path == luks.CrypttabPath:
+		// The restore re-applies Bor's drop-in and crypttab option tokens;
+		// the rebuild rate limit keeps a tamper loop from becoming a
+		// rebuild storm.
+		go triggerDiskEncryptionSync(ctx, client, cfg)
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
 	default:

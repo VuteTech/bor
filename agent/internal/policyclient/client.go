@@ -99,23 +99,24 @@ func (c *Client) Close() error {
 
 // PolicyInfo holds the policy data returned from the server.
 type PolicyInfo struct {
-	ID                  string
-	Name                string
-	Type                string
-	Content             string // kept for compatibility / fallback
-	Version             int32
-	Priority            int32                   // max binding priority across enabled bindings for this node
-	KConfigPolicy       *pb.KConfigPolicy       // populated from typed_content for Kconfig type
-	FirefoxPolicy       *pb.FirefoxPolicy       // populated from typed_content for Firefox type
-	ChromePolicy        *pb.ChromePolicy        // populated from typed_content for Chrome type
-	DConfPolicy         *pb.DConfPolicy         // populated from typed_content for Dconf type
-	PolkitPolicy        *pb.PolkitPolicy        // populated from typed_content for Polkit type
-	PackagePolicy       *pb.PackagePolicy       // populated from typed_content for Package type
-	ThunderbirdPolicy   *pb.ThunderbirdPolicy   // populated from typed_content for Thunderbird type
-	EdgePolicy          *pb.EdgePolicy          // populated from typed_content for Edge type
-	FirewalldPolicy     *pb.FirewalldPolicy     // populated from typed_content for Firewalld type
-	SessionAccessPolicy *pb.SessionAccessPolicy // populated from typed_content for SessionAccess type
-	FlatpakPolicy       *pb.FlatpakPolicy       // populated from typed_content for Flatpak type
+	ID                   string
+	Name                 string
+	Type                 string
+	Content              string // kept for compatibility / fallback
+	Version              int32
+	Priority             int32                    // max binding priority across enabled bindings for this node
+	KConfigPolicy        *pb.KConfigPolicy        // populated from typed_content for Kconfig type
+	FirefoxPolicy        *pb.FirefoxPolicy        // populated from typed_content for Firefox type
+	ChromePolicy         *pb.ChromePolicy         // populated from typed_content for Chrome type
+	DConfPolicy          *pb.DConfPolicy          // populated from typed_content for Dconf type
+	PolkitPolicy         *pb.PolkitPolicy         // populated from typed_content for Polkit type
+	PackagePolicy        *pb.PackagePolicy        // populated from typed_content for Package type
+	ThunderbirdPolicy    *pb.ThunderbirdPolicy    // populated from typed_content for Thunderbird type
+	EdgePolicy           *pb.EdgePolicy           // populated from typed_content for Edge type
+	FirewalldPolicy      *pb.FirewalldPolicy      // populated from typed_content for Firewalld type
+	SessionAccessPolicy  *pb.SessionAccessPolicy  // populated from typed_content for SessionAccess type
+	FlatpakPolicy        *pb.FlatpakPolicy        // populated from typed_content for Flatpak type
+	DiskEncryptionPolicy *pb.DiskEncryptionPolicy // populated from typed_content for DiskEncryption type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -150,6 +151,7 @@ type AgentConfig struct {
 	NotifyMessageChrome      string
 	NotifyMessageThunderbird string
 	NotifyMessageEdge        string
+	DiskEncryptionInventory  bool
 }
 
 // GetAgentConfig fetches agent configuration (notification settings)
@@ -176,6 +178,7 @@ func (c *Client) GetAgentConfig(ctx context.Context) (*AgentConfig, error) {
 		NotifyMessageChrome:      cfg.GetNotifyMessageChrome(),
 		NotifyMessageThunderbird: cfg.GetNotifyMessageThunderbird(),
 		NotifyMessageEdge:        cfg.GetNotifyMessageEdge(),
+		DiskEncryptionInventory:  cfg.GetDiskEncryptionInventory(),
 	}, nil
 }
 
@@ -325,6 +328,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			if fpp := p.GetFlatpakPolicy(); fpp != nil {
 				pi.FlatpakPolicy = fpp
+			}
+			if dep := p.GetDiskEncryptionPolicy(); dep != nil {
+				pi.DiskEncryptionPolicy = dep
 			}
 		}
 
