@@ -1,0 +1,324 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+import "google/protobuf/timestamp.proto";
+
+// ─── Policy content ─────────────
+
+// LuksVolumeScope selects which LUKS volumes the policy manages.
+enum LuksVolumeScope {
+  // Treated as SYSTEM.
+  LUKS_VOLUME_SCOPE_UNSPECIFIED = 0;
+  // Volumes backing /, /usr, /var, /home and active swap.
+  LUKS_VOLUME_SCOPE_SYSTEM = 1;
+  // Only volumes backing DiskEncryptionPolicy.mountpoints.
+  LUKS_VOLUME_SCOPE_MOUNTPOINTS = 2;
+  // Every active LUKS mapping on a non-removable disk.
+  LUKS_VOLUME_SCOPE_ALL_FIXED = 3;
+}
+
+// TpmPcrProfile selects the PCR set a TPM2 enrollment is bound to.
+enum TpmPcrProfile {
+  // Treated as SECURE_BOOT.
+  TPM_PCR_PROFILE_UNSPECIFIED = 0;
+  // PCR 7 (Secure Boot state).
+  TPM_PCR_PROFILE_SECURE_BOOT = 1;
+  // PCR 7+14 (shim / MOK).
+  TPM_PCR_PROFILE_SECURE_BOOT_SHIM = 2;
+  // Tpm2Protector.pcrs.
+  TPM_PCR_PROFILE_CUSTOM = 3;
+}
+
+// TpmBackend selects the tool that manages the TPM2 keyslot.
+enum TpmBackend {
+  // Treated as AUTO.
+  TPM_BACKEND_UNSPECIFIED = 0;
+  // systemd-cryptenroll on systemd-initrd systems, Clevis tpm2 pin
+  // otherwise (Phase 2).
+  TPM_BACKEND_AUTO = 1;
+  TPM_BACKEND_SYSTEMD = 2;
+  // Phase 2.
+  TPM_BACKEND_CLEVIS = 3;
+}
+
+// PassphraseMode controls what happens to unmanaged passphrase keyslots.
+enum PassphraseMode {
+  // Treated as KEEP.
+  PASSPHRASE_MODE_UNSPECIFIED = 0;
+  // Unmanaged passphrase slots are left alone.
+  PASSPHRASE_MODE_KEEP = 1;
+  // Phase 2: wipe them once protectors + escrow are verified (TPM/Tang-only).
+  PASSPHRASE_MODE_REMOVE = 2;
+}
+
+// InitramfsMode controls whether the agent may modify the initramfs and
+// crypttab to enable the desired boot-time protectors.
+enum InitramfsMode {
+  // Treated as VERIFY_ONLY.
+  INITRAMFS_MODE_UNSPECIFIED = 0;
+  // Only check and report; never modify.
+  INITRAMFS_MODE_VERIFY_ONLY = 1;
+  // dracut drop-in + crypttab option tokens + rebuild.
+  INITRAMFS_MODE_MANAGE = 2;
+}
+
+// Tpm2Protector configures the TPM2 keyslot.
+message Tpm2Protector {
+  bool enabled = 1;
+  TpmPcrProfile pcr_profile = 2;
+  // CUSTOM only; 0..23, non-empty; 0 and 2 need allow_firmware_pcrs.
+  repeated uint32 pcrs = 3;
+  TpmBackend backend = 4;
+  // Unset = true: re-enroll automatically when the TPM no longer unseals
+  // in the current PCR state (e.g. after a firmware or dbx update).
+  optional bool auto_reseal = 5;
+  bool allow_firmware_pcrs = 6;
+  // Phase 3; accepted, reported INAPPLICABLE.
+  bool with_pin = 7;
+}
+
+// TangServer is one Tang server a volume may be bound to. Policy content is
+// self-contained: the entries are copied from the registry by the editor, and
+// export/import and nodes never depend on the registry.
+message TangServer {
+  // http(s)://host[:port][/path]
+  string url = 1;
+  // Preferred signing key, RFC 7638 S256 thumbprint, base64url (43 chars).
+  string thumbprint = 2;
+  // Older keys still trusted; bindings made with them are re-bound.
+  repeated string accepted_thumbprints = 3;
+  // UI cache: the tang_servers row it was copied from; ignored by the agent.
+  string registry_id = 4;
+}
+
+// TangProtector configures Clevis/Tang network-bound unlocking.
+message TangProtector {
+  bool enabled = 1;
+  // 1..4 (LUKS2 JSON area budget).
+  repeated TangServer servers = 2;
+  // sss "t"; 0 = 1.
+  uint32 threshold = 3;
+  // Phase 2: bind to the Bor Tang responder with a per-node key.
+  bool bor_responder = 4;
+  // Phase 2: sss t=2 over {tang set, tpm2}.
+  bool require_tpm2_too = 5;
+}
+
+// RecoveryKeyPolicy configures the escrowed recovery key.
+message RecoveryKeyPolicy {
+  // Enroll + escrow a Bor-generated recovery key.
+  bool escrow = 1;
+  // Unset = 180; 0 = never; else 30..730.
+  optional uint32 rotation_interval_days = 2;
+  // Unset = true.
+  optional bool rotate_after_reveal = 3;
+  // Unset = true: the server may release the ACTIVE key to the owning node
+  // while a rotation task exists.
+  optional bool server_assisted_rotation = 4;
+}
+
+// DiskEncryptionPolicy - merge across bound policies (a node has one
+// effective configuration): require_* and recovery.escrow are OR-ed;
+// rotation_interval_days takes the smallest non-zero value; everything else
+// comes from the highest-priority policy that sets it. Tang server lists are
+// NOT unioned (a union would silently widen who can unlock the disk).
+message DiskEncryptionPolicy {
+  bool require_encryption = 1;
+  LuksVolumeScope volume_scope = 2;
+  // MOUNTPOINTS scope; absolute, ≤ 32.
+  repeated string mountpoints = 3;
+  // 0 = 512.
+  uint32 min_volume_key_bits = 4;
+  // Empty = ["aes-xts-plain64"].
+  repeated string allowed_ciphers = 5;
+  bool require_tpm2 = 6;
+  bool require_secure_boot = 7;
+  Tpm2Protector tpm2 = 8;
+  TangProtector tang = 9;
+  RecoveryKeyPolicy recovery = 10;
+  PassphraseMode passphrase_mode = 11;
+  InitramfsMode initramfs_mode = 12;
+  // Unset = true.
+  optional bool adopt_existing = 13;
+  // Field numbers 14-20 are reserved for future use.
+}
+
+// ─── Agent ↔ server messages ────────────────────────────────────────
+
+// LuksKeyslotKind classifies a keyslot by its LUKS2 tokens.
+enum LuksKeyslotKind {
+  LUKS_KEYSLOT_KIND_UNSPECIFIED = 0;
+  // No token.
+  LUKS_KEYSLOT_KIND_PASSWORD = 1;
+  // systemd-recovery, not Bor's.
+  LUKS_KEYSLOT_KIND_RECOVERY = 2;
+  // systemd-recovery + bor-escrow marker.
+  LUKS_KEYSLOT_KIND_BOR_RECOVERY = 3;
+  LUKS_KEYSLOT_KIND_TPM2 = 4;
+  LUKS_KEYSLOT_KIND_FIDO2 = 5;
+  LUKS_KEYSLOT_KIND_PKCS11 = 6;
+  LUKS_KEYSLOT_KIND_CLEVIS = 7;
+  // Unknown token type (never touched).
+  LUKS_KEYSLOT_KIND_OTHER = 8;
+}
+
+// LuksKeyslot is the agent's view of one LUKS2 keyslot. Carries no secrets.
+message LuksKeyslot {
+  uint32 index = 1;
+  LuksKeyslotKind kind = 2;
+  // "pbkdf2-sha512", "argon2id", …
+  string kdf = 3;
+  // hex sha256(luks_uuid ":" index ":" kdf.salt) - a stable identifier of
+  // this keyslot instance; re-keying changes it (drift detection).
+  string fingerprint = 4;
+  repeated uint32 tpm2_pcrs = 5;
+  // tang | sss | tpm2
+  string clevis_pin = 6;
+  uint32 clevis_threshold = 7;
+  repeated string tang_urls = 8;
+  // From the adv embedded in the JWE.
+  repeated string tang_signing_thumbprints = 9;
+  string bor_escrow_id = 10;
+}
+
+// LuksVolumeState is the agent's inventory of one LUKS volume.
+message LuksVolumeState {
+  string luks_uuid = 1;
+  string mapping_name = 2;
+  repeated string mountpoints = 3;
+  bool is_system = 4;
+  uint32 luks_version = 5;
+  string cipher = 6;
+  uint32 volume_key_bits = 7;
+  repeated LuksKeyslot keyslots = 8;
+  // "", "snapd", "sdbootutil", "pcrlock", "signed-pcr"
+  string externally_managed_by = 9;
+  // "ok" | "missing:tpm2-tss" | "missing:clevis" | "unknown"
+  string initramfs_status = 10;
+  // LUKS2 metadata budget remaining for new tokens.
+  uint32 json_area_free_bytes = 11;
+}
+
+// SecureBootState is the platform Secure Boot state read from efivars.
+enum SecureBootState {
+  SECURE_BOOT_STATE_UNSPECIFIED = 0;
+  SECURE_BOOT_STATE_ENABLED = 1;
+  SECURE_BOOT_STATE_DISABLED = 2;
+  SECURE_BOOT_STATE_SETUP_MODE = 3;
+  SECURE_BOOT_STATE_LEGACY_BIOS = 4;
+}
+
+// DiskEncryptionPlatform carries per-node platform facts.
+message DiskEncryptionPlatform {
+  bool tpm2_present = 1;
+  SecureBootState secure_boot = 2;
+  // dracut | initramfs-tools | mkinitcpio | rpm-ostree | unknown
+  string initramfs_generator = 3;
+  string systemd_version = 4;
+  string cryptsetup_version = 5;
+  // "" = not installed.
+  string clevis_version = 6;
+}
+
+// UnencryptedMount is an in-scope mount not backed by dm-crypt.
+message UnencryptedMount {
+  string mountpoint = 1;
+  string source = 2;
+  string fstype = 3;
+}
+
+// ReportDiskEncryptionStateRequest is the agent's inventory report.
+message ReportDiskEncryptionStateRequest {
+  string client_id = 1;
+  DiskEncryptionPlatform platform = 2;
+  repeated LuksVolumeState volumes = 3;
+  repeated UnencryptedMount unencrypted_system_mounts = 4;
+}
+
+// ReportDiskEncryptionStateResponse piggybacks pending tasks.
+message ReportDiskEncryptionStateResponse {
+  repeated DiskEncryptionTask tasks = 1;
+}
+
+// RecoveryKeyReason records why a recovery key was created or rotated.
+enum RecoveryKeyReason {
+  RECOVERY_KEY_REASON_UNSPECIFIED = 0;
+  RECOVERY_KEY_REASON_INITIAL = 1;
+  RECOVERY_KEY_REASON_SCHEDULED = 2;
+  RECOVERY_KEY_REASON_AFTER_REVEAL = 3;
+  RECOVERY_KEY_REASON_ADMIN_REQUEST = 4;
+  RECOVERY_KEY_REASON_DRIFT = 5;
+  RECOVERY_KEY_REASON_AFTER_RELEASE = 6;
+}
+
+// DiskEncryptionTask is a server-to-agent work item.
+message DiskEncryptionTask {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    ROTATE_RECOVERY_KEY = 1;
+    RESCAN = 2;
+  }
+  Kind kind = 1;
+  string luks_uuid = 2;
+  RecoveryKeyReason reason = 3;
+  google.protobuf.Timestamp requested_at = 4;
+}
+
+message GetDiskEncryptionTasksRequest {
+  string client_id = 1;
+}
+message GetDiskEncryptionTasksResponse {
+  repeated DiskEncryptionTask tasks = 1;
+}
+
+// EscrowRecoveryKeyRequest stores a new recovery key BEFORE its keyslot
+// exists (escrow-first two-phase commit).
+message EscrowRecoveryKeyRequest {
+  string client_id = 1;
+  string luks_uuid = 2;
+  // Agent-generated UUIDv4; idempotency key.
+  string escrow_id = 3;
+  // 8×8 modhex; validated server-side.
+  string recovery_key = 4;
+  RecoveryKeyReason reason = 5;
+  // Set when completing a server-assisted rotation.
+  string rotation_id = 6;
+}
+message EscrowRecoveryKeyResponse {
+  bool accepted = 1;
+}
+
+// ConfirmRecoveryKeyRequest promotes a PENDING key to ACTIVE once its
+// keyslot exists and has been verified on the node.
+message ConfirmRecoveryKeyRequest {
+  string client_id = 1;
+  string luks_uuid = 2;
+  string escrow_id = 3;
+  uint32 keyslot = 4;
+  string keyslot_fingerprint = 5;
+}
+message ConfirmRecoveryKeyResponse {
+  bool accepted = 1;
+}
+
+// BeginRecoveryKeyRotationRequest asks for the ACTIVE key as the unlock
+// credential for a rotation. Granted only while a rotation task exists for
+// the volume, only to the node that owns it, at most once per 24 h.
+message BeginRecoveryKeyRotationRequest {
+  string client_id = 1;
+  string luks_uuid = 2;
+}
+message BeginRecoveryKeyRotationResponse {
+  string rotation_id = 1;
+  // Released ONLY because a rotation task exists.
+  string current_recovery_key = 2;
+  // + 15 min; otherwise recoverykey.release_unconfirmed is raised.
+  google.protobuf.Timestamp complete_by = 3;
+}

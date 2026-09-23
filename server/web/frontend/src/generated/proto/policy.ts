@@ -7,6 +7,7 @@
 /* eslint-disable */
 import type { ChromePolicy } from "./chrome";
 import type { DConfPolicy } from "./dconf";
+import type { DiskEncryptionPolicy } from "./disk_encryption";
 import type { EdgePolicy } from "./edge";
 import type { FirefoxPolicy } from "./firefox";
 import type { FirewalldPolicy } from "./firewalld";
@@ -68,8 +69,9 @@ export interface Policy {
   edge_policy?: EdgePolicy | undefined;
   firewalld_policy?: FirewalldPolicy | undefined;
   session_access_policy?: SessionAccessPolicy | undefined;
-  flatpak_policy?:
-    | FlatpakPolicy
+  flatpak_policy?: FlatpakPolicy | undefined;
+  disk_encryption_policy?:
+    | DiskEncryptionPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority
@@ -156,6 +158,12 @@ export enum PolicyUpdate_UpdateType {
    * to collect and report fresh system metadata via the Heartbeat RPC.
    */
   METADATA_REQUEST = 5,
+  /**
+   * DISK_ENCRYPTION_TASK - DISK_ENCRYPTION_TASK is a server-to-agent command asking the agent
+   * to fetch and run its pending disk-encryption tasks
+   * (GetDiskEncryptionTasks), e.g. a recovery-key rotation.
+   */
+  DISK_ENCRYPTION_TASK = 6,
   UNRECOGNIZED = -1,
 }
 
@@ -213,6 +221,11 @@ export interface AgentConfig {
   notify_message_chrome: string;
   notify_message_thunderbird: string;
   notify_message_edge: string;
+  /**
+   * Report LUKS volume inventory even when no DiskEncryption policy is
+   * bound (read-only; server setting, default on).
+   */
+  disk_encryption_inventory: boolean;
 }
 
 /** NodeInfo contains metadata reported by an agent node. */
