@@ -267,3 +267,20 @@ ldap:
 #  max_download_mb: 64
 #  # Allow repositories on private networks (internal mirrors). Default false.
 #  allow_private_networks: false
+
+# Disk encryption (LUKS) recovery-key escrow.
+#
+# escrow_kek_file holds the 32-byte key-encryption key (raw or base64) that
+# wraps escrowed recovery keys; it lives outside the database and must be
+# 0600. Escrow stays disabled (fail closed) until it is set. Previous KEKs
+# stay readable via escrow_kek_previous_files ("id=path" entries) while a
+# background job rewraps records.
+#
+#disk_encryption:
+#  escrow_kek_file: /etc/bor/escrow.kek
+#  escrow_kek_id: file-1
+#  escrow_kek_previous_files: []
+#  # Require TOTP during step-up before revealing a recovery key.
+#  require_mfa_for_reveal: true
+#  retired_retention_days: 30
+#  orphan_retention_days: 90

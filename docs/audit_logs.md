@@ -308,19 +308,43 @@ Matching values are replaced with the literal string `[REDACTED]` in both the `m
 
 | Bor action | CEF severity | Label |
 |------------|-------------|-------|
-| `tamper_detected` | 8 | High |
-| `delete` | 6 | Medium-high |
-| `create`, `update` | 3 | Low |
+| `tamper_detected`, `recoverykey.reveal`, `recoverykey.release_unconfirmed` | 8 | High |
+| `recoverykey.reveal_denied`, `luks.clone_suspected` | 7 | Medium-high |
+| `delete`, `recoverykey.release` | 6 | Medium-high |
+| `luks.drift` | 5 | Medium |
+| `create`, `update`, `recoverykey.rotate_request`, `recoverykey.destroy`, `luks.tpm_reseal` | 3 | Low |
+| `recoverykey.escrow`, `recoverykey.confirm`, `tangserver.check`, `flatpakrepo.*` | 2 | Low |
 | other | 1 | Informational |
 
 ### OCSF severity_id (0–5)
 
 | Bor action | OCSF severity_id | Label |
 |------------|-----------------|-------|
-| `tamper_detected` | 4 | High |
-| `delete` | 3 | Medium |
-| `create`, `update` | 2 | Low |
+| `tamper_detected`, `recoverykey.reveal`, `recoverykey.release_unconfirmed` | 4 | High |
+| `delete`, `recoverykey.reveal_denied`, `recoverykey.release`, `luks.clone_suspected`, `luks.drift` | 3 | Medium |
+| `create`, `update`, other `recoverykey.*`, `luks.tpm_reseal`, `tangserver.check` | 2 | Low |
 | other | 1 | Informational |
+
+### Disk encryption events
+
+The DiskEncryption policy type emits dedicated events (see
+[`disk-encryption.md`](disk-encryption.md)). Forward at least the
+`recoverykey.*` events to an off-box SIEM - the database audit log has no
+hash chain, so tamper evidence for reveals relies on syslog forwarding.
+
+| Event | Emitted when |
+|-------|--------------|
+| `recoverykey.escrow` | An agent stored a new (pending) recovery key |
+| `recoverykey.confirm` | The keyslot was verified and the key became active |
+| `recoverykey.rotate_request` | A rotation was scheduled (admin, interval, drift or reveal) |
+| `recoverykey.release` | The active key was released to its own node for a rotation |
+| `recoverykey.release_unconfirmed` | A released key was not rotated within 15 minutes |
+| `recoverykey.reveal` / `recoverykey.reveal_denied` | An administrator revealed a key (or failed the step-up/RBAC check) |
+| `recoverykey.destroy` | A retired or orphaned key was crypto-shredded |
+| `luks.drift` | The escrowed key no longer opens the volume (keyslot fingerprint changed) |
+| `luks.clone_suspected` | Several nodes report the same LUKS UUID (cloned image, shared volume key) |
+| `luks.tpm_reseal` | The agent re-enrolled a TPM2 slot after a PCR change |
+| `tangserver.check` | A Tang advertisement check changed status (ok / new_key / error) |
 
 ### RFC 5424 syslog severity
 

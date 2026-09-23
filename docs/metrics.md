@@ -256,6 +256,46 @@ bor_flatpak_catalog_refresh_total{repo="flathub",outcome="unchanged"} 30
 bor_flatpak_catalog_refresh_total{repo="flathub",outcome="error"}     1
 ```
 
+---
+
+### Disk encryption metrics
+
+Aggregate labels only - no node identifiers or key material.
+
+#### `bor_luks_volumes_total`
+
+LUKS volumes reported by agents, partitioned by whether an active recovery
+key is escrowed.
+
+| Label | Values |
+|-------|--------|
+| `escrowed` | `true`, `false` |
+
+```
+bor_luks_volumes_total{escrowed="true"}  41
+bor_luks_volumes_total{escrowed="false"} 3
+```
+
+#### `bor_luks_recovery_keys_overdue_total`
+
+Volumes with a pending recovery-key rotation task (scheduled, after a
+reveal, admin-requested or drift). Alert when this stays non-zero for more
+than a day - the affected nodes are not completing their rotations.
+
+#### `bor_luks_escrow_operations_total`
+
+**Counter.** Recovery-key escrow operations.
+
+| Label | Values |
+|-------|--------|
+| `op` | `escrow`, `confirm`, `release`, `destroy` |
+| `outcome` | `ok`, `error` |
+
+#### `bor_luks_recovery_key_reveals_total`
+
+**Counter.** Recovery keys revealed to administrators. Every increment has a
+matching `recoverykey.reveal` audit event.
+
 ## Alerting examples
 
 Paste these into a Prometheus `rules.yml` file.
