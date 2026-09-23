@@ -34,6 +34,37 @@ type Config struct {
 	ACME           ACMEConfig
 	AgentRepo      AgentRepoConfig
 	FlatpakCatalog FlatpakCatalogConfig
+	DiskEncryption DiskEncryptionConfig
+}
+
+// DiskEncryptionConfig configures LUKS recovery-key escrow and (Phase 2) the
+// Bor Tang responder. Without a
+// KEK the escrow RPCs fail closed and the policy editor shows a blocking
+// warning.
+type DiskEncryptionConfig struct {
+	// EscrowKEKFile holds 32 random bytes (raw or base64) and must not be
+	// group- or world-readable. Required for recovery-key escrow.
+	EscrowKEKFile string // BOR_ESCROW_KEK_FILE
+	// EscrowKEKID is the label stored per record (default "file-1").
+	EscrowKEKID string // BOR_ESCROW_KEK_ID
+	// EscrowKEKPreviousFiles keeps old KEKs readable during rotation.
+	// Comma-separated "id=path" entries; a background job rewraps records.
+	EscrowKEKPreviousFiles []string // BOR_ESCROW_KEK_PREVIOUS_FILES
+	// EscrowPKCS11KeyLabel selects an AES KEK on the HSM that already holds
+	// the CA key (requires the pkcs11 build tag).
+	EscrowPKCS11KeyLabel string // BOR_ESCROW_PKCS11_KEY_LABEL
+	// RequireMFAForReveal demands a second factor during step-up before a
+	// recovery key is revealed (NIS2: MFA for privileged access).
+	RequireMFAForReveal bool // BOR_ESCROW_REQUIRE_MFA - default true
+	// RetiredRetentionDays keeps retired keys revealable before they are
+	// crypto-shredded (covers disks restored from older header backups).
+	RetiredRetentionDays int // BOR_ESCROW_RETIRED_RETENTION_DAYS - default 30
+	// OrphanRetentionDays keeps keys of volumes whose node was deleted.
+	OrphanRetentionDays int // BOR_ESCROW_ORPHAN_RETENTION_DAYS - default 90
+	// TangListen enables the Phase 2 Bor Tang responder ("" = off).
+	TangListen string // BOR_TANG_LISTEN - Phase 2
+	// TangAllowedNetworks are the CIDRs allowed to call /rec (Phase 2).
+	TangAllowedNetworks []string // BOR_TANG_ALLOWED_NETWORKS - Phase 2
 }
 
 // AgentRepoConfig locates the static agent package repository that the
@@ -386,6 +417,17 @@ type fileConfig struct {
 		MaxDownloadMB        int  `yaml:"max_download_mb"`
 		AllowPrivateNetworks bool `yaml:"allow_private_networks"`
 	} `yaml:"flatpak_catalog"`
+	DiskEncryption struct {
+		EscrowKEKFile          string   `yaml:"escrow_kek_file"`
+		EscrowKEKID            string   `yaml:"escrow_kek_id"`
+		EscrowKEKPreviousFiles []string `yaml:"escrow_kek_previous_files"`
+		EscrowPKCS11KeyLabel   string   `yaml:"escrow_pkcs11_key_label"`
+		RequireMFAForReveal    *bool    `yaml:"require_mfa_for_reveal"`
+		RetiredRetentionDays   int      `yaml:"retired_retention_days"`
+		OrphanRetentionDays    int      `yaml:"orphan_retention_days"`
+		TangListen             string   `yaml:"tang_listen"`
+		TangAllowedNetworks    []string `yaml:"tang_allowed_networks"`
+	} `yaml:"disk_encryption"`
 	ACME struct {
 		Enabled      bool     `yaml:"enabled"`
 		DirectoryURL string   `yaml:"directory_url"`
@@ -576,6 +618,43 @@ func Load() (*Config, error) {
 		flatpakMaxDownloadMB = 64
 	}
 
+	// ─── Disk encryption / recovery-key escrow ─────────────────────────────
+	escrowPreviousFiles := fc.DiskEncryption.EscrowKEKPreviousFiles
+	if v := os.Getenv("BOR_ESCROW_KEK_PREVIOUS_FILES"); v != "" {
+		escrowPreviousFiles = splitComma(v)
+	}
+	escrowRequireMFA := true
+	if fc.DiskEncryption.RequireMFAForReveal != nil {
+		escrowRequireMFA = *fc.DiskEncryption.RequireMFAForReveal
+	}
+	escrowRequireMFA = getEnvBool("BOR_ESCROW_REQUIRE_MFA", escrowRequireMFA)
+	escrowRetiredDays := fc.DiskEncryption.RetiredRetentionDays
+	if escrowRetiredDays <= 0 {
+		escrowRetiredDays = 30
+	}
+	if v := os.Getenv("BOR_ESCROW_RETIRED_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid BOR_ESCROW_RETIRED_RETENTION_DAYS: %q", v)
+		}
+		escrowRetiredDays = n
+	}
+	escrowOrphanDays := fc.DiskEncryption.OrphanRetentionDays
+	if escrowOrphanDays <= 0 {
+		escrowOrphanDays = 90
+	}
+	if v := os.Getenv("BOR_ESCROW_ORPHAN_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid BOR_ESCROW_ORPHAN_RETENTION_DAYS: %q", v)
+		}
+		escrowOrphanDays = n
+	}
+	tangAllowedNetworks := fc.DiskEncryption.TangAllowedNetworks
+	if v := os.Getenv("BOR_TANG_ALLOWED_NETWORKS"); v != "" {
+		tangAllowedNetworks = splitComma(v)
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -665,6 +744,17 @@ func Load() (*Config, error) {
 			RefreshEnabled:       getEnvBool("BOR_FLATPAK_CATALOG_REFRESH", fc.FlatpakCatalog.RefreshEnabled),
 			MaxDownloadMB:        flatpakMaxDownloadMB,
 			AllowPrivateNetworks: getEnvBool("BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS", fc.FlatpakCatalog.AllowPrivateNetworks),
+		},
+		DiskEncryption: DiskEncryptionConfig{
+			EscrowKEKFile:          getEnv("BOR_ESCROW_KEK_FILE", fc.DiskEncryption.EscrowKEKFile),
+			EscrowKEKID:            getEnv("BOR_ESCROW_KEK_ID", fc.DiskEncryption.EscrowKEKID),
+			EscrowKEKPreviousFiles: escrowPreviousFiles,
+			EscrowPKCS11KeyLabel:   getEnv("BOR_ESCROW_PKCS11_KEY_LABEL", fc.DiskEncryption.EscrowPKCS11KeyLabel),
+			RequireMFAForReveal:    escrowRequireMFA,
+			RetiredRetentionDays:   escrowRetiredDays,
+			OrphanRetentionDays:    escrowOrphanDays,
+			TangListen:             getEnv("BOR_TANG_LISTEN", fc.DiskEncryption.TangListen),
+			TangAllowedNetworks:    tangAllowedNetworks,
 		},
 		UI: UIConfig{
 			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),

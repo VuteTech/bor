@@ -24,6 +24,7 @@ var sensitiveKeys = []string{
 	"password", "passwd", "secret", "token", "credential",
 	"passphrase", "private_key", "privatekey", "api_key", "apikey",
 	"jwt", "auth_token", "access_token", "refresh_token",
+	"recovery_key", // LUKS recovery keys (belt and braces; the reveal route bypasses this middleware anyway)
 }
 
 func isSensitiveKey(key string) bool {

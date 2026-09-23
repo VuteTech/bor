@@ -33,6 +33,7 @@ type PolicyServer struct {
 	dconfRepo   dconfRepository
 	polkitRepo  polkitRepository
 	hub         *PolicyHub
+	diskEncSvc  *services.DiskEncryptionService
 }
 
 // dconfRepository is the subset of database.DConfRepository used by PolicyServer.
@@ -593,6 +594,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal Flatpak typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_FlatpakPolicy{FlatpakPolicy: &fpPol}
+		}
+	case "DiskEncryption":
+		var dePol pb.DiskEncryptionPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &dePol); err != nil {
+			log.Printf("WARNING: failed to unmarshal DiskEncryption typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_DiskEncryptionPolicy{DiskEncryptionPolicy: &dePol}
 		}
 	}
 
