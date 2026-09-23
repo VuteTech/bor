@@ -7,6 +7,7 @@ package policyclient
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -102,10 +103,14 @@ func (c *Client) BeginRecoveryKeyRotation(ctx context.Context, luksUUID string) 
 	return resp.GetRotationId(), key, nil
 }
 
-// clampUint32 converts a non-negative int to uint32.
+// clampUint32 converts an int to uint32, clamping at both bounds (LUKS2
+// keyslot indexes are 0..31, so the clamps never fire in practice).
 func clampUint32(v int) uint32 {
 	if v < 0 {
 		return 0
 	}
-	return uint32(v) //nolint:gosec // bounds checked above; LUKS2 slots are 0..31
+	if uint64(v) > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v)
 }
