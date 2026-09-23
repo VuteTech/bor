@@ -26,6 +26,19 @@ type Config struct {
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
+
+	DiskEncryption DiskEncryptionConfig `yaml:"disk_encryption"`
+}
+
+// DiskEncryptionConfig holds LUKS enforcement settings
+// .
+type DiskEncryptionConfig struct {
+	StateFile    string `yaml:"state_file"`    // rotation crash-recovery state (default /var/lib/bor/agent/luks-state.json; never holds keys)
+	BootstrapDir string `yaml:"bootstrap_dir"` // one-time provisioning credentials (default /etc/bor/luks-bootstrap)
+	RunDir       string `yaml:"run_dir"`       // root-only tmpfs work dir, Clevis TMPDIR (default /run/bor/luks)
+	Cryptsetup   string `yaml:"cryptsetup"`    // default "cryptsetup" (PATH)
+	Cryptenroll  string `yaml:"cryptenroll"`   // default "systemd-cryptenroll"
+	Clevis       string `yaml:"clevis"`        // default "clevis"
 }
 
 // ServerConfig holds server connection settings.

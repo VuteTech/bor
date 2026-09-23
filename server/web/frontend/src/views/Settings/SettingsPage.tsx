@@ -18,6 +18,7 @@ import { UserGroupsTab } from "./UserGroupsTab";
 import { AgentNotificationsTab } from "./AgentNotificationsTab";
 import { MFAPolicyTab } from "./MFAPolicyTab";
 import { FlatpakRepositoriesTab } from "./FlatpakRepositoriesTab";
+import { TangServersTab } from "./TangServersTab";
 
 export const SettingsPage: React.FC = () => {
   const canUsers = hasPermission("user:view");
@@ -25,6 +26,7 @@ export const SettingsPage: React.FC = () => {
   const canUserGroups = hasPermission("user_group:view");
   const canSettings = hasPermission("settings:manage");
   const canFlatpak = hasPermission("flatpak_repo:view");
+  const canTang = hasPermission("tang_server:view");
 
   // Active tab is kept in the URL (?tab=) so it survives refresh, is
   // bookmarkable, and works with the browser Back button.
@@ -37,7 +39,9 @@ export const SettingsPage: React.FC = () => {
     ? "user-groups"
     : canSettings
     ? "agent-notifications"
-    : "flatpak-repos";
+    : canFlatpak
+    ? "flatpak-repos"
+    : "tang-servers";
   const activeTab = searchParams.get("tab") ?? defaultTab;
   const setActiveTab = (key: string) =>
     setSearchParams((prev) => {
@@ -45,7 +49,7 @@ export const SettingsPage: React.FC = () => {
       return prev;
     }, { replace: true });
 
-  if (!canUsers && !canRoles && !canUserGroups && !canSettings && !canFlatpak) {
+  if (!canUsers && !canRoles && !canUserGroups && !canSettings && !canFlatpak && !canTang) {
     return (
       <PageSection>
         <Title headingLevel="h1">Access Denied</Title>
@@ -99,6 +103,13 @@ export const SettingsPage: React.FC = () => {
           <Tab eventKey="flatpak-repos" title={<TabTitleText>Flatpak Repositories</TabTitleText>}>
             <div style={{ paddingTop: 16 }}>
               <FlatpakRepositoriesTab />
+            </div>
+          </Tab>
+        )}
+        {canTang && (
+          <Tab eventKey="tang-servers" title={<TabTitleText>Tang Servers</TabTitleText>}>
+            <div style={{ paddingTop: 16 }}>
+              <TangServersTab />
             </div>
           </Tab>
         )}

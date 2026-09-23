@@ -76,6 +76,8 @@ import {
   NodeFilterOptions,
 } from "../../apiClient/nodesApi";
 import { fetchNodeGroups, NodeGroup } from "../../apiClient/nodeGroupsApi";
+import { hasPermission } from "../../apiClient/permissions";
+import { NodeDiskEncryptionSection } from "../DiskEncryption/NodeDiskEncryptionSection";
 
 /* ── Helpers ── */
 
@@ -716,6 +718,10 @@ export const NodesPage: React.FC = () => {
               </>
             );
           })()}
+
+          {hasPermission("disk_encryption:view") && (
+            <NodeDiskEncryptionSection nodeId={selectedNode.id} />
+          )}
 
           <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}>
             Actions

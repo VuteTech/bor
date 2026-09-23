@@ -26,6 +26,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
+	"github.com/VuteTech/Bor/server/internal/escrow"
 	"github.com/VuteTech/Bor/server/internal/flatpakcatalog"
 	grpcserver "github.com/VuteTech/Bor/server/internal/grpc"
 	"github.com/VuteTech/Bor/server/internal/metrics"
@@ -181,6 +182,7 @@ func main() {
 	revocationRepo := database.NewRevocationRepository(db)
 	mfaRepo := database.NewMFARepository(db)
 	webauthnRepo := database.NewWebAuthnRepository(db)
+	luksRepo := database.NewLuksRepository(db)
 
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
@@ -391,6 +393,50 @@ func main() {
 	flatpakCatalogHandler := api.NewFlatpakCatalogHandler(flatpakSvc)
 	flatpakRemoteInfoHandler := api.NewFlatpakRemoteInfoHandler(flatpakSvc)
 
+	// Disk encryption: LUKS volume
+	// inventory, recovery-key escrow (envelope-encrypted under a KEK outside
+	// the database) and the external Tang server registry. Without a KEK the
+	// escrow flows fail closed; inventory still works.
+	var escrowWrapper escrow.KeyWrapper
+	if cfg.DiskEncryption.EscrowKEKFile != "" {
+		previous, prevErr := escrow.ParsePreviousKEKFiles(cfg.DiskEncryption.EscrowKEKPreviousFiles)
+		if prevErr != nil {
+			log.Fatalf("Failed to parse BOR_ESCROW_KEK_PREVIOUS_FILES: %v", prevErr)
+		}
+		escrowWrapper, err = escrow.NewFileWrapper(escrow.FileKEKConfig{
+			Path:          cfg.DiskEncryption.EscrowKEKFile,
+			ID:            cfg.DiskEncryption.EscrowKEKID,
+			PreviousFiles: previous,
+		})
+		if err != nil {
+			log.Fatalf("Failed to load escrow KEK: %v", err)
+		}
+		log.Printf("Recovery-key escrow enabled (KEK %q from %s)", escrowWrapper.KEKID(), cfg.DiskEncryption.EscrowKEKFile)
+	} else {
+		log.Println("Recovery-key escrow disabled: set BOR_ESCROW_KEK_FILE to enable")
+	}
+	if cfg.DiskEncryption.EscrowPKCS11KeyLabel != "" && escrowWrapper == nil {
+		log.Println("WARNING: BOR_ESCROW_PKCS11_KEY_LABEL is set but PKCS#11 escrow KEKs are not implemented yet; escrow stays disabled")
+	}
+	escrowSvc := escrow.NewService(escrowWrapper)
+	tangSvc := services.NewTangServerService(luksRepo, policySvc, auditSvc)
+	luksEscrowOps := metrics.NewLuksEscrowOperations()
+	luksReveals := metrics.NewLuksReveals()
+	diskEncSvc := services.NewDiskEncryptionService(luksRepo, nodeSvc, policySvc, escrowSvc, auditSvc,
+		services.DiskEncryptionConfig{
+			RequireMFAForReveal:  cfg.DiskEncryption.RequireMFAForReveal,
+			RetiredRetentionDays: cfg.DiskEncryption.RetiredRetentionDays,
+			OrphanRetentionDays:  cfg.DiskEncryption.OrphanRetentionDays,
+		}).
+		WithTaskSender(policyHub).
+		WithTangService(tangSvc).
+		WithMetrics(luksEscrowOps, luksReveals)
+	diskEncSvc.StartJanitor(context.Background())
+	stepUpSvc := services.NewStepUpService(authSvc, mfaSvc, cfg.Security.JWTSecret, cfg.DiskEncryption.RequireMFAForReveal)
+	diskEncHandler := api.NewDiskEncryptionHandler(diskEncSvc, stepUpSvc, cfg.Audit.AnonymizeIPs)
+	tangServersHandler := api.NewTangServersHandler(tangSvc)
+	stepUpHandler := api.NewStepUpHandler(stepUpSvc)
+
 	// Setup HTTP routes
 	mux := http.NewServeMux()
 
@@ -565,6 +611,48 @@ func main() {
 	mux.Handle("/api/v1/flatpak-catalog/", authMiddleware(api.RequirePermission(az, "policy", "view")(flatpakCatalogHandler)))
 	mux.Handle("/api/v1/flatpak-remote-info", authMiddleware(api.RequirePermission(az, "policy", "view")(flatpakRemoteInfoHandler)))
 
+	// Step-up re-authentication: a single-use token for privileged actions
+	// (recovery-key reveal). Rate limited like the other credential endpoints.
+	mux.Handle("/api/v1/auth/step-up", authRateLimit(authMiddleware(stepUpHandler)))
+
+	// Disk encryption: the fleet recovery-key directory, per-node detail,
+	// reveal (own permission + step-up; emits explicit audit events instead
+	// of the generic middleware, so no duplicate rows and no key material in
+	// request logs) and rotate.
+	diskEncViewPerm := api.RequirePermission(az, "disk_encryption", "view")
+	diskEncRevealPerm := api.RequirePermission(az, "disk_encryption", "reveal")
+	diskEncRotatePerm := api.RequirePermission(az, "disk_encryption", "rotate")
+	mux.Handle("/api/v1/disk-encryption/summary", authMiddleware(diskEncViewPerm(http.HandlerFunc(diskEncHandler.Summary))))
+	mux.Handle("/api/v1/disk-encryption/volumes", authMiddleware(diskEncViewPerm(http.HandlerFunc(diskEncHandler.Volumes))))
+	mux.Handle("/api/v1/disk-encryption/volumes/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case api.IsRevealPath(r):
+			diskEncRevealPerm(http.HandlerFunc(diskEncHandler.Volumes)).ServeHTTP(w, r)
+		case api.IsRotatePath(r):
+			diskEncRotatePerm(auditMw(http.HandlerFunc(diskEncHandler.Volumes))).ServeHTTP(w, r)
+		default:
+			diskEncViewPerm(http.HandlerFunc(diskEncHandler.Volumes)).ServeHTTP(w, r)
+		}
+	})))
+	mux.Handle("/api/v1/disk-encryption/nodes/", authMiddleware(diskEncViewPerm(http.HandlerFunc(diskEncHandler.NodeDetail))))
+
+	// Tang server registry (Settings -> Tang servers).
+	tangServerPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+		{Method: http.MethodGet, Resource: "tang_server", Action: "view"},
+		{Method: http.MethodPost, Resource: "tang_server", Action: "create"},
+		{Method: http.MethodPut, Resource: "tang_server", Action: "edit"},
+		{Method: http.MethodDelete, Resource: "tang_server", Action: "delete"},
+	})
+	tangCheckPerm := api.RequirePermission(az, "tang_server", "edit")
+	mux.Handle("/api/v1/tang-servers", authMiddleware(tangServerPerms(auditMw(tangServersHandler))))
+	mux.Handle("/api/v1/tang-servers/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/check") {
+			tangCheckPerm(auditMw(tangServersHandler)).ServeHTTP(w, r)
+			return
+		}
+		tangServerPerms(auditMw(tangServersHandler)).ServeHTTP(w, r)
+	})))
+
 	// DConf schema catalogue — readable by anyone with policy:view
 	mux.Handle("/api/v1/dconf/schemas", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(dconfHandler.ListSchemas))))
 
@@ -700,7 +788,9 @@ func main() {
 		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(map[string]bool{}, revocationRepo)),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(map[string]bool{}, revocationRepo)),
 	)...)
-	pb.RegisterPolicyServiceServer(policyGrpcSrv, grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, polkitRepo, policyHub))
+	pb.RegisterPolicyServiceServer(policyGrpcSrv,
+		grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, polkitRepo, policyHub).
+			WithDiskEncryptionService(diskEncSvc))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
@@ -773,9 +863,9 @@ func main() {
 	// ─── Prometheus metrics server (plain HTTP, separate port) ───────────
 	metricsCollector := metrics.NewBorCollector(
 		nodeRepo, policyRepo, policyBindingRepo,
-		auditLogRepo, userRepo, dconfRepo, flatpakRepo,
+		auditLogRepo, userRepo, dconfRepo, flatpakRepo, luksRepo,
 	)
-	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector, agentPackageDownloads, flatpakRefreshes)
+	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector, agentPackageDownloads, flatpakRefreshes, luksEscrowOps, luksReveals)
 
 	// Start both servers.
 	go func() {
@@ -814,6 +904,7 @@ func main() {
 
 	log.Println("Shutting down server...")
 	flatpakManager.Stop()
+	diskEncSvc.StopJanitor()
 	enrollGrpcSrv.GracefulStop()
 	policyGrpcSrv.GracefulStop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

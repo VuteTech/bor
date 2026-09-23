@@ -19,16 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PolicyService_GetPolicy_FullMethodName              = "/bor.policy.v1.PolicyService/GetPolicy"
-	PolicyService_ListPolicies_FullMethodName           = "/bor.policy.v1.PolicyService/ListPolicies"
-	PolicyService_SubscribePolicyUpdates_FullMethodName = "/bor.policy.v1.PolicyService/SubscribePolicyUpdates"
-	PolicyService_ReportCompliance_FullMethodName       = "/bor.policy.v1.PolicyService/ReportCompliance"
-	PolicyService_GetAgentConfig_FullMethodName         = "/bor.policy.v1.PolicyService/GetAgentConfig"
-	PolicyService_Heartbeat_FullMethodName              = "/bor.policy.v1.PolicyService/Heartbeat"
-	PolicyService_ReportTamperEvent_FullMethodName      = "/bor.policy.v1.PolicyService/ReportTamperEvent"
-	PolicyService_RenewCertificate_FullMethodName       = "/bor.policy.v1.PolicyService/RenewCertificate"
-	PolicyService_ReportSchemaCatalogue_FullMethodName  = "/bor.policy.v1.PolicyService/ReportSchemaCatalogue"
-	PolicyService_ReportPolkitCatalogue_FullMethodName  = "/bor.policy.v1.PolicyService/ReportPolkitCatalogue"
+	PolicyService_GetPolicy_FullMethodName                 = "/bor.policy.v1.PolicyService/GetPolicy"
+	PolicyService_ListPolicies_FullMethodName              = "/bor.policy.v1.PolicyService/ListPolicies"
+	PolicyService_SubscribePolicyUpdates_FullMethodName    = "/bor.policy.v1.PolicyService/SubscribePolicyUpdates"
+	PolicyService_ReportCompliance_FullMethodName          = "/bor.policy.v1.PolicyService/ReportCompliance"
+	PolicyService_GetAgentConfig_FullMethodName            = "/bor.policy.v1.PolicyService/GetAgentConfig"
+	PolicyService_Heartbeat_FullMethodName                 = "/bor.policy.v1.PolicyService/Heartbeat"
+	PolicyService_ReportTamperEvent_FullMethodName         = "/bor.policy.v1.PolicyService/ReportTamperEvent"
+	PolicyService_RenewCertificate_FullMethodName          = "/bor.policy.v1.PolicyService/RenewCertificate"
+	PolicyService_ReportSchemaCatalogue_FullMethodName     = "/bor.policy.v1.PolicyService/ReportSchemaCatalogue"
+	PolicyService_ReportPolkitCatalogue_FullMethodName     = "/bor.policy.v1.PolicyService/ReportPolkitCatalogue"
+	PolicyService_ReportDiskEncryptionState_FullMethodName = "/bor.policy.v1.PolicyService/ReportDiskEncryptionState"
+	PolicyService_GetDiskEncryptionTasks_FullMethodName    = "/bor.policy.v1.PolicyService/GetDiskEncryptionTasks"
+	PolicyService_EscrowRecoveryKey_FullMethodName         = "/bor.policy.v1.PolicyService/EscrowRecoveryKey"
+	PolicyService_ConfirmRecoveryKey_FullMethodName        = "/bor.policy.v1.PolicyService/ConfirmRecoveryKey"
+	PolicyService_BeginRecoveryKeyRotation_FullMethodName  = "/bor.policy.v1.PolicyService/BeginRecoveryKeyRotation"
 )
 
 // PolicyServiceClient is the client API for PolicyService service.
@@ -59,6 +64,19 @@ type PolicyServiceClient interface {
 	// ReportPolkitCatalogue is called by agents at startup to publish
 	// the polkit actions installed on their node.
 	ReportPolkitCatalogue(ctx context.Context, in *ReportPolkitCatalogueRequest, opts ...grpc.CallOption) (*ReportPolkitCatalogueResponse, error)
+	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
+	// and platform facts. The response piggybacks pending tasks.
+	ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error)
+	// GetDiskEncryptionTasks returns pending disk-encryption tasks for the node.
+	GetDiskEncryptionTasks(ctx context.Context, in *GetDiskEncryptionTasksRequest, opts ...grpc.CallOption) (*GetDiskEncryptionTasksResponse, error)
+	// EscrowRecoveryKey stores a new recovery key before its keyslot exists.
+	EscrowRecoveryKey(ctx context.Context, in *EscrowRecoveryKeyRequest, opts ...grpc.CallOption) (*EscrowRecoveryKeyResponse, error)
+	// ConfirmRecoveryKey promotes a pending key to active once its keyslot
+	// exists and has been verified on the node.
+	ConfirmRecoveryKey(ctx context.Context, in *ConfirmRecoveryKeyRequest, opts ...grpc.CallOption) (*ConfirmRecoveryKeyResponse, error)
+	// BeginRecoveryKeyRotation releases the active key as the unlock
+	// credential for a pending, server-side rotation task.
+	BeginRecoveryKeyRotation(ctx context.Context, in *BeginRecoveryKeyRotationRequest, opts ...grpc.CallOption) (*BeginRecoveryKeyRotationResponse, error)
 }
 
 type policyServiceClient struct {
@@ -178,6 +196,56 @@ func (c *policyServiceClient) ReportPolkitCatalogue(ctx context.Context, in *Rep
 	return out, nil
 }
 
+func (c *policyServiceClient) ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportDiskEncryptionStateResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ReportDiskEncryptionState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *policyServiceClient) GetDiskEncryptionTasks(ctx context.Context, in *GetDiskEncryptionTasksRequest, opts ...grpc.CallOption) (*GetDiskEncryptionTasksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDiskEncryptionTasksResponse)
+	err := c.cc.Invoke(ctx, PolicyService_GetDiskEncryptionTasks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *policyServiceClient) EscrowRecoveryKey(ctx context.Context, in *EscrowRecoveryKeyRequest, opts ...grpc.CallOption) (*EscrowRecoveryKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EscrowRecoveryKeyResponse)
+	err := c.cc.Invoke(ctx, PolicyService_EscrowRecoveryKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *policyServiceClient) ConfirmRecoveryKey(ctx context.Context, in *ConfirmRecoveryKeyRequest, opts ...grpc.CallOption) (*ConfirmRecoveryKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmRecoveryKeyResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ConfirmRecoveryKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *policyServiceClient) BeginRecoveryKeyRotation(ctx context.Context, in *BeginRecoveryKeyRotationRequest, opts ...grpc.CallOption) (*BeginRecoveryKeyRotationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginRecoveryKeyRotationResponse)
+	err := c.cc.Invoke(ctx, PolicyService_BeginRecoveryKeyRotation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PolicyServiceServer is the server API for PolicyService service.
 // All implementations must embed UnimplementedPolicyServiceServer
 // for forward compatibility.
@@ -206,6 +274,19 @@ type PolicyServiceServer interface {
 	// ReportPolkitCatalogue is called by agents at startup to publish
 	// the polkit actions installed on their node.
 	ReportPolkitCatalogue(context.Context, *ReportPolkitCatalogueRequest) (*ReportPolkitCatalogueResponse, error)
+	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
+	// and platform facts. The response piggybacks pending tasks.
+	ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error)
+	// GetDiskEncryptionTasks returns pending disk-encryption tasks for the node.
+	GetDiskEncryptionTasks(context.Context, *GetDiskEncryptionTasksRequest) (*GetDiskEncryptionTasksResponse, error)
+	// EscrowRecoveryKey stores a new recovery key before its keyslot exists.
+	EscrowRecoveryKey(context.Context, *EscrowRecoveryKeyRequest) (*EscrowRecoveryKeyResponse, error)
+	// ConfirmRecoveryKey promotes a pending key to active once its keyslot
+	// exists and has been verified on the node.
+	ConfirmRecoveryKey(context.Context, *ConfirmRecoveryKeyRequest) (*ConfirmRecoveryKeyResponse, error)
+	// BeginRecoveryKeyRotation releases the active key as the unlock
+	// credential for a pending, server-side rotation task.
+	BeginRecoveryKeyRotation(context.Context, *BeginRecoveryKeyRotationRequest) (*BeginRecoveryKeyRotationResponse, error)
 	mustEmbedUnimplementedPolicyServiceServer()
 }
 
@@ -245,6 +326,21 @@ func (UnimplementedPolicyServiceServer) ReportSchemaCatalogue(context.Context, *
 }
 func (UnimplementedPolicyServiceServer) ReportPolkitCatalogue(context.Context, *ReportPolkitCatalogueRequest) (*ReportPolkitCatalogueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportPolkitCatalogue not implemented")
+}
+func (UnimplementedPolicyServiceServer) ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportDiskEncryptionState not implemented")
+}
+func (UnimplementedPolicyServiceServer) GetDiskEncryptionTasks(context.Context, *GetDiskEncryptionTasksRequest) (*GetDiskEncryptionTasksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDiskEncryptionTasks not implemented")
+}
+func (UnimplementedPolicyServiceServer) EscrowRecoveryKey(context.Context, *EscrowRecoveryKeyRequest) (*EscrowRecoveryKeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EscrowRecoveryKey not implemented")
+}
+func (UnimplementedPolicyServiceServer) ConfirmRecoveryKey(context.Context, *ConfirmRecoveryKeyRequest) (*ConfirmRecoveryKeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmRecoveryKey not implemented")
+}
+func (UnimplementedPolicyServiceServer) BeginRecoveryKeyRotation(context.Context, *BeginRecoveryKeyRotationRequest) (*BeginRecoveryKeyRotationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BeginRecoveryKeyRotation not implemented")
 }
 func (UnimplementedPolicyServiceServer) mustEmbedUnimplementedPolicyServiceServer() {}
 func (UnimplementedPolicyServiceServer) testEmbeddedByValue()                       {}
@@ -440,6 +536,96 @@ func _PolicyService_ReportPolkitCatalogue_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_ReportDiskEncryptionState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportDiskEncryptionStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ReportDiskEncryptionState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ReportDiskEncryptionState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ReportDiskEncryptionState(ctx, req.(*ReportDiskEncryptionStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PolicyService_GetDiskEncryptionTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDiskEncryptionTasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).GetDiskEncryptionTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_GetDiskEncryptionTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).GetDiskEncryptionTasks(ctx, req.(*GetDiskEncryptionTasksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PolicyService_EscrowRecoveryKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EscrowRecoveryKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).EscrowRecoveryKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_EscrowRecoveryKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).EscrowRecoveryKey(ctx, req.(*EscrowRecoveryKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PolicyService_ConfirmRecoveryKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmRecoveryKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ConfirmRecoveryKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ConfirmRecoveryKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ConfirmRecoveryKey(ctx, req.(*ConfirmRecoveryKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PolicyService_BeginRecoveryKeyRotation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginRecoveryKeyRotationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).BeginRecoveryKeyRotation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_BeginRecoveryKeyRotation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).BeginRecoveryKeyRotation(ctx, req.(*BeginRecoveryKeyRotationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PolicyService_ServiceDesc is the grpc.ServiceDesc for PolicyService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -482,6 +668,26 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportPolkitCatalogue",
 			Handler:    _PolicyService_ReportPolkitCatalogue_Handler,
+		},
+		{
+			MethodName: "ReportDiskEncryptionState",
+			Handler:    _PolicyService_ReportDiskEncryptionState_Handler,
+		},
+		{
+			MethodName: "GetDiskEncryptionTasks",
+			Handler:    _PolicyService_GetDiskEncryptionTasks_Handler,
+		},
+		{
+			MethodName: "EscrowRecoveryKey",
+			Handler:    _PolicyService_EscrowRecoveryKey_Handler,
+		},
+		{
+			MethodName: "ConfirmRecoveryKey",
+			Handler:    _PolicyService_ConfirmRecoveryKey_Handler,
+		},
+		{
+			MethodName: "BeginRecoveryKeyRotation",
+			Handler:    _PolicyService_BeginRecoveryKeyRotation_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

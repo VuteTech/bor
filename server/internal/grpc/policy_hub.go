@@ -178,6 +178,18 @@ func (h *PolicyHub) Subscribe(_ context.Context, clientID string) (<-chan *hubEv
 // SendMetadataRefreshRequest sends a METADATA_REQUEST event directly to
 // the named client's stream. Returns false if the client is not connected.
 func (h *PolicyHub) SendMetadataRefreshRequest(clientID string) bool {
+	return h.sendNodeEvent(clientID, pb.PolicyUpdate_METADATA_REQUEST)
+}
+
+// SendDiskEncryptionTask sends a DISK_ENCRYPTION_TASK event directly to the
+// named client's stream, asking the agent to fetch and run its pending
+// disk-encryption tasks. Returns false if the client is not connected.
+func (h *PolicyHub) SendDiskEncryptionTask(clientID string) bool {
+	return h.sendNodeEvent(clientID, pb.PolicyUpdate_DISK_ENCRYPTION_TASK)
+}
+
+// sendNodeEvent sends a policy-less targeted event to one client's stream.
+func (h *PolicyHub) sendNodeEvent(clientID string, eventType pb.PolicyUpdate_UpdateType) bool {
 	h.mu.RLock()
 	ch, ok := h.clients[clientID]
 	rev := h.revision
@@ -189,7 +201,7 @@ func (h *PolicyHub) SendMetadataRefreshRequest(clientID string) bool {
 
 	ev := &hubEvent{
 		update: &pb.PolicyUpdate{
-			Type:     pb.PolicyUpdate_METADATA_REQUEST,
+			Type:     eventType,
 			Revision: rev,
 		},
 	}
@@ -198,7 +210,7 @@ func (h *PolicyHub) SendMetadataRefreshRequest(clientID string) bool {
 	case ch <- ev:
 		return true
 	default:
-		log.Printf("policy_hub: dropping METADATA_REQUEST for slow subscriber %s", clientID)
+		log.Printf("policy_hub: dropping %s for slow subscriber %s", eventType, clientID)
 		return false
 	}
 }

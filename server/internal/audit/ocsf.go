@@ -221,8 +221,12 @@ func activityForAction(action string) (activityID int, activityName string) {
 		return ocsfActivityDelete, "Delete"
 	case "tamper_detected":
 		return ocsfActivityUpdate, "Modify"
-	case "flatpakrepo.refresh", "flatpakrepo.upload":
+	case "flatpakrepo.refresh", "flatpakrepo.upload",
+		"recoverykey.escrow", "recoverykey.confirm", "recoverykey.rotate_request",
+		"recoverykey.release", "luks.tpm_reseal", "tangserver.check":
 		return ocsfActivityUpdate, "Update"
+	case "recoverykey.destroy":
+		return ocsfActivityDelete, "Delete"
 	default:
 		return ocsfActivityOther, "Other"
 	}
@@ -230,13 +234,17 @@ func activityForAction(action string) (activityID int, activityName string) {
 
 // severityForAction maps Bor action verbs to OCSF severity IDs.
 // OCSF severity: 0=Unknown 1=Informational 2=Low 3=Medium 4=High 5=Critical
+// Mirrors the CEF map in cef.go.
 func severityForAction(action string) (severityID int, severityName string) {
 	switch action {
-	case "tamper_detected":
+	case "tamper_detected", "recoverykey.reveal", "recoverykey.release_unconfirmed":
 		return 4, "High"
-	case "delete":
+	case "delete", "recoverykey.reveal_denied", "recoverykey.release",
+		"luks.clone_suspected", "luks.drift":
 		return 3, "Medium"
-	case "create", "update":
+	case "create", "update",
+		"recoverykey.rotate_request", "recoverykey.destroy", "luks.tpm_reseal",
+		"recoverykey.escrow", "recoverykey.confirm", "tangserver.check":
 		return 2, "Low"
 	default:
 		return 1, "Informational"

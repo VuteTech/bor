@@ -23,6 +23,7 @@ type repos struct {
 	users          *database.UserRepository
 	compliance     *database.DConfRepository
 	flatpak        *database.FlatpakCatalogRepository
+	luks           *database.LuksRepository
 }
 
 // BorCollector implements prometheus.Collector and emits Bor-specific metrics
@@ -53,6 +54,10 @@ type BorCollector struct {
 	// ── Flatpak catalog metrics ───────────────────────────────────────────
 	flatpakAppsTotal   *prometheus.Desc
 	flatpakLastSuccess *prometheus.Desc
+
+	// ── Disk encryption metrics ───────────────────────────────────────────
+	luksVolumesTotal        *prometheus.Desc
+	luksRotationsOverdueTot *prometheus.Desc
 }
 
 // NewBorCollector creates a new BorCollector wired to the given repositories.
@@ -64,6 +69,7 @@ func NewBorCollector(
 	userRepo *database.UserRepository,
 	dconfRepo *database.DConfRepository,
 	flatpakRepo *database.FlatpakCatalogRepository,
+	luksRepo *database.LuksRepository,
 ) *BorCollector {
 	return &BorCollector{
 		repos: repos{
@@ -74,6 +80,7 @@ func NewBorCollector(
 			users:          userRepo,
 			compliance:     dconfRepo,
 			flatpak:        flatpakRepo,
+			luks:           luksRepo,
 		},
 
 		nodesTotal: prometheus.NewDesc(
@@ -130,6 +137,16 @@ func NewBorCollector(
 			"Unix timestamp of the last successful Flatpak catalog refresh, by repository (0 = never).",
 			[]string{"repo"}, nil,
 		),
+		luksVolumesTotal: prometheus.NewDesc(
+			"bor_luks_volumes_total",
+			"LUKS volumes reported by agents, partitioned by whether an active recovery key is escrowed.",
+			[]string{"escrowed"}, nil,
+		),
+		luksRotationsOverdueTot: prometheus.NewDesc(
+			"bor_luks_recovery_keys_overdue_total",
+			"LUKS volumes with a pending recovery-key rotation task.",
+			nil, nil,
+		),
 	}
 }
 
@@ -145,6 +162,8 @@ func (c *BorCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.auditEventsTotal
 	ch <- c.flatpakAppsTotal
 	ch <- c.flatpakLastSuccess
+	ch <- c.luksVolumesTotal
+	ch <- c.luksRotationsOverdueTot
 }
 
 // Collect runs all DB queries and emits the current metric values.
@@ -161,6 +180,7 @@ func (c *BorCollector) Collect(ch chan<- prometheus.Metric) {
 	c.collectUsers(ctx, ch)
 	c.collectAuditEvents(ctx, ch)
 	c.collectFlatpakCatalog(ctx, ch)
+	c.collectLuks(ctx, ch)
 }
 
 func (c *BorCollector) collectNodes(ctx context.Context, ch chan<- prometheus.Metric) {
@@ -276,4 +296,24 @@ func (c *BorCollector) collectFlatpakCatalog(ctx context.Context, ch chan<- prom
 		}
 		ch <- prometheus.MustNewConstMetric(c.flatpakLastSuccess, prometheus.GaugeValue, ts, st.Name)
 	}
+}
+
+func (c *BorCollector) collectLuks(ctx context.Context, ch chan<- prometheus.Metric) {
+	if c.repos.luks == nil {
+		return
+	}
+	escrowed, notEscrowed, err := c.repos.luks.CountVolumesByEscrowed(ctx)
+	if err != nil {
+		log.Printf("metrics: luks CountVolumesByEscrowed: %v", err)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(c.luksVolumesTotal, prometheus.GaugeValue, float64(escrowed), "true")
+	ch <- prometheus.MustNewConstMetric(c.luksVolumesTotal, prometheus.GaugeValue, float64(notEscrowed), "false")
+
+	overdue, err := c.repos.luks.CountRotationsPending(ctx)
+	if err != nil {
+		log.Printf("metrics: luks CountRotationsPending: %v", err)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(c.luksRotationsOverdueTot, prometheus.GaugeValue, float64(overdue))
 }

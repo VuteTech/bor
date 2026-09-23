@@ -290,6 +290,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateSessionAccessContent(content)
 	case "Flatpak":
 		return ValidateFlatpakContent(content)
+	case "DiskEncryption":
+		return ValidateDiskEncryptionContent(content)
 	}
 	return nil
 }

@@ -46,6 +46,20 @@ const STATUS_LABELS: Record<ComplianceStatus, string> = {
   error:          "Error",
 };
 
+/** Human labels for the disk-encryption item schema ids (luks:/platform:). */
+const LUKS_ITEM_LABELS: Record<string, string> = {
+  "luks:encryption":     "Encryption",
+  "luks:cipher":         "Cipher",
+  "luks:recovery":       "Recovery key",
+  "luks:tpm2":           "TPM2 protector",
+  "luks:tang":           "Tang protector",
+  "luks:initramfs":      "Initramfs",
+  "luks:bootstrap":      "Bootstrap slot",
+  "luks:adoption":       "Adoption",
+  "platform:tpm2":       "TPM 2.0",
+  "platform:secureboot": "Secure Boot",
+};
+
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {
   unknown:        "grey",
   compliant:      "green",
@@ -108,14 +122,19 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
           : item.schema_id === "flatpak:remote"
             ? "Flatpak remote"
             : null;
+        // Disk encryption items: "luks:recovery" / "3f2a…" -> "Recovery key · 3f2a…".
+        const luksKind = LUKS_ITEM_LABELS[item.schema_id ?? ""] ?? null;
+        const shortKey = /^[0-9a-f]{8}-/.test(item.key ?? "") ? `${item.key.slice(0, 8)}…` : item.key;
         const label = isPolkit
           ? (item.schema_id.slice("polkit:".length) || item.key)
           : flatpakKind
             ? `${flatpakKind} · ${item.key}`
-            : (summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key);
+            : luksKind
+              ? `${luksKind} · ${shortKey}`
+              : (summaryIndex.get(`${item.schema_id}/${item.key}`) ?? item.key);
         const subtitle = isPolkit
           ? item.key
-          : flatpakKind
+          : flatpakKind || luksKind
             ? item.schema_id
             : summaryIndex.has(`${item.schema_id}/${item.key}`)
               ? `${item.schema_id} / ${item.key}`

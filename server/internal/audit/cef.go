@@ -102,13 +102,23 @@ func writeExt(b *strings.Builder, key, value string) {
 // cefSeverity maps Bor action names to CEF severity (0–10).
 func cefSeverity(action string) int {
 	switch action {
-	case "tamper_detected":
+	case "tamper_detected",
+		// A recovery key left the escrow towards a human, or a released key
+		// was never rotated - the highest-signal disk encryption events.
+		// Phase 2 adds tang.recovery_denied and node.lost here.
+		"recoverykey.reveal", "recoverykey.release_unconfirmed":
 		return 8
-	case "delete":
+	case "recoverykey.reveal_denied", "luks.clone_suspected":
+		return 7
+	case "delete", "recoverykey.release":
 		return 6
-	case "create", "update":
+	case "luks.drift":
+		return 5
+	case "create", "update",
+		"recoverykey.rotate_request", "recoverykey.destroy", "luks.tpm_reseal":
 		return 3
-	case "flatpakrepo.refresh", "flatpakrepo.upload":
+	case "flatpakrepo.refresh", "flatpakrepo.upload",
+		"recoverykey.escrow", "recoverykey.confirm", "tangserver.check":
 		return 2
 	default:
 		return 1

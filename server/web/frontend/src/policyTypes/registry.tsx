@@ -22,6 +22,7 @@ import type { SVGIconProps } from "@patternfly/react-icons/dist/esm/createIcon";
 import EdgeIcon from "@patternfly/react-icons/dist/esm/icons/edge-icon";
 import SlidersHIcon from "@patternfly/react-icons/dist/esm/icons/sliders-h-icon";
 import KeyIcon from "@patternfly/react-icons/dist/esm/icons/key-icon";
+import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import ShieldAltIcon from "@patternfly/react-icons/dist/esm/icons/shield-alt-icon";
 import UserClockIcon from "@patternfly/react-icons/dist/esm/icons/user-clock-icon";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
@@ -44,7 +45,8 @@ export type PolicyTypeId =
   | "Firewalld"
   | "SessionAccess"
   | "Package"
-  | "Flatpak";
+  | "Flatpak"
+  | "DiskEncryption";
 
 export type PolicyTypeCategory = "browsers" | "desktop" | "system";
 
@@ -416,6 +418,64 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
       return null;
     },
   },
+  DiskEncryption: {
+    id: "DiskEncryption",
+    label: "Disk encryption",
+    technicalName: "LUKS",
+    category: "system",
+    tagline: "TPM2, Tang and escrowed recovery keys for LUKS2 volumes",
+    description:
+      "Full-disk encryption management for LUKS2 volumes: verify encryption coverage, unlock automatically with the TPM or your Tang servers, and escrow a per-volume recovery key on the Bor server - revealed only with its own permission, re-authentication and a full audit trail.",
+    manages: [
+      "LUKS2 keyslots and tokens (systemd-cryptenroll, clevis)",
+      "Escrowed recovery keys with automatic rotation",
+      "/etc/dracut.conf.d/90-bor-disk-encryption.conf and crypttab options (manage mode)",
+    ],
+    appliesTo: ["Nodes with LUKS2-encrypted volumes (dracut systems for TPM2 unlocking)"],
+    examples: [
+      "Escrow recovery keys for every laptop, BitLocker-style",
+      "Unlock desktops on the office network via Tang, prompt elsewhere",
+      "Require encryption and Secure Boot fleet-wide",
+    ],
+    docsHref: `${DOCS_BASE}/disk-encryption.md`,
+    Icon: LockIcon,
+    defaultContent: () =>
+      pretty({
+        requireEncryption: true,
+        volumeScope: "LUKS_VOLUME_SCOPE_SYSTEM",
+        tpm2: { enabled: true, pcrProfile: "TPM_PCR_PROFILE_SECURE_BOOT", autoReseal: true },
+        recovery: { escrow: true, rotationIntervalDays: 180, rotateAfterReveal: true, serverAssistedRotation: true },
+        initramfsMode: "INITRAMFS_MODE_VERIFY_ONLY",
+      }),
+    validateContent: (content) => {
+      type DeTang = { enabled?: boolean; servers?: { url?: string; thumbprint?: string }[] };
+      const parsed = parseObject(content) as {
+        requireEncryption?: boolean;
+        requireTpm2?: boolean;
+        requireSecureBoot?: boolean;
+        tpm2?: { enabled?: boolean };
+        tang?: DeTang;
+        recovery?: { escrow?: boolean };
+      } | null;
+      if (!parsed) return "Disk encryption policy content is not valid JSON";
+      const anyControl =
+        parsed.requireEncryption === true ||
+        parsed.requireTpm2 === true ||
+        parsed.requireSecureBoot === true ||
+        parsed.tpm2?.enabled === true ||
+        parsed.tang?.enabled === true ||
+        parsed.recovery?.escrow === true;
+      if (!anyControl) return "Require encryption or enable at least one protector before saving";
+      if (parsed.tang?.enabled === true) {
+        const servers = Array.isArray(parsed.tang.servers) ? parsed.tang.servers : [];
+        if (servers.length === 0) return "The Tang protector needs at least one server";
+        if (servers.some((s) => !s.thumbprint)) {
+          return "Every Tang server needs its confirmed signing thumbprint";
+        }
+      }
+      return null;
+    },
+  },
 };
 
 /** Display order: by category, then the order used across the UI. */
@@ -431,6 +491,7 @@ export const POLICY_TYPE_ORDER: PolicyTypeId[] = [
   "SessionAccess",
   "Package",
   "Flatpak",
+  "DiskEncryption",
 ];
 
 export const POLICY_TYPE_LIST: PolicyTypeDef[] = POLICY_TYPE_ORDER.map((id) => POLICY_TYPES[id]);

@@ -7,6 +7,7 @@ option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 import "google/protobuf/timestamp.proto";
 import "chrome.proto";
 import "dconf.proto";
+import "disk_encryption.proto";
 import "edge.proto";
 import "firefox.proto";
 import "firewalld.proto";
@@ -52,6 +53,33 @@ service PolicyService {
   // the polkit actions installed on their node.
   rpc ReportPolkitCatalogue(ReportPolkitCatalogueRequest)
       returns (ReportPolkitCatalogueResponse);
+
+  // ─── Disk encryption ─────────────
+  // All five RPCs run on the mTLS policy port; the node identity is the
+  // verified certificate CN, and every volume lookup is scoped to it.
+
+  // ReportDiskEncryptionState publishes the node's LUKS volume inventory
+  // and platform facts. The response piggybacks pending tasks.
+  rpc ReportDiskEncryptionState(ReportDiskEncryptionStateRequest)
+      returns (ReportDiskEncryptionStateResponse);
+
+  // GetDiskEncryptionTasks returns pending disk-encryption tasks for the node.
+  rpc GetDiskEncryptionTasks(GetDiskEncryptionTasksRequest)
+      returns (GetDiskEncryptionTasksResponse);
+
+  // EscrowRecoveryKey stores a new recovery key before its keyslot exists.
+  rpc EscrowRecoveryKey(EscrowRecoveryKeyRequest)
+      returns (EscrowRecoveryKeyResponse);
+
+  // ConfirmRecoveryKey promotes a pending key to active once its keyslot
+  // exists and has been verified on the node.
+  rpc ConfirmRecoveryKey(ConfirmRecoveryKeyRequest)
+      returns (ConfirmRecoveryKeyResponse);
+
+  // BeginRecoveryKeyRotation releases the active key as the unlock
+  // credential for a pending, server-side rotation task.
+  rpc BeginRecoveryKeyRotation(BeginRecoveryKeyRotationRequest)
+      returns (BeginRecoveryKeyRotationResponse);
 }
 
 // Policy represents a desktop policy configuration
@@ -97,6 +125,7 @@ message Policy {
     FirewalldPolicy    firewalld_policy    = 19;
     SessionAccessPolicy session_access_policy = 20;
     FlatpakPolicy       flatpak_policy        = 21;
+    DiskEncryptionPolicy disk_encryption_policy = 22;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority
@@ -167,6 +196,10 @@ message PolicyUpdate {
     // METADATA_REQUEST is a server-to-agent command asking the agent
     // to collect and report fresh system metadata via the Heartbeat RPC.
     METADATA_REQUEST = 5;
+    // DISK_ENCRYPTION_TASK is a server-to-agent command asking the agent
+    // to fetch and run its pending disk-encryption tasks
+    // (GetDiskEncryptionTasks), e.g. a recovery-key rotation.
+    DISK_ENCRYPTION_TASK = 6;
   }
 
   UpdateType type = 1;
@@ -249,6 +282,9 @@ message AgentConfig {
   string notify_message_chrome      = 5;
   string notify_message_thunderbird = 6;
   string notify_message_edge        = 7;
+  // Report LUKS volume inventory even when no DiskEncryption policy is
+  // bound (read-only; server setting, default on).
+  bool disk_encryption_inventory = 8;
 }
 
 // ─── Heartbeat messages ─────────────────────────────────────────────────────

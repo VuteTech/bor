@@ -304,6 +304,78 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     return rows;
   }
 
+  if (policyType === "DiskEncryption") {
+    type DeTangServer = { url?: string; thumbprint?: string; acceptedThumbprints?: string[] };
+    const de = raw as {
+      requireEncryption?: boolean;
+      volumeScope?: string;
+      mountpoints?: string[];
+      minVolumeKeyBits?: number;
+      allowedCiphers?: string[];
+      requireTpm2?: boolean;
+      requireSecureBoot?: boolean;
+      tpm2?: { enabled?: boolean; pcrProfile?: string; pcrs?: number[]; autoReseal?: boolean };
+      tang?: { enabled?: boolean; servers?: DeTangServer[]; threshold?: number };
+      recovery?: {
+        escrow?: boolean;
+        rotationIntervalDays?: number;
+        rotateAfterReveal?: boolean;
+        serverAssistedRotation?: boolean;
+      };
+      initramfsMode?: string;
+      adoptExisting?: boolean;
+    };
+    const scopeLabel =
+      String(de.volumeScope ?? "").replace("LUKS_VOLUME_SCOPE_", "").toLowerCase().replace("_", " ") || "system";
+    rows.push({ setting: "Require encryption", value: de.requireEncryption ? "Yes" : "No", locked: null });
+    rows.push({ setting: "Volume scope", value: scopeLabel, locked: null });
+    if (de.mountpoints?.length) rows.push({ setting: "Mountpoints", value: de.mountpoints.join(", "), locked: null });
+    if (de.minVolumeKeyBits) rows.push({ setting: "Minimum volume key", value: `${de.minVolumeKeyBits} bits`, locked: null });
+    if (de.allowedCiphers?.length) rows.push({ setting: "Allowed ciphers", value: de.allowedCiphers.join(", "), locked: null });
+    if (de.requireTpm2) rows.push({ setting: "Require TPM 2.0", value: "Yes", locked: null });
+    if (de.requireSecureBoot) rows.push({ setting: "Require Secure Boot", value: "Yes", locked: null });
+    if (de.tpm2?.enabled) {
+      const profile =
+        de.tpm2.pcrProfile === "TPM_PCR_PROFILE_CUSTOM"
+          ? `custom PCRs ${(de.tpm2.pcrs ?? []).join("+")}`
+          : de.tpm2.pcrProfile === "TPM_PCR_PROFILE_SECURE_BOOT_SHIM"
+            ? "Secure Boot + shim (PCR 7+14)"
+            : "Secure Boot (PCR 7)";
+      rows.push({
+        setting: "Protector › TPM2",
+        value: `${profile}${de.tpm2.autoReseal === false ? ", auto-reseal off" : ", auto-reseal on"}`,
+        locked: null,
+      });
+    }
+    if (de.tang?.enabled) {
+      const servers = de.tang.servers ?? [];
+      rows.push({
+        setting: "Protector › Tang",
+        value:
+          servers.map((s) => s.url ?? "").join(", ") +
+          (servers.length > 1 ? ` (threshold ${de.tang.threshold || 1})` : ""),
+        locked: null,
+      });
+    }
+    if (de.recovery?.escrow) {
+      const days = de.recovery.rotationIntervalDays ?? 180;
+      rows.push({
+        setting: "Protector › Recovery key",
+        value: `escrowed, ${days === 0 ? "never rotated" : `rotated every ${days} days`}${
+          de.recovery.rotateAfterReveal === false ? "" : ", replaced after every reveal"
+        }${de.recovery.serverAssistedRotation === false ? ", server-assisted rotation off" : ""}`,
+        locked: null,
+      });
+    }
+    rows.push({
+      setting: "Initramfs",
+      value: de.initramfsMode === "INITRAMFS_MODE_MANAGE" ? "managed (dracut drop-in + rebuild)" : "verify only",
+      locked: null,
+    });
+    if (de.adoptExisting === false) rows.push({ setting: "Adopt existing enrollments", value: "No", locked: null });
+    return rows;
+  }
+
   if (policyType === "SessionAccess") {
     type SaWin = { days?: string[]; start?: string; end?: string };
     type SaRule = { description?: string; users?: string[]; groups?: string[]; windows?: SaWin[]; endAction?: string; warnMinutes?: number[] };
