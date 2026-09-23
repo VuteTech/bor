@@ -16,6 +16,7 @@ import { PolkitPolicyEditor } from "../PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "../FirewalldPolicyEditor";
 import { SessionAccessPolicyEditor } from "../SessionAccessPolicyEditor";
 import { FlatpakPolicyEditor } from "../FlatpakPolicyEditor";
+import { DiskEncryptionPolicyEditor } from "../DiskEncryptionPolicyEditor";
 import { KconfigPolicyEditor } from "./KconfigPolicyEditor";
 import { TreePolicyEditor } from "./TreePolicyEditor";
 import type { PolicyContentEditorProps } from "./PolicyContentEditorProps";
@@ -125,6 +126,8 @@ export const PolicyContentEditor: React.FC<Props> = ({ type, ...rest }) => {
         return <SessionAccessPolicyEditor contentRaw={rest.contentRaw} onChange={rest.onChange} isDisabled={rest.isDisabled} />;
       case "Flatpak":
         return <FlatpakPolicyEditor contentRaw={rest.contentRaw} onChange={rest.onChange} isDisabled={rest.isDisabled} />;
+      case "DiskEncryption":
+        return <DiskEncryptionPolicyEditor {...rest} />;
       default:
         return <RawJsonContentEditor {...rest} />;
     }
