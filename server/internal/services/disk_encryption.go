@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -248,21 +249,45 @@ func validateTangProtector(t *pb.TangProtector) error {
 	return nil
 }
 
+// tangURLRE is the only shape of Tang URL accepted anywhere: http or https
+// (Tang serves plain HTTP by design), a DNS name or IPv4 literal (no
+// userinfo, no IPv6 literal), an optional port and an optional plain path.
+// No query, no fragment. It is applied to the raw string before parsing so
+// every downstream use of the value is guarded by the same check.
+var tangURLRE = regexp.MustCompile(
+	`^https?://[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252}[A-Za-z0-9])?(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/-]*)?$`)
+
+// normalizeTangURL validates raw against tangURLRE, parses it and rebuilds
+// the URL from the parsed components (scheme, host, path) with any trailing
+// slash dropped. The rebuilt value is the only form that is stored in the
+// registry or fetched by the advertisement checks, so an admin-supplied URL
+// can never smuggle credentials, a query string or an unexpected shape into
+// an outbound request (CodeQL go/request-forgery).
+func normalizeTangURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("url is required")
+	}
+	if len(raw) > 2048 {
+		return "", fmt.Errorf("url is too long")
+	}
+	if !tangURLRE.MatchString(raw) {
+		return "", fmt.Errorf("invalid url %q: expected http(s)://host[:port][/path] with no credentials, query or fragment", raw)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid url %q: %v", raw, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil ||
+		u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("invalid url %q: expected http(s)://host[:port][/path] with no credentials, query or fragment", raw)
+	}
+	return u.Scheme + "://" + u.Host + strings.TrimRight(u.EscapedPath(), "/"), nil
+}
+
 func validateTangURL(u string) error {
-	if u == "" {
-		return fmt.Errorf("url is required")
-	}
-	if len(u) > 2048 {
-		return fmt.Errorf("url is too long")
-	}
-	lower := strings.ToLower(u)
-	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
-		return fmt.Errorf("invalid url %q: only http:// and https:// are supported by Tang/Clevis", u)
-	}
-	if strings.ContainsAny(u, " \t\r\n\"'") {
-		return fmt.Errorf("invalid url %q: contains whitespace or quotes", u)
-	}
-	return nil
+	_, err := normalizeTangURL(u)
+	return err
 }
 
 // ─── Effective policy merge ─────────────────────────────────────────────

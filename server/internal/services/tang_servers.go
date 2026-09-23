@@ -6,11 +6,13 @@ package services
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"regexp"
 	"slices"
@@ -54,12 +56,20 @@ type TangServerService struct {
 
 // NewTangServerService creates a TangServerService.
 func NewTangServerService(repo *database.LuksRepository, policySvc *PolicyService, auditSvc *AuditService) *TangServerService {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = tangDialContext
+	// Registry probes go directly to the Tang host; a proxy would both
+	// bypass the address policy in tangDialContext and break access to the
+	// internal networks Tang lives on.
+	tr.Proxy = nil
+	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	return &TangServerService{
 		repo:      repo,
 		policySvc: policySvc,
 		auditSvc:  auditSvc,
 		client: &http.Client{
-			Timeout: tangProbeTimeout,
+			Timeout:   tangProbeTimeout,
+			Transport: tr,
 			// Tang serves plain HTTP by design; never follow redirects to
 			// avoid being bounced to an unexpected host.
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -67,6 +77,71 @@ func NewTangServerService(repo *database.LuksRepository, policySvc *PolicyServic
 			},
 		},
 	}
+}
+
+// tangBlockedAddr refuses addresses the server must never probe: loopback,
+// unspecified, link-local (which includes cloud metadata endpoints such as
+// 169.254.169.254), multicast and broadcast. Private RFC 1918 / CGNAT
+// ranges stay allowed - that is where Tang servers normally live.
+func tangBlockedAddr(ip net.IP) error {
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+	reason := ""
+	switch {
+	case ip.IsUnspecified():
+		reason = "unspecified"
+	case ip.IsLoopback():
+		reason = "loopback"
+	case ip.IsLinkLocalUnicast(), ip.IsLinkLocalMulticast(), ip.IsInterfaceLocalMulticast(), ip.IsMulticast():
+		reason = "link-local or multicast"
+	case ip.Equal(net.IPv4bcast):
+		reason = "broadcast"
+	}
+	if reason != "" {
+		return fmt.Errorf("refusing to contact %s: %s address", ip, reason)
+	}
+	return nil
+}
+
+// tangDialContext resolves the host itself and connects only to addresses
+// tangBlockedAddr accepts (DNS pinning: the name is resolved and checked
+// here, at connect time, so it cannot be re-pointed at a blocked address
+// between validation and connect).
+func tangDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s: %w", addr, err)
+	}
+	var ips []net.IP
+	if ip := net.ParseIP(host); ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		addrs, rerr := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if rerr != nil {
+			return nil, fmt.Errorf("resolve %s: %w", host, rerr)
+		}
+		for _, a := range addrs {
+			ips = append(ips, a.IP)
+		}
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	var lastErr error
+	for _, ip := range ips {
+		if berr := tangBlockedAddr(ip); berr != nil {
+			lastErr = berr
+			continue
+		}
+		conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if derr == nil {
+			return conn, nil
+		}
+		lastErr = derr
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no addresses for %s", host)
+	}
+	return nil, fmt.Errorf("dial %s: %w", host, lastErr)
 }
 
 // List returns every registered Tang server with per-thumbprint bound-volume
@@ -144,11 +219,11 @@ func applyTangServerRequest(srv *models.TangServer, req *models.TangServerReques
 		return diskEncInvalid("invalid name %q: letters, digits, spaces, dots, dashes; at most 64 characters", name)
 	}
 	srv.Name = name
-	u := strings.TrimSpace(req.URL)
-	if err := validateTangURL(u); err != nil {
+	u, err := normalizeTangURL(req.URL)
+	if err != nil {
 		return diskEncInvalid("%v", err)
 	}
-	srv.URL = strings.TrimRight(u, "/")
+	srv.URL = u
 	if len(req.TrustedThumbprints) == 0 {
 		return diskEncInvalid("at least one trusted signing thumbprint is required (compare with `tang-show-keys` on the Tang host)")
 	}
@@ -216,16 +291,16 @@ func (s *TangServerService) referencedByPolicy(ctx context.Context, srv *models.
 // admin to confirm against `tang-show-keys`. This makes trust-on-first-use
 // explicit and human-verified.
 func (s *TangServerService) Probe(ctx context.Context, rawURL string) (*models.TangProbeResponse, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	if err := validateTangURL(rawURL); err != nil {
+	base, err := normalizeTangURL(rawURL)
+	if err != nil {
 		return nil, diskEncInvalid("%v", err)
 	}
-	adv, err := s.fetchAdvertisement(ctx, strings.TrimRight(rawURL, "/"))
+	adv, err := s.fetchAdvertisement(ctx, base)
 	if err != nil {
 		return nil, err
 	}
 	return &models.TangProbeResponse{
-		URL:                 strings.TrimRight(rawURL, "/"),
+		URL:                 base,
 		SigningThumbprints:  sortedKeys(adv.SigningKeys),
 		ExchangeThumbprints: sortedKeys(adv.ExchangeKeys),
 	}, nil
@@ -335,26 +410,33 @@ func (s *TangServerService) emitCheckAudit(ctx context.Context, srv *models.Tang
 }
 
 // fetchAdvertisement GETs <url>/adv with a size cap and parses/verifies it.
+// baseURL is re-normalized here so the request is always built from the
+// validated, rebuilt form regardless of the caller (registry row or probe
+// input), and the dialer refuses blocked addresses on top of that.
 func (s *TangServerService) fetchAdvertisement(ctx context.Context, baseURL string) (*tang.Advertisement, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/adv", http.NoBody)
+	base, err := normalizeTangURL(baseURL)
+	if err != nil {
+		return nil, diskEncInvalid("%v", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/adv", http.NoBody)
 	if err != nil {
 		return nil, diskEncInvalid("invalid URL: %v", err)
 	}
 	req.Header.Set("Accept", "application/jose+json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch %s/adv: %w", baseURL, err)
+		return nil, fmt.Errorf("fetch %s/adv: %w", base, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch %s/adv: unexpected status %s", baseURL, resp.Status)
+		return nil, fmt.Errorf("fetch %s/adv: unexpected status %s", base, resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, tangAdvMaxBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read %s/adv: %w", baseURL, err)
+		return nil, fmt.Errorf("read %s/adv: %w", base, err)
 	}
 	if int64(len(body)) > tangAdvMaxBytes {
-		return nil, fmt.Errorf("advertisement from %s exceeds %d bytes", baseURL, tangAdvMaxBytes)
+		return nil, fmt.Errorf("advertisement from %s exceeds %d bytes", base, tangAdvMaxBytes)
 	}
 	adv, err := tang.ParseAdvertisement(body)
 	if err != nil {

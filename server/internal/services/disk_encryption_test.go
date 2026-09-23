@@ -118,7 +118,7 @@ func TestValidateDiskEncryptionContent(t *testing.T) {
 		{
 			name:    "tang bad scheme",
 			content: `{"tang": {"enabled": true, "servers": [{"url": "ftp://tang1.corp", "thumbprint": "` + validThp + `"}]}}`,
-			wantErr: "only http:// and https://",
+			wantErr: "expected http(s)://",
 		},
 		{
 			name:    "bor responder is phase 2",
