@@ -154,10 +154,14 @@ func ParseHeader(raw []byte, uuid string) (*Header, error) {
 	}
 
 	for idxStr, ks := range meta.Keyslots {
-		idx, err := strconv.Atoi(idxStr)
+		// LUKS2 keyslot names are small decimal indexes (0..31). Parsing
+		// with an explicit 8-bit size bounds every later conversion of the
+		// index to a fixed-width type (CodeQL go/incorrect-integer-conversion).
+		idx64, err := strconv.ParseUint(idxStr, 10, 8)
 		if err != nil {
 			continue
 		}
+		idx := int(idx64)
 		if h.VolumeKeyBits == 0 && ks.KeySize > 0 {
 			h.VolumeKeyBits = ks.KeySize * 8
 		}
@@ -180,9 +184,11 @@ func ParseHeader(raw []byte, uuid string) (*Header, error) {
 	}
 	sort.Slice(h.Keyslots, func(i, j int) bool { return h.Keyslots[i].Index < h.Keyslots[j].Index })
 
-	// Free JSON area ≈ configured json_size minus the current document.
-	if size, err := strconv.Atoi(meta.Config.JSONSize); err == nil && size > len(raw) {
-		h.JSONAreaFree = size - len(raw)
+	// Free JSON area is roughly the configured json_size minus the current
+	// document. The 31-bit parse keeps the difference within both int32 and
+	// uint32 for the state report.
+	if size, err := strconv.ParseUint(meta.Config.JSONSize, 10, 31); err == nil && int(size) > len(raw) {
+		h.JSONAreaFree = int(size) - len(raw)
 	}
 
 	return h, nil
