@@ -180,6 +180,8 @@ func main() {
 	settingsRepo := database.NewSettingsRepository(db)
 	flatpakRepo := database.NewFlatpakCatalogRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
+	enrollmentTokenRepo := database.NewEnrollmentTokenRepository(db)
+	policyHubStateRepo := database.NewPolicyHubStateRepository(db)
 	mfaRepo := database.NewMFARepository(db)
 	webauthnRepo := database.NewWebAuthnRepository(db)
 	luksRepo := database.NewLuksRepository(db)
@@ -266,7 +268,7 @@ func main() {
 	policyBindingSvc := services.NewPolicyBindingService(policyBindingRepo, policyRepo, nodeGroupRepo)
 
 	// Initialize enrollment service
-	enrollSvc := services.NewEnrollmentService(caCert, caKey, nodeGroupSvc, nodeSvc, revocationRepo)
+	enrollSvc := services.NewEnrollmentService(caCert, caKey, enrollmentTokenRepo, nodeGroupSvc, nodeSvc, revocationRepo)
 
 	// Initialize audit service
 	auditSvc := services.NewAuditService(auditLogRepo)
@@ -330,7 +332,14 @@ func main() {
 	}
 
 	// PolicyHub provides in-process pub/sub for streaming policy updates.
-	policyHub := grpcserver.NewPolicyHub()
+	// Its revision counter is seeded from and persisted to the database so
+	// revision numbers stay monotonic across restarts; otherwise an agent
+	// reconnecting after a restart could be served a delta that silently
+	// skips events (reused revision numbers).
+	policyHub, err := grpcserver.NewPersistentPolicyHub(context.Background(), policyHubStateRepo)
+	if err != nil {
+		log.Fatalf("Failed to initialize policy hub: %v", err)
+	}
 
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc).
