@@ -8,10 +8,10 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
@@ -21,10 +21,16 @@ import (
 
 const enrollmentTokenTTL = 5 * time.Minute
 
+// EnrollmentTokenStore persists pending enrollment tokens so they survive a
+// server restart. Implemented by database.EnrollmentTokenRepository.
+type EnrollmentTokenStore interface {
+	Create(ctx context.Context, tokenHash, nodeGroupID string, expiresAt time.Time) error
+	Consume(ctx context.Context, tokenHash string) (nodeGroupID string, expiresAt time.Time, found bool, err error)
+}
+
 // EnrollmentService manages enrollment tokens and agent certificate signing.
 type EnrollmentService struct {
-	mu     sync.Mutex
-	tokens map[string]*models.EnrollmentToken
+	tokenStore EnrollmentTokenStore
 
 	caCert *x509.Certificate
 	caKey  crypto.Signer
@@ -35,9 +41,9 @@ type EnrollmentService struct {
 }
 
 // NewEnrollmentService creates a new EnrollmentService.
-func NewEnrollmentService(caCert *x509.Certificate, caKey crypto.Signer, nodeGroupSvc *NodeGroupService, nodeSvc *NodeService, revokeRepo *database.RevocationRepository) *EnrollmentService {
+func NewEnrollmentService(caCert *x509.Certificate, caKey crypto.Signer, tokenStore EnrollmentTokenStore, nodeGroupSvc *NodeGroupService, nodeSvc *NodeService, revokeRepo *database.RevocationRepository) *EnrollmentService {
 	return &EnrollmentService{
-		tokens:       make(map[string]*models.EnrollmentToken),
+		tokenStore:   tokenStore,
 		caCert:       caCert,
 		caKey:        caKey,
 		nodeGroupSvc: nodeGroupSvc,
@@ -46,8 +52,15 @@ func NewEnrollmentService(caCert *x509.Certificate, caKey crypto.Signer, nodeGro
 	}
 }
 
+// hashToken returns the hex SHA-256 of a token. Only the hash is persisted,
+// so a database compromise does not yield usable enrollment tokens.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 // CreateToken generates a short-lived, single-use enrollment token for a node group.
-func (s *EnrollmentService) CreateToken(nodeGroupID string) (*models.EnrollmentToken, error) {
+func (s *EnrollmentService) CreateToken(ctx context.Context, nodeGroupID string) (*models.EnrollmentToken, error) {
 	if nodeGroupID == "" {
 		return nil, fmt.Errorf("node_group_id is required")
 	}
@@ -64,35 +77,30 @@ func (s *EnrollmentService) CreateToken(nodeGroupID string) (*models.EnrollmentT
 		Used:        false,
 	}
 
-	s.mu.Lock()
-	s.tokens[token.Token] = token
-	s.mu.Unlock()
+	if err := s.tokenStore.Create(ctx, hashToken(token.Token), nodeGroupID, token.ExpiresAt); err != nil {
+		return nil, fmt.Errorf("failed to store enrollment token: %w", err)
+	}
 
 	return token, nil
 }
 
 // ConsumeToken validates and consumes an enrollment token. Returns the
-// associated node group ID on success.
-func (s *EnrollmentService) ConsumeToken(tokenStr string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	token, ok := s.tokens[tokenStr]
-	if !ok {
+// associated node group ID on success. Consumption is atomic (the store
+// deletes the token in the same operation that returns it), so a token can
+// never be used twice even under concurrent enrollment attempts.
+func (s *EnrollmentService) ConsumeToken(ctx context.Context, tokenStr string) (string, error) {
+	nodeGroupID, expiresAt, found, err := s.tokenStore.Consume(ctx, hashToken(tokenStr))
+	if err != nil {
+		return "", fmt.Errorf("failed to consume enrollment token: %w", err)
+	}
+	if !found {
 		return "", fmt.Errorf("invalid enrollment token")
 	}
-	if token.Used {
-		return "", fmt.Errorf("enrollment token already used")
-	}
-	if time.Now().After(token.ExpiresAt) {
-		delete(s.tokens, tokenStr)
+	if time.Now().After(expiresAt) {
 		return "", fmt.Errorf("enrollment token expired")
 	}
 
-	token.Used = true
-	delete(s.tokens, tokenStr)
-
-	return token.NodeGroupID, nil
+	return nodeGroupID, nil
 }
 
 // SignCSR signs a PEM-encoded certificate signing request with the internal CA.

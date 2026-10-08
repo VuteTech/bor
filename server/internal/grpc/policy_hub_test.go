@@ -375,3 +375,124 @@ func TestPolicyHub_PublishResync_SubscriberReceivesSignal(t *testing.T) {
 		t.Fatal("timed out waiting for resync event")
 	}
 }
+
+// fakeRevisionStore is an in-memory RevisionStore for tests. Like the
+// database implementation, it only ever raises the stored high-water mark.
+type fakeRevisionStore struct {
+	revision int64
+	loadErr  error
+	saveErr  error
+	saves    int
+}
+
+func (f *fakeRevisionStore) LoadRevision(_ context.Context) (int64, error) {
+	if f.loadErr != nil {
+		return 0, f.loadErr
+	}
+	return f.revision, nil
+}
+
+func (f *fakeRevisionStore) SaveRevision(_ context.Context, revision int64) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.saves++
+	if revision > f.revision {
+		f.revision = revision
+	}
+	return nil
+}
+
+func TestNewPersistentPolicyHub_SeedsRevisionFromStore(t *testing.T) {
+	store := &fakeRevisionStore{revision: 42}
+
+	hub, err := NewPersistentPolicyHub(context.Background(), store)
+	if err != nil {
+		t.Fatalf("NewPersistentPolicyHub() error = %v", err)
+	}
+	if got := hub.Revision(); got != 42 {
+		t.Errorf("seeded revision = %d, want 42", got)
+	}
+
+	hub.Publish(pb.PolicyUpdate_CREATED, makeTestPolicy("p1", "Policy 1"))
+	if got := hub.Revision(); got != 43 {
+		t.Errorf("revision after publish = %d, want 43", got)
+	}
+	if store.revision != 43 {
+		t.Errorf("persisted revision = %d, want 43", store.revision)
+	}
+	if store.saves != 1 {
+		t.Errorf("SaveRevision calls = %d, want 1", store.saves)
+	}
+}
+
+func TestNewPersistentPolicyHub_LoadErrorFails(t *testing.T) {
+	store := &fakeRevisionStore{loadErr: context.DeadlineExceeded}
+
+	if _, err := NewPersistentPolicyHub(context.Background(), store); err == nil {
+		t.Error("NewPersistentPolicyHub() should fail when the store cannot be read")
+	}
+}
+
+func TestNewPersistentPolicyHub_SaveErrorStillDelivers(t *testing.T) {
+	store := &fakeRevisionStore{saveErr: context.DeadlineExceeded}
+
+	hub, err := NewPersistentPolicyHub(context.Background(), store)
+	if err != nil {
+		t.Fatalf("NewPersistentPolicyHub() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, unsub := hub.Subscribe(ctx, "")
+	defer unsub()
+
+	hub.Publish(pb.PolicyUpdate_CREATED, makeTestPolicy("p1", "Policy 1"))
+
+	select {
+	case ev := <-ch:
+		if ev.update.Revision != 1 {
+			t.Errorf("revision = %d, want 1", ev.update.Revision)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("event was not delivered after a persistence failure")
+	}
+}
+
+func TestNewPersistentPolicyHub_RevisionSurvivesRestart(t *testing.T) {
+	store := &fakeRevisionStore{}
+
+	// First server lifetime: three events reach revision 3.
+	hub1, err := NewPersistentPolicyHub(context.Background(), store)
+	if err != nil {
+		t.Fatalf("NewPersistentPolicyHub() error = %v", err)
+	}
+	hub1.Publish(pb.PolicyUpdate_CREATED, makeTestPolicy("p1", "Policy 1"))
+	hub1.Publish(pb.PolicyUpdate_CREATED, makeTestPolicy("p2", "Policy 2"))
+	hub1.Publish(pb.PolicyUpdate_UPDATED, makeTestPolicy("p1", "Policy 1 v2"))
+
+	// Simulated restart: a fresh hub seeded from the same store continues
+	// counting instead of reusing revisions 1..3 for different events.
+	hub2, err := NewPersistentPolicyHub(context.Background(), store)
+	if err != nil {
+		t.Fatalf("NewPersistentPolicyHub() after restart error = %v", err)
+	}
+	if got := hub2.Revision(); got != 3 {
+		t.Fatalf("revision after restart = %d, want 3", got)
+	}
+
+	// An agent that was fully synced before the restart is up to date.
+	if events := hub2.EventsSince(3); len(events) != 0 {
+		t.Errorf("EventsSince(3) after restart returned %d events, want 0", len(events))
+	}
+
+	// A new event continues the sequence and is delta-visible to that agent.
+	hub2.Publish(pb.PolicyUpdate_DELETED, makeTestPolicy("p2", "Policy 2"))
+	events := hub2.EventsSince(3)
+	if len(events) != 1 {
+		t.Fatalf("EventsSince(3) returned %d events, want 1", len(events))
+	}
+	if events[0].Revision != 4 {
+		t.Errorf("new event revision = %d, want 4", events[0].Revision)
+	}
+}

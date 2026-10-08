@@ -5,6 +5,7 @@
 package services
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -12,11 +13,41 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/pki"
 )
+
+// fakeTokenStore is an in-memory EnrollmentTokenStore for tests. It mirrors
+// the atomic delete-on-consume semantics of the database implementation.
+type fakeTokenStore struct {
+	tokens map[string]fakeTokenRow
+}
+
+type fakeTokenRow struct {
+	nodeGroupID string
+	expiresAt   time.Time
+}
+
+func newFakeTokenStore() *fakeTokenStore {
+	return &fakeTokenStore{tokens: make(map[string]fakeTokenRow)}
+}
+
+func (f *fakeTokenStore) Create(_ context.Context, tokenHash, nodeGroupID string, expiresAt time.Time) error {
+	f.tokens[tokenHash] = fakeTokenRow{nodeGroupID: nodeGroupID, expiresAt: expiresAt}
+	return nil
+}
+
+func (f *fakeTokenStore) Consume(_ context.Context, tokenHash string) (nodeGroupID string, expiresAt time.Time, found bool, err error) {
+	row, ok := f.tokens[tokenHash]
+	if !ok {
+		return "", time.Time{}, false, nil
+	}
+	delete(f.tokens, tokenHash)
+	return row.nodeGroupID, row.expiresAt, true, nil
+}
 
 func newTestCA(t *testing.T) (*x509.Certificate, crypto.Signer) {
 	t.Helper()
@@ -34,9 +65,10 @@ func newTestCA(t *testing.T) (*x509.Certificate, crypto.Signer) {
 
 func TestEnrollmentService_CreateToken(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
+	store := newFakeTokenStore()
+	svc := NewEnrollmentService(caCert, caKey, store, nil, nil, nil)
 
-	token, err := svc.CreateToken("test-group-id")
+	token, err := svc.CreateToken(context.Background(), "test-group-id")
 	if err != nil {
 		t.Fatalf("CreateToken() error = %v", err)
 	}
@@ -49,13 +81,21 @@ func TestEnrollmentService_CreateToken(t *testing.T) {
 	if token.ExpiresAt.Before(time.Now()) {
 		t.Error("Token already expired")
 	}
+
+	// Only the hash reaches the store, never the plaintext token.
+	if _, ok := store.tokens[token.Token]; ok {
+		t.Error("plaintext token was persisted to the store")
+	}
+	if _, ok := store.tokens[hashToken(token.Token)]; !ok {
+		t.Error("token hash not found in the store")
+	}
 }
 
 func TestEnrollmentService_CreateToken_EmptyGroupID(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, newFakeTokenStore(), nil, nil, nil)
 
-	_, err := svc.CreateToken("")
+	_, err := svc.CreateToken(context.Background(), "")
 	if err == nil {
 		t.Error("CreateToken() should return error for empty group ID")
 	}
@@ -63,11 +103,11 @@ func TestEnrollmentService_CreateToken_EmptyGroupID(t *testing.T) {
 
 func TestEnrollmentService_ConsumeToken(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, newFakeTokenStore(), nil, nil, nil)
 
-	token, _ := svc.CreateToken("group-1")
+	token, _ := svc.CreateToken(context.Background(), "group-1")
 
-	groupID, err := svc.ConsumeToken(token.Token)
+	groupID, err := svc.ConsumeToken(context.Background(), token.Token)
 	if err != nil {
 		t.Fatalf("ConsumeToken() error = %v", err)
 	}
@@ -76,7 +116,7 @@ func TestEnrollmentService_ConsumeToken(t *testing.T) {
 	}
 
 	// Second consume should fail (single-use)
-	_, err = svc.ConsumeToken(token.Token)
+	_, err = svc.ConsumeToken(context.Background(), token.Token)
 	if err == nil {
 		t.Error("ConsumeToken() should fail on second use")
 	}
@@ -84,17 +124,42 @@ func TestEnrollmentService_ConsumeToken(t *testing.T) {
 
 func TestEnrollmentService_ConsumeToken_Invalid(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, newFakeTokenStore(), nil, nil, nil)
 
-	_, err := svc.ConsumeToken("nonexistent-token")
+	_, err := svc.ConsumeToken(context.Background(), "nonexistent-token")
 	if err == nil {
 		t.Error("ConsumeToken() should return error for invalid token")
 	}
 }
 
+func TestEnrollmentService_ConsumeToken_Expired(t *testing.T) {
+	caCert, caKey := newTestCA(t)
+	store := newFakeTokenStore()
+	svc := NewEnrollmentService(caCert, caKey, store, nil, nil, nil)
+
+	token, err := svc.CreateToken(context.Background(), "group-1")
+	if err != nil {
+		t.Fatalf("CreateToken() error = %v", err)
+	}
+
+	// Backdate the stored expiry past the TTL.
+	hash := hashToken(token.Token)
+	row := store.tokens[hash]
+	row.expiresAt = time.Now().Add(-time.Minute)
+	store.tokens[hash] = row
+
+	_, err = svc.ConsumeToken(context.Background(), token.Token)
+	if err == nil {
+		t.Fatal("ConsumeToken() should fail for expired token")
+	}
+	if !strings.Contains(err.Error(), "expired") {
+		t.Errorf("error = %v, want mention of expiry", err)
+	}
+}
+
 func TestEnrollmentService_SignCSR(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, newFakeTokenStore(), nil, nil, nil)
 
 	agentKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -133,7 +198,7 @@ func TestEnrollmentService_SignCSR(t *testing.T) {
 
 func TestEnrollmentService_GetCACertPEM(t *testing.T) {
 	caCert, caKey := newTestCA(t)
-	svc := NewEnrollmentService(caCert, caKey, nil, nil, nil)
+	svc := NewEnrollmentService(caCert, caKey, newFakeTokenStore(), nil, nil, nil)
 
 	caPEM := svc.GetCACertPEM()
 	if len(caPEM) == 0 {

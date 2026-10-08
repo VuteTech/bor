@@ -25,6 +25,14 @@ type hubEvent struct {
 	affectedGroupIDs []string // nil/empty = broadcast to all agents
 }
 
+// RevisionStore persists the hub's revision high-water mark so revision
+// numbers stay monotonic across server restarts. Implemented by
+// database.PolicyHubStateRepository.
+type RevisionStore interface {
+	LoadRevision(ctx context.Context) (int64, error)
+	SaveRevision(ctx context.Context, revision int64) error
+}
+
 // PolicyHub is an in-process publish/subscribe hub that tracks policy
 // change events and fans them out to connected gRPC streaming clients.
 //
@@ -40,15 +48,34 @@ type PolicyHub struct {
 	maxLogSize  int
 	subscribers map[chan *hubEvent]struct{}
 	clients     map[string]chan *hubEvent // clientID → channel
+	store       RevisionStore             // nil = revision is not persisted
 }
 
-// NewPolicyHub creates a ready-to-use PolicyHub.
+// NewPolicyHub creates a ready-to-use PolicyHub whose revision counter starts
+// at zero and is not persisted. Production code uses NewPersistentPolicyHub.
 func NewPolicyHub() *PolicyHub {
 	return &PolicyHub{
 		maxLogSize:  defaultEventLogSize,
 		subscribers: make(map[chan *hubEvent]struct{}),
 		clients:     make(map[string]chan *hubEvent),
 	}
+}
+
+// NewPersistentPolicyHub creates a PolicyHub whose revision counter is seeded
+// from store and persisted back on every publish. Without this, the counter
+// would restart at zero after a server restart and revision numbers already
+// handed to agents would be reused for different events; an agent whose
+// last-known revision falls inside the reused range would then be served a
+// delta that silently skips events.
+func NewPersistentPolicyHub(ctx context.Context, store RevisionStore) (*PolicyHub, error) {
+	revision, err := store.LoadRevision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	h := NewPolicyHub()
+	h.revision = revision
+	h.store = store
+	return h, nil
 }
 
 // Revision returns the current revision (thread-safe).
@@ -86,6 +113,17 @@ func (h *PolicyHub) publish(updateType pb.PolicyUpdate_UpdateType, policy *pb.Po
 		subs = append(subs, ch)
 	}
 	h.mu.Unlock()
+
+	// Persist the new high-water mark before fan-out, so an agent can never
+	// observe a revision number that is not durable yet (a crash would reuse
+	// it for different events). On failure the event is still delivered:
+	// dropping it would desync every connected agent, which is worse than
+	// the narrow reuse window (a persistence failure followed by a crash).
+	if h.store != nil {
+		if err := h.store.SaveRevision(context.Background(), protoUpdate.Revision); err != nil {
+			log.Printf("policy_hub: failed to persist revision %d: %v", protoUpdate.Revision, err)
+		}
+	}
 
 	ev := &hubEvent{update: protoUpdate, affectedGroupIDs: affectedGroupIDs}
 

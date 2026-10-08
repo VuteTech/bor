@@ -49,7 +49,7 @@ func (s *EnrollmentServer) CreateEnrollmentToken(ctx context.Context, req *pb.Cr
 		return nil, status.Errorf(codes.InvalidArgument, "node_group_id is required")
 	}
 
-	token, err := s.enrollSvc.CreateToken(req.GetNodeGroupId())
+	token, err := s.enrollSvc.CreateToken(ctx, req.GetNodeGroupId())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create enrollment token: %v", err)
 	}
@@ -71,7 +71,7 @@ func (s *EnrollmentServer) Enroll(ctx context.Context, req *pb.EnrollRequest) (*
 		return nil, status.Errorf(codes.InvalidArgument, "csr_pem is required")
 	}
 
-	nodeGroupID, err := s.enrollSvc.ConsumeToken(req.GetEnrollmentToken())
+	nodeGroupID, err := s.enrollSvc.ConsumeToken(ctx, req.GetEnrollmentToken())
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "enrollment failed: %v", err)
 	}

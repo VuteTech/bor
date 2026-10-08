@@ -208,7 +208,7 @@ func (h *NodeGroupHandler) GenerateToken(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	token, err := h.enrollSvc.CreateToken(groupID)
+	token, err := h.enrollSvc.CreateToken(r.Context(), groupID)
 	if err != nil {
 		log.Printf("Failed to create enrollment token: %v", err)
 		http.Error(w, `{"error":"failed to create enrollment token"}`, http.StatusInternalServerError)
