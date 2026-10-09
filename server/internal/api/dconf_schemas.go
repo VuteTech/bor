@@ -168,6 +168,7 @@ func (h *ComplianceHandler) List(w http.ResponseWriter, r *http.Request) {
 		SortOrder: q.Get("sort_order"),
 		Page:      atoiDefault(q.Get("page"), 1),
 		PerPage:   atoiDefault(q.Get("per_page"), 25),
+		Scope:     requestScope(r, "compliance", "view").Filter(),
 	}
 
 	results, err := h.dconfRepo.ListComplianceResultsPaged(r.Context(), req)
@@ -187,7 +188,7 @@ func (h *ComplianceHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	statusCounts, err := h.dconfRepo.CountComplianceByStatusFiltered(r.Context(), req.Search)
+	statusCounts, err := h.dconfRepo.CountComplianceByStatusFiltered(r.Context(), req.Search, req.Scope)
 	if err != nil {
 		log.Printf("Failed to count compliance by status: %v", err)
 		http.Error(w, `{"error":"failed to count compliance results"}`, http.StatusInternalServerError)

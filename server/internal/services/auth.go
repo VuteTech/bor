@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/golang-jwt/jwt/v5"
@@ -113,6 +114,23 @@ type AuthService struct {
 	mfaSvc          *MFAService
 	webauthnSvc     *WebAuthnService
 	adminPassword   string // initial admin password; used once when no users exist
+	nodeGroupRepo   *database.NodeGroupRepository
+	nodeGroupScopes func() bool
+}
+
+// WithNodeGroupScopes enables node-group-scoped role bindings while enabled
+// reports true (checked at use time): they then count towards the user's
+// permissions, and LDAP mappings of the form "Role@Node Group" are applied.
+// Without it, or while enabled reports false, only global bindings count and
+// scoped LDAP mappings are skipped.
+func (s *AuthService) WithNodeGroupScopes(repo *database.NodeGroupRepository, enabled func() bool) *AuthService {
+	s.nodeGroupRepo = repo
+	s.nodeGroupScopes = enabled
+	return s
+}
+
+func (s *AuthService) nodeGroupScopesEnabled() bool {
+	return s.nodeGroupRepo != nil && s.nodeGroupScopes != nil && s.nodeGroupScopes()
 }
 
 // WithAdminPassword sets the initial admin password used by EnsureDefaultAdmin.
@@ -407,66 +425,158 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 	}, nil
 }
 
-// syncLDAPRoles grants or revokes roles whose names appear in groupRoleMap based
-// on the user's current LDAP group memberships. Only roles that are present in
-// groupRoleMap are touched; role bindings created by an administrator are left
-// intact.
+// ParseLDAPRoleTarget splits a group-role-map value into a role name and an
+// optional node group name: "Org Admin" grants the role globally,
+// "Org Admin@Berlin Office" grants it scoped to the node group named
+// "Berlin Office".
+func ParseLDAPRoleTarget(value string) (roleName, nodeGroupName string) {
+	role, group, _ := strings.Cut(value, "@")
+	return strings.TrimSpace(role), strings.TrimSpace(group)
+}
+
+// ldapBindingKey identifies one role binding by role and scope.
+type ldapBindingKey struct {
+	roleID    string
+	scopeType string
+	scopeID   string
+}
+
+// planLDAPRoleSync decides which bindings to create and which binding IDs to
+// delete. Only keys in managed are ever touched: a binding whose (role,
+// scope) is not produced by the LDAP map was made by an administrator and is
+// left alone.
+func planLDAPRoleSync(wanted, managed map[ldapBindingKey]bool, current map[ldapBindingKey]string) (create []ldapBindingKey, remove []string) {
+	for key := range managed {
+		bindingID, has := current[key]
+		switch {
+		case wanted[key] && !has:
+			create = append(create, key)
+		case !wanted[key] && has:
+			remove = append(remove, bindingID)
+		}
+	}
+	sort.Slice(create, func(i, j int) bool {
+		if create[i].roleID != create[j].roleID {
+			return create[i].roleID < create[j].roleID
+		}
+		return create[i].scopeID < create[j].scopeID
+	})
+	sort.Strings(remove)
+	return create, remove
+}
+
+// dropUncreatableScopedKeys is applied while node-group-scoped RBAC is off:
+// scoped mappings must not create bindings, so wanted scoped keys that do
+// not exist yet are dropped. Existing scoped bindings stay wanted while the
+// user is still in the LDAP group and are removed once they leave, so a stale
+// grant cannot come back to life when the feature is enabled again.
+func dropUncreatableScopedKeys(wanted map[ldapBindingKey]bool, current map[ldapBindingKey]string) {
+	for key := range wanted {
+		if _, has := current[key]; key.scopeType == models.ScopeNodeGroup && !has {
+			delete(wanted, key)
+		}
+	}
+}
+
+// syncLDAPRoles grants or revokes the role bindings produced by groupRoleMap
+// based on the user's current LDAP group memberships. Map values are role
+// names, optionally scoped to a node group ("Role@Node Group"). Only
+// (role, scope) pairs that appear in the map are touched; role bindings
+// created by an administrator are left intact.
 func (s *AuthService) syncLDAPRoles(ctx context.Context, userID string, ldapGroups []string, groupRoleMap map[string]string) {
-	// Build the set of role names this user should hold.
-	wantedRoles := make(map[string]bool)
+	memberOf := make(map[string]bool, len(ldapGroups))
 	for _, grp := range ldapGroups {
-		if roleName, ok := groupRoleMap[grp]; ok {
-			wantedRoles[roleName] = true
+		memberOf[grp] = true
+	}
+
+	var groupIDsByName map[string]string // loaded on first scoped mapping
+	resolve := func(value string) (ldapBindingKey, bool) {
+		roleName, groupName := ParseLDAPRoleTarget(value)
+		role, err := s.roleRepo.GetByName(ctx, roleName)
+		if err != nil || role == nil {
+			log.Printf("syncLDAPRoles: role %q not found in DB, skipping", roleName)
+			return ldapBindingKey{}, false
+		}
+		if groupName == "" {
+			return ldapBindingKey{roleID: role.ID, scopeType: models.ScopeGlobal}, true
+		}
+		if s.nodeGroupRepo == nil {
+			log.Printf("syncLDAPRoles: node-group mapping %q unavailable, skipping", value)
+			return ldapBindingKey{}, false
+		}
+		if groupIDsByName == nil {
+			groups, err := s.nodeGroupRepo.ListAll(ctx)
+			if err != nil {
+				log.Printf("syncLDAPRoles: list node groups: %v", err)
+				return ldapBindingKey{}, false
+			}
+			groupIDsByName = make(map[string]string, len(groups))
+			for _, g := range groups {
+				groupIDsByName[g.Name] = g.ID
+			}
+		}
+		groupID, ok := groupIDsByName[groupName]
+		if !ok {
+			log.Printf("syncLDAPRoles: node group %q not found, skipping mapping %q", groupName, value)
+			return ldapBindingKey{}, false
+		}
+		return ldapBindingKey{roleID: role.ID, scopeType: models.ScopeNodeGroup, scopeID: groupID}, true
+	}
+
+	wanted := make(map[ldapBindingKey]bool)
+	managed := make(map[ldapBindingKey]bool)
+	resolved := make(map[string]ldapBindingKey)
+	for ldapGroup, value := range groupRoleMap {
+		key, seen := resolved[value]
+		if !seen {
+			var ok bool
+			if key, ok = resolve(value); !ok {
+				continue
+			}
+			resolved[value] = key
+		}
+		managed[key] = true
+		if memberOf[ldapGroup] {
+			wanted[key] = true
 		}
 	}
 
-	// Build the set of all role names managed by this map.
-	managedRoles := make(map[string]bool)
-	for _, roleName := range groupRoleMap {
-		managedRoles[roleName] = true
-	}
-
-	// Fetch the user's current role bindings.
 	bindings, err := s.bindingRepo.ListByUserID(ctx, userID)
 	if err != nil {
 		log.Printf("syncLDAPRoles: list bindings for user %s: %v", userID, err)
 		return
 	}
-
-	// Index current bindings by role ID.
-	currentByRoleID := make(map[string]string) // roleID → bindingID
+	current := make(map[ldapBindingKey]string, len(bindings))
 	for _, b := range bindings {
-		currentByRoleID[b.RoleID] = b.ID
+		key := ldapBindingKey{roleID: b.RoleID, scopeType: b.ScopeType}
+		if b.ScopeID != nil {
+			key.scopeID = *b.ScopeID
+		}
+		current[key] = b.ID
 	}
 
-	// For each managed role, grant or revoke as needed.
-	for roleName := range managedRoles {
-		role, roleErr := s.roleRepo.GetByName(ctx, roleName)
-		if roleErr != nil || role == nil {
-			log.Printf("syncLDAPRoles: role %q not found in DB, skipping", roleName)
-			continue
+	if !s.nodeGroupScopesEnabled() {
+		dropUncreatableScopedKeys(wanted, current)
+	}
+
+	create, remove := planLDAPRoleSync(wanted, managed, current)
+	for _, key := range create {
+		binding := &models.UserRoleBinding{UserID: userID, RoleID: key.roleID, ScopeType: key.scopeType}
+		if key.scopeID != "" {
+			scopeID := key.scopeID
+			binding.ScopeID = &scopeID
 		}
-
-		_, hasBinding := currentByRoleID[role.ID]
-		shouldHave := wantedRoles[roleName]
-
-		switch {
-		case shouldHave && !hasBinding:
-			if createErr := s.bindingRepo.Create(ctx, &models.UserRoleBinding{
-				UserID:    userID,
-				RoleID:    role.ID,
-				ScopeType: "global",
-			}); createErr != nil {
-				log.Printf("syncLDAPRoles: grant role %q to user %s: %v", roleName, userID, createErr)
-			} else {
-				log.Printf("syncLDAPRoles: granted role %q to LDAP user %s", roleName, userID)
-			}
-		case !shouldHave && hasBinding:
-			if delErr := s.bindingRepo.Delete(ctx, currentByRoleID[role.ID]); delErr != nil {
-				log.Printf("syncLDAPRoles: revoke role %q from user %s: %v", roleName, userID, delErr)
-			} else {
-				log.Printf("syncLDAPRoles: revoked role %q from LDAP user %s", roleName, userID)
-			}
+		if createErr := s.bindingRepo.Create(ctx, binding); createErr != nil {
+			log.Printf("syncLDAPRoles: grant role %s (%s %s) to user %s: %v", key.roleID, key.scopeType, key.scopeID, userID, createErr)
+		} else {
+			log.Printf("syncLDAPRoles: granted role %s (%s %s) to LDAP user %s", key.roleID, key.scopeType, key.scopeID, userID)
+		}
+	}
+	for _, bindingID := range remove {
+		if delErr := s.bindingRepo.Delete(ctx, bindingID); delErr != nil {
+			log.Printf("syncLDAPRoles: revoke binding %s from user %s: %v", bindingID, userID, delErr)
+		} else {
+			log.Printf("syncLDAPRoles: revoked binding %s from LDAP user %s", bindingID, userID)
 		}
 	}
 }
@@ -875,9 +985,10 @@ func (s *AuthService) CreateUser(ctx context.Context, req *models.CreateUserRequ
 	return user, nil
 }
 
-// EnsureCallerCanAssignRole verifies that the caller holds every permission
-// granted by roleName, so a user cannot assign a role more privileged than
-// themselves (privilege-escalation guard for the user-creation path).
+// EnsureCallerCanAssignRole verifies that the caller holds, globally, every
+// permission granted by roleName. The user-creation path binds the role
+// globally, so a permission the caller holds only for some node groups is not
+// enough (privilege-escalation guard for the user-creation path).
 func (s *AuthService) EnsureCallerCanAssignRole(ctx context.Context, callerUserID, roleName string) error {
 	if roleName == "" {
 		return nil
@@ -889,22 +1000,16 @@ func (s *AuthService) EnsureCallerCanAssignRole(ctx context.Context, callerUserI
 	if role == nil {
 		return fmt.Errorf("role not found: %s", roleName)
 	}
-	callerPerms, err := s.GetUserPermissions(ctx, callerUserID)
+	grants, err := s.GetUserGrants(ctx, callerUserID)
 	if err != nil {
 		return fmt.Errorf("failed to load caller permissions: %w", err)
-	}
-	held := make(map[string]struct{}, len(callerPerms))
-	for _, p := range callerPerms {
-		held[p] = struct{}{}
 	}
 	rolePerms, err := s.roleRepo.GetPermissionsByRoleID(ctx, role.ID)
 	if err != nil {
 		return fmt.Errorf("failed to load role permissions: %w", err)
 	}
-	for _, p := range rolePerms {
-		if _, ok := held[p.Resource+":"+p.Action]; !ok {
-			return fmt.Errorf("cannot assign a role that grants permissions you do not hold")
-		}
+	if ok, _ := grants.CanDelegate(rolePerms, authz.BindingTarget{ScopeType: models.ScopeGlobal}); !ok {
+		return fmt.Errorf("cannot assign a role that grants permissions you do not hold")
 	}
 	return nil
 }
@@ -932,37 +1037,23 @@ func (s *AuthService) GetUser(ctx context.Context, id string) (*models.User, err
 	return s.userRepo.GetByID(ctx, id)
 }
 
-// GetUserPermissions returns a deduplicated, sorted list of "resource:action"
-// permission strings for the given user, aggregated from the user's effective
-// roles: direct role bindings plus roles inherited through user-group
-// membership. It reads from the same ListEffectiveRoleIDs source as the
-// Authorizer, so what the frontend shows always matches what the backend
-// enforces.
+// GetUserGrants returns the user's permissions with the scope each is held
+// at, from direct role bindings plus roles inherited through user-group
+// membership. It uses the same computation as the request authorizer, so
+// what the frontend shows always matches what the backend enforces.
+func (s *AuthService) GetUserGrants(ctx context.Context, userID string) (authz.Grants, error) {
+	return authz.ComputeGrants(ctx, s.bindingRepo, s.roleRepo, userID,
+		authz.GrantOptions{NodeGroupScopes: s.nodeGroupScopesEnabled()})
+}
+
+// GetUserPermissions returns the sorted "resource:action" permissions the
+// user holds anywhere (globally or for at least one node group).
 func (s *AuthService) GetUserPermissions(ctx context.Context, userID string) ([]string, error) {
-	roleIDs, err := s.bindingRepo.ListEffectiveRoleIDs(ctx, userID)
+	grants, err := s.GetUserGrants(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch role bindings: %w", err)
+		return nil, err
 	}
-
-	seen := make(map[string]struct{})
-	var perms []string
-
-	for _, roleID := range roleIDs {
-		rolePerms, err := s.roleRepo.GetPermissionsByRoleID(ctx, roleID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch permissions for role %s: %w", roleID, err)
-		}
-		for _, p := range rolePerms {
-			key := p.Resource + ":" + p.Action
-			if _, ok := seen[key]; !ok {
-				seen[key] = struct{}{}
-				perms = append(perms, key)
-			}
-		}
-	}
-
-	sort.Strings(perms)
-	return perms, nil
+	return grants.Keys(), nil
 }
 
 // ListUsers returns all users
@@ -1028,7 +1119,8 @@ func (s *AuthService) isLastSuperAdmin(ctx context.Context, id string) (bool, er
 	}
 	isSuperAdmin := false
 	for _, b := range bindings {
-		if b.RoleID == role.ID {
+		// Only a global Super Admin binding makes someone a Super Admin.
+		if b.RoleID == role.ID && b.ScopeType == models.ScopeGlobal {
 			isSuperAdmin = true
 			break
 		}
@@ -1036,7 +1128,7 @@ func (s *AuthService) isLastSuperAdmin(ctx context.Context, id string) (bool, er
 	if !isSuperAdmin {
 		return false, nil
 	}
-	count, err := s.bindingRepo.CountUsersWithRole(ctx, role.ID)
+	count, err := s.bindingRepo.CountUsersWithGlobalRole(ctx, role.ID)
 	if err != nil {
 		return false, fmt.Errorf("failed to count super admins: %w", err)
 	}

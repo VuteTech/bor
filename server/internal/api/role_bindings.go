@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
@@ -22,6 +24,8 @@ import (
 type UserRoleBindingHandler struct {
 	bindingRepo *database.UserRoleBindingRepository
 	roleRepo    *database.RoleRepository
+	nodeGroups  nodeGroupGetter
+	scopesOn    func() bool
 	auditSvc    *services.AuditService
 }
 
@@ -38,18 +42,83 @@ func (h *UserRoleBindingHandler) WithAuditService(auditSvc *services.AuditServic
 	return h
 }
 
-// validateGlobalScope rejects scoped role bindings. RBAC is global-only:
-// scoped bindings were never enforced, so accepting them would silently
-// create grants that do nothing (or, worse, grants that spring to life if
-// scoped enforcement ships later). An empty scope type defaults to global.
-func validateGlobalScope(scopeType string, scopeID *string) (string, error) {
-	if scopeType == "" {
-		scopeType = models.ScopeGlobal
+// WithNodeGroupScopes enables node-group-scoped role bindings, validated
+// against groups, while enabled reports true (checked per request). Without
+// it (the community default) only global bindings can be created; see the
+// edition package.
+func (h *UserRoleBindingHandler) WithNodeGroupScopes(groups nodeGroupGetter, enabled func() bool) *UserRoleBindingHandler {
+	h.nodeGroups = groups
+	h.scopesOn = enabled
+	return h
+}
+
+// scopeGroups returns the node group lookup when node-group scopes are
+// enabled right now, nil otherwise (which validateBindingScope refuses).
+func scopeGroups(groups nodeGroupGetter, enabled func() bool) nodeGroupGetter {
+	if groups == nil || enabled == nil || !enabled() {
+		return nil
 	}
-	if scopeType != models.ScopeGlobal || scopeID != nil {
-		return "", errors.New("scoped role bindings are not supported; scope_type must be 'global' with no scope_id")
+	return groups
+}
+
+// nodeGroupGetter looks up a node group by ID (nil, nil when absent).
+type nodeGroupGetter interface {
+	GetByID(ctx context.Context, id string) (*models.NodeGroup, error)
+}
+
+// errInvalidScope marks a client error in a role binding's scope fields.
+var errInvalidScope = errors.New("invalid scope")
+
+// validateBindingScope normalizes and checks a role binding's scope:
+//
+//   - "" or "global": no scope_id allowed; returns ("global", nil).
+//   - "node_group": scope_id must name an existing node group.
+//
+// Errors wrapping errInvalidScope are client errors (400); anything else is
+// a lookup failure (500).
+func validateBindingScope(ctx context.Context, groups nodeGroupGetter, scopeType string, scopeID *string) (normType string, normID *string, err error) {
+	id := ""
+	if scopeID != nil {
+		id = *scopeID
 	}
-	return scopeType, nil
+
+	switch scopeType {
+	case "", models.ScopeGlobal:
+		if id != "" {
+			return "", nil, fmt.Errorf("%w: a global binding takes no scope_id", errInvalidScope)
+		}
+		return models.ScopeGlobal, nil, nil
+	case models.ScopeNodeGroup:
+		if !uuidPattern.MatchString(id) {
+			return "", nil, fmt.Errorf("%w: scope_id must be a node group ID", errInvalidScope)
+		}
+		if groups == nil {
+			return "", nil, fmt.Errorf("%w: node-group-scoped role assignments are not enabled in this edition", errInvalidScope)
+		}
+		group, err := groups.GetByID(ctx, id)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to look up node group: %w", err)
+		}
+		if group == nil {
+			return "", nil, fmt.Errorf("%w: node group not found", errInvalidScope)
+		}
+		return models.ScopeNodeGroup, &id, nil
+	default:
+		return "", nil, fmt.Errorf("%w: scope_type must be 'global' or 'node_group'", errInvalidScope)
+	}
+}
+
+// uuidPattern matches a canonical UUID string.
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// writeScopeError answers a validateBindingScope error with 400 or 500.
+func writeScopeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errInvalidScope) {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	log.Printf("role binding scope validation failed: %v", err)
+	writeJSONError(w, http.StatusInternalServerError, "failed to validate binding scope")
 }
 
 // ListByUser handles GET /api/v1/user-role-bindings?user_id={id}
@@ -90,38 +159,27 @@ func (h *UserRoleBindingHandler) Create(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	scopeType, err := validateGlobalScope(binding.ScopeType, binding.ScopeID)
+	scopeType, scopeID, err := validateBindingScope(r.Context(), scopeGroups(h.nodeGroups, h.scopesOn), binding.ScopeType, binding.ScopeID)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		writeScopeError(w, err)
 		return
 	}
-	binding.ScopeType = scopeType
+	binding.ScopeType, binding.ScopeID = scopeType, scopeID
 
-	// Privilege-escalation guard: the caller may only assign a role whose
-	// permissions are a subset of the permissions the caller already holds.
-	// This blocks a delegated user administrator from binding "Super Admin"
-	// (or any higher-privileged role) to anyone, including themselves.
-	claims := GetUserFromContext(r.Context())
-	if claims == nil {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-	callerPerms, err := callerEffectivePermissions(r.Context(), h.roleRepo, h.bindingRepo, claims.UserID)
-	if err != nil {
-		log.Printf("role binding: failed to load caller permissions: %v", err)
-		http.Error(w, `{"error":"failed to verify caller permissions"}`, http.StatusInternalServerError)
-		return
-	}
-	subset, missing, err := rolePermissionsSubsetOf(r.Context(), h.roleRepo, binding.RoleID, callerPerms)
+	// Privilege-escalation guard: the caller may only grant permissions they
+	// hold themselves, with at least the reach of the new binding. This blocks
+	// a user administrator from binding "Super Admin" (or any role granting
+	// more than they hold) to anyone, including themselves, and a caller with
+	// only node-group-scoped rights from granting them more widely.
+	ok, missing, err := callerCanDelegateRole(r, h.roleRepo, binding.RoleID, bindingTargetOf(binding.ScopeType, binding.ScopeID))
 	if err != nil {
 		log.Printf("role binding: failed to check role permissions: %v", err)
 		http.Error(w, `{"error":"failed to verify role permissions"}`, http.StatusInternalServerError)
 		return
 	}
-	if !subset {
-		log.Printf("role binding denied: user %s tried to assign role %s granting unheld permission %q",
-			claims.UserID, binding.RoleID, missing)
-		http.Error(w, `{"error":"cannot assign a role that grants permissions you do not hold"}`, http.StatusForbidden)
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "cannot assign a role that grants permissions you do not hold at this scope")
+		auditDenial(r, "user_role_binding", "create", binding.UserID, "would grant "+missing+", which the caller does not hold")
 		return
 	}
 
@@ -198,6 +256,8 @@ func (h *UserRoleBindingHandler) auditRevoke(r *http.Request, binding *models.Us
 		"user_id":    binding.UserID,
 		"role_id":    binding.RoleID,
 		"role_name":  roleName,
+		"scope_type": binding.ScopeType,
+		"scope_id":   derefString(binding.ScopeID),
 	})
 	if err != nil {
 		return
@@ -215,7 +275,7 @@ func (h *UserRoleBindingHandler) auditRevoke(r *http.Request, binding *models.Us
 		Action:     "revoke_role",
 		Resource:   &auditpb.Resource{Type: "user_role_binding", Id: binding.ID},
 		Outcome:    auditpb.Outcome_OUTCOME_SUCCESS,
-		SrcIp:      extractIP(r),
+		SrcIp:      auditSrcIP(r),
 		Payload: &auditpb.AuditEvent_HttpChange{
 			HttpChange: &auditpb.HttpPayload{
 				Method:   r.Method,
@@ -233,11 +293,14 @@ func (h *UserRoleBindingHandler) guardLastSuperAdminBinding(ctx context.Context,
 	if binding == nil {
 		return nil // already gone; let Delete handle it
 	}
+	if binding.ScopeType != models.ScopeGlobal {
+		return nil // a node-group-scoped binding never makes anyone a Super Admin
+	}
 	role, err := h.roleRepo.GetByName(ctx, models.RoleSuperAdmin)
 	if err != nil || role == nil || binding.RoleID != role.ID {
 		return nil // not a Super Admin binding
 	}
-	count, err := h.bindingRepo.CountUsersWithRole(ctx, role.ID)
+	count, err := h.bindingRepo.CountUsersWithGlobalRole(ctx, role.ID)
 	if err != nil {
 		return err
 	}

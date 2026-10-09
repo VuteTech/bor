@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import { notifySessionExpired } from "./session";
+import type { PermissionScope } from "./permissions";
 
 // csrfToken reads the bor_csrf cookie for double-submit CSRF protection.
 function csrfToken(): string {
@@ -94,6 +95,9 @@ export interface UserInfo {
   email: string;
   full_name: string;
   permissions?: string[];
+  permission_scopes?: Record<string, PermissionScope>;
+  edition?: string;
+  features?: string[];
   source?: string;
 }
 

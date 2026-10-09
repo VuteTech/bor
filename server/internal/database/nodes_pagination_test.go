@@ -58,6 +58,12 @@ func TestBuildNodeFilter(t *testing.T) {
 		{"status + search", &models.NodeListRequest{Status: "online", Search: "web"},
 			"WHERE n.status_cached = $1 AND (n.name ILIKE $2 OR n.fqdn ILIKE $2 OR n.ip_address ILIKE $2 OR n.groups ILIKE $2)", 2},
 		{"blank search ignored", &models.NodeListRequest{Search: "   "}, "", 0},
+		{"empty scope matches nothing", &models.NodeListRequest{Scope: &models.GroupScopeFilter{}},
+			"WHERE FALSE", 0},
+		{"scope numbered after other filters",
+			&models.NodeListRequest{Status: "online", Search: "web", Scope: &models.GroupScopeFilter{GroupIDs: []string{"g1"}}},
+			"WHERE n.status_cached = $1 AND (n.name ILIKE $2 OR n.fqdn ILIKE $2 OR n.ip_address ILIKE $2 OR n.groups ILIKE $2)" +
+				" AND EXISTS (SELECT 1 FROM node_group_members sgm WHERE sgm.node_id = n.id AND sgm.node_group_id = ANY($3::uuid[]))", 3},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

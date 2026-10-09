@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/VuteTech/Bor/server/internal/models"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -217,6 +219,9 @@ const complianceBaseFrom = `
 type ComplianceListParams struct {
 	Page, PerPage                        int
 	Search, Status, SortField, SortOrder string
+	// Scope limits results to nodes in at least one of its node groups when
+	// non-nil (a delegated administrator's view). Set server-side only.
+	Scope *models.GroupScopeFilter
 }
 
 // complianceSortColumns allowlists sort fields to SQL columns (ORDER BY cannot
@@ -243,7 +248,7 @@ func complianceOrderBy(field, order string) string {
 // buildComplianceFilter returns the extra AND conditions (appended to the base
 // WHERE) plus bind args, with placeholders starting at $1. When includeStatus
 // is false the status filter is skipped (used for the status-count overview).
-func buildComplianceFilter(search, status string, includeStatus bool) (sql string, args []interface{}) {
+func buildComplianceFilter(search, status string, includeStatus bool, scope *models.GroupScopeFilter) (sql string, args []interface{}) {
 	var sb strings.Builder
 	i := 1
 	if s := strings.TrimSpace(search); s != "" {
@@ -254,6 +259,16 @@ func buildComplianceFilter(search, status string, includeStatus bool) (sql strin
 	if includeStatus && status != "" {
 		args = append(args, status)
 		fmt.Fprintf(&sb, " AND cr.status = $%d", i)
+		i++
+	}
+	if scope != nil {
+		// A delegated administrator sees results for nodes in their groups.
+		if len(scope.GroupIDs) == 0 {
+			sb.WriteString(" AND FALSE")
+		} else {
+			args = append(args, pq.Array(scope.GroupIDs))
+			fmt.Fprintf(&sb, " AND EXISTS (SELECT 1 FROM node_group_members sgm WHERE sgm.node_id = cr.node_id AND sgm.node_group_id = ANY($%d::uuid[]))", i)
+		}
 	}
 	return sb.String(), args
 }
@@ -261,7 +276,7 @@ func buildComplianceFilter(search, status string, includeStatus bool) (sql strin
 // ListComplianceResultsPaged returns a page of compliance results matching the
 // filter, ordered by the allowlisted sort field.
 func (r *DConfRepository) ListComplianceResultsPaged(ctx context.Context, req *ComplianceListParams) ([]*ComplianceRow, error) {
-	filter, args := buildComplianceFilter(req.Search, req.Status, true)
+	filter, args := buildComplianceFilter(req.Search, req.Status, true, req.Scope)
 	page, perPage := models.ClampPagination(req.Page, req.PerPage)
 	offset := (page - 1) * perPage
 	args = append(args, perPage, offset)
@@ -295,7 +310,7 @@ func (r *DConfRepository) ListComplianceResultsPaged(ctx context.Context, req *C
 // CountComplianceFiltered returns the number of compliance results matching the
 // search + status filter (respecting binding liveness).
 func (r *DConfRepository) CountComplianceFiltered(ctx context.Context, req *ComplianceListParams) (int, error) {
-	filter, args := buildComplianceFilter(req.Search, req.Status, true)
+	filter, args := buildComplianceFilter(req.Search, req.Status, true, req.Scope)
 	query := `SELECT COUNT(*)` + complianceBaseFrom + filter
 	var count int
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
@@ -306,8 +321,8 @@ func (r *DConfRepository) CountComplianceFiltered(ctx context.Context, req *Comp
 
 // CountComplianceByStatusFiltered returns per-status counts over the
 // search-filtered set (ignoring the status filter), for the overview chips.
-func (r *DConfRepository) CountComplianceByStatusFiltered(ctx context.Context, search string) (map[string]int, error) {
-	filter, args := buildComplianceFilter(search, "", false)
+func (r *DConfRepository) CountComplianceByStatusFiltered(ctx context.Context, search string, scope *models.GroupScopeFilter) (map[string]int, error) {
+	filter, args := buildComplianceFilter(search, "", false, scope)
 	query := `SELECT cr.status, COUNT(*)` + complianceBaseFrom + filter + " GROUP BY cr.status"
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {

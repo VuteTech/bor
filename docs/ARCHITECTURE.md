@@ -62,7 +62,11 @@ Bor is an Enterprise Linux Desktop Policy Management system consisting of:
 
 **Components:**
 
-- `cmd/server/` - Application entry point and initialization
+- `cmd/server/` - Community edition entry point (flags, then `app.Run`)
+- `pkg/app/` - Server startup and wiring (`app.Run`), importable so other
+  distributions can build their own entry point
+- `pkg/edition/` - Edition and optional-feature switches (`edition.Community`
+  enables none)
 - `internal/api/` - REST API handlers for web UI
 - `internal/config/` - Configuration management
 - `internal/database/` - Database layer, migrations, repositories
@@ -302,15 +306,43 @@ Bor is an Enterprise Linux Desktop Policy Management system consisting of:
 ### Authorization
 
 #### Web UI (RBAC)
-- Role-based access control, global-only by design: a role binding grants
-  its permissions everywhere. Scoped (per-organization, per-group) bindings
-  are not supported; delegated administration is a planned feature with its
-  own scope model.
-- Granular permissions (resource:action)
-- User Groups for bulk role assignment: a role bound to a user group is
-  granted to every member of the group
-- Permission checks at API layer; the privilege-escalation guard and the
-  UI permission list use the same effective-roles source as enforcement
+- Role-based access control with granular permissions (resource:action).
+- A role binding is either **global** or **scoped to one node group**
+  (delegated administration, e.g. "Org Admin of the Berlin office").
+  Node-group scopes are an optional feature
+  (`edition.NodeGroupScopedRBAC`): the community edition does not enable
+  it, so only global bindings can be created and any existing scoped
+  binding grants nothing. Another distribution enables it by passing its own
+  edition to `app.Run`; the switch is read per request.
+- A node-group binding grants only the permissions on node-group-scopable
+  resources (nodes, node groups, policies, policy bindings, compliance) and
+  only for that group. Permissions on everything else (users, roles, user
+  groups, settings, audit logs, disk encryption, Tang servers, Flatpak
+  repositories) come only from global bindings. The rule lives in one place,
+  `internal/authz`.
+- Object-level rules for scoped administrators: an object is visible when it
+  belongs to at least one in-scope node group, and changeable only when every
+  node group it belongs to is in scope. A policy belongs to every group it is
+  bound to; an unbound draft belongs to its creator. Objects in no group
+  (unassigned nodes, other users' unbound drafts) and new node groups need a
+  global grant. Out-of-scope objects answer 404, so their existence is not
+  revealed.
+- Routes are global-only by default (`PermissionGate.Require`). Only routes
+  whose handlers enforce node-group scope per object opt in to scoped grants
+  (`PermissionGate.RequireScoped`), so a handler without scope checks is
+  unreachable for a scoped administrator.
+- User Groups for bulk role assignment: a role bound to a user group (at
+  either scope) is granted to every member of the group.
+- Privilege-escalation guards: nobody can grant a permission, or a reach for
+  it, that they do not hold themselves. This covers assigning roles to users
+  and to user groups, adding members to user groups (membership confers
+  every role of the group), role permission edits and the role chosen at
+  user creation. The guards, enforcement and the UI permission list share
+  one computation.
+- Refused state-changing requests, including scope and guard refusals, are
+  recorded as `access_denied` audit events (actor, permission, reason).
+- LDAP group mappings may target a node group (`Role@Node Group`) when the
+  edition enables node-group scopes.
 
 #### gRPC
 - Client certificate verification (authentication)

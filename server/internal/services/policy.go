@@ -104,6 +104,10 @@ func (s *PolicyService) CreatePolicy(ctx context.Context, req *models.CreatePoli
 		State:       models.PolicyStateDraft,
 		CreatedBy:   createdBy,
 	}
+	if req.CreatedByUserID != "" {
+		ownerID := req.CreatedByUserID
+		policy.CreatedByUserID = &ownerID
+	}
 
 	if err := s.policyRepo.Create(ctx, policy); err != nil {
 		return nil, fmt.Errorf("failed to create policy: %w", err)

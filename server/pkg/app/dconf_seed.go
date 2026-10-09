@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-package main
+package app
 
 import (
 	"context"

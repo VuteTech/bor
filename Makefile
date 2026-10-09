@@ -43,8 +43,7 @@ help:
 	@echo "All builds use GOFIPS140=v1.0.0 (FIPS 140-3 validated crypto module)."
 	@echo "FIPS enforcement:    GODEBUG=fips140=on ./server  (restricts to FIPS-approved algorithms at runtime)"
 	@echo ""
-	@echo "HSM / PKCS#11 build (requires CGO and crypto11 dependency):"
-	@echo "  cd server && go get github.com/ThalesIgnite/crypto11"
+	@echo "HSM / PKCS#11 build (requires CGO and a C compiler):"
 	@echo "  make server-pkcs11"
 
 # All Go builds use GOFIPS140=v1.0.0 to pin the FIPS 140-3 validated crypto
@@ -59,8 +58,7 @@ server:
 		-ldflags "-X main.Version=$(VERSION)" \
 		-o server ./cmd/server
 
-# Build server with PKCS#11 HSM support (requires CGO + pkcs11 headers)
-# Before first use: cd server && go get github.com/ThalesIgnite/crypto11
+# Build server with PKCS#11 HSM support (requires CGO and a C compiler)
 server-pkcs11:
 	@echo "Building server (FIPS 140-3 + PKCS#11 HSM support, version=$(VERSION), arch=$(ARCH))..."
 	cd server && GOFIPS140=v1.0.0 GOARCH=$(ARCH) CGO_ENABLED=1 go build \

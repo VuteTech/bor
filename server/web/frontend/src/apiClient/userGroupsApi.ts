@@ -126,8 +126,9 @@ export interface UserGroupRoleBinding {
   id: string;
   group_id: string;
   role_id: string;
-  // Always "global": RBAC is global-only; scoped bindings are not supported.
+  // "global" or "node_group" (scope_id is then the node group ID).
   scope_type: string;
+  scope_id?: string;
   created_at: string;
 }
 
@@ -142,14 +143,15 @@ export async function fetchGroupRoleBindings(
 
 export async function addGroupRoleBinding(
   groupId: string,
-  roleId: string
+  roleId: string,
+  scope?: { scope_type: "global" | "node_group"; scope_id?: string }
 ): Promise<UserGroupRoleBinding> {
   return apiRequest<UserGroupRoleBinding>(
     `/api/v1/user-groups/${encodeURIComponent(groupId)}/role-bindings`,
     {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ role_id: roleId }),
+      body: JSON.stringify({ role_id: roleId, ...scope }),
     }
   );
 }

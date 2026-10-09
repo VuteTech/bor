@@ -194,7 +194,7 @@ export const Shell: React.FC = () => {
 
   /* ── After session is established, check if MFA setup is required ── */
   const applySession = useCallback(async (user: UserInfo) => {
-    setPermissions(user.permissions || []);
+    setPermissions(user.permissions || [], user.permission_scopes, user.features);
     setCurrentUser(user.full_name || user.username);
     setCurrentUserSource(user.source || "local");
     setIsLoggedIn(true);

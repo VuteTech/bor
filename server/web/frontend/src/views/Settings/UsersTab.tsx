@@ -48,7 +48,21 @@ import {
   CreateUserRequest,
 } from "../../apiClient/usersApi";
 import { fetchRoles, Role } from "../../apiClient/rolesApi";
-import { hasPermission } from "../../apiClient/permissions";
+import {
+  FEATURE_NODE_GROUP_SCOPED_RBAC,
+  hasFeature,
+  hasPermission,
+} from "../../apiClient/permissions";
+import {
+  GLOBAL_SCOPE,
+  isRoleScopeComplete,
+  RoleScopeFields,
+  roleScopeLabel,
+  roleScopeRequest,
+  RoleScopeValue,
+  showRoleScopes,
+  useScopeNodeGroups,
+} from "../../components/RoleScopeFields";
 
 /* ── Users Tab ── */
 
@@ -481,7 +495,10 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
 
   // Add role form state
   const [newRoleId, setNewRoleId] = useState("");
+  const [newScope, setNewScope] = useState<RoleScopeValue>(GLOBAL_SCOPE);
   const [addSaving, setAddSaving] = useState(false);
+  const nodeGroups = useScopeNodeGroups();
+  const scopesEnabled = hasFeature(FEATURE_NODE_GROUP_SCOPED_RBAC);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -521,9 +538,11 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
       await createBinding({
         user_id: userId,
         role_id: newRoleId,
+        ...roleScopeRequest(newScope),
       });
       setShowAdd(false);
       setNewRoleId("");
+      setNewScope(GLOBAL_SCOPE);
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to add binding");
@@ -554,6 +573,7 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
         <Thead>
           <Tr>
             <Th>Role</Th>
+            {showRoleScopes(scopesEnabled, bindings) && <Th>Scope</Th>}
             <Th>Actions</Th>
           </Tr>
         </Thead>
@@ -561,6 +581,9 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
           {bindings.map((b) => (
             <Tr key={b.id}>
               <Td>{roleName(b.role_id)}</Td>
+              {showRoleScopes(scopesEnabled, bindings) && (
+                <Td>{roleScopeLabel(b.scope_type, b.scope_id, nodeGroups, scopesEnabled)}</Td>
+              )}
               <Td>
                 <Button
                   variant="plain"
@@ -575,7 +598,7 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
           ))}
           {bindings.length === 0 && (
             <Tr>
-              <Td colSpan={2}>No role assignments.</Td>
+              <Td colSpan={showRoleScopes(scopesEnabled, bindings) ? 3 : 2}>No role assignments.</Td>
             </Tr>
           )}
         </Tbody>
@@ -605,6 +628,14 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
                   ))}
                 </select>
               </FormGroup>
+              {scopesEnabled && (
+                <RoleScopeFields
+                  idPrefix="ar"
+                  value={newScope}
+                  onChange={setNewScope}
+                  nodeGroups={nodeGroups}
+                />
+              )}
             </Form>
           </ModalBody>
           <ModalFooter>
@@ -612,7 +643,7 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
               key="add"
               variant="primary"
               onClick={handleAdd}
-              isDisabled={addSaving || !newRoleId}
+              isDisabled={addSaving || !newRoleId || !isRoleScopeComplete(newScope)}
               isLoading={addSaving}
             >
               Add

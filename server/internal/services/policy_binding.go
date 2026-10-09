@@ -125,6 +125,19 @@ func (s *PolicyBindingService) GetEnabledGroupIDsForPolicy(ctx context.Context, 
 	return s.repo.GetEnabledGroupIDsByPolicyID(ctx, policyID)
 }
 
+// ListPolicyGroupRefs returns every (policy, group, state) binding triple.
+// Delegated administration uses it to decide which policies a node-group-
+// scoped administrator may see or change.
+func (s *PolicyBindingService) ListPolicyGroupRefs(ctx context.Context) ([]database.PolicyGroupRef, error) {
+	return s.repo.ListPolicyGroupRefs(ctx)
+}
+
+// GetGroupIDsForPolicy returns every group the policy is bound to, enabled or
+// not.
+func (s *PolicyBindingService) GetGroupIDsForPolicy(ctx context.Context, policyID string) ([]string, error) {
+	return s.repo.GetGroupIDsByPolicyID(ctx, policyID)
+}
+
 // HasEnabledBinding returns true if the policy has at least one enabled binding
 func (s *PolicyBindingService) HasEnabledBinding(ctx context.Context, policyID string) (bool, error) {
 	count, err := s.repo.CountEnabledByPolicyID(ctx, policyID)

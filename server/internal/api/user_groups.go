@@ -23,7 +23,19 @@ type UserGroupHandler struct {
 	memberRepo   *database.UserGroupMemberRepository
 	bindingRepo  *database.UserGroupRoleBindingRepository
 	roleRepo     *database.RoleRepository
+	nodeGroups   nodeGroupGetter
+	scopesOn     func() bool
 	auditSvc     *services.AuditService
+}
+
+// WithNodeGroupScopes enables node-group-scoped role bindings on user
+// groups, validated against groups, while enabled reports true (checked per
+// request). Without it (the community default) only global bindings can be
+// created; see the edition package.
+func (h *UserGroupHandler) WithNodeGroupScopes(groups nodeGroupGetter, enabled func() bool) *UserGroupHandler {
+	h.nodeGroups = groups
+	h.scopesOn = enabled
+	return h
 }
 
 // NewUserGroupHandler creates a new UserGroupHandler
@@ -248,6 +260,24 @@ func (h *UserGroupHandler) AddMember(w http.ResponseWriter, r *http.Request, gro
 		return
 	}
 
+	// Privilege-escalation guard: membership confers every role bound to the
+	// group, so the caller must be able to grant all of them.
+	if h.roleRepo == nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	ok, missing, err := callerCanGrantGroupMembership(r, h.roleRepo, h.bindingRepo, groupID)
+	if err != nil {
+		log.Printf("group member: failed to check group roles: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "cannot grant a role with permissions you do not hold")
+		auditDenial(r, "user_group", "add_member", groupID, "would grant "+missing+", which the caller does not hold")
+		return
+	}
+
 	member := &models.UserGroupMember{
 		GroupID: groupID,
 		UserID:  req.UserID,
@@ -330,9 +360,27 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	scopeType, err := validateGlobalScope(req.ScopeType, req.ScopeID)
+	scopeType, scopeID, err := validateBindingScope(r.Context(), scopeGroups(h.nodeGroups, h.scopesOn), req.ScopeType, req.ScopeID)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		writeScopeError(w, err)
+		return
+	}
+
+	// Privilege-escalation guard: every member of the group receives the
+	// role, so the caller must hold its permissions with at least this reach.
+	if h.roleRepo == nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	ok, missing, err := callerCanDelegateRole(r, h.roleRepo, req.RoleID, bindingTargetOf(scopeType, scopeID))
+	if err != nil {
+		log.Printf("group role binding: failed to check role permissions: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "cannot grant a role with permissions you do not hold")
+		auditDenial(r, "user_group", "add_role", groupID, "would grant "+missing+", which the caller does not hold")
 		return
 	}
 
@@ -340,6 +388,7 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 		GroupID:   groupID,
 		RoleID:    req.RoleID,
 		ScopeType: scopeType,
+		ScopeID:   scopeID,
 	}
 	if err := h.bindingRepo.Create(r.Context(), binding); err != nil {
 		log.Printf("Failed to create group role binding: %v", err)
@@ -398,6 +447,8 @@ func (h *UserGroupHandler) auditGroupRoleRevoke(r *http.Request, binding *models
 		"group_id":   binding.GroupID,
 		"role_id":    binding.RoleID,
 		"role_name":  roleName,
+		"scope_type": binding.ScopeType,
+		"scope_id":   derefString(binding.ScopeID),
 	})
 	if err != nil {
 		return
@@ -415,7 +466,7 @@ func (h *UserGroupHandler) auditGroupRoleRevoke(r *http.Request, binding *models
 		Action:     "revoke_role",
 		Resource:   &auditpb.Resource{Type: "user_group_role_binding", Id: binding.ID},
 		Outcome:    auditpb.Outcome_OUTCOME_SUCCESS,
-		SrcIp:      extractIP(r),
+		SrcIp:      auditSrcIP(r),
 		Payload: &auditpb.AuditEvent_HttpChange{
 			HttpChange: &auditpb.HttpPayload{
 				Method:   r.Method,

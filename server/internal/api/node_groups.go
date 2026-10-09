@@ -42,9 +42,14 @@ func (h *NodeGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if groups == nil {
-		groups = []*models.NodeGroup{}
+	viewScope := requestScope(r, "node_group", "view")
+	visible := make([]*models.NodeGroup, 0, len(groups))
+	for _, g := range groups {
+		if viewScope.Allows(g.ID) {
+			visible = append(visible, g)
+		}
 	}
+	groups = visible
 
 	// Build response with node counts
 	type nodeGroupWithCount struct {
@@ -75,6 +80,13 @@ func (h *NodeGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *NodeGroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// A new group cannot be inside anyone's node-group scope yet, so creating
+	// one needs a global grant.
+	if !requestScope(r, "node_group", "create").IsGlobal() {
+		denyRequest(w, r, "node_group", "create", "", "creating a node group requires a global grant")
 		return
 	}
 
@@ -119,8 +131,21 @@ func (h *NodeGroupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every per-group route needs the group to be visible; out-of-scope
+	// groups answer 404 so their existence is not revealed.
+	if !requestScope(r, "node_group", "view").Allows(id) {
+		http.Error(w, `{"error":"node group not found"}`, http.StatusNotFound)
+		return
+	}
+
 	// Handle sub-paths like /api/v1/node-groups/{id}/tokens
 	if subpath == "tokens" {
+		// POST maps to node_group:create: a delegated administrator may
+		// mint enrollment tokens for their own groups.
+		if !requestScope(r, "node_group", "create").Allows(id) {
+			denyOutOfScope(w, r, "node_group", "create", id)
+			return
+		}
 		h.GenerateToken(w, r, id)
 		return
 	}
@@ -129,8 +154,16 @@ func (h *NodeGroupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		h.Get(w, r, id)
 	case http.MethodPut:
+		if !requestScope(r, "node_group", "edit").Allows(id) {
+			denyOutOfScope(w, r, "node_group", "edit", id)
+			return
+		}
 		h.Update(w, r, id)
 	case http.MethodDelete:
+		if !requestScope(r, "node_group", "delete").Allows(id) {
+			denyOutOfScope(w, r, "node_group", "delete", id)
+			return
+		}
 		h.Delete(w, r, id)
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)

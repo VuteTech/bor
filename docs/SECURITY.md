@@ -623,13 +623,9 @@ The CA certificate is still stored on disk as a regular PEM file. This is intent
 
 ### Prerequisites
 
-**Build requirement** — PKCS#11 support requires CGO and must be explicitly enabled:
+**Build requirement** — PKCS#11 support requires CGO (and a C compiler) and must be explicitly enabled. The `github.com/eclipse-keypont/crypto11` dependency is already part of the server module:
 
 ```bash
-# One-time: add the dependency
-cd server && go get github.com/ThalesIgnite/crypto11
-
-# Build with PKCS#11 support
 make server-pkcs11
 ```
 
@@ -723,9 +719,7 @@ pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --list-slots
 #### 4. Build the server with PKCS#11 support
 
 ```bash
-cd /path/to/regula/server
-go get github.com/ThalesIgnite/crypto11
-cd ..
+cd /path/to/bor
 make server-pkcs11
 ```
 

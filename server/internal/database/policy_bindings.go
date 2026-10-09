@@ -161,6 +161,57 @@ func (r *PolicyBindingRepository) GetEnabledGroupIDsByPolicyID(ctx context.Conte
 	return ids, rows.Err()
 }
 
+// PolicyGroupRef is one (policy, group, state) triple from policy_bindings.
+type PolicyGroupRef struct {
+	PolicyID string
+	GroupID  string
+	Enabled  bool
+}
+
+// ListPolicyGroupRefs returns every binding as a (policy, group, state)
+// triple, regardless of binding or policy state. Delegated administration
+// derives policy visibility and write access from it: a policy belongs to
+// every node group it is bound to, enabled or not.
+func (r *PolicyBindingRepository) ListPolicyGroupRefs(ctx context.Context) ([]PolicyGroupRef, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT policy_id, group_id, state = 'enabled' FROM policy_bindings`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list policy group refs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var refs []PolicyGroupRef
+	for rows.Next() {
+		var ref PolicyGroupRef
+		if err := rows.Scan(&ref.PolicyID, &ref.GroupID, &ref.Enabled); err != nil {
+			return nil, fmt.Errorf("failed to scan policy group ref: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	return refs, rows.Err()
+}
+
+// GetGroupIDsByPolicyID returns the distinct group IDs the policy is bound to,
+// enabled or not.
+func (r *PolicyBindingRepository) GetGroupIDsByPolicyID(ctx context.Context, policyID string) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT DISTINCT group_id FROM policy_bindings WHERE policy_id = $1", policyID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group IDs for policy: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan group ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // BindingCounts holds per-policy binding tallies.
 type BindingCounts struct {
 	Total   int

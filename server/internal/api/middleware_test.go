@@ -49,14 +49,26 @@ func TestAuthMiddleware_InvalidFormat(t *testing.T) {
 	}
 }
 
-// mockAuthorizer is a test double for authz.Authorizer
+// mockAuthorizer is a test double for authz.Authorizer. With result true it
+// grants the permissions these tests check, globally.
 type mockAuthorizer struct {
 	result bool
 	err    error
 }
 
-func (m *mockAuthorizer) HasPermission(_ context.Context, _, _, _ string) (bool, error) {
-	return m.result, m.err
+func (m *mockAuthorizer) Grants(_ context.Context, _ string) (authz.Grants, error) {
+	if m.err != nil || !m.result {
+		return authz.Grants{}, m.err
+	}
+	return authz.NewGrants(map[string]authz.Scope{
+		"policy:view": authz.GlobalScope(),
+		"user:manage": authz.GlobalScope(),
+	}), nil
+}
+
+func (m *mockAuthorizer) HasPermission(ctx context.Context, userID, resource, action string) (bool, error) {
+	g, err := m.Grants(ctx, userID)
+	return !g.Scope(resource, action).IsEmpty(), err
 }
 
 // Compile-time check that mockAuthorizer implements authz.Authorizer
@@ -124,17 +136,24 @@ func TestExtractIDFromPath(t *testing.T) {
 
 // ── Deny-by-default tests ──
 
-// permCheckingAuthorizer tracks what permission was checked and returns a
-// configurable result per resource:action pair.
+// permCheckingAuthorizer grants the allowed resource:action pairs globally.
 type permCheckingAuthorizer struct {
 	allowed map[string]bool
-	calls   []string
 }
 
-func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _, resource, action string) (bool, error) {
-	key := resource + ":" + action
-	m.calls = append(m.calls, key)
-	return m.allowed[key], nil
+func (m *permCheckingAuthorizer) Grants(_ context.Context, _ string) (authz.Grants, error) {
+	perms := make(map[string]authz.Scope, len(m.allowed))
+	for k, ok := range m.allowed {
+		if ok {
+			perms[k] = authz.GlobalScope()
+		}
+	}
+	return authz.NewGrants(perms), nil
+}
+
+func (m *permCheckingAuthorizer) HasPermission(ctx context.Context, userID, resource, action string) (bool, error) {
+	g, err := m.Grants(ctx, userID)
+	return !g.Scope(resource, action).IsEmpty(), err
 }
 
 // helper to build a request with user claims in context

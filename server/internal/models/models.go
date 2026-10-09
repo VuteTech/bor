@@ -44,8 +44,11 @@ type Policy struct {
 	DeprecationMessage   *string    `json:"deprecation_message,omitempty" db:"deprecation_message"`
 	ReplacementPolicyID  *string    `json:"replacement_policy_id,omitempty" db:"replacement_policy_id"`
 	CreatedBy            string     `json:"created_by" db:"created_by"`
-	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at" db:"updated_at"`
+	// CreatedByUserID owns an unbound draft for delegated (node-group-scoped)
+	// administrators. Nil for policies whose creator no longer exists.
+	CreatedByUserID *string   `json:"created_by_user_id,omitempty" db:"created_by_user_id"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // CreatePolicyRequest represents a request to create a policy
@@ -54,6 +57,9 @@ type CreatePolicyRequest struct {
 	Description string `json:"description"`
 	Type        string `json:"type"`
 	Content     string `json:"content"`
+	// CreatedByUserID is set server-side from the authenticated caller and is
+	// never read from the request body.
+	CreatedByUserID string `json:"-"`
 }
 
 // UpdatePolicyRequest represents a request to update a policy (only allowed in DRAFT state)
@@ -155,11 +161,14 @@ const (
 	RoleUser  = "user"
 )
 
-// ScopeGlobal is the only supported role-binding scope. RBAC is global-only:
-// scoped (per-organization, per-group) bindings are not supported, and the
-// database constrains scope_type to this value. Delegated administration is
-// a planned feature with its own scope model.
-const ScopeGlobal = "global"
+// Role-binding scope types. A global binding grants its role's permissions
+// everywhere. A node_group binding (scope_id = node group ID) grants only the
+// node-group-scopable permissions, and only for objects belonging to that
+// group; see the authz package for which resources are scopable.
+const (
+	ScopeGlobal    = "global"
+	ScopeNodeGroup = "node_group"
+)
 
 // Role represents an RBAC role
 type Role struct {
@@ -185,6 +194,14 @@ type UserRoleBinding struct {
 	ScopeType string    `json:"scope_type" db:"scope_type"`
 	ScopeID   *string   `json:"scope_id,omitempty" db:"scope_id"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+// EffectiveBinding is one role a user holds, with the scope it is held at,
+// whether bound directly or inherited through user-group membership.
+type EffectiveBinding struct {
+	RoleID    string
+	ScopeType string
+	ScopeID   *string
 }
 
 // Default role name constants
@@ -236,11 +253,25 @@ type LoginResponse struct {
 
 // MeResponse represents the response for GET /api/v1/auth/me
 type MeResponse struct {
-	ID          string   `json:"id"`
-	Username    string   `json:"username"`
-	Email       string   `json:"email"`
-	FullName    string   `json:"full_name"`
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	FullName string `json:"full_name"`
+	// Permissions lists every "resource:action" the user holds anywhere.
 	Permissions []string `json:"permissions"`
+	// PermissionScopes says where each permission is held: globally or for
+	// specific node groups (delegated administration).
+	PermissionScopes map[string]PermissionScope `json:"permission_scopes"`
+	// Edition is the running edition, e.g. "community".
+	Edition string `json:"edition"`
+	// Features lists the optional features the edition currently enables.
+	Features []string `json:"features"`
+}
+
+// PermissionScope describes where a user holds one permission.
+type PermissionScope struct {
+	Global       bool     `json:"global"`
+	NodeGroupIDs []string `json:"node_group_ids"`
 }
 
 // CreateUserRequest represents a request to create a user
@@ -423,6 +454,15 @@ type NodeListRequest struct {
 	Group        string `json:"group,omitempty"`         // node group id, or "none" for unassigned
 	SortField    string `json:"sort_field,omitempty"`
 	SortOrder    string `json:"sort_order,omitempty"` // "asc" | "desc"
+	// Scope restricts results to nodes in at least one of ScopeGroupIDs when
+	// non-nil (a delegated administrator's view). Set server-side only.
+	Scope *GroupScopeFilter `json:"-"`
+}
+
+// GroupScopeFilter limits a query to objects belonging to at least one of
+// the given node groups. An empty GroupIDs list matches nothing.
+type GroupScopeFilter struct {
+	GroupIDs []string
 }
 
 // NodeFilterOptions holds the distinct values available for node filter
