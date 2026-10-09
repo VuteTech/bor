@@ -24,36 +24,36 @@ func NewUserRoleBindingRepository(db *DB) *UserRoleBindingRepository {
 	return &UserRoleBindingRepository{db: db}
 }
 
-// ListEffectiveRoleIDs returns the deduplicated set of role IDs a user holds,
-// both from direct user role bindings and from role bindings on user groups
-// the user is a member of. This is the single source of truth for
+// ListEffectiveBindings returns the deduplicated (role, scope) pairs a user
+// holds, both from direct user role bindings and from role bindings on user
+// groups the user is a member of. This is the single source of truth for
 // authorization, the privilege-escalation guards, and the permission list
 // shown in the UI, so the three can never disagree.
-func (r *UserRoleBindingRepository) ListEffectiveRoleIDs(ctx context.Context, userID string) ([]string, error) {
+func (r *UserRoleBindingRepository) ListEffectiveBindings(ctx context.Context, userID string) ([]models.EffectiveBinding, error) {
 	query := `
-		SELECT role_id FROM user_role_bindings WHERE user_id = $1
+		SELECT role_id, scope_type, scope_id FROM user_role_bindings WHERE user_id = $1
 		UNION
-		SELECT ugrb.role_id
+		SELECT ugrb.role_id, ugrb.scope_type, ugrb.scope_id
 		  FROM user_group_role_bindings ugrb
 		  JOIN user_group_members m ON m.group_id = ugrb.group_id
 		 WHERE m.user_id = $1`
 
 	rows, err := r.db.QueryContext(ctx, query, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list effective role IDs: %w", err)
+		return nil, fmt.Errorf("failed to list effective role bindings: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var roleIDs []string
+	var bindings []models.EffectiveBinding
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("failed to scan role ID: %w", err)
+		var b models.EffectiveBinding
+		if err := rows.Scan(&b.RoleID, &b.ScopeType, &b.ScopeID); err != nil {
+			return nil, fmt.Errorf("failed to scan effective role binding: %w", err)
 		}
-		roleIDs = append(roleIDs, id)
+		bindings = append(bindings, b)
 	}
 
-	return roleIDs, rows.Err()
+	return bindings, rows.Err()
 }
 
 // Create inserts a new user role binding
@@ -147,11 +147,14 @@ func (r *UserRoleBindingRepository) GetByID(ctx context.Context, id string) (*mo
 	return b, nil
 }
 
-// CountUsersWithRole returns the number of distinct users bound to the given role.
-func (r *UserRoleBindingRepository) CountUsersWithRole(ctx context.Context, roleID string) (int, error) {
+// CountUsersWithGlobalRole returns the number of distinct users directly bound
+// to the given role with global scope. A node-group-scoped binding of the same
+// role does not count: it cannot exercise the role everywhere, so it must
+// never satisfy guards such as "keep at least one Super Admin".
+func (r *UserRoleBindingRepository) CountUsersWithGlobalRole(ctx context.Context, roleID string) (int, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT user_id) FROM user_role_bindings WHERE role_id = $1`, roleID).Scan(&count)
+		`SELECT COUNT(DISTINCT user_id) FROM user_role_bindings WHERE role_id = $1 AND scope_type = 'global'`, roleID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count users with role: %w", err)
 	}

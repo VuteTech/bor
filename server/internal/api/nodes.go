@@ -57,6 +57,7 @@ func (h *NodeHandler) List(w http.ResponseWriter, r *http.Request) {
 		SortOrder:    q.Get("sort_order"),
 		Page:         atoiDefault(q.Get("page"), 1),
 		PerPage:      atoiDefault(q.Get("per_page"), 25),
+		Scope:        requestScope(r, "node", "view").Filter(),
 	}
 
 	resp, err := h.nodeSvc.ListNodesPaged(r.Context(), req)
@@ -96,9 +97,8 @@ func (h *NodeHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node, err := h.nodeSvc.GetNode(r.Context(), id)
-	if err != nil || node == nil {
-		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+	node, ok := h.loadVisibleNode(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -106,6 +106,34 @@ func (h *NodeHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(node); err != nil {
 		log.Printf("Failed to encode node response: %v", err)
 	}
+}
+
+// loadVisibleNode fetches a node the caller may see (node:view for at least
+// one of its groups). It answers 404 itself, for a missing node and for one
+// outside the caller's scope alike, so the response does not reveal that an
+// out-of-scope node exists.
+func (h *NodeHandler) loadVisibleNode(w http.ResponseWriter, r *http.Request, id string) (*models.Node, bool) {
+	node, err := h.nodeSvc.GetNode(r.Context(), id)
+	if err != nil || node == nil || !requestScope(r, "node", "view").AllowsAny(node.NodeGroupIDs) {
+		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+		return nil, false
+	}
+	return node, true
+}
+
+// loadWritableNode fetches a node the caller may change with node:action:
+// visible, and every one of its groups in scope for action. A node in no
+// group needs a global grant. It answers 404 or 403 itself.
+func (h *NodeHandler) loadWritableNode(w http.ResponseWriter, r *http.Request, id, action string) (*models.Node, bool) {
+	node, ok := h.loadVisibleNode(w, r, id)
+	if !ok {
+		return nil, false
+	}
+	if !requestScope(r, "node", action).AllowsAll(node.NodeGroupIDs) {
+		denyOutOfScope(w, r, "node", action, id)
+		return nil, false
+	}
+	return node, true
 }
 
 // Update handles PUT /api/v1/nodes/{id}
@@ -118,6 +146,10 @@ func (h *NodeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, _, _ := parseNodePath(r.URL.Path)
 	if id == "" {
 		http.Error(w, `{"error":"node id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if _, ok := h.loadWritableNode(w, r, id, "edit"); !ok {
 		return
 	}
 
@@ -152,7 +184,7 @@ func (h *NodeHandler) CountByStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	counts, err := h.nodeSvc.CountByStatus(r.Context())
+	counts, err := h.nodeSvc.CountByStatus(r.Context(), requestScope(r, "node", "view").Filter())
 	if err != nil {
 		log.Printf("Failed to count nodes by status: %v", err)
 		http.Error(w, `{"error":"failed to count nodes"}`, http.StatusInternalServerError)
@@ -172,7 +204,7 @@ func (h *NodeHandler) FilterOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts, err := h.nodeSvc.GetNodeFilterOptions(r.Context())
+	opts, err := h.nodeSvc.GetNodeFilterOptions(r.Context(), requestScope(r, "node", "view").Filter())
 	if err != nil {
 		log.Printf("Failed to load node filter options: %v", err)
 		http.Error(w, `{"error":"failed to load filter options"}`, http.StatusInternalServerError)
@@ -196,9 +228,8 @@ func (h *NodeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node, err := h.nodeSvc.GetNode(r.Context(), id)
-	if err != nil || node == nil {
-		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+	node, ok := h.loadWritableNode(w, r, id, "delete")
+	if !ok {
 		return
 	}
 
@@ -226,9 +257,8 @@ func (h *NodeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // It sends a METADATA_REQUEST event to the named agent's stream, asking it
 // to collect fresh system info and report back via the Heartbeat RPC.
 func (h *NodeHandler) RefreshMetadata(w http.ResponseWriter, r *http.Request, id string) {
-	node, err := h.nodeSvc.GetNode(r.Context(), id)
-	if err != nil || node == nil {
-		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+	node, ok := h.loadWritableNode(w, r, id, "create")
+	if !ok {
 		return
 	}
 
@@ -260,12 +290,16 @@ func (h *NodeHandler) AddToGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"group_id is required"}`, http.StatusBadRequest)
 		return
 	}
-	node, err := h.nodeSvc.GetNode(r.Context(), id)
-	if err != nil || node == nil {
-		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+	if _, ok := h.loadWritableNode(w, r, id, "create"); !ok {
 		return
 	}
-	err = h.nodeSvc.AddNodeToGroup(r.Context(), id, req.GroupID)
+	// The target group must be in scope too: a delegated administrator can
+	// only move nodes between their own groups.
+	if !requestScope(r, "node", "create").Allows(req.GroupID) {
+		denyOutOfScope(w, r, "node_group", "create", req.GroupID)
+		return
+	}
+	err := h.nodeSvc.AddNodeToGroup(r.Context(), id, req.GroupID)
 	if err != nil {
 		log.Printf("Failed to add node %s to group %s: %v", id, req.GroupID, err) //nolint:gosec // id comes from URL path parameter
 		http.Error(w, `{"error":"failed to add node to group"}`, http.StatusInternalServerError)
@@ -290,9 +324,11 @@ func (h *NodeHandler) RemoveFromGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"node id and group id required"}`, http.StatusBadRequest)
 		return
 	}
-	node, err := h.nodeSvc.GetNode(r.Context(), id)
-	if err != nil || node == nil {
-		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+	if _, ok := h.loadWritableNode(w, r, id, "delete"); !ok {
+		return
+	}
+	if !requestScope(r, "node", "delete").Allows(groupID) {
+		denyOutOfScope(w, r, "node_group", "delete", groupID)
 		return
 	}
 	if err := h.nodeSvc.RemoveNodeFromGroup(r.Context(), id, groupID); err != nil {
@@ -363,9 +399,8 @@ func (h *NodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // It revokes the current mTLS certificate of the node, preventing it from
 // connecting to the policy gRPC server until a new certificate is issued.
 func (h *NodeHandler) RevokeNodeCertificate(w http.ResponseWriter, r *http.Request, nodeID string) {
-	node, err := h.nodeSvc.GetNode(r.Context(), nodeID)
-	if err != nil || node == nil {
-		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+	node, ok := h.loadWritableNode(w, r, nodeID, "create")
+	if !ok {
 		return
 	}
 	if node.CertSerial == nil || *node.CertSerial == "" {

@@ -278,8 +278,9 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// RequirePermission checks that the authenticated user has a specific permission
-// via the Authorizer. It replaces hardcoded role checks like AdminOnly. Use
+// RequirePermission checks that the authenticated user holds a permission
+// globally. A node-group-scoped grant does not satisfy it; routes that
+// enforce node-group scope per object use PermissionGate.RequireScoped. Use
 // PermissionGate.Require to also audit refused requests.
 func RequirePermission(az authz.Authorizer, resource, action string) func(http.Handler) http.Handler {
 	return NewPermissionGate(az, nil, false).Require(resource, action)
@@ -292,7 +293,7 @@ type MethodPermission struct {
 	Action   string
 }
 
-// RequireMethodPermission checks permissions based on the HTTP method.
+// RequireMethodPermission checks a global permission chosen by HTTP method.
 // If no matching method is found, the request is denied with 405 Method Not
 // Allowed. Use PermissionGate.RequireMethod to also audit refused requests.
 func RequireMethodPermission(az authz.Authorizer, perms []MethodPermission) func(http.Handler) http.Handler {

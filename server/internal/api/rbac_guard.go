@@ -7,99 +7,65 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
 
+	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 )
 
-// permKey is the canonical "resource:action" representation of a permission.
-func permKey(resource, action string) string {
-	return resource + ":" + action
+// bindingTargetOf converts a role binding's scope fields into an
+// authz.BindingTarget.
+func bindingTargetOf(scopeType string, scopeID *string) authz.BindingTarget {
+	t := authz.BindingTarget{ScopeType: scopeType}
+	if scopeID != nil {
+		t.ScopeID = *scopeID
+	}
+	return t
 }
 
-// callerEffectivePermissions returns the set of "resource:action" permissions
-// the given user holds, aggregated across their effective roles (direct role
-// bindings and roles inherited through user-group membership). It is used to
-// enforce that an administrator can never grant a permission they do not
-// themselves possess (no privilege escalation). It draws from the same
-// ListEffectiveRoleIDs source as the Authorizer, so the guard and the
-// enforcement can never disagree.
-func callerEffectivePermissions(ctx context.Context, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, userID string) (map[string]struct{}, error) {
-	perms := make(map[string]struct{})
-	if userID == "" {
-		return perms, nil
-	}
-	roleIDs, err := bindingRepo.ListEffectiveRoleIDs(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load caller role bindings: %w", err)
-	}
-	for _, roleID := range roleIDs {
-		rolePerms, err := roleRepo.GetPermissionsByRoleID(ctx, roleID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load permissions for role %s: %w", roleID, err)
-		}
-		for _, p := range rolePerms {
-			perms[permKey(p.Resource, p.Action)] = struct{}{}
-		}
-	}
-	return perms, nil
-}
-
-// rolePermissionsSubsetOf reports whether every permission attached to roleID is
-// contained in the caller's permission set. The first missing permission is
-// returned for diagnostics. This guarantees a caller cannot assign a role that
-// grants more than they themselves hold.
-func rolePermissionsSubsetOf(ctx context.Context, roleRepo *database.RoleRepository, roleID string, callerPerms map[string]struct{}) (subset bool, missing string, err error) {
-	rolePerms, err := roleRepo.GetPermissionsByRoleID(ctx, roleID)
+// callerCanDelegateRole reports whether the caller may grant roleID at
+// target: every permission the binding would hand out must already be held by
+// the caller with at least that reach (see authz.Grants.CanDelegate). The
+// caller's grants come from the permission gate; a request that did not pass
+// one holds nothing and is refused.
+func callerCanDelegateRole(r *http.Request, roleRepo *database.RoleRepository, roleID string, target authz.BindingTarget) (ok bool, missing string, err error) {
+	perms, err := roleRepo.GetPermissionsByRoleID(r.Context(), roleID)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to load role permissions: %w", err)
 	}
-	for _, p := range rolePerms {
-		key := permKey(p.Resource, p.Action)
-		if _, ok := callerPerms[key]; !ok {
-			return false, key, nil
-		}
-	}
-	return true, "", nil
+	ok, missing = requestGrants(r).CanDelegate(perms, target)
+	return ok, missing, nil
 }
 
-// firstUnheldPermission returns the first permission in rolePerms that the
-// caller does not hold, or "" when every one is held.
-func firstUnheldPermission(callerPerms map[string]struct{}, rolePerms []*models.Permission) string {
-	for _, p := range rolePerms {
-		key := permKey(p.Resource, p.Action)
-		if _, ok := callerPerms[key]; !ok {
-			return key
-		}
-	}
-	return ""
+// groupRoleBindingLister lists a user group's role bindings.
+type groupRoleBindingLister interface {
+	ListByGroupID(ctx context.Context, groupID string) ([]*models.UserGroupRoleBinding, error)
 }
 
-// callerCanGrantRoles reports whether the caller holds every permission of
-// every role in roleIDs, i.e. whether giving those roles to someone hands out
-// nothing the caller does not already have. The first unheld permission is
-// returned for diagnostics.
-func callerCanGrantRoles(ctx context.Context, roleRepo *database.RoleRepository, userBindingRepo *database.UserRoleBindingRepository, callerID string, roleIDs []string) (ok bool, missing string, err error) {
-	callerPerms, err := callerEffectivePermissions(ctx, roleRepo, userBindingRepo, callerID)
+// callerCanGrantGroupMembership reports whether the caller may add a user to
+// groupID. Membership hands the new member every role binding of the group,
+// each at its own scope, so the caller must be able to delegate all of them;
+// otherwise anyone allowed to manage user groups could join (or add an
+// accomplice to) a group carrying a role they do not hold.
+func callerCanGrantGroupMembership(r *http.Request, roleRepo *database.RoleRepository, bindings groupRoleBindingLister, groupID string) (ok bool, missing string, err error) {
+	groupBindings, err := bindings.ListByGroupID(r.Context(), groupID)
 	if err != nil {
-		return false, "", err
+		return false, "", fmt.Errorf("failed to load group role bindings: %w", err)
 	}
-	for _, roleID := range roleIDs {
-		rolePerms, err := roleRepo.GetPermissionsByRoleID(ctx, roleID)
-		if err != nil {
-			return false, "", fmt.Errorf("failed to load permissions for role %s: %w", roleID, err)
-		}
-		if missing := firstUnheldPermission(callerPerms, rolePerms); missing != "" {
-			return false, missing, nil
+	for _, b := range groupBindings {
+		ok, missing, err := callerCanDelegateRole(r, roleRepo, b.RoleID, bindingTargetOf(b.ScopeType, b.ScopeID))
+		if err != nil || !ok {
+			return ok, missing, err
 		}
 	}
 	return true, "", nil
 }
 
-// callerID returns the authenticated user's ID, or "".
-func callerID(ctx context.Context) string {
-	if claims := GetUserFromContext(ctx); claims != nil {
-		return claims.UserID
+// derefString returns *s, or "" for nil.
+func derefString(s *string) string {
+	if s == nil {
+		return ""
 	}
-	return ""
+	return *s
 }

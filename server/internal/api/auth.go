@@ -13,6 +13,7 @@ import (
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	"github.com/VuteTech/Bor/server/pkg/edition"
 	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -24,6 +25,15 @@ type AuthHandler struct {
 	webauthnSvc      *services.WebAuthnService
 	auditSvc         *services.AuditService
 	privacyPolicyURL string
+	edition          edition.Edition
+}
+
+// WithEdition reports the running edition and its enabled features in
+// /api/v1/auth/me, so the UI can offer edition-dependent options. Without it
+// the community edition is reported.
+func (h *AuthHandler) WithEdition(e edition.Edition) *AuthHandler {
+	h.edition = e
+	return h
 }
 
 // NewAuthHandler creates a new AuthHandler
@@ -192,22 +202,29 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	permissions, err := h.authSvc.GetUserPermissions(r.Context(), claims.UserID)
+	grants, err := h.authSvc.GetUserGrants(r.Context(), claims.UserID)
 	if err != nil {
 		log.Printf("Failed to get permissions for user %s: %v", claims.UserID, err)
 		http.Error(w, `{"error":"failed to load permissions"}`, http.StatusInternalServerError)
 		return
 	}
-	if permissions == nil {
-		permissions = []string{}
-	}
 
 	resp := models.MeResponse{
-		ID:          user.ID,
-		Username:    user.Username,
-		Email:       user.Email,
-		FullName:    user.FullName,
-		Permissions: permissions,
+		ID:               user.ID,
+		Username:         user.Username,
+		Email:            user.Email,
+		FullName:         user.FullName,
+		Permissions:      grants.Keys(),
+		PermissionScopes: grants.Summary(),
+	}
+	ed := h.edition
+	if ed == nil {
+		ed = edition.Community{}
+	}
+	resp.Edition = ed.Name()
+	resp.Features = []string{}
+	for _, f := range edition.EnabledFeatures(ed) {
+		resp.Features = append(resp.Features, string(f))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

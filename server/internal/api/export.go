@@ -5,7 +5,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -56,7 +58,7 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	all, err := h.policySvc.ListAllPolicies(r.Context())
+	all, err := h.visiblePolicies(r)
 	if err != nil {
 		http.Error(w, `{"error":"failed to list policies"}`, http.StatusInternalServerError)
 		return
@@ -99,9 +101,10 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"failed to list bindings"}`, http.StatusInternalServerError)
 			return
 		}
+		bindingScope := requestScope(r, "binding", "view")
 		for _, b := range bindings {
 			slug, ok := slugByID[b.PolicyID]
-			if !ok {
+			if !ok || !bindingScope.Allows(b.GroupID) {
 				continue
 			}
 			doc, derr := export.BuildBindingDoc(slug, b.PolicyName, b.GroupName, b.Priority)
@@ -134,7 +137,7 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-	if _, err := w.Write(out); err != nil {
+	if _, err := w.Write(out); err != nil { //nolint:gosec // YAML/JSON attachment download (Content-Disposition), served with nosniff; never rendered as HTML
 		log.Printf("Failed to write export response: %v", err)
 	}
 }
@@ -162,7 +165,11 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		Actor:      actor,
 	}
 
-	report, err := export.Import(r.Context(), h.policySvc, h.bindingSvc, h.groupSvc, services.ValidatePolicyContentByType, body, opts)
+	report, err := export.Import(r.Context(),
+		scopedPolicyStore{h: h, r: r},
+		scopedBindingStore{h: h, r: r},
+		scopedGroupStore{h: h, r: r},
+		services.ValidatePolicyContentByType, body, opts)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -199,4 +206,111 @@ func (h *ExportHandler) audit(r *http.Request, action, details string) {
 		ResourceType: "policy",
 		Details:      details,
 	})
+}
+
+// visiblePolicies lists the policies the caller may view (all of them for a
+// global grant).
+func (h *ExportHandler) visiblePolicies(r *http.Request) ([]*models.Policy, error) {
+	all, err := h.policySvc.ListAllPolicies(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	scope := requestScope(r, "policy", "view")
+	if scope.IsGlobal() {
+		return all, nil
+	}
+	idx, err := loadPolicyGroupIndex(r.Context(), h.bindingSvc)
+	if err != nil {
+		return nil, err
+	}
+	return filterVisiblePolicies(all, idx, scope, callerID(r.Context())), nil
+}
+
+// errOutOfScope is returned by the scoped import stores for objects outside
+// the caller's node-group scope. The importer reports it per document.
+var errOutOfScope = errors.New("outside your node-group scope")
+
+// scopedPolicyStore restricts import to what the caller may see and change:
+// name-conflict detection only sees visible policies, created policies are
+// owned by the caller, and updates need policy:edit reach.
+type scopedPolicyStore struct {
+	h *ExportHandler
+	r *http.Request
+}
+
+func (s scopedPolicyStore) ListAllPolicies(context.Context) ([]*models.Policy, error) {
+	return s.h.visiblePolicies(s.r)
+}
+
+func (s scopedPolicyStore) CreatePolicy(ctx context.Context, req *models.CreatePolicyRequest, createdBy string) (*models.Policy, error) {
+	req.CreatedByUserID = callerID(ctx)
+	return s.h.policySvc.CreatePolicy(ctx, req, createdBy)
+}
+
+func (s scopedPolicyStore) UpdatePolicy(ctx context.Context, id string, req *models.UpdatePolicyRequest) (*models.Policy, error) {
+	scope := requestScope(s.r, "policy", "edit")
+	if !scope.IsGlobal() {
+		policy, err := s.h.policySvc.GetPolicy(ctx, id)
+		if err != nil || policy == nil {
+			return nil, fmt.Errorf("policy not found")
+		}
+		groupIDs, err := s.h.bindingSvc.GetGroupIDsForPolicy(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !canWritePolicy(scope, policy, groupIDs, callerID(ctx)) {
+			return nil, errOutOfScope
+		}
+	}
+	return s.h.policySvc.UpdatePolicy(ctx, id, req)
+}
+
+// scopedBindingStore only creates bindings to in-scope groups, for policies
+// the caller can see.
+type scopedBindingStore struct {
+	h *ExportHandler
+	r *http.Request
+}
+
+func (s scopedBindingStore) CreateBinding(ctx context.Context, req *models.CreatePolicyBindingRequest) (*models.PolicyBinding, error) {
+	if !requestScope(s.r, "binding", "create").Allows(req.GroupID) {
+		return nil, errOutOfScope
+	}
+	policyScope := requestScope(s.r, "policy", "view")
+	if !policyScope.IsGlobal() {
+		policy, err := s.h.policySvc.GetPolicy(ctx, req.PolicyID)
+		if err != nil || policy == nil {
+			return nil, fmt.Errorf("policy not found")
+		}
+		groupIDs, err := s.h.bindingSvc.GetGroupIDsForPolicy(ctx, req.PolicyID)
+		if err != nil {
+			return nil, err
+		}
+		if !canViewPolicy(policyScope, policy, groupIDs, callerID(ctx)) {
+			return nil, fmt.Errorf("policy not found")
+		}
+	}
+	return s.h.bindingSvc.CreateBinding(ctx, req)
+}
+
+// scopedGroupStore resolves group names only among the caller's visible
+// groups, so a binding to an out-of-scope group fails as an unknown group.
+type scopedGroupStore struct {
+	h *ExportHandler
+	r *http.Request
+}
+
+func (s scopedGroupStore) ListNodeGroups(ctx context.Context) ([]*models.NodeGroup, error) {
+	groups, err := s.h.groupSvc.ListNodeGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope := requestScope(s.r, "node_group", "view")
+	visible := make([]*models.NodeGroup, 0, len(groups))
+	for _, g := range groups {
+		if scope.Allows(g.ID) {
+			visible = append(visible, g)
+		}
+	}
+	return visible, nil
 }

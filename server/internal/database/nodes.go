@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/VuteTech/Bor/server/internal/models"
 )
 
@@ -306,16 +308,39 @@ func buildNodeFilter(req *models.NodeListRequest) (where string, args []interfac
 			"(n.name ILIKE $%d OR n.fqdn ILIKE $%d OR n.ip_address ILIKE $%d OR n.groups ILIKE $%d)",
 			p, p, p, p))
 	}
+	if req.Scope != nil {
+		cond, scopeArgs := nodeScopeCondition(req.Scope, len(args))
+		conds = append(conds, cond)
+		args = append(args, scopeArgs...)
+	}
 	if len(conds) == 0 {
 		return "", args
 	}
 	return "WHERE " + strings.Join(conds, " AND "), args
 }
 
+// nodeScopeCondition returns a condition matching nodes that belong to at
+// least one of the scope's node groups (a delegated administrator's view).
+// argOffset is the number of bind args already in use. An empty scope
+// matches no node; unassigned nodes are never in a node-group scope.
+func nodeScopeCondition(scope *models.GroupScopeFilter, argOffset int) (cond string, args []interface{}) {
+	if len(scope.GroupIDs) == 0 {
+		return "FALSE", nil
+	}
+	return fmt.Sprintf(
+		"EXISTS (SELECT 1 FROM node_group_members sgm WHERE sgm.node_id = n.id AND sgm.node_group_id = ANY($%d::uuid[]))",
+		argOffset+1), []interface{}{pq.Array(scope.GroupIDs)}
+}
+
 // DistinctFilterValues returns the distinct non-empty os_name, desktop_env, and
-// agent_version values, for populating filter dropdowns.
-func (r *NodeRepository) DistinctFilterValues(ctx context.Context) (*models.NodeFilterOptions, error) {
+// agent_version values, for populating filter dropdowns. A non-nil scope
+// limits the values to nodes the delegated administrator can see.
+func (r *NodeRepository) DistinctFilterValues(ctx context.Context, scope *models.GroupScopeFilter) (*models.NodeFilterOptions, error) {
 	opts := &models.NodeFilterOptions{OS: []string{}, Desktops: []string{}, AgentVersions: []string{}}
+	scopeCond, scopeArgs := "TRUE", []interface{}(nil)
+	if scope != nil {
+		scopeCond, scopeArgs = nodeScopeCondition(scope, 0)
+	}
 	cols := []struct {
 		col  string
 		dest *[]string
@@ -327,9 +352,9 @@ func (r *NodeRepository) DistinctFilterValues(ctx context.Context) (*models.Node
 	for _, c := range cols {
 		// Column name is from a fixed local list, never request input.
 		query := fmt.Sprintf(
-			"SELECT DISTINCT %s FROM nodes WHERE %s IS NOT NULL AND %s <> '' ORDER BY %s",
-			c.col, c.col, c.col, c.col)
-		rows, err := r.db.QueryContext(ctx, query)
+			"SELECT DISTINCT n.%s FROM nodes n WHERE n.%s IS NOT NULL AND n.%s <> '' AND %s ORDER BY n.%s",
+			c.col, c.col, c.col, scopeCond, c.col)
+		rows, err := r.db.QueryContext(ctx, query, scopeArgs...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load distinct %s: %w", c.col, err)
 		}
@@ -547,11 +572,16 @@ func (r *NodeRepository) UpdateHeartbeat(ctx context.Context, id string, facts m
 	return nil
 }
 
-// CountByStatus returns the count of nodes per status
-func (r *NodeRepository) CountByStatus(ctx context.Context) (map[string]int, error) {
-	query := `SELECT status_cached, COUNT(*) FROM nodes GROUP BY status_cached`
+// CountByStatus returns the count of nodes per status. A non-nil scope limits
+// the count to nodes the delegated administrator can see.
+func (r *NodeRepository) CountByStatus(ctx context.Context, scope *models.GroupScopeFilter) (map[string]int, error) {
+	scopeCond, scopeArgs := "TRUE", []interface{}(nil)
+	if scope != nil {
+		scopeCond, scopeArgs = nodeScopeCondition(scope, 0)
+	}
+	query := `SELECT n.status_cached, COUNT(*) FROM nodes n WHERE ` + scopeCond + ` GROUP BY n.status_cached`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, scopeArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count nodes by status: %w", err)
 	}

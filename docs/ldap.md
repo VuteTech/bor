@@ -61,7 +61,7 @@ The authentication flow when LDAP is enabled:
 | `LDAP_GROUP_MEMBER_ATTR` | `member` | Group attribute listing member DNs |
 | `LDAP_ATTR_MEMBER_OF` | `memberOf` | User attribute listing group DNs (preferred, skips group search) |
 | `LDAP_PAGE_SIZE` | `500` | LDAP results paging (RFC 2696); `0` = disabled |
-| `BOR_LDAP_GROUP_ROLE_MAP` | _(empty)_ | Map LDAP group CNs to Bor roles; format: `"Group CN=Role Name,Another Group=Another Role"` |
+| `BOR_LDAP_GROUP_ROLE_MAP` | _(empty)_ | Map LDAP group CNs to Bor roles; format: `"Group CN=Role Name,Another Group=Role Name@Node Group"` (`@Node Group` scopes the role to one node group) |
 
 ### YAML (`/etc/bor/server.yaml`)
 
@@ -364,7 +364,24 @@ ldap:
     "Domain Admins": "Super Admin"
     "IT Staff":      "Org Admin"
     "Auditors":      "Auditor"
+    "Berlin IT":     "Org Admin@Berlin Office"
 ```
+
+### Delegated administration
+
+Node-group-scoped roles are an optional feature that the community edition
+does not enable; without it, `Role@Node Group` mappings create nothing (and
+scoped bindings they created earlier are still removed when the user leaves
+the LDAP group).
+
+Append `@<node group name>` to a role name to grant the role only for one
+node group: `"Berlin IT": "Org Admin@Berlin Office"` makes members of the
+`Berlin IT` LDAP group Org Admins of the `Berlin Office` node group. A
+node-group-scoped role grants only its permissions on nodes, node groups,
+policies, policy bindings and compliance, and only for that group;
+permissions on users, roles, settings, audit logs and disk encryption always
+need a global (unscoped) mapping. The node group must exist; a mapping that
+names an unknown group is skipped and logged at login.
 
 ### Available Bor roles
 
@@ -381,10 +398,10 @@ ldap:
 
 1. The user authenticates successfully via LDAP.
 2. Bor retrieves the user's LDAP group CNs (via `attr_member_of` or group search).
-3. For each role in `group_role_map`, Bor checks whether the user is currently in the mapped group.
-   - If yes and the user does not already hold the role → role binding is created.
-   - If no and the user currently holds the role → role binding is deleted.
-4. Role bindings for roles **not** in the map are left unchanged.
+3. For each role (and node-group scope, if given) in `group_role_map`, Bor checks whether the user is currently in the mapped group.
+   - If yes and the user does not already hold the role at that scope, a role binding is created.
+   - If no and the user currently holds the role at that scope, the role binding is deleted.
+4. Role bindings whose role and scope do **not** come from the map are left unchanged, so a binding an administrator created by hand (for example the same role scoped to another node group) is never removed by LDAP sync.
 
 > **Note:** Group CNs are matched exactly as returned by LDAP (e.g. `"Domain Admins"`, not the full DN). The `cnFromDN` function automatically extracts the CN from a full DN, so `memberOf`-style values work without additional configuration.
 

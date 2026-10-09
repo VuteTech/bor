@@ -185,7 +185,7 @@ func (c *BorCollector) Collect(ch chan<- prometheus.Metric) {
 
 func (c *BorCollector) collectNodes(ctx context.Context, ch chan<- prometheus.Metric) {
 	// ── Counts by status ──
-	counts, err := c.repos.nodes.CountByStatus(ctx)
+	counts, err := c.repos.nodes.CountByStatus(ctx, nil)
 	if err != nil {
 		log.Printf("metrics: CountByStatus: %v", err)
 	} else {

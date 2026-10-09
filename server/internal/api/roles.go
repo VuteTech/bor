@@ -5,7 +5,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -254,7 +253,7 @@ func (h *RoleHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request,
 
 	// Privilege-escalation guard: the caller may only grant permissions they
 	// themselves hold.
-	if err := h.ensureCallerHoldsPermissions(r.Context(), req.PermissionIDs); err != nil {
+	if err := h.ensureCallerHoldsPermissions(r, req.PermissionIDs); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusForbidden)
 		return
 	}
@@ -269,36 +268,34 @@ func (h *RoleHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request,
 }
 
 // ensureCallerHoldsPermissions verifies that every permission ID the caller is
-// about to assign maps to a permission the caller already holds. This prevents
-// a delegated role administrator from escalating by granting permissions beyond
-// their own.
-func (h *RoleHandler) ensureCallerHoldsPermissions(ctx context.Context, permissionIDs []string) error {
-	claims := GetUserFromContext(ctx)
-	if claims == nil {
+// about to assign maps to a permission the caller already holds globally. A
+// role can be bound at any scope, including globally, so a permission held
+// only for some node groups is not enough to put it into a role. This
+// prevents a role administrator from escalating by granting permissions
+// beyond their own.
+func (h *RoleHandler) ensureCallerHoldsPermissions(r *http.Request, permissionIDs []string) error {
+	ctx := r.Context()
+	if GetUserFromContext(ctx) == nil {
 		return fmt.Errorf("unauthorized")
 	}
-	callerPerms, err := callerEffectivePermissions(ctx, h.roleRepo, h.bindingRepo, claims.UserID)
-	if err != nil {
-		log.Printf("ensureCallerHoldsPermissions: %v", err)
-		return fmt.Errorf("failed to verify caller permissions")
-	}
+	grants := requestGrants(r)
 	// Map requested permission IDs to their canonical resource:action key.
 	allPerms, err := h.permRepo.List(ctx)
 	if err != nil {
 		log.Printf("ensureCallerHoldsPermissions: list permissions: %v", err)
 		return fmt.Errorf("failed to verify caller permissions")
 	}
-	byID := make(map[string]string, len(allPerms))
+	byID := make(map[string]*models.Permission, len(allPerms))
 	for _, p := range allPerms {
-		byID[p.ID] = permKey(p.Resource, p.Action)
+		byID[p.ID] = p
 	}
 	for _, id := range permissionIDs {
-		key, ok := byID[id]
+		p, ok := byID[id]
 		if !ok {
 			return fmt.Errorf("unknown permission")
 		}
-		if _, held := callerPerms[key]; !held {
-			return fmt.Errorf("cannot grant a permission you do not hold")
+		if !grants.Scope(p.Resource, p.Action).IsGlobal() {
+			return fmt.Errorf("cannot grant a permission you do not hold globally")
 		}
 	}
 	return nil

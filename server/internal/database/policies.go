@@ -26,8 +26,8 @@ func NewPolicyRepository(db *DB) *PolicyRepository {
 // Create inserts a new policy into the database
 func (r *PolicyRepository) Create(ctx context.Context, policy *models.Policy) error {
 	query := `
-		INSERT INTO policies (name, description, type, content, version, status, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO policies (name, description, type, content, version, status, created_by, created_by_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id`
 
 	now := time.Now()
@@ -40,7 +40,7 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *models.Policy) er
 
 	err := r.db.QueryRowContext(ctx, query,
 		policy.Name, policy.Description, policy.Type, policy.Content,
-		policy.Version, policy.State, policy.CreatedBy,
+		policy.Version, policy.State, policy.CreatedBy, policy.CreatedByUserID,
 		policy.CreatedAt, policy.UpdatedAt,
 	).Scan(&policy.ID)
 	if err != nil {
@@ -53,7 +53,7 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *models.Policy) er
 // GetByName retrieves a policy by name
 func (r *PolicyRepository) GetByName(ctx context.Context, name string) (*models.Policy, error) {
 	query := `
-		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_at, updated_at
+		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_by_user_id, created_at, updated_at
 		FROM policies WHERE name = $1`
 
 	policy := &models.Policy{}
@@ -61,7 +61,7 @@ func (r *PolicyRepository) GetByName(ctx context.Context, name string) (*models.
 		&policy.ID, &policy.Name, &policy.Description, &policy.Type,
 		&policy.Content, &policy.Version, &policy.State,
 		&policy.DeprecatedAt, &policy.DeprecationMessage, &policy.ReplacementPolicyID,
-		&policy.CreatedBy, &policy.CreatedAt, &policy.UpdatedAt,
+		&policy.CreatedBy, &policy.CreatedByUserID, &policy.CreatedAt, &policy.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -76,7 +76,7 @@ func (r *PolicyRepository) GetByName(ctx context.Context, name string) (*models.
 // GetByID retrieves a policy by ID
 func (r *PolicyRepository) GetByID(ctx context.Context, id string) (*models.Policy, error) {
 	query := `
-		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_at, updated_at
+		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_by_user_id, created_at, updated_at
 		FROM policies WHERE id = $1`
 
 	policy := &models.Policy{}
@@ -84,7 +84,7 @@ func (r *PolicyRepository) GetByID(ctx context.Context, id string) (*models.Poli
 		&policy.ID, &policy.Name, &policy.Description, &policy.Type,
 		&policy.Content, &policy.Version, &policy.State,
 		&policy.DeprecatedAt, &policy.DeprecationMessage, &policy.ReplacementPolicyID,
-		&policy.CreatedBy, &policy.CreatedAt, &policy.UpdatedAt,
+		&policy.CreatedBy, &policy.CreatedByUserID, &policy.CreatedAt, &policy.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -99,7 +99,7 @@ func (r *PolicyRepository) GetByID(ctx context.Context, id string) (*models.Poli
 // ListEnabled returns all released policies (for agent consumption)
 func (r *PolicyRepository) ListEnabled(ctx context.Context) ([]*models.Policy, error) {
 	query := `
-		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_at, updated_at
+		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_by_user_id, created_at, updated_at
 		FROM policies WHERE status = 'released' ORDER BY name`
 
 	return r.scanPolicies(ctx, query)
@@ -108,7 +108,7 @@ func (r *PolicyRepository) ListEnabled(ctx context.Context) ([]*models.Policy, e
 // ListAll returns all policies regardless of state
 func (r *PolicyRepository) ListAll(ctx context.Context) ([]*models.Policy, error) {
 	query := `
-		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_at, updated_at
+		SELECT id, name, description, type, content, version, status, deprecated_at, deprecation_message, replacement_policy_id, created_by, created_by_user_id, created_at, updated_at
 		FROM policies ORDER BY updated_at DESC`
 
 	return r.scanPolicies(ctx, query)
@@ -129,7 +129,7 @@ func (r *PolicyRepository) scanPolicies(ctx context.Context, query string, args 
 			&policy.ID, &policy.Name, &policy.Description, &policy.Type,
 			&policy.Content, &policy.Version, &policy.State,
 			&policy.DeprecatedAt, &policy.DeprecationMessage, &policy.ReplacementPolicyID,
-			&policy.CreatedBy, &policy.CreatedAt, &policy.UpdatedAt,
+			&policy.CreatedBy, &policy.CreatedByUserID, &policy.CreatedAt, &policy.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan policy: %w", err)

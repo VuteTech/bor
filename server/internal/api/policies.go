@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
 )
@@ -17,6 +18,9 @@ import (
 // PolicyHandler handles policy endpoints
 type PolicyHandler struct {
 	policySvc *services.PolicyService
+	// bindings resolves which node groups a policy is bound to, for
+	// node-group-scoped callers. Without it, scoped callers see no policies.
+	bindings policyGroupSource
 	// OnPolicyChange is called after a mutation that may affect agents:
 	// Update, SetState, Deprecate. It receives the policy ID so the
 	// caller can scope notifications to the affected node groups.
@@ -29,6 +33,71 @@ func NewPolicyHandler(policySvc *services.PolicyService) *PolicyHandler {
 	return &PolicyHandler{policySvc: policySvc}
 }
 
+// WithBindings attaches the policy-to-node-group lookup that delegated
+// (node-group-scoped) administration needs.
+func (h *PolicyHandler) WithBindings(bindings policyGroupSource) *PolicyHandler {
+	h.bindings = bindings
+	return h
+}
+
+// scopePolicies filters a policy list down to what the caller may view.
+func (h *PolicyHandler) scopePolicies(r *http.Request, policies []*models.Policy) ([]*models.Policy, error) {
+	scope := requestScope(r, "policy", "view")
+	if scope.IsGlobal() {
+		return policies, nil
+	}
+	idx, err := loadPolicyGroupIndex(r.Context(), h.bindings)
+	if err != nil {
+		return nil, err
+	}
+	return filterVisiblePolicies(policies, idx, scope, callerID(r.Context())), nil
+}
+
+// loadPolicy fetches a policy the caller may view and, when writeAction is
+// set, also change with policy:writeAction. It answers 404 (missing or not
+// visible, indistinguishably) or 403 (visible but outside the write scope)
+// itself.
+func (h *PolicyHandler) loadPolicy(w http.ResponseWriter, r *http.Request, id, writeAction string) (*models.Policy, bool) {
+	policy, err := h.policySvc.GetPolicy(r.Context(), id)
+	if err != nil || policy == nil {
+		http.Error(w, `{"error":"policy not found"}`, http.StatusNotFound)
+		return nil, false
+	}
+
+	viewScope := requestScope(r, "policy", "view")
+	writeScope := authz.GlobalScope()
+	if writeAction != "" {
+		writeScope = requestScope(r, "policy", writeAction)
+	}
+	if viewScope.IsGlobal() && writeScope.IsGlobal() {
+		return policy, true
+	}
+
+	var groupIDs []string
+	if h.bindings != nil {
+		groupIDs, err = h.bindings.GetGroupIDsForPolicy(r.Context(), id)
+		if err != nil {
+			log.Printf("Failed to resolve groups of policy %s: %v", id, err) //nolint:gosec // id comes from URL path parameter
+			http.Error(w, `{"error":"failed to check policy scope"}`, http.StatusInternalServerError)
+			return nil, false
+		}
+	} else if !viewScope.IsGlobal() {
+		http.Error(w, `{"error":"policy not found"}`, http.StatusNotFound)
+		return nil, false
+	}
+
+	uid := callerID(r.Context())
+	if !viewScope.IsGlobal() && !canViewPolicy(viewScope, policy, groupIDs, uid) {
+		http.Error(w, `{"error":"policy not found"}`, http.StatusNotFound)
+		return nil, false
+	}
+	if writeAction != "" && !canWritePolicy(writeScope, policy, groupIDs, uid) {
+		denyOutOfScope(w, r, "policy", writeAction, id)
+		return nil, false
+	}
+	return policy, true
+}
+
 // List handles GET /api/v1/policies
 func (h *PolicyHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -37,6 +106,9 @@ func (h *PolicyHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	policies, err := h.policySvc.ListEnabledPolicies(r.Context())
+	if err == nil {
+		policies, err = h.scopePolicies(r, policies)
+	}
 	if err != nil {
 		log.Printf("Failed to list policies: %v", err)
 		http.Error(w, `{"error":"failed to list policies"}`, http.StatusInternalServerError)
@@ -61,6 +133,9 @@ func (h *PolicyHandler) ListAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	policies, err := h.policySvc.ListAllPolicies(r.Context())
+	if err == nil {
+		policies, err = h.scopePolicies(r, policies)
+	}
 	if err != nil {
 		log.Printf("Failed to list all policies: %v", err)
 		http.Error(w, `{"error":"failed to list policies"}`, http.StatusInternalServerError)
@@ -94,6 +169,9 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	createdBy := ""
 	if claims != nil {
 		createdBy = claims.Username
+		// The creator owns the draft: a node-group-scoped author keeps access
+		// to it until it is bound to one of their groups.
+		req.CreatedByUserID = claims.UserID
 	}
 
 	policy, err := h.policySvc.CreatePolicy(r.Context(), &req, createdBy)
@@ -130,9 +208,8 @@ func (h *PolicyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policy, err := h.policySvc.GetPolicy(r.Context(), id)
-	if err != nil || policy == nil {
-		http.Error(w, `{"error":"policy not found"}`, http.StatusNotFound)
+	policy, ok := h.loadPolicy(w, r, id, "")
+	if !ok {
 		return
 	}
 
@@ -152,6 +229,10 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := extractPolicyIDFromPath(r.URL.Path)
 	if id == "" {
 		http.Error(w, `{"error":"policy id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if _, ok := h.loadPolicy(w, r, id, "edit"); !ok {
 		return
 	}
 
@@ -228,6 +309,10 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
+	if _, ok := h.loadPolicy(w, r, id, "edit"); !ok {
+		return
+	}
+
 	var req models.SetPolicyStateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -263,6 +348,10 @@ func (h *PolicyHandler) Deprecate(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
+	if _, ok := h.loadPolicy(w, r, id, "edit"); !ok {
+		return
+	}
+
 	var req models.DeprecatePolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -295,6 +384,10 @@ func (h *PolicyHandler) Deprecate(w http.ResponseWriter, r *http.Request, id str
 func (h *PolicyHandler) Delete(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	if _, ok := h.loadPolicy(w, r, id, "delete"); !ok {
 		return
 	}
 

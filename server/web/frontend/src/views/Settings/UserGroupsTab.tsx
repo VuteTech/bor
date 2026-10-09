@@ -30,7 +30,21 @@ import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-i
 import PencilAltIcon from "@patternfly/react-icons/dist/esm/icons/pencil-alt-icon";
 import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
 
-import { hasPermission } from "../../apiClient/permissions";
+import {
+  FEATURE_NODE_GROUP_SCOPED_RBAC,
+  hasFeature,
+  hasPermission,
+} from "../../apiClient/permissions";
+import {
+  GLOBAL_SCOPE,
+  isRoleScopeComplete,
+  RoleScopeFields,
+  roleScopeLabel,
+  roleScopeRequest,
+  RoleScopeValue,
+  showRoleScopes,
+  useScopeNodeGroups,
+} from "../../components/RoleScopeFields";
 import {
   fetchUserGroups,
   createUserGroup,
@@ -598,7 +612,10 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
   const [showAdd, setShowAdd] = useState(false);
 
   const [newRoleId, setNewRoleId] = useState("");
+  const [newScope, setNewScope] = useState<RoleScopeValue>(GLOBAL_SCOPE);
   const [addSaving, setAddSaving] = useState(false);
+  const nodeGroups = useScopeNodeGroups();
+  const scopesEnabled = hasFeature(FEATURE_NODE_GROUP_SCOPED_RBAC);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -644,9 +661,10 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
     setAddSaving(true);
     setError(null);
     try {
-      await addGroupRoleBinding(groupId, newRoleId);
+      await addGroupRoleBinding(groupId, newRoleId, roleScopeRequest(newScope));
       setShowAdd(false);
       setNewRoleId("");
+      setNewScope(GLOBAL_SCOPE);
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to add role binding");
@@ -677,6 +695,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
         <Thead>
           <Tr>
             <Th>Role</Th>
+            {showRoleScopes(scopesEnabled, bindings) && <Th>Scope</Th>}
             <Th>Actions</Th>
           </Tr>
         </Thead>
@@ -684,6 +703,9 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
           {bindings.map((b) => (
             <Tr key={b.id}>
               <Td>{roleName(b.role_id)}</Td>
+              {showRoleScopes(scopesEnabled, bindings) && (
+                <Td>{roleScopeLabel(b.scope_type, b.scope_id, nodeGroups, scopesEnabled)}</Td>
+              )}
               <Td>
                 <Button
                   variant="plain"
@@ -698,7 +720,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
           ))}
           {bindings.length === 0 && (
             <Tr>
-              <Td colSpan={2}>No role assignments.</Td>
+              <Td colSpan={showRoleScopes(scopesEnabled, bindings) ? 3 : 2}>No role assignments.</Td>
             </Tr>
           )}
         </Tbody>
@@ -728,6 +750,14 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
                   ))}
                 </select>
               </FormGroup>
+              {scopesEnabled && (
+                <RoleScopeFields
+                  idPrefix="gr"
+                  value={newScope}
+                  onChange={setNewScope}
+                  nodeGroups={nodeGroups}
+                />
+              )}
             </Form>
           </ModalBody>
           <ModalFooter>
@@ -735,7 +765,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
               key="add"
               variant="primary"
               onClick={handleAdd}
-              isDisabled={addSaving || !newRoleId}
+              isDisabled={addSaving || !newRoleId || !isRoleScopeComplete(newScope)}
               isLoading={addSaving}
             >
               Add

@@ -114,7 +114,7 @@ Migrations: `000021` (dconf_schemas + node_dconf_schemas), `000022` (compliance_
 | `proto/policy/policy.proto` | ComplianceStatus, ComplianceItemResult, ReportSchemaCatalogue RPC |
 | `server/assets/dconf_builtin_schemas.json` | Built-in schema catalogue — commit after `make update-dconf-schemas` |
 | `server/assets/dconf.go` | `go:embed` wrapper for the built-in catalogue |
-| `server/cmd/server/dconf_seed.go` | Seeds built-in schemas at server startup |
+| `server/pkg/app/dconf_seed.go` | Seeds built-in schemas at server startup |
 | `server/internal/database/dconf.go` | DConfRepository — schema catalogue and compliance DB operations |
 | `server/internal/database/migrations/000021_*` | `dconf_schemas`, `node_dconf_schemas` tables |
 | `server/internal/database/migrations/000022_*` | `compliance_results` table |

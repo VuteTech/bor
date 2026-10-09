@@ -23,11 +23,19 @@ type UserGroupHandler struct {
 	memberRepo   *database.UserGroupMemberRepository
 	bindingRepo  *database.UserGroupRoleBindingRepository
 	roleRepo     *database.RoleRepository
+	nodeGroups   nodeGroupGetter
+	scopesOn     func() bool
 	auditSvc     *services.AuditService
-	// userBindingRepo resolves the caller's own permissions for the
-	// privilege-escalation guards. Without it, adding group roles or members
-	// is refused.
-	userBindingRepo *database.UserRoleBindingRepository
+}
+
+// WithNodeGroupScopes enables node-group-scoped role bindings on user
+// groups, validated against groups, while enabled reports true (checked per
+// request). Without it (the community default) only global bindings can be
+// created; see the edition package.
+func (h *UserGroupHandler) WithNodeGroupScopes(groups nodeGroupGetter, enabled func() bool) *UserGroupHandler {
+	h.nodeGroups = groups
+	h.scopesOn = enabled
+	return h
 }
 
 // NewUserGroupHandler creates a new UserGroupHandler
@@ -51,37 +59,6 @@ func (h *UserGroupHandler) WithAuditService(auditSvc *services.AuditService, rol
 	h.auditSvc = auditSvc
 	h.roleRepo = roleRepo
 	return h
-}
-
-// WithRoleGuard enables the privilege-escalation guards on group roles and
-// group membership. Roles bound to a user group are granted to its members,
-// so both adding a role to a group and adding a member to a group hand out
-// permissions; the caller must already hold every one of them.
-func (h *UserGroupHandler) WithRoleGuard(userBindingRepo *database.UserRoleBindingRepository) *UserGroupHandler {
-	h.userBindingRepo = userBindingRepo
-	return h
-}
-
-// guardRoleGrant answers 403 (and audits it) unless the caller holds every
-// permission of roleIDs. It answers 500 when the guard is not wired or the
-// check fails, so a misconfigured handler refuses rather than allows.
-func (h *UserGroupHandler) guardRoleGrant(w http.ResponseWriter, r *http.Request, groupID, action string, roleIDs []string) bool {
-	if h.roleRepo == nil || h.userBindingRepo == nil {
-		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
-		return false
-	}
-	ok, missing, err := callerCanGrantRoles(r.Context(), h.roleRepo, h.userBindingRepo, callerID(r.Context()), roleIDs)
-	if err != nil {
-		log.Printf("user group %s: failed to check role permissions: %v", action, err)
-		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
-		return false
-	}
-	if !ok {
-		writeJSONError(w, http.StatusForbidden, "cannot grant a role with permissions you do not hold")
-		auditDenial(r, "user_group", action, groupID, "would grant "+missing+", which the caller does not hold")
-		return false
-	}
-	return true
 }
 
 // ServeHTTP routes user-groups requests including sub-resources
@@ -283,18 +260,21 @@ func (h *UserGroupHandler) AddMember(w http.ResponseWriter, r *http.Request, gro
 		return
 	}
 
-	// Membership confers every role bound to the group.
-	groupBindings, err := h.bindingRepo.ListByGroupID(r.Context(), groupID)
-	if err != nil {
-		log.Printf("Failed to list group role bindings: %v", err)
+	// Privilege-escalation guard: membership confers every role bound to the
+	// group, so the caller must be able to grant all of them.
+	if h.roleRepo == nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
 		return
 	}
-	roleIDs := make([]string, 0, len(groupBindings))
-	for _, b := range groupBindings {
-		roleIDs = append(roleIDs, b.RoleID)
+	ok, missing, err := callerCanGrantGroupMembership(r, h.roleRepo, h.bindingRepo, groupID)
+	if err != nil {
+		log.Printf("group member: failed to check group roles: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
 	}
-	if !h.guardRoleGrant(w, r, groupID, "add_member", roleIDs) {
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "cannot grant a role with permissions you do not hold")
+		auditDenial(r, "user_group", "add_member", groupID, "would grant "+missing+", which the caller does not hold")
 		return
 	}
 
@@ -380,14 +360,27 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	scopeType, err := validateGlobalScope(req.ScopeType, req.ScopeID)
+	scopeType, scopeID, err := validateBindingScope(r.Context(), scopeGroups(h.nodeGroups, h.scopesOn), req.ScopeType, req.ScopeID)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		writeScopeError(w, err)
 		return
 	}
 
-	// Every member of the group receives the role.
-	if !h.guardRoleGrant(w, r, groupID, "add_role", []string{req.RoleID}) {
+	// Privilege-escalation guard: every member of the group receives the
+	// role, so the caller must hold its permissions with at least this reach.
+	if h.roleRepo == nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	ok, missing, err := callerCanDelegateRole(r, h.roleRepo, req.RoleID, bindingTargetOf(scopeType, scopeID))
+	if err != nil {
+		log.Printf("group role binding: failed to check role permissions: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "cannot grant a role with permissions you do not hold")
+		auditDenial(r, "user_group", "add_role", groupID, "would grant "+missing+", which the caller does not hold")
 		return
 	}
 
@@ -395,6 +388,7 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 		GroupID:   groupID,
 		RoleID:    req.RoleID,
 		ScopeType: scopeType,
+		ScopeID:   scopeID,
 	}
 	if err := h.bindingRepo.Create(r.Context(), binding); err != nil {
 		log.Printf("Failed to create group role binding: %v", err)
@@ -453,6 +447,8 @@ func (h *UserGroupHandler) auditGroupRoleRevoke(r *http.Request, binding *models
 		"group_id":   binding.GroupID,
 		"role_id":    binding.RoleID,
 		"role_name":  roleName,
+		"scope_type": binding.ScopeType,
+		"scope_id":   derefString(binding.ScopeID),
 	})
 	if err != nil {
 		return

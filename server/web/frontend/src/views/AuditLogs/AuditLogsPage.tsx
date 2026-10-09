@@ -56,7 +56,7 @@ const KNOWN_RESOURCE_TYPES = [
   "user-groups", "user-role-bindings", "user_role_binding",
   "user_group_role_binding", "policy-bindings", "managed_file", "settings",
   // Permission resources, used by access_denied events.
-  "user_group", "user", "role", "policy", "node", "node_group",
+  "user_group", "user", "role", "policy", "node", "node_group", "binding",
 ];
 
 // ─── Badge colors ─────────────────────────────────────────────────────────────

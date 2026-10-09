@@ -46,6 +46,7 @@ import {
   NodeGroup,
   EnrollmentToken,
 } from "../../apiClient/nodeGroupsApi";
+import { hasGlobalPermission } from "../../apiClient/permissions";
 
 /* ── Helpers ── */
 
@@ -54,6 +55,9 @@ const formatDate = (dateStr: string): string => new Date(dateStr).toLocaleString
 /* ── Component ── */
 
 export const NodeGroupsPage: React.FC = () => {
+  // A new group cannot fall inside a delegated (node-group-scoped)
+  // administrator's scope, so creating one needs a global grant.
+  const canCreateGroup = hasGlobalPermission("node_group:create");
   const [groups, setGroups] = useState<NodeGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -300,9 +304,11 @@ export const NodeGroupsPage: React.FC = () => {
           alignItems={{ default: "alignItemsCenter" }}
         >
           <FlexItem>
-            <Button variant="primary" icon={<PlusCircleIcon />} onClick={openCreateModal}>
-              Create Node Group
-            </Button>
+            {canCreateGroup && (
+              <Button variant="primary" icon={<PlusCircleIcon />} onClick={openCreateModal}>
+                Create Node Group
+              </Button>
+            )}
           </FlexItem>
         </Flex>
       </PageSection>
@@ -363,9 +369,11 @@ export const NodeGroupsPage: React.FC = () => {
             emptyTitle="No node groups"
             emptyBody="Create a node group to organize your desktop agents and generate enrollment tokens."
             action={
-              <Button variant="primary" onClick={openCreateModal}>
-                Create Node Group
-              </Button>
+              canCreateGroup ? (
+                <Button variant="primary" onClick={openCreateModal}>
+                  Create Node Group
+                </Button>
+              ) : undefined
             }
             onClearFilters={() => setSearchText("")}
           />

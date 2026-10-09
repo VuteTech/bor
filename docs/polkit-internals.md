@@ -200,7 +200,7 @@ The frontend `PolkitPolicyEditor` fetches this endpoint on mount to populate the
 | `proto/policy/policy.proto` | `polkit_policy` oneof field, `ReportPolkitCatalogue` RPC |
 | `server/assets/polkit_builtin_actions.json` | Built-in action catalogue — commit after `make update-polkit-actions` |
 | `server/assets/polkit.go` | `go:embed` wrapper for the built-in catalogue |
-| `server/cmd/server/polkit_seed.go` | Seeds built-in actions at server startup |
+| `server/pkg/app/polkit_seed.go` | Seeds built-in actions at server startup |
 | `server/internal/database/migrations/000024_polkit_actions.up.sql` | `polkit_actions`, `node_polkit_actions` tables |
 | `server/internal/database/polkit.go` | `PolkitRepository` — `UpsertAction`, `ReplaceNodeActions`, `ListActions`, `ListActionsByNode` |
 | `server/internal/grpc/polkit_catalogue.go` | `ReportPolkitCatalogue` gRPC handler |

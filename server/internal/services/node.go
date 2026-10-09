@@ -75,8 +75,8 @@ func (s *NodeService) ListNodesPaged(ctx context.Context, req *models.NodeListRe
 }
 
 // GetNodeFilterOptions returns the distinct values for node filter dropdowns.
-func (s *NodeService) GetNodeFilterOptions(ctx context.Context) (*models.NodeFilterOptions, error) {
-	return s.nodeRepo.DistinctFilterValues(ctx)
+func (s *NodeService) GetNodeFilterOptions(ctx context.Context, scope *models.GroupScopeFilter) (*models.NodeFilterOptions, error) {
+	return s.nodeRepo.DistinctFilterValues(ctx, scope)
 }
 
 // GetNode retrieves a node by ID
@@ -106,8 +106,8 @@ func (s *NodeService) GetNodeByName(ctx context.Context, name string) (*models.N
 }
 
 // CountByStatus returns node counts per status
-func (s *NodeService) CountByStatus(ctx context.Context) (map[string]int, error) {
-	return s.nodeRepo.CountByStatus(ctx)
+func (s *NodeService) CountByStatus(ctx context.Context, scope *models.GroupScopeFilter) (map[string]int, error) {
+	return s.nodeRepo.CountByStatus(ctx, scope)
 }
 
 // ProcessHeartbeat records a node heartbeat, updating metadata facts.
