@@ -6,6 +6,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,6 +66,24 @@ func (r *UserGroupRoleBindingRepository) ListByGroupID(ctx context.Context, grou
 	}
 
 	return bindings, rows.Err()
+}
+
+// GetByID returns a group role binding by ID, or nil if not found
+func (r *UserGroupRoleBindingRepository) GetByID(ctx context.Context, id string) (*models.UserGroupRoleBinding, error) {
+	query := `
+		SELECT id, group_id, role_id, scope_type, scope_id, created_at
+		FROM user_group_role_bindings WHERE id = $1`
+
+	b := &models.UserGroupRoleBinding{}
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&b.ID, &b.GroupID, &b.RoleID, &b.ScopeType, &b.ScopeID, &b.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group role binding: %w", err)
+	}
+	return b, nil
 }
 
 // Delete removes a group role binding

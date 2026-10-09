@@ -13,6 +13,8 @@ import (
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // UserGroupHandler handles user group API endpoints (identity domain)
@@ -20,6 +22,8 @@ type UserGroupHandler struct {
 	userGroupSvc *services.UserGroupService
 	memberRepo   *database.UserGroupMemberRepository
 	bindingRepo  *database.UserGroupRoleBindingRepository
+	roleRepo     *database.RoleRepository
+	auditSvc     *services.AuditService
 }
 
 // NewUserGroupHandler creates a new UserGroupHandler
@@ -33,6 +37,16 @@ func NewUserGroupHandler(
 		memberRepo:   memberRepo,
 		bindingRepo:  bindingRepo,
 	}
+}
+
+// WithAuditService attaches an AuditService (and a role repository for
+// resolving role names) so group privilege revocations are recorded with the
+// affected group and role (the generic HTTP audit middleware only sees the
+// binding UUID on a DELETE).
+func (h *UserGroupHandler) WithAuditService(auditSvc *services.AuditService, roleRepo *database.RoleRepository) *UserGroupHandler {
+	h.auditSvc = auditSvc
+	h.roleRepo = roleRepo
+	return h
 }
 
 // ServeHTTP routes user-groups requests including sub-resources
@@ -311,16 +325,21 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if req.RoleID == "" || req.ScopeType == "" {
-		http.Error(w, `{"error":"role_id and scope_type are required"}`, http.StatusBadRequest)
+	if req.RoleID == "" {
+		http.Error(w, `{"error":"role_id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	scopeType, err := validateGlobalScope(req.ScopeType, req.ScopeID)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
 
 	binding := &models.UserGroupRoleBinding{
 		GroupID:   groupID,
 		RoleID:    req.RoleID,
-		ScopeType: req.ScopeType,
-		ScopeID:   req.ScopeID,
+		ScopeType: scopeType,
 	}
 	if err := h.bindingRepo.Create(r.Context(), binding); err != nil {
 		log.Printf("Failed to create group role binding: %v", err)
@@ -337,13 +356,74 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 
 // RemoveGroupRoleBinding handles DELETE /api/v1/user-groups/{id}/role-bindings/{binding_id}
 func (h *UserGroupHandler) RemoveGroupRoleBinding(w http.ResponseWriter, r *http.Request, bindingID string) {
+	// Fetch first so the audit event can name the affected group and role;
+	// after the delete only the UUID would remain.
+	binding, err := h.bindingRepo.GetByID(r.Context(), bindingID)
+	if err != nil {
+		log.Printf("Failed to load group role binding before delete: %v", err)
+		http.Error(w, `{"error":"failed to delete role binding"}`, http.StatusInternalServerError)
+		return
+	}
+
 	if err := h.bindingRepo.Delete(r.Context(), bindingID); err != nil {
 		log.Printf("Failed to delete group role binding: %v", err)
 		http.Error(w, `{"error":"failed to delete role binding"}`, http.StatusInternalServerError)
 		return
 	}
 
+	if binding != nil {
+		h.auditGroupRoleRevoke(r, binding)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// auditGroupRoleRevoke records a privilege-revocation event naming the
+// affected user group and role. This complements the generic HTTP audit
+// middleware entry, whose DELETE record only carries the binding UUID.
+func (h *UserGroupHandler) auditGroupRoleRevoke(r *http.Request, binding *models.UserGroupRoleBinding) {
+	if h.auditSvc == nil {
+		return
+	}
+
+	roleName := ""
+	if h.roleRepo != nil {
+		if role, err := h.roleRepo.GetByID(r.Context(), binding.RoleID); err == nil && role != nil {
+			roleName = role.Name
+		}
+	}
+
+	details, err := json.Marshal(map[string]string{
+		"binding_id": binding.ID,
+		"group_id":   binding.GroupID,
+		"role_id":    binding.RoleID,
+		"role_name":  roleName,
+	})
+	if err != nil {
+		return
+	}
+
+	actor := &auditpb.Actor{}
+	if claims := GetUserFromContext(r.Context()); claims != nil {
+		actor.UserId = claims.UserID
+		actor.Username = claims.Username
+	}
+
+	h.auditSvc.Emit(r.Context(), &auditpb.AuditEvent{
+		OccurredAt: timestamppb.Now(),
+		Actor:      actor,
+		Action:     "revoke_role",
+		Resource:   &auditpb.Resource{Type: "user_group_role_binding", Id: binding.ID},
+		Outcome:    auditpb.Outcome_OUTCOME_SUCCESS,
+		SrcIp:      extractIP(r),
+		Payload: &auditpb.AuditEvent_HttpChange{
+			HttpChange: &auditpb.HttpPayload{
+				Method:   r.Method,
+				Path:     r.URL.Path,
+				BodyJson: string(details),
+			},
+		},
+	})
 }
 
 // parseUserGroupPath extracts group ID, sub-resource name, and sub-resource ID from paths like:

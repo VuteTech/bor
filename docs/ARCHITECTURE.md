@@ -302,10 +302,15 @@ Bor is an Enterprise Linux Desktop Policy Management system consisting of:
 ### Authorization
 
 #### Web UI (RBAC)
-- Role-based access control
+- Role-based access control, global-only by design: a role binding grants
+  its permissions everywhere. Scoped (per-organization, per-group) bindings
+  are not supported; delegated administration is a planned feature with its
+  own scope model.
 - Granular permissions (resource:action)
-- User Groups for bulk role assignment
-- Permission checks at API layer
+- User Groups for bulk role assignment: a role bound to a user group is
+  granted to every member of the group
+- Permission checks at API layer; the privilege-escalation guard and the
+  UI permission list use the same effective-roles source as enforcement
 
 #### gRPC
 - Client certificate verification (authentication)

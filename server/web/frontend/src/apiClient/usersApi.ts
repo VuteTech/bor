@@ -63,16 +63,14 @@ export interface UserRoleBinding {
   id: string;
   user_id: string;
   role_id: string;
+  // Always "global": RBAC is global-only; scoped bindings are not supported.
   scope_type: string;
-  scope_id?: string;
   created_at: string;
 }
 
 export interface CreateBindingRequest {
   user_id: string;
   role_id: string;
-  scope_type: string;
-  scope_id?: string;
 }
 
 /* ── API methods ── */

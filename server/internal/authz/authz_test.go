@@ -6,327 +6,160 @@ package authz
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 )
 
-// mockBindingRepo implements the methods used by the authorizer from UserRoleBindingRepository
-type mockBindingRepo struct {
-	bindings []*models.UserRoleBinding
-	err      error
+// mockBindingSource implements RoleBindingSource. roleIDs maps a user ID to
+// the user's effective role IDs (direct plus group-inherited), mirroring
+// what UserRoleBindingRepository.ListEffectiveRoleIDs returns.
+type mockBindingSource struct {
+	roleIDs map[string][]string
+	err     error
 }
 
-func (m *mockBindingRepo) ListByUserID(_ context.Context, _ string) ([]*models.UserRoleBinding, error) {
-	return m.bindings, m.err
+func (m *mockBindingSource) ListEffectiveRoleIDs(_ context.Context, userID string) ([]string, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.roleIDs[userID], nil
 }
 
-// mockRoleRepo implements the methods used by the authorizer from RoleRepository
-type mockRoleRepo struct {
+// mockPermissionSource implements PermissionSource.
+type mockPermissionSource struct {
 	permissions map[string][]*models.Permission
 	err         error
 }
 
-func (m *mockRoleRepo) GetPermissionsByRoleID(_ context.Context, roleID string) ([]*models.Permission, error) {
+func (m *mockPermissionSource) GetPermissionsByRoleID(_ context.Context, roleID string) ([]*models.Permission, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.permissions[roleID], nil
 }
 
-// testAuthorizer creates an authorizer with mock repos for testing
-type testAuthorizer struct {
-	bindingRepo *mockBindingRepo
-	roleRepo    *mockRoleRepo
+func perm(resource, action string) *models.Permission {
+	return &models.Permission{Resource: resource, Action: action}
 }
 
-func (a *testAuthorizer) HasPermission(ctx context.Context, userID, resource, action, scopeType string, scopeID *string) (bool, error) {
-	bindings, err := a.bindingRepo.ListByUserID(ctx, userID)
-	if err != nil {
-		return false, err
+func TestHasPermission(t *testing.T) {
+	tests := []struct {
+		name     string
+		roleIDs  map[string][]string
+		perms    map[string][]*models.Permission
+		userID   string
+		resource string
+		action   string
+		want     bool
+	}{
+		{
+			name:     "direct role grants permission",
+			roleIDs:  map[string][]string{"u1": {"admin"}},
+			perms:    map[string][]*models.Permission{"admin": {perm("policy", "write")}},
+			userID:   "u1",
+			resource: "policy",
+			action:   "write",
+			want:     true,
+		},
+		{
+			name:     "group-inherited role grants permission",
+			roleIDs:  map[string][]string{"u1": {"viewer-via-group"}},
+			perms:    map[string][]*models.Permission{"viewer-via-group": {perm("policy", "read")}},
+			userID:   "u1",
+			resource: "policy",
+			action:   "read",
+			want:     true,
+		},
+		{
+			name:     "no roles means no permission",
+			roleIDs:  map[string][]string{},
+			perms:    map[string][]*models.Permission{"admin": {perm("policy", "write")}},
+			userID:   "u1",
+			resource: "policy",
+			action:   "write",
+			want:     false,
+		},
+		{
+			name:     "role without the permission is denied",
+			roleIDs:  map[string][]string{"u1": {"viewer"}},
+			perms:    map[string][]*models.Permission{"viewer": {perm("policy", "read")}},
+			userID:   "u1",
+			resource: "policy",
+			action:   "write",
+			want:     false,
+		},
+		{
+			name:     "action must match exactly",
+			roleIDs:  map[string][]string{"u1": {"viewer"}},
+			perms:    map[string][]*models.Permission{"viewer": {perm("policy", "read")}},
+			userID:   "u1",
+			resource: "policy",
+			action:   "delete",
+			want:     false,
+		},
+		{
+			name:     "resource must match exactly",
+			roleIDs:  map[string][]string{"u1": {"viewer"}},
+			perms:    map[string][]*models.Permission{"viewer": {perm("policy", "read")}},
+			userID:   "u1",
+			resource: "node",
+			action:   "read",
+			want:     false,
+		},
+		{
+			name: "any role granting the permission is enough",
+			roleIDs: map[string][]string{
+				"u1": {"viewer", "node-admin"},
+			},
+			perms: map[string][]*models.Permission{
+				"viewer":     {perm("policy", "read")},
+				"node-admin": {perm("node", "manage")},
+			},
+			userID:   "u1",
+			resource: "node",
+			action:   "manage",
+			want:     true,
+		},
 	}
 
-	var matchingBindings []*models.UserRoleBinding
-	for _, b := range bindings {
-		if matchesScope(b, scopeType, scopeID) {
-			matchingBindings = append(matchingBindings, b)
-		}
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			az := NewFromSources(
+				&mockBindingSource{roleIDs: tt.roleIDs},
+				&mockPermissionSource{permissions: tt.perms},
+			)
 
-	for _, b := range matchingBindings {
-		perms, err := a.roleRepo.GetPermissionsByRoleID(ctx, b.RoleID)
-		if err != nil {
-			return false, err
-		}
-		for _, p := range perms {
-			if p.Resource == resource && p.Action == action {
-				return true, nil
+			got, err := az.HasPermission(context.Background(), tt.userID, tt.resource, tt.action)
+			if err != nil {
+				t.Fatalf("HasPermission() error = %v", err)
 			}
-		}
-	}
-
-	return false, nil
-}
-
-func strPtr(s string) *string { return &s }
-
-func TestMatchesScope_GlobalAlwaysMatches(t *testing.T) {
-	binding := &models.UserRoleBinding{ScopeType: models.ScopeGlobal}
-
-	if !matchesScope(binding, models.ScopeGlobal, nil) {
-		t.Error("global binding should match global scope")
-	}
-	if !matchesScope(binding, models.ScopeOrganization, strPtr("org-1")) {
-		t.Error("global binding should match organization scope")
-	}
-	if !matchesScope(binding, models.ScopeGroup, strPtr("grp-1")) {
-		t.Error("global binding should match group scope")
+			if got != tt.want {
+				t.Errorf("HasPermission() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestMatchesScope_OrganizationMatch(t *testing.T) {
-	binding := &models.UserRoleBinding{
-		ScopeType: models.ScopeOrganization,
-		ScopeID:   strPtr("org-1"),
-	}
+func TestHasPermission_BindingSourceError(t *testing.T) {
+	az := NewFromSources(
+		&mockBindingSource{err: errors.New("db down")},
+		&mockPermissionSource{},
+	)
 
-	if !matchesScope(binding, models.ScopeOrganization, strPtr("org-1")) {
-		t.Error("org binding should match same org scope")
-	}
-	if matchesScope(binding, models.ScopeOrganization, strPtr("org-2")) {
-		t.Error("org binding should not match different org scope")
-	}
-	if matchesScope(binding, models.ScopeGroup, strPtr("org-1")) {
-		t.Error("org binding should not match group scope")
+	if _, err := az.HasPermission(context.Background(), "u1", "policy", "read"); err == nil {
+		t.Error("HasPermission() should propagate binding source errors")
 	}
 }
 
-func TestMatchesScope_GroupMatch(t *testing.T) {
-	binding := &models.UserRoleBinding{
-		ScopeType: models.ScopeGroup,
-		ScopeID:   strPtr("grp-1"),
-	}
+func TestHasPermission_PermissionSourceError(t *testing.T) {
+	az := NewFromSources(
+		&mockBindingSource{roleIDs: map[string][]string{"u1": {"admin"}}},
+		&mockPermissionSource{err: errors.New("db down")},
+	)
 
-	if !matchesScope(binding, models.ScopeGroup, strPtr("grp-1")) {
-		t.Error("group binding should match same group scope")
-	}
-	if matchesScope(binding, models.ScopeGroup, strPtr("grp-2")) {
-		t.Error("group binding should not match different group scope")
-	}
-	if matchesScope(binding, models.ScopeOrganization, strPtr("grp-1")) {
-		t.Error("group binding should not match org scope")
-	}
-}
-
-func TestMatchesScope_NilScopeID(t *testing.T) {
-	binding := &models.UserRoleBinding{
-		ScopeType: models.ScopeOrganization,
-		ScopeID:   nil,
-	}
-
-	if matchesScope(binding, models.ScopeOrganization, strPtr("org-1")) {
-		t.Error("binding with nil scope_id should not match")
-	}
-
-	binding2 := &models.UserRoleBinding{
-		ScopeType: models.ScopeOrganization,
-		ScopeID:   strPtr("org-1"),
-	}
-	if matchesScope(binding2, models.ScopeOrganization, nil) {
-		t.Error("nil requested scope_id should not match")
-	}
-}
-
-func TestHasPermission_GlobalAdmin(t *testing.T) {
-	az := &testAuthorizer{
-		bindingRepo: &mockBindingRepo{
-			bindings: []*models.UserRoleBinding{
-				{RoleID: "role-admin", ScopeType: models.ScopeGlobal},
-			},
-		},
-		roleRepo: &mockRoleRepo{
-			permissions: map[string][]*models.Permission{
-				"role-admin": {
-					{Resource: "policy", Action: "create"},
-					{Resource: "policy", Action: "edit"},
-					{Resource: "policy", Action: "delete"},
-					{Resource: "user", Action: "manage"},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-
-	// Admin should have policy:create
-	ok, err := az.HasPermission(ctx, "user-1", "policy", "create", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("global admin should have policy:create permission")
-	}
-
-	// Admin should have user:manage
-	ok, err = az.HasPermission(ctx, "user-1", "user", "manage", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("global admin should have user:manage permission")
-	}
-
-	// Admin should NOT have compliance:view (not assigned)
-	ok, err = az.HasPermission(ctx, "user-1", "compliance", "view", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ok {
-		t.Error("global admin should not have compliance:view if not assigned")
-	}
-}
-
-func TestHasPermission_OrgScopedRole(t *testing.T) {
-	orgID := "org-123"
-	az := &testAuthorizer{
-		bindingRepo: &mockBindingRepo{
-			bindings: []*models.UserRoleBinding{
-				{RoleID: "role-org-admin", ScopeType: models.ScopeOrganization, ScopeID: &orgID},
-			},
-		},
-		roleRepo: &mockRoleRepo{
-			permissions: map[string][]*models.Permission{
-				"role-org-admin": {
-					{Resource: "policy", Action: "create"},
-					{Resource: "policy", Action: "view"},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-
-	// Should have permission in matching org
-	ok, err := az.HasPermission(ctx, "user-1", "policy", "create", models.ScopeOrganization, &orgID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("org admin should have policy:create in their org")
-	}
-
-	// Should NOT have permission in different org
-	otherOrg := "org-456"
-	ok, err = az.HasPermission(ctx, "user-1", "policy", "create", models.ScopeOrganization, &otherOrg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ok {
-		t.Error("org admin should not have policy:create in different org")
-	}
-}
-
-func TestHasPermission_NoBindings(t *testing.T) {
-	az := &testAuthorizer{
-		bindingRepo: &mockBindingRepo{bindings: nil},
-		roleRepo:    &mockRoleRepo{permissions: map[string][]*models.Permission{}},
-	}
-
-	ctx := context.Background()
-
-	ok, err := az.HasPermission(ctx, "user-1", "policy", "create", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ok {
-		t.Error("user with no bindings should not have any permission")
-	}
-}
-
-func TestHasPermission_MultipleRoles(t *testing.T) {
-	az := &testAuthorizer{
-		bindingRepo: &mockBindingRepo{
-			bindings: []*models.UserRoleBinding{
-				{RoleID: "role-viewer", ScopeType: models.ScopeGlobal},
-				{RoleID: "role-editor", ScopeType: models.ScopeGlobal},
-			},
-		},
-		roleRepo: &mockRoleRepo{
-			permissions: map[string][]*models.Permission{
-				"role-viewer": {
-					{Resource: "policy", Action: "view"},
-				},
-				"role-editor": {
-					{Resource: "policy", Action: "edit"},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-
-	// Should have policy:view from viewer role
-	ok, err := az.HasPermission(ctx, "user-1", "policy", "view", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("user should have policy:view from viewer role")
-	}
-
-	// Should have policy:edit from editor role
-	ok, err = az.HasPermission(ctx, "user-1", "policy", "edit", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("user should have policy:edit from editor role")
-	}
-
-	// Should NOT have policy:delete from either role
-	ok, err = az.HasPermission(ctx, "user-1", "policy", "delete", models.ScopeGlobal, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ok {
-		t.Error("user should not have policy:delete")
-	}
-}
-
-func TestHasPermission_GlobalBindingAppliesEverywhere(t *testing.T) {
-	az := &testAuthorizer{
-		bindingRepo: &mockBindingRepo{
-			bindings: []*models.UserRoleBinding{
-				{RoleID: "role-admin", ScopeType: models.ScopeGlobal},
-			},
-		},
-		roleRepo: &mockRoleRepo{
-			permissions: map[string][]*models.Permission{
-				"role-admin": {
-					{Resource: "policy", Action: "create"},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-	orgID := "org-123"
-
-	// Global role should work even when checking org scope
-	ok, err := az.HasPermission(ctx, "user-1", "policy", "create", models.ScopeOrganization, &orgID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("global binding should apply to organization scope checks")
-	}
-
-	groupID := "grp-456"
-	ok, err = az.HasPermission(ctx, "user-1", "policy", "create", models.ScopeGroup, &groupID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !ok {
-		t.Error("global binding should apply to group scope checks")
+	if _, err := az.HasPermission(context.Background(), "u1", "policy", "read"); err == nil {
+		t.Error("HasPermission() should propagate permission source errors")
 	}
 }

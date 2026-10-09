@@ -155,12 +155,11 @@ const (
 	RoleUser  = "user"
 )
 
-// Scope type constants for user role bindings
-const (
-	ScopeGlobal       = "global"
-	ScopeOrganization = "organization"
-	ScopeGroup        = "group"
-)
+// ScopeGlobal is the only supported role-binding scope. RBAC is global-only:
+// scoped (per-organization, per-group) bindings are not supported, and the
+// database constrains scope_type to this value. Delegated administration is
+// a planned feature with its own scope model.
+const ScopeGlobal = "global"
 
 // Role represents an RBAC role
 type Role struct {

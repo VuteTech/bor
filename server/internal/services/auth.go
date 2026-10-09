@@ -933,13 +933,13 @@ func (s *AuthService) GetUser(ctx context.Context, id string) (*models.User, err
 }
 
 // GetUserPermissions returns a deduplicated, sorted list of "resource:action"
-// permission strings for the given user, aggregated from all their role bindings.
-// All bindings (global, organization, and group scoped) are included so the
-// frontend has the full set of permissions to show/hide UI elements.
-// Note: The backend still enforces scoped permissions at request time via the
-// Authorizer middleware — the frontend list is for display purposes only.
+// permission strings for the given user, aggregated from the user's effective
+// roles: direct role bindings plus roles inherited through user-group
+// membership. It reads from the same ListEffectiveRoleIDs source as the
+// Authorizer, so what the frontend shows always matches what the backend
+// enforces.
 func (s *AuthService) GetUserPermissions(ctx context.Context, userID string) ([]string, error) {
-	bindings, err := s.bindingRepo.ListByUserID(ctx, userID)
+	roleIDs, err := s.bindingRepo.ListEffectiveRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch role bindings: %w", err)
 	}
@@ -947,10 +947,10 @@ func (s *AuthService) GetUserPermissions(ctx context.Context, userID string) ([]
 	seen := make(map[string]struct{})
 	var perms []string
 
-	for _, b := range bindings {
-		rolePerms, err := s.roleRepo.GetPermissionsByRoleID(ctx, b.RoleID)
+	for _, roleID := range roleIDs {
+		rolePerms, err := s.roleRepo.GetPermissionsByRoleID(ctx, roleID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch permissions for role %s: %w", b.RoleID, err)
+			return nil, fmt.Errorf("failed to fetch permissions for role %s: %w", roleID, err)
 		}
 		for _, p := range rolePerms {
 			key := p.Resource + ":" + p.Action
