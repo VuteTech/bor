@@ -14,17 +14,42 @@ import (
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // UserRoleBindingHandler handles user role binding endpoints
 type UserRoleBindingHandler struct {
 	bindingRepo *database.UserRoleBindingRepository
 	roleRepo    *database.RoleRepository
+	auditSvc    *services.AuditService
 }
 
 // NewUserRoleBindingHandler creates a new UserRoleBindingHandler
 func NewUserRoleBindingHandler(bindingRepo *database.UserRoleBindingRepository, roleRepo *database.RoleRepository) *UserRoleBindingHandler {
 	return &UserRoleBindingHandler{bindingRepo: bindingRepo, roleRepo: roleRepo}
+}
+
+// WithAuditService attaches an AuditService so privilege revocations are
+// recorded with the affected user and role (the generic HTTP audit
+// middleware only sees the binding UUID on a DELETE).
+func (h *UserRoleBindingHandler) WithAuditService(auditSvc *services.AuditService) *UserRoleBindingHandler {
+	h.auditSvc = auditSvc
+	return h
+}
+
+// validateGlobalScope rejects scoped role bindings. RBAC is global-only:
+// scoped bindings were never enforced, so accepting them would silently
+// create grants that do nothing (or, worse, grants that spring to life if
+// scoped enforcement ships later). An empty scope type defaults to global.
+func validateGlobalScope(scopeType string, scopeID *string) (string, error) {
+	if scopeType == "" {
+		scopeType = models.ScopeGlobal
+	}
+	if scopeType != models.ScopeGlobal || scopeID != nil {
+		return "", errors.New("scoped role bindings are not supported; scope_type must be 'global' with no scope_id")
+	}
+	return scopeType, nil
 }
 
 // ListByUser handles GET /api/v1/user-role-bindings?user_id={id}
@@ -60,10 +85,17 @@ func (h *UserRoleBindingHandler) Create(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if binding.UserID == "" || binding.RoleID == "" || binding.ScopeType == "" {
-		http.Error(w, `{"error":"user_id, role_id, and scope_type are required"}`, http.StatusBadRequest)
+	if binding.UserID == "" || binding.RoleID == "" {
+		http.Error(w, `{"error":"user_id and role_id are required"}`, http.StatusBadRequest)
 		return
 	}
+
+	scopeType, err := validateGlobalScope(binding.ScopeType, binding.ScopeID)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	binding.ScopeType = scopeType
 
 	// Privilege-escalation guard: the caller may only assign a role whose
 	// permissions are a subset of the permissions the caller already holds.
@@ -114,8 +146,18 @@ func (h *UserRoleBindingHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Fetch the binding first: the last-Super-Admin guard needs it, and the
+	// audit event must record which user and role were affected (after the
+	// delete only the UUID would remain).
+	binding, err := h.bindingRepo.GetByID(r.Context(), id)
+	if err != nil {
+		log.Printf("Failed to load role binding before delete: %v", err)
+		http.Error(w, `{"error":"failed to delete binding"}`, http.StatusInternalServerError)
+		return
+	}
+
 	// Refuse to unassign the Super Admin role from the last Super Admin.
-	if err := h.guardLastSuperAdminBinding(r.Context(), id); err != nil {
+	if err := h.guardLastSuperAdminBinding(r.Context(), binding); err != nil {
 		if errors.Is(err, services.ErrLastSuperAdmin) {
 			http.Error(w, `{"error":"Cannot remove the Super Admin role from the last Super Admin user."}`, http.StatusConflict)
 			return
@@ -131,17 +173,63 @@ func (h *UserRoleBindingHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if binding != nil {
+		h.auditRevoke(r, binding)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// guardLastSuperAdminBinding returns services.ErrLastSuperAdmin when removing
-// the binding identified by id would unassign the Super Admin role from the
-// only remaining Super Admin.
-func (h *UserRoleBindingHandler) guardLastSuperAdminBinding(ctx context.Context, id string) error {
-	binding, err := h.bindingRepo.GetByID(ctx, id)
-	if err != nil {
-		return err
+// auditRevoke records a privilege-revocation event naming the affected user
+// and role. This complements the generic HTTP audit middleware entry, whose
+// DELETE record only carries the binding UUID.
+func (h *UserRoleBindingHandler) auditRevoke(r *http.Request, binding *models.UserRoleBinding) {
+	if h.auditSvc == nil {
+		return
 	}
+
+	roleName := ""
+	if role, err := h.roleRepo.GetByID(r.Context(), binding.RoleID); err == nil && role != nil {
+		roleName = role.Name
+	}
+
+	details, err := json.Marshal(map[string]string{
+		"binding_id": binding.ID,
+		"user_id":    binding.UserID,
+		"role_id":    binding.RoleID,
+		"role_name":  roleName,
+	})
+	if err != nil {
+		return
+	}
+
+	actor := &auditpb.Actor{}
+	if claims := GetUserFromContext(r.Context()); claims != nil {
+		actor.UserId = claims.UserID
+		actor.Username = claims.Username
+	}
+
+	h.auditSvc.Emit(r.Context(), &auditpb.AuditEvent{
+		OccurredAt: timestamppb.Now(),
+		Actor:      actor,
+		Action:     "revoke_role",
+		Resource:   &auditpb.Resource{Type: "user_role_binding", Id: binding.ID},
+		Outcome:    auditpb.Outcome_OUTCOME_SUCCESS,
+		SrcIp:      extractIP(r),
+		Payload: &auditpb.AuditEvent_HttpChange{
+			HttpChange: &auditpb.HttpPayload{
+				Method:   r.Method,
+				Path:     r.URL.Path,
+				BodyJson: string(details),
+			},
+		},
+	})
+}
+
+// guardLastSuperAdminBinding returns services.ErrLastSuperAdmin when removing
+// the given binding would unassign the Super Admin role from the only
+// remaining Super Admin. A nil binding (already gone) passes the guard.
+func (h *UserRoleBindingHandler) guardLastSuperAdminBinding(ctx context.Context, binding *models.UserRoleBinding) error {
 	if binding == nil {
 		return nil // already gone; let Delete handle it
 	}

@@ -55,7 +55,7 @@ type mockAuthorizer struct {
 	err    error
 }
 
-func (m *mockAuthorizer) HasPermission(_ context.Context, _, _, _, _ string, _ *string) (bool, error) {
+func (m *mockAuthorizer) HasPermission(_ context.Context, _, _, _ string) (bool, error) {
 	return m.result, m.err
 }
 
@@ -131,7 +131,7 @@ type permCheckingAuthorizer struct {
 	calls   []string
 }
 
-func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _, resource, action, _ string, _ *string) (bool, error) {
+func (m *permCheckingAuthorizer) HasPermission(_ context.Context, _, resource, action string) (bool, error) {
 	key := resource + ":" + action
 	m.calls = append(m.calls, key)
 	return m.allowed[key], nil

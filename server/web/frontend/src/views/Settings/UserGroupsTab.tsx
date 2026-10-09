@@ -24,7 +24,6 @@ import {
   TabTitleText,
   Flex,
   FlexItem,
-  Label,
 } from "@patternfly/react-core";
 import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
@@ -599,8 +598,6 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
   const [showAdd, setShowAdd] = useState(false);
 
   const [newRoleId, setNewRoleId] = useState("");
-  const [newScopeType, setNewScopeType] = useState("global");
-  const [newScopeId, setNewScopeId] = useState("");
   const [addSaving, setAddSaving] = useState(false);
 
   const reload = useCallback(() => {
@@ -647,16 +644,9 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
     setAddSaving(true);
     setError(null);
     try {
-      await addGroupRoleBinding(
-        groupId,
-        newRoleId,
-        newScopeType,
-        newScopeType !== "global" ? newScopeId : undefined
-      );
+      await addGroupRoleBinding(groupId, newRoleId);
       setShowAdd(false);
       setNewRoleId("");
-      setNewScopeType("global");
-      setNewScopeId("");
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to add role binding");
@@ -687,8 +677,6 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
         <Thead>
           <Tr>
             <Th>Role</Th>
-            <Th>Scope Type</Th>
-            <Th>Scope Target</Th>
             <Th>Actions</Th>
           </Tr>
         </Thead>
@@ -696,10 +684,6 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
           {bindings.map((b) => (
             <Tr key={b.id}>
               <Td>{roleName(b.role_id)}</Td>
-              <Td>
-                <Label>{b.scope_type}</Label>
-              </Td>
-              <Td>{b.scope_id || "—"}</Td>
               <Td>
                 <Button
                   variant="plain"
@@ -714,7 +698,7 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
           ))}
           {bindings.length === 0 && (
             <Tr>
-              <Td colSpan={4}>No role assignments.</Td>
+              <Td colSpan={2}>No role assignments.</Td>
             </Tr>
           )}
         </Tbody>
@@ -744,28 +728,6 @@ const GroupRoleAssignmentsTab: React.FC<{ groupId: string }> = ({ groupId }) => 
                   ))}
                 </select>
               </FormGroup>
-              <FormGroup label="Scope Type" isRequired fieldId="gr-scope">
-                <select
-                  id="gr-scope"
-                  className="pf-v6-c-form-control"
-                  value={newScopeType}
-                  onChange={(e) => setNewScopeType(e.target.value)}
-                >
-                  <option value="global">Global</option>
-                  <option value="organization">Organization</option>
-                  <option value="group">User Group</option>
-                </select>
-              </FormGroup>
-              {newScopeType !== "global" && (
-                <FormGroup label="Scope Target" fieldId="gr-scope-id">
-                  <TextInput
-                    id="gr-scope-id"
-                    value={newScopeId}
-                    onChange={(_ev, v) => setNewScopeId(v)}
-                    placeholder="Enter scope ID"
-                  />
-                </FormGroup>
-              )}
             </Form>
           </ModalBody>
           <ModalFooter>

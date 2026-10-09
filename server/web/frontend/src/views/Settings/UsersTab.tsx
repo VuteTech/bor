@@ -481,8 +481,6 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
 
   // Add role form state
   const [newRoleId, setNewRoleId] = useState("");
-  const [newScopeType, setNewScopeType] = useState("global");
-  const [newScopeId, setNewScopeId] = useState("");
   const [addSaving, setAddSaving] = useState(false);
 
   const reload = useCallback(() => {
@@ -523,13 +521,9 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
       await createBinding({
         user_id: userId,
         role_id: newRoleId,
-        scope_type: newScopeType,
-        scope_id: newScopeType !== "global" ? newScopeId : undefined,
       });
       setShowAdd(false);
       setNewRoleId("");
-      setNewScopeType("global");
-      setNewScopeId("");
       reload();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to add binding");
@@ -560,8 +554,6 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
         <Thead>
           <Tr>
             <Th>Role</Th>
-            <Th>Scope Type</Th>
-            <Th>Scope Target</Th>
             <Th>Actions</Th>
           </Tr>
         </Thead>
@@ -569,10 +561,6 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
           {bindings.map((b) => (
             <Tr key={b.id}>
               <Td>{roleName(b.role_id)}</Td>
-              <Td>
-                <Label>{b.scope_type}</Label>
-              </Td>
-              <Td>{b.scope_id || "—"}</Td>
               <Td>
                 <Button
                   variant="plain"
@@ -587,7 +575,7 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
           ))}
           {bindings.length === 0 && (
             <Tr>
-              <Td colSpan={4}>No role assignments.</Td>
+              <Td colSpan={2}>No role assignments.</Td>
             </Tr>
           )}
         </Tbody>
@@ -617,28 +605,6 @@ const RoleAssignmentsTab: React.FC<{ userId: string }> = ({ userId }) => {
                   ))}
                 </select>
               </FormGroup>
-              <FormGroup label="Scope Type" isRequired fieldId="ar-scope">
-                <select
-                  id="ar-scope"
-                  className="pf-v6-c-form-control"
-                  value={newScopeType}
-                  onChange={(e) => setNewScopeType(e.target.value)}
-                >
-                  <option value="global">Global</option>
-                  <option value="organization">Organization</option>
-                  <option value="group">User Group</option>
-                </select>
-              </FormGroup>
-              {newScopeType !== "global" && (
-                <FormGroup label="Scope Target" fieldId="ar-scope-id">
-                  <TextInput
-                    id="ar-scope-id"
-                    value={newScopeId}
-                    onChange={(_ev, v) => setNewScopeId(v)}
-                    placeholder="Enter scope ID"
-                  />
-                </FormGroup>
-              )}
             </Form>
           </ModalBody>
           <ModalFooter>

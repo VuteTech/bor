@@ -289,8 +289,7 @@ func RequirePermission(az authz.Authorizer, resource, action string) func(http.H
 				return
 			}
 
-			scopeType := "global"
-			allowed, err := az.HasPermission(r.Context(), claims.UserID, resource, action, scopeType, nil)
+			allowed, err := az.HasPermission(r.Context(), claims.UserID, resource, action)
 			if err != nil {
 				http.Error(w, `{"error":"authorization check failed"}`, http.StatusInternalServerError)
 				return
@@ -338,8 +337,7 @@ func RequireMethodPermission(az authz.Authorizer, perms []MethodPermission) func
 				return
 			}
 
-			scopeType := "global"
-			allowed, err := az.HasPermission(r.Context(), claims.UserID, resource, action, scopeType, nil)
+			allowed, err := az.HasPermission(r.Context(), claims.UserID, resource, action)
 			if err != nil {
 				http.Error(w, `{"error":"authorization check failed"}`, http.StatusInternalServerError)
 				return

@@ -17,22 +17,25 @@ func permKey(resource, action string) string {
 }
 
 // callerEffectivePermissions returns the set of "resource:action" permissions
-// the given user holds, aggregated across all their role bindings. It is used to
+// the given user holds, aggregated across their effective roles (direct role
+// bindings and roles inherited through user-group membership). It is used to
 // enforce that an administrator can never grant a permission they do not
-// themselves possess (no privilege escalation).
+// themselves possess (no privilege escalation). It draws from the same
+// ListEffectiveRoleIDs source as the Authorizer, so the guard and the
+// enforcement can never disagree.
 func callerEffectivePermissions(ctx context.Context, roleRepo *database.RoleRepository, bindingRepo *database.UserRoleBindingRepository, userID string) (map[string]struct{}, error) {
 	perms := make(map[string]struct{})
 	if userID == "" {
 		return perms, nil
 	}
-	bindings, err := bindingRepo.ListByUserID(ctx, userID)
+	roleIDs, err := bindingRepo.ListEffectiveRoleIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load caller role bindings: %w", err)
 	}
-	for _, b := range bindings {
-		rolePerms, err := roleRepo.GetPermissionsByRoleID(ctx, b.RoleID)
+	for _, roleID := range roleIDs {
+		rolePerms, err := roleRepo.GetPermissionsByRoleID(ctx, roleID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load permissions for role %s: %w", b.RoleID, err)
+			return nil, fmt.Errorf("failed to load permissions for role %s: %w", roleID, err)
 		}
 		for _, p := range rolePerms {
 			perms[permKey(p.Resource, p.Action)] = struct{}{}

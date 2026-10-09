@@ -347,11 +347,13 @@ func main() {
 		WithAuditService(auditSvc)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
-	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo, roleRepo)
+	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo, roleRepo).
+		WithAuditService(auditSvc)
 	policyHandler := api.NewPolicyHandler(policySvc)
 	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
-	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo)
+	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo).
+		WithAuditService(auditSvc, roleRepo)
 	policyBindingHandler := api.NewPolicyBindingHandler(policyBindingSvc)
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)

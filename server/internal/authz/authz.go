@@ -3,6 +3,11 @@
 // Copyright (C) 2026 Bor contributors
 
 // Package authz provides role-based access control for Bor.
+//
+// RBAC is global-only: a role binding grants its role's permissions
+// everywhere. Scoped (per-organization, per-group) bindings are not
+// supported; delegated administration is a planned feature and will be
+// introduced with an explicit scope model when it ships.
 package authz
 
 import (
@@ -15,52 +20,50 @@ import (
 
 // Authorizer defines the interface for checking user permissions
 type Authorizer interface {
-	HasPermission(ctx context.Context, userID, resource, action, scopeType string, scopeID *string) (bool, error)
+	HasPermission(ctx context.Context, userID, resource, action string) (bool, error)
+}
+
+// RoleBindingSource yields the effective role IDs a user holds (direct
+// bindings plus bindings inherited through user-group membership).
+// Implemented by database.UserRoleBindingRepository.
+type RoleBindingSource interface {
+	ListEffectiveRoleIDs(ctx context.Context, userID string) ([]string, error)
+}
+
+// PermissionSource yields the permissions attached to a role.
+// Implemented by database.RoleRepository.
+type PermissionSource interface {
+	GetPermissionsByRoleID(ctx context.Context, roleID string) ([]*models.Permission, error)
 }
 
 // authorizer implements the Authorizer interface using the RBAC database tables
 type authorizer struct {
-	bindingRepo *database.UserRoleBindingRepository
-	roleRepo    *database.RoleRepository
+	bindings RoleBindingSource
+	roles    PermissionSource
 }
 
 // New creates a new Authorizer
 func New(bindingRepo *database.UserRoleBindingRepository, roleRepo *database.RoleRepository) Authorizer {
-	return &authorizer{
-		bindingRepo: bindingRepo,
-		roleRepo:    roleRepo,
-	}
+	return NewFromSources(bindingRepo, roleRepo)
 }
 
-// HasPermission checks if a user has a specific permission within a given scope.
-//
-// Logic:
-//   - Fetch all role bindings for the user
-//   - Filter by matching scope:
-//   - "global" applies everywhere
-//   - "organization" applies only if scope matches
-//   - "group" applies only if scope matches
-//   - Collect permissions via role_permissions
-//   - Match resource + action
-func (a *authorizer) HasPermission(ctx context.Context, userID, resource, action, scopeType string, scopeID *string) (bool, error) {
-	bindings, err := a.bindingRepo.ListByUserID(ctx, userID)
+// NewFromSources creates an Authorizer from the narrow source interfaces.
+func NewFromSources(bindings RoleBindingSource, roles PermissionSource) Authorizer {
+	return &authorizer{bindings: bindings, roles: roles}
+}
+
+// HasPermission checks if a user holds a permission through any of their
+// effective roles (direct role bindings and user-group role bindings).
+func (a *authorizer) HasPermission(ctx context.Context, userID, resource, action string) (bool, error) {
+	roleIDs, err := a.bindings.ListEffectiveRoleIDs(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch role bindings: %w", err)
 	}
 
-	// Filter bindings by scope
-	var matchingBindings []*models.UserRoleBinding
-	for _, b := range bindings {
-		if matchesScope(b, scopeType, scopeID) {
-			matchingBindings = append(matchingBindings, b)
-		}
-	}
-
-	// Check permissions for each matching role
-	for _, b := range matchingBindings {
-		perms, err := a.roleRepo.GetPermissionsByRoleID(ctx, b.RoleID)
+	for _, roleID := range roleIDs {
+		perms, err := a.roles.GetPermissionsByRoleID(ctx, roleID)
 		if err != nil {
-			return false, fmt.Errorf("failed to fetch permissions for role %s: %w", b.RoleID, err)
+			return false, fmt.Errorf("failed to fetch permissions for role %s: %w", roleID, err)
 		}
 
 		for _, p := range perms {
@@ -71,28 +74,4 @@ func (a *authorizer) HasPermission(ctx context.Context, userID, resource, action
 	}
 
 	return false, nil
-}
-
-// matchesScope checks if a user role binding matches the requested scope.
-// Global scope always matches regardless of the requested scope.
-// For organization and group scopes, both the scope type and scope ID must match.
-// Returns false if either the binding's ScopeID or the requested scopeID is nil
-// for non-global scopes, ensuring explicit scope matching for security.
-func matchesScope(binding *models.UserRoleBinding, scopeType string, scopeID *string) bool {
-	// Global bindings always apply
-	if binding.ScopeType == models.ScopeGlobal {
-		return true
-	}
-
-	// Scope types must match
-	if binding.ScopeType != scopeType {
-		return false
-	}
-
-	// For non-global scopes, scope IDs must match
-	if binding.ScopeID == nil || scopeID == nil {
-		return false
-	}
-
-	return *binding.ScopeID == *scopeID
 }
