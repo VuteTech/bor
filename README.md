@@ -151,12 +151,11 @@ make frontend && make server && make agent
 ### PKCS#11 HSM build
 
 To store the CA private key in a hardware security module, build with the
-`pkcs11` tag. This requires CGO and the `crypto11` dependency:
+`pkcs11` tag. This requires CGO (and a C compiler); the `crypto11` dependency
+is already part of the module:
 
 ```bash
-cd server && go get github.com/ThalesIgnite/crypto11
-cd ..
-make server-pkcs11   # → server/server  (FIPS 140-3 + PKCS#11)
+make server-pkcs11   # -> server/server  (FIPS 140-3 + PKCS#11)
 ```
 
 See [docs/SECURITY.md](docs/SECURITY.md#hsm-integration-pkcs11) for the full

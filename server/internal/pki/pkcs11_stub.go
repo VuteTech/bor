@@ -22,7 +22,6 @@ import (
 func EnsureCAWithHSM(_, _, _, _, _ string) (*x509.Certificate, crypto.Signer, error) {
 	return nil, nil, fmt.Errorf(
 		"PKCS#11 HSM support is not compiled in: " +
-			"rebuild the server with '-tags pkcs11' and add the dependency: " +
-			"cd server && go get github.com/ThalesIgnite/crypto11",
+			"rebuild the server with 'make server-pkcs11' (build tag pkcs11, CGO enabled)",
 	)
 }

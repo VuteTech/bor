@@ -6,13 +6,10 @@
 
 // Package pki provides PKI helpers with optional PKCS#11 HSM support.
 //
-// This file is compiled only when the 'pkcs11' build tag is set:
+// This file is compiled only when the 'pkcs11' build tag is set (it needs
+// CGO and a C compiler):
 //
 //	make server-pkcs11
-//
-// Before building with HSM support, add the dependency:
-//
-//	cd server && go get github.com/ThalesIgnite/crypto11
 //
 // Runtime requirements:
 //   - A PKCS#11 shared library (.so) for your HSM or software token
@@ -27,7 +24,6 @@
 //	BOR_CA_PKCS11_KEY_LABEL=bor-ca-key
 //	BOR_CA_PKCS11_PIN=<token-pin>
 //	BOR_CA_CERT_FILE=/var/lib/bor/pki/ca/ca.crt   # cert on disk, key in HSM
-
 package pki
 
 import (
@@ -44,7 +40,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ThalesIgnite/crypto11"
+	"github.com/eclipse-keypont/crypto11"
 )
 
 // EnsureCAWithHSM loads (or creates) the CA certificate at certPath whose
@@ -78,8 +74,8 @@ func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string) (*x509.Cer
 	}
 
 	if signer == nil {
-		// Key not present on token — generate a new P-384 key.
-		log.Printf("pki: key %q not found on HSM token %q — generating new ECDSA P-384 CA key", keyLabel, tokenLabel)
+		// Key not present on token: generate a new P-384 key.
+		log.Printf("pki: key %q not found on HSM token %q, generating new ECDSA P-384 CA key", keyLabel, tokenLabel)
 		signer, err = ctx.GenerateECDSAKeyPairWithLabel(nil, []byte(keyLabel), elliptic.P384())
 		if err != nil {
 			return nil, nil, fmt.Errorf("PKCS#11 GenerateECDSAKeyPairWithLabel (label=%s): %w", keyLabel, err)
@@ -88,12 +84,12 @@ func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string) (*x509.Cer
 
 	// Ensure the CA certificate exists on disk.
 	if !fileExists(certPath) {
-		if err := os.MkdirAll(filepath.Dir(certPath), 0o700); err != nil {
-			return nil, nil, fmt.Errorf("failed to create CA cert directory: %w", err)
+		if mkErr := os.MkdirAll(filepath.Dir(certPath), 0o700); mkErr != nil {
+			return nil, nil, fmt.Errorf("failed to create CA cert directory: %w", mkErr)
 		}
-		log.Printf("pki: generating CA certificate for HSM key %q → %s", keyLabel, certPath)
-		if err := generateCACert(certPath, signer); err != nil {
-			return nil, nil, err
+		log.Printf("pki: generating CA certificate for HSM key %q -> %s", keyLabel, certPath)
+		if genErr := generateCACert(certPath, signer); genErr != nil {
+			return nil, nil, genErr
 		}
 	}
 
@@ -133,11 +129,16 @@ func generateCACert(certPath string, signer crypto.Signer) error {
 		return fmt.Errorf("failed to create HSM CA certificate: %w", err)
 	}
 
-	f, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(certPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // certPath is operator configuration
 	if err != nil {
 		return fmt.Errorf("failed to write CA cert %s: %w", certPath, err)
 	}
-	defer f.Close()
-
-	return pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if encErr := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); encErr != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to write CA cert %s: %w", certPath, encErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("failed to write CA cert %s: %w", certPath, closeErr)
+	}
+	return nil
 }
