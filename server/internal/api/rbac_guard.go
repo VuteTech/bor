@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/VuteTech/Bor/server/internal/database"
+	"github.com/VuteTech/Bor/server/internal/models"
 )
 
 // permKey is the canonical "resource:action" representation of a permission.
@@ -60,4 +61,45 @@ func rolePermissionsSubsetOf(ctx context.Context, roleRepo *database.RoleReposit
 		}
 	}
 	return true, "", nil
+}
+
+// firstUnheldPermission returns the first permission in rolePerms that the
+// caller does not hold, or "" when every one is held.
+func firstUnheldPermission(callerPerms map[string]struct{}, rolePerms []*models.Permission) string {
+	for _, p := range rolePerms {
+		key := permKey(p.Resource, p.Action)
+		if _, ok := callerPerms[key]; !ok {
+			return key
+		}
+	}
+	return ""
+}
+
+// callerCanGrantRoles reports whether the caller holds every permission of
+// every role in roleIDs, i.e. whether giving those roles to someone hands out
+// nothing the caller does not already have. The first unheld permission is
+// returned for diagnostics.
+func callerCanGrantRoles(ctx context.Context, roleRepo *database.RoleRepository, userBindingRepo *database.UserRoleBindingRepository, callerID string, roleIDs []string) (ok bool, missing string, err error) {
+	callerPerms, err := callerEffectivePermissions(ctx, roleRepo, userBindingRepo, callerID)
+	if err != nil {
+		return false, "", err
+	}
+	for _, roleID := range roleIDs {
+		rolePerms, err := roleRepo.GetPermissionsByRoleID(ctx, roleID)
+		if err != nil {
+			return false, "", fmt.Errorf("failed to load permissions for role %s: %w", roleID, err)
+		}
+		if missing := firstUnheldPermission(callerPerms, rolePerms); missing != "" {
+			return false, missing, nil
+		}
+	}
+	return true, "", nil
+}
+
+// callerID returns the authenticated user's ID, or "".
+func callerID(ctx context.Context) string {
+	if claims := GetUserFromContext(ctx); claims != nil {
+		return claims.UserID
+	}
+	return ""
 }

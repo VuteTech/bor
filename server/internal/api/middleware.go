@@ -279,29 +279,10 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 }
 
 // RequirePermission checks that the authenticated user has a specific permission
-// via the Authorizer. It replaces hardcoded role checks like AdminOnly.
+// via the Authorizer. It replaces hardcoded role checks like AdminOnly. Use
+// PermissionGate.Require to also audit refused requests.
 func RequirePermission(az authz.Authorizer, resource, action string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims := GetUserFromContext(r.Context())
-			if claims == nil {
-				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
-				return
-			}
-
-			allowed, err := az.HasPermission(r.Context(), claims.UserID, resource, action)
-			if err != nil {
-				http.Error(w, `{"error":"authorization check failed"}`, http.StatusInternalServerError)
-				return
-			}
-			if !allowed {
-				http.Error(w, `{"error":"insufficient permissions"}`, http.StatusForbidden)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
+	return NewPermissionGate(az, nil, false).Require(resource, action)
 }
 
 // MethodPermission maps an HTTP method to a resource:action pair
@@ -312,44 +293,10 @@ type MethodPermission struct {
 }
 
 // RequireMethodPermission checks permissions based on the HTTP method.
-// If no matching method is found, the request is denied with 405 Method Not Allowed.
+// If no matching method is found, the request is denied with 405 Method Not
+// Allowed. Use PermissionGate.RequireMethod to also audit refused requests.
 func RequireMethodPermission(az authz.Authorizer, perms []MethodPermission) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			claims := GetUserFromContext(r.Context())
-			if claims == nil {
-				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
-				return
-			}
-
-			var resource, action string
-			found := false
-			for _, p := range perms {
-				if p.Method == r.Method {
-					resource = p.Resource
-					action = p.Action
-					found = true
-					break
-				}
-			}
-			if !found {
-				http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-				return
-			}
-
-			allowed, err := az.HasPermission(r.Context(), claims.UserID, resource, action)
-			if err != nil {
-				http.Error(w, `{"error":"authorization check failed"}`, http.StatusInternalServerError)
-				return
-			}
-			if !allowed {
-				http.Error(w, `{"error":"insufficient permissions"}`, http.StatusForbidden)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
+	return NewPermissionGate(az, nil, false).RequireMethod(perms)
 }
 
 // AdminOnly restricts access to users with the "user:manage" permission.

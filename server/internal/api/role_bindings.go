@@ -122,6 +122,7 @@ func (h *UserRoleBindingHandler) Create(w http.ResponseWriter, r *http.Request) 
 		log.Printf("role binding denied: user %s tried to assign role %s granting unheld permission %q",
 			claims.UserID, binding.RoleID, missing)
 		http.Error(w, `{"error":"cannot assign a role that grants permissions you do not hold"}`, http.StatusForbidden)
+		auditDenial(r, "user_role_binding", "create", binding.UserID, "would grant "+missing+", which the caller does not hold")
 		return
 	}
 
@@ -215,7 +216,7 @@ func (h *UserRoleBindingHandler) auditRevoke(r *http.Request, binding *models.Us
 		Action:     "revoke_role",
 		Resource:   &auditpb.Resource{Type: "user_role_binding", Id: binding.ID},
 		Outcome:    auditpb.Outcome_OUTCOME_SUCCESS,
-		SrcIp:      extractIP(r),
+		SrcIp:      auditSrcIP(r),
 		Payload: &auditpb.AuditEvent_HttpChange{
 			HttpChange: &auditpb.HttpPayload{
 				Method:   r.Method,

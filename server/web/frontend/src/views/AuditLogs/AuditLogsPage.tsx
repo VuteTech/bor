@@ -50,11 +50,13 @@ import {
 
 // ─── Known filter values ──────────────────────────────────────────────────────
 
-const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "tamper_detected"];
+const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "access_denied", "tamper_detected"];
 const KNOWN_RESOURCE_TYPES = [
   "policies", "nodes", "node-groups", "users", "roles",
   "user-groups", "user-role-bindings", "user_role_binding",
   "user_group_role_binding", "policy-bindings", "managed_file", "settings",
+  // Permission resources, used by access_denied events.
+  "user_group", "user", "role", "policy", "node", "node_group",
 ];
 
 // ─── Badge colors ─────────────────────────────────────────────────────────────
@@ -71,6 +73,7 @@ const ACTION_LABEL_COLOR: Record<string, LabelColor> = {
   update: "blue",
   delete: "red",
   revoke_role: "purple",
+  access_denied: "yellow",
   tamper_detected: "orange",
 };
 const DEFAULT_ACTION_LABEL_COLOR: LabelColor = "grey";

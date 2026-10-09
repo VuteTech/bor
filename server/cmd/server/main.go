@@ -353,7 +353,8 @@ func main() {
 	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
 	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo).
-		WithAuditService(auditSvc, roleRepo)
+		WithAuditService(auditSvc, roleRepo).
+		WithRoleGuard(userRoleBindingRepo)
 	policyBindingHandler := api.NewPolicyBindingHandler(policyBindingSvc)
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
@@ -454,6 +455,11 @@ func main() {
 	// Audit middleware for logging state-changing API calls
 	auditMw := api.AuditMiddleware(auditSvc, cfg.Audit.AnonymizeIPs)
 
+	// Permission gate: every route's permission check. Refused
+	// state-changing requests, and refusals by the privilege-escalation
+	// guards behind it, are recorded as access_denied audit events.
+	gate := api.NewPermissionGate(az, auditSvc, cfg.Audit.AnonymizeIPs)
+
 	// Rate limiter for authentication endpoints: 10 req/min per IP (NIS2 / brute-force protection).
 	authRateLimit := api.NewRateLimitMiddleware(10, time.Minute)
 
@@ -501,13 +507,13 @@ func main() {
 	mux.Handle("/api/v1/users/me/webauthn/credentials/", authMiddleware(http.HandlerFunc(authHandler.WebAuthnCredentialHandler)))
 
 	// Policy routes — method-based permission checking
-	policyPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	policyPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "policy", Action: "view"},
 		{Method: http.MethodPost, Resource: "policy", Action: "create"},
 		{Method: http.MethodPut, Resource: "policy", Action: "edit"},
 		{Method: http.MethodDelete, Resource: "policy", Action: "delete"},
 	})
-	mux.Handle("/api/v1/policies", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(policyHandler.List))))
+	mux.Handle("/api/v1/policies", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(policyHandler.List))))
 	mux.Handle("/api/v1/policies/all", authMiddleware(policyPerms(auditMw(http.HandlerFunc(policyHandler.ServeHTTP)))))
 	mux.Handle("/api/v1/policies/all/", authMiddleware(policyPerms(auditMw(http.HandlerFunc(policyHandler.ServeHTTP)))))
 
@@ -515,11 +521,11 @@ func main() {
 	// import creates drafts and needs create. Both are audit-logged by the
 	// handler itself (exports are GETs, which the audit middleware skips).
 	exportHandler := api.NewExportHandler(policySvc, policyBindingSvc, nodeGroupSvc, auditSvc)
-	mux.Handle("/api/v1/policies/export", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(exportHandler.Export))))
-	mux.Handle("/api/v1/policies/import", authMiddleware(api.RequirePermission(az, "policy", "create")(http.HandlerFunc(exportHandler.Import))))
+	mux.Handle("/api/v1/policies/export", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(exportHandler.Export))))
+	mux.Handle("/api/v1/policies/import", authMiddleware(gate.Require("policy", "create")(http.HandlerFunc(exportHandler.Import))))
 
 	// Node routes — method-based permission checking
-	nodePerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	nodePerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "node", Action: "view"},
 		{Method: http.MethodPost, Resource: "node", Action: "create"},
 		{Method: http.MethodPut, Resource: "node", Action: "edit"},
@@ -527,15 +533,15 @@ func main() {
 	})
 	// Manifest for the deploy-agent wizard (gated like the node screens it
 	// serves; the raw files above stay public for package managers).
-	mux.Handle("/api/v1/agent-packages", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(agentRepoHandler.ManifestAPI))))
+	mux.Handle("/api/v1/agent-packages", authMiddleware(gate.Require("node", "view")(http.HandlerFunc(agentRepoHandler.ManifestAPI))))
 
-	mux.Handle("/api/v1/nodes", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.List))))
-	mux.Handle("/api/v1/nodes/status-counts", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.CountByStatus))))
-	mux.Handle("/api/v1/nodes/filter-options", authMiddleware(api.RequirePermission(az, "node", "view")(http.HandlerFunc(nodeHandler.FilterOptions))))
+	mux.Handle("/api/v1/nodes", authMiddleware(gate.Require("node", "view")(http.HandlerFunc(nodeHandler.List))))
+	mux.Handle("/api/v1/nodes/status-counts", authMiddleware(gate.Require("node", "view")(http.HandlerFunc(nodeHandler.CountByStatus))))
+	mux.Handle("/api/v1/nodes/filter-options", authMiddleware(gate.Require("node", "view")(http.HandlerFunc(nodeHandler.FilterOptions))))
 	mux.Handle("/api/v1/nodes/", authMiddleware(nodePerms(auditMw(http.HandlerFunc(nodeHandler.ServeHTTP)))))
 
 	// Node group routes — method-based permission checking
-	groupPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	groupPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "node_group", Action: "view"},
 		{Method: http.MethodPost, Resource: "node_group", Action: "create"},
 		{Method: http.MethodPut, Resource: "node_group", Action: "edit"},
@@ -545,7 +551,7 @@ func main() {
 	mux.Handle("/api/v1/node-groups/", authMiddleware(groupPerms(auditMw(http.HandlerFunc(nodeGroupHandler.ServeHTTP)))))
 
 	// User group routes — identity domain (separate from node groups)
-	userGroupPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	userGroupPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "user_group", Action: "view"},
 		{Method: http.MethodPost, Resource: "user_group", Action: "create"},
 		{Method: http.MethodPut, Resource: "user_group", Action: "edit"},
@@ -555,7 +561,7 @@ func main() {
 	mux.Handle("/api/v1/user-groups/", authMiddleware(userGroupPerms(auditMw(http.HandlerFunc(userGroupHandler.ServeHTTP)))))
 
 	// Policy binding routes — method-based permission checking
-	bindingPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	bindingPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "binding", Action: "view"},
 		{Method: http.MethodPost, Resource: "binding", Action: "create"},
 		{Method: http.MethodPut, Resource: "binding", Action: "toggle"},
@@ -568,7 +574,7 @@ func main() {
 	// User management routes — per-action permissions (view/create/edit/delete).
 	// user:manage still grants all of these (migration 000028 grants the granular
 	// perms to every role that holds user:manage).
-	userPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	userPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "user", Action: "view"},
 		{Method: http.MethodPost, Resource: "user", Action: "create"},
 		{Method: http.MethodPut, Resource: "user", Action: "edit"},
@@ -578,7 +584,7 @@ func main() {
 	mux.Handle("/api/v1/users/", authMiddleware(userPerms(auditMw(userHandler))))
 
 	// Role management routes — per-action permissions.
-	rolePerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	rolePerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "role", Action: "view"},
 		{Method: http.MethodPost, Resource: "role", Action: "create"},
 		{Method: http.MethodPut, Resource: "role", Action: "edit"},
@@ -587,30 +593,30 @@ func main() {
 	mux.Handle("/api/v1/roles", authMiddleware(rolePerms(auditMw(roleHandler))))
 	mux.Handle("/api/v1/roles/", authMiddleware(rolePerms(auditMw(roleHandler))))
 	// Listing the permission catalogue is a read — gated by role:view.
-	mux.Handle("/api/v1/permissions", authMiddleware(api.RequirePermission(az, "role", "view")(http.HandlerFunc(roleHandler.ListAllPermissions))))
+	mux.Handle("/api/v1/permissions", authMiddleware(gate.Require("role", "view")(http.HandlerFunc(roleHandler.ListAllPermissions))))
 
 	// User role binding routes remain admin-level (managing who has which role).
-	adminMiddleware := api.AdminOnly(az)
+	adminMiddleware := gate.Require("user", "manage")
 	mux.Handle("/api/v1/user-role-bindings", authMiddleware(adminMiddleware(auditMw(bindingHandler))))
 	mux.Handle("/api/v1/user-role-bindings/", authMiddleware(adminMiddleware(auditMw(bindingHandler))))
 
 	// Audit log routes
-	mux.Handle("/api/v1/audit-logs", authMiddleware(api.RequirePermission(az, "audit_log", "view")(http.HandlerFunc(auditLogHandler.List))))
-	mux.Handle("/api/v1/audit-logs/export", authMiddleware(api.RequirePermission(az, "audit_log", "export")(http.HandlerFunc(auditLogHandler.Export))))
+	mux.Handle("/api/v1/audit-logs", authMiddleware(gate.Require("audit_log", "view")(http.HandlerFunc(auditLogHandler.List))))
+	mux.Handle("/api/v1/audit-logs/export", authMiddleware(gate.Require("audit_log", "export")(http.HandlerFunc(auditLogHandler.Export))))
 
 	// Settings routes
-	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(api.RequirePermission(az, "settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
-	mux.Handle("/api/v1/settings/mfa", authMiddleware(api.RequirePermission(az, "settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
+	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(gate.Require("settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
+	mux.Handle("/api/v1/settings/mfa", authMiddleware(gate.Require("settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
 
 	// Flatpak repositories (server catalog sources) and the read-only catalog
 	// used by the policy editor.
-	flatpakRepoPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	flatpakRepoPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "flatpak_repo", Action: "view"},
 		{Method: http.MethodPost, Resource: "flatpak_repo", Action: "create"},
 		{Method: http.MethodPut, Resource: "flatpak_repo", Action: "edit"},
 		{Method: http.MethodDelete, Resource: "flatpak_repo", Action: "delete"},
 	})
-	flatpakRepoActionPerms := api.RequirePermission(az, "flatpak_repo", "refresh")
+	flatpakRepoActionPerms := gate.Require("flatpak_repo", "refresh")
 	mux.Handle("/api/v1/flatpak-repos", authMiddleware(flatpakRepoPerms(auditMw(flatpakReposHandler))))
 	mux.Handle("/api/v1/flatpak-repos/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/refresh") || strings.HasSuffix(r.URL.Path, "/catalog-upload")) {
@@ -619,8 +625,8 @@ func main() {
 		}
 		flatpakRepoPerms(auditMw(flatpakReposHandler)).ServeHTTP(w, r)
 	})))
-	mux.Handle("/api/v1/flatpak-catalog/", authMiddleware(api.RequirePermission(az, "policy", "view")(flatpakCatalogHandler)))
-	mux.Handle("/api/v1/flatpak-remote-info", authMiddleware(api.RequirePermission(az, "policy", "view")(flatpakRemoteInfoHandler)))
+	mux.Handle("/api/v1/flatpak-catalog/", authMiddleware(gate.Require("policy", "view")(flatpakCatalogHandler)))
+	mux.Handle("/api/v1/flatpak-remote-info", authMiddleware(gate.Require("policy", "view")(flatpakRemoteInfoHandler)))
 
 	// Step-up re-authentication: a single-use token for privileged actions
 	// (recovery-key reveal). Rate limited like the other credential endpoints.
@@ -630,9 +636,9 @@ func main() {
 	// reveal (own permission + step-up; emits explicit audit events instead
 	// of the generic middleware, so no duplicate rows and no key material in
 	// request logs) and rotate.
-	diskEncViewPerm := api.RequirePermission(az, "disk_encryption", "view")
-	diskEncRevealPerm := api.RequirePermission(az, "disk_encryption", "reveal")
-	diskEncRotatePerm := api.RequirePermission(az, "disk_encryption", "rotate")
+	diskEncViewPerm := gate.Require("disk_encryption", "view")
+	diskEncRevealPerm := gate.Require("disk_encryption", "reveal")
+	diskEncRotatePerm := gate.Require("disk_encryption", "rotate")
 	mux.Handle("/api/v1/disk-encryption/summary", authMiddleware(diskEncViewPerm(http.HandlerFunc(diskEncHandler.Summary))))
 	mux.Handle("/api/v1/disk-encryption/volumes", authMiddleware(diskEncViewPerm(http.HandlerFunc(diskEncHandler.Volumes))))
 	mux.Handle("/api/v1/disk-encryption/volumes/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -648,13 +654,13 @@ func main() {
 	mux.Handle("/api/v1/disk-encryption/nodes/", authMiddleware(diskEncViewPerm(http.HandlerFunc(diskEncHandler.NodeDetail))))
 
 	// Tang server registry (Settings -> Tang servers).
-	tangServerPerms := api.RequireMethodPermission(az, []api.MethodPermission{
+	tangServerPerms := gate.RequireMethod([]api.MethodPermission{
 		{Method: http.MethodGet, Resource: "tang_server", Action: "view"},
 		{Method: http.MethodPost, Resource: "tang_server", Action: "create"},
 		{Method: http.MethodPut, Resource: "tang_server", Action: "edit"},
 		{Method: http.MethodDelete, Resource: "tang_server", Action: "delete"},
 	})
-	tangCheckPerm := api.RequirePermission(az, "tang_server", "edit")
+	tangCheckPerm := gate.Require("tang_server", "edit")
 	mux.Handle("/api/v1/tang-servers", authMiddleware(tangServerPerms(auditMw(tangServersHandler))))
 	mux.Handle("/api/v1/tang-servers/", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/check") {
@@ -665,22 +671,22 @@ func main() {
 	})))
 
 	// DConf schema catalogue — readable by anyone with policy:view
-	mux.Handle("/api/v1/dconf/schemas", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(dconfHandler.ListSchemas))))
+	mux.Handle("/api/v1/dconf/schemas", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(dconfHandler.ListSchemas))))
 
 	// Compliance results — readable by anyone with compliance:view
-	mux.Handle("/api/v1/compliance", authMiddleware(api.RequirePermission(az, "compliance", "view")(http.HandlerFunc(complianceHandler.List))))
+	mux.Handle("/api/v1/compliance", authMiddleware(gate.Require("compliance", "view")(http.HandlerFunc(complianceHandler.List))))
 
 	// Polkit action catalogue — readable by anyone with policy:view
-	mux.Handle("/api/v1/polkit/actions", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(polkitHandler.ListActions))))
+	mux.Handle("/api/v1/polkit/actions", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(polkitHandler.ListActions))))
 
 	// Ubuntu PPA info proxy — avoids browser CORS when fetching from Launchpad/keyserver
-	mux.Handle("/api/v1/ppa-info", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(ppaHandler.ServeHTTP))))
+	mux.Handle("/api/v1/ppa-info", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(ppaHandler.ServeHTTP))))
 
 	// OpenSUSE .ymp (1-click install) parser — extracts repos/packages from uploaded file
-	mux.Handle("/api/v1/ymp-import", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(ympHandler.ServeHTTP))))
+	mux.Handle("/api/v1/ymp-import", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(ympHandler.ServeHTTP))))
 
 	// Fedora COPR proxy — resolves chroot baseurl and signing key server-side
-	mux.Handle("/api/v1/copr-info", authMiddleware(api.RequirePermission(az, "policy", "view")(http.HandlerFunc(coprHandler.ServeHTTP))))
+	mux.Handle("/api/v1/copr-info", authMiddleware(gate.Require("policy", "view")(http.HandlerFunc(coprHandler.ServeHTTP))))
 
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))

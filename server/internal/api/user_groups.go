@@ -24,6 +24,10 @@ type UserGroupHandler struct {
 	bindingRepo  *database.UserGroupRoleBindingRepository
 	roleRepo     *database.RoleRepository
 	auditSvc     *services.AuditService
+	// userBindingRepo resolves the caller's own permissions for the
+	// privilege-escalation guards. Without it, adding group roles or members
+	// is refused.
+	userBindingRepo *database.UserRoleBindingRepository
 }
 
 // NewUserGroupHandler creates a new UserGroupHandler
@@ -47,6 +51,37 @@ func (h *UserGroupHandler) WithAuditService(auditSvc *services.AuditService, rol
 	h.auditSvc = auditSvc
 	h.roleRepo = roleRepo
 	return h
+}
+
+// WithRoleGuard enables the privilege-escalation guards on group roles and
+// group membership. Roles bound to a user group are granted to its members,
+// so both adding a role to a group and adding a member to a group hand out
+// permissions; the caller must already hold every one of them.
+func (h *UserGroupHandler) WithRoleGuard(userBindingRepo *database.UserRoleBindingRepository) *UserGroupHandler {
+	h.userBindingRepo = userBindingRepo
+	return h
+}
+
+// guardRoleGrant answers 403 (and audits it) unless the caller holds every
+// permission of roleIDs. It answers 500 when the guard is not wired or the
+// check fails, so a misconfigured handler refuses rather than allows.
+func (h *UserGroupHandler) guardRoleGrant(w http.ResponseWriter, r *http.Request, groupID, action string, roleIDs []string) bool {
+	if h.roleRepo == nil || h.userBindingRepo == nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return false
+	}
+	ok, missing, err := callerCanGrantRoles(r.Context(), h.roleRepo, h.userBindingRepo, callerID(r.Context()), roleIDs)
+	if err != nil {
+		log.Printf("user group %s: failed to check role permissions: %v", action, err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return false
+	}
+	if !ok {
+		writeJSONError(w, http.StatusForbidden, "cannot grant a role with permissions you do not hold")
+		auditDenial(r, "user_group", action, groupID, "would grant "+missing+", which the caller does not hold")
+		return false
+	}
+	return true
 }
 
 // ServeHTTP routes user-groups requests including sub-resources
@@ -248,6 +283,21 @@ func (h *UserGroupHandler) AddMember(w http.ResponseWriter, r *http.Request, gro
 		return
 	}
 
+	// Membership confers every role bound to the group.
+	groupBindings, err := h.bindingRepo.ListByGroupID(r.Context(), groupID)
+	if err != nil {
+		log.Printf("Failed to list group role bindings: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "failed to verify role permissions")
+		return
+	}
+	roleIDs := make([]string, 0, len(groupBindings))
+	for _, b := range groupBindings {
+		roleIDs = append(roleIDs, b.RoleID)
+	}
+	if !h.guardRoleGrant(w, r, groupID, "add_member", roleIDs) {
+		return
+	}
+
 	member := &models.UserGroupMember{
 		GroupID: groupID,
 		UserID:  req.UserID,
@@ -336,6 +386,11 @@ func (h *UserGroupHandler) AddGroupRoleBinding(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Every member of the group receives the role.
+	if !h.guardRoleGrant(w, r, groupID, "add_role", []string{req.RoleID}) {
+		return
+	}
+
 	binding := &models.UserGroupRoleBinding{
 		GroupID:   groupID,
 		RoleID:    req.RoleID,
@@ -415,7 +470,7 @@ func (h *UserGroupHandler) auditGroupRoleRevoke(r *http.Request, binding *models
 		Action:     "revoke_role",
 		Resource:   &auditpb.Resource{Type: "user_group_role_binding", Id: binding.ID},
 		Outcome:    auditpb.Outcome_OUTCOME_SUCCESS,
-		SrcIp:      extractIP(r),
+		SrcIp:      auditSrcIP(r),
 		Payload: &auditpb.AuditEvent_HttpChange{
 			HttpChange: &auditpb.HttpPayload{
 				Method:   r.Method,

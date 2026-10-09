@@ -309,8 +309,14 @@ Bor is an Enterprise Linux Desktop Policy Management system consisting of:
 - Granular permissions (resource:action)
 - User Groups for bulk role assignment: a role bound to a user group is
   granted to every member of the group
-- Permission checks at API layer; the privilege-escalation guard and the
+- Permission checks at API layer; the privilege-escalation guards and the
   UI permission list use the same effective-roles source as enforcement
+- Privilege-escalation guards: nobody can hand out a permission they do not
+  hold. This covers assigning roles to users, assigning roles to user
+  groups, adding members to user groups (membership confers every role of
+  the group), editing role permissions and the role chosen at user creation
+- Refused state-changing requests, including guard refusals, are recorded
+  as `access_denied` audit events (actor, permission, reason)
 
 #### gRPC
 - Client certificate verification (authentication)
