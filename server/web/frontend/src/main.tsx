@@ -10,20 +10,24 @@ import { BrowserRouter } from "react-router";
 import { Shell } from "./Shell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/ToastHost";
+import { finishStepUpPopup } from "./utils/stepUpPopup";
 
 const mountPoint = document.getElementById("app-root");
 if (!mountPoint) {
   throw new Error("Could not locate #app-root element in the DOM");
 }
-const reactRoot = createRoot(mountPoint);
-reactRoot.render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <ErrorBoundary>
-        <ToastProvider>
-          <Shell />
-        </ToastProvider>
-      </ErrorBoundary>
-    </BrowserRouter>
-  </React.StrictMode>
-);
+// A step-up popup reports to its opener and closes instead of rendering.
+if (!finishStepUpPopup()) {
+  const reactRoot = createRoot(mountPoint);
+  reactRoot.render(
+    <React.StrictMode>
+      <BrowserRouter>
+        <ErrorBoundary>
+          <ToastProvider>
+            <Shell />
+          </ToastProvider>
+        </ErrorBoundary>
+      </BrowserRouter>
+    </React.StrictMode>
+  );
+}

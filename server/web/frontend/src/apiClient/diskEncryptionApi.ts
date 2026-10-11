@@ -246,6 +246,32 @@ export async function issueStepUp(
   });
 }
 
+export interface StepUpMethod {
+  /** "password": password (+ TOTP); "redirect": identity provider popup. */
+  method: "password" | "redirect";
+  url?: string;
+}
+
+/** Tells how the signed-in user re-authenticates for purpose. */
+export async function getStepUpMethod(purpose: string): Promise<StepUpMethod> {
+  return apiRequest<StepUpMethod>(`/api/v1/auth/step-up/method?purpose=${encodeURIComponent(purpose)}`, {
+    headers: authHeaders(),
+  });
+}
+
+/**
+ * Collects the step-up token after a re-authentication at the identity
+ * provider. Fails with the message "totp_required" when the user's TOTP
+ * code is still needed; call again with it.
+ */
+export async function collectStepUp(totpCode?: string): Promise<{ token: string; expires_in: number }> {
+  return apiRequest<{ token: string; expires_in: number }>("/api/v1/auth/step-up/collect", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ totp_code: totpCode || undefined }),
+  });
+}
+
 /* ── Tang servers (Settings) ── */
 
 export type TangCheckStatus = "never" | "ok" | "new_key" | "error";

@@ -187,6 +187,13 @@ type StepUpRequest struct {
 	TOTPCode string `json:"totp_code,omitempty"`
 }
 
+// StepUpMethodResponse tells the web UI how the user re-authenticates:
+// "password", or "redirect" to URL (an identity provider, in a popup).
+type StepUpMethodResponse struct {
+	Method string `json:"method"`
+	URL    string `json:"url,omitempty"`
+}
+
 // StepUpResponse carries the single-use step-up token.
 type StepUpResponse struct {
 	Token     string `json:"token"`

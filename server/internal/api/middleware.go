@@ -92,6 +92,57 @@ func SetRefreshCookie(w http.ResponseWriter, token string, maxAge int) {
 	})
 }
 
+// PendingLoginCookieName holds a federated sign-in that still needs a Bor
+// second factor (a step-flow session token).
+const PendingLoginCookieName = "bor_pending_login"
+
+// pendingLoginPath limits the pending sign-in cookie to the endpoint that
+// consumes it.
+const pendingLoginPath = "/api/v1/auth/resume"
+
+// SetPendingLoginCookie holds a federated sign-in for /api/v1/auth/resume.
+func SetPendingLoginCookie(w http.ResponseWriter, sessionToken string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     PendingLoginCookieName,
+		Value:    sessionToken,
+		Path:     pendingLoginPath,
+		MaxAge:   300,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func clearPendingLoginCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name: PendingLoginCookieName, Value: "", Path: pendingLoginPath, MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// PendingStepUpCookieName holds a federated re-authentication until the web
+// UI collects it as a step-up token.
+const PendingStepUpCookieName = "bor_pending_step_up"
+
+// pendingStepUpPath limits the pending step-up cookie to its collector.
+const pendingStepUpPath = "/api/v1/auth/step-up/collect"
+
+// SetPendingStepUpCookie holds a federated re-authentication for
+// /api/v1/auth/step-up/collect.
+func SetPendingStepUpCookie(w http.ResponseWriter, pending string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: PendingStepUpCookieName, Value: pending, Path: pendingStepUpPath, MaxAge: 300,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func clearPendingStepUpCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name: PendingStepUpCookieName, Value: "", Path: pendingStepUpPath, MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
 // ClearSessionCookie removes the session and refresh cookies.
 func ClearSessionCookie(w http.ResponseWriter) {
 	SetSessionCookie(w, "", -1)
@@ -133,13 +184,45 @@ func clearCSRFCookie(w http.ResponseWriter) {
 
 // csrfExemptPaths are public auth endpoints that don't have a CSRF cookie yet.
 var csrfExemptPaths = map[string]bool{
-	"/api/v1/auth/login":           true,
-	"/api/v1/auth/begin":           true,
-	"/api/v1/auth/step":            true,
-	"/api/v1/auth/logout":          true,
-	"/api/v1/auth/refresh":         true,
-	"/api/v1/auth/webauthn/begin":  true,
-	"/api/v1/auth/webauthn/finish": true,
+	"/api/v1/auth/login":                  true,
+	"/api/v1/auth/begin":                  true,
+	"/api/v1/auth/step":                   true,
+	"/api/v1/auth/resume":                 true,
+	"/api/v1/auth/enroll/totp/begin":      true,
+	"/api/v1/auth/enroll/totp/finish":     true,
+	"/api/v1/auth/enroll/webauthn/begin":  true,
+	"/api/v1/auth/enroll/webauthn/finish": true,
+	"/api/v1/auth/logout":                 true,
+	"/api/v1/auth/refresh":                true,
+	"/api/v1/auth/webauthn/begin":         true,
+	"/api/v1/auth/webauthn/finish":        true,
+}
+
+// csrfExemptPrefixes are route prefixes that authenticate requests
+// themselves (server extensions' public routes: identity provider
+// callbacks, SCIM with bearer tokens) and never act on the session cookie.
+var (
+	csrfExemptMu       sync.RWMutex
+	csrfExemptPrefixes []string
+)
+
+// ExemptFromCSRF exempts requests under prefix from the CSRF check. Only for
+// routes that do not authenticate with the session cookie.
+func ExemptFromCSRF(prefix string) {
+	csrfExemptMu.Lock()
+	defer csrfExemptMu.Unlock()
+	csrfExemptPrefixes = append(csrfExemptPrefixes, prefix)
+}
+
+func csrfExemptByPrefix(path string) bool {
+	csrfExemptMu.RLock()
+	defer csrfExemptMu.RUnlock()
+	for _, p := range csrfExemptPrefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // CSRFMiddleware validates the double-submit CSRF token on state-changing
@@ -154,7 +237,7 @@ func CSRFMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Skip CSRF check for public auth endpoints and non-API routes.
-		if csrfExemptPaths[r.URL.Path] || !strings.HasPrefix(r.URL.Path, "/api/") {
+		if csrfExemptPaths[r.URL.Path] || !strings.HasPrefix(r.URL.Path, "/api/") || csrfExemptByPrefix(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}

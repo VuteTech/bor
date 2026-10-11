@@ -26,14 +26,14 @@ func NewUserGroupRepository(db *DB) *UserGroupRepository {
 
 // Create inserts a new user group
 func (r *UserGroupRepository) Create(ctx context.Context, ug *models.UserGroup) error {
-	query := `INSERT INTO user_groups (name, description, created_at, updated_at)
-		VALUES ($1, $2, $3, $4) RETURNING id`
+	query := `INSERT INTO user_groups (name, description, managed_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id`
 
 	now := time.Now()
 	ug.CreatedAt = now
 	ug.UpdatedAt = now
 
-	err := r.db.QueryRowContext(ctx, query, ug.Name, ug.Description, ug.CreatedAt, ug.UpdatedAt).Scan(&ug.ID)
+	err := r.db.QueryRowContext(ctx, query, ug.Name, ug.Description, ug.ManagedBy, ug.CreatedAt, ug.UpdatedAt).Scan(&ug.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create user group: %w", err)
 	}
@@ -42,9 +42,9 @@ func (r *UserGroupRepository) Create(ctx context.Context, ug *models.UserGroup) 
 
 // GetByID retrieves a user group by ID
 func (r *UserGroupRepository) GetByID(ctx context.Context, id string) (*models.UserGroup, error) {
-	query := `SELECT id, name, description, created_at, updated_at FROM user_groups WHERE id = $1`
+	query := `SELECT id, name, description, managed_by, created_at, updated_at FROM user_groups WHERE id = $1`
 	ug := &models.UserGroup{}
-	err := r.db.QueryRowContext(ctx, query, id).Scan(&ug.ID, &ug.Name, &ug.Description, &ug.CreatedAt, &ug.UpdatedAt)
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&ug.ID, &ug.Name, &ug.Description, &ug.ManagedBy, &ug.CreatedAt, &ug.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -56,7 +56,7 @@ func (r *UserGroupRepository) GetByID(ctx context.Context, id string) (*models.U
 
 // ListAll returns all user groups
 func (r *UserGroupRepository) ListAll(ctx context.Context) ([]*models.UserGroup, error) {
-	query := `SELECT id, name, description, created_at, updated_at FROM user_groups ORDER BY name`
+	query := `SELECT id, name, description, managed_by, created_at, updated_at FROM user_groups ORDER BY name`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user groups: %w", err)
@@ -66,7 +66,7 @@ func (r *UserGroupRepository) ListAll(ctx context.Context) ([]*models.UserGroup,
 	var groups []*models.UserGroup
 	for rows.Next() {
 		ug := &models.UserGroup{}
-		if err := rows.Scan(&ug.ID, &ug.Name, &ug.Description, &ug.CreatedAt, &ug.UpdatedAt); err != nil {
+		if err := rows.Scan(&ug.ID, &ug.Name, &ug.Description, &ug.ManagedBy, &ug.CreatedAt, &ug.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan user group: %w", err)
 		}
 		groups = append(groups, ug)

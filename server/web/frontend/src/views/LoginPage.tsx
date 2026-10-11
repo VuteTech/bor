@@ -19,10 +19,17 @@ import {
 import EyeIcon from "@patternfly/react-icons/dist/esm/icons/eye-icon";
 import EyeSlashIcon from "@patternfly/react-icons/dist/esm/icons/eye-slash-icon";
 import { LiveAlert } from "../components/LiveAlert";
-import { startAuthentication } from "@simplewebauthn/browser";
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { MFASetupModal } from "./Settings/MFASetupModal";
 import {
   authBegin,
+  authResume,
   authStep,
+  EnrollmentResult,
+  enrollWebAuthnBegin,
+  enrollWebAuthnFinish,
+  getPublicConfig,
+  LoginMethod,
   webAuthnAuthBegin,
   webAuthnAuthFinish,
   UserInfo,
@@ -33,7 +40,41 @@ interface LoginPageProps {
   onLoggedIn: (token: string, user: { username: string; full_name: string }) => void;
 }
 
-type Phase = "username" | "totp" | "password" | "webauthn";
+type Phase = "username" | "totp" | "password" | "webauthn" | "enroll";
+
+// Messages for the error codes an external login (SSO) callback returns in
+// the ?sso_error= query parameter. Unknown codes get a generic message.
+const SSO_ERRORS: Record<string, string> = {
+  not_provisioned: "Your account has not been set up in Bor. Contact your administrator.",
+  username_taken: "An account with your username already exists in Bor. Contact your administrator.",
+  disabled: "Your account is disabled.",
+  mfa_required: "Multi-factor authentication is required. Sign in to your identity provider with MFA.",
+  mfa_setup_required:
+    "Multi-factor authentication is required, but no Bor authenticator or security key is set up for your account. Contact your administrator.",
+  unavailable: "This sign-in method is not available right now.",
+};
+
+/** Reads and clears ?sso_continue=mfa, left by an identity provider sign-in
+ *  that still needs a Bor second factor. */
+function takeSSOContinue(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("sso_continue") !== "mfa") return false;
+  params.delete("sso_continue");
+  const query = params.toString();
+  window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
+  return true;
+}
+
+/** Reads and clears an ?sso_error= code left by an external login. */
+function takeSSOError(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("sso_error");
+  if (!code) return null;
+  params.delete("sso_error");
+  const query = params.toString();
+  window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
+  return SSO_ERRORS[code] ?? "Sign-in through your identity provider failed.";
+}
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [phase, setPhase] = useState<Phase>("username");
@@ -44,8 +85,65 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [passwordInput, setPasswordInput] = useState("");
   const [mfaMethods, setMfaMethods] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(() => takeSSOError());
+  const [loginMethods, setLoginMethods] = useState<LoginMethod[]>([]);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    getPublicConfig()
+      .then((cfg) => setLoginMethods(cfg.login_methods ?? []))
+      .catch(() => setLoginMethods([]));
+  }, []);
+
+  const [enrollOpen, setEnrollOpen] = useState(false);
+
+  // The account must set up a second factor before its session starts.
+  const showEnrollment = (enrollmentToken: string) => {
+    setSessionToken(enrollmentToken);
+    setPasswordInput("");
+    setPhase("enroll");
+  };
+
+  const finishEnrollment = (result: EnrollmentResult) => {
+    onLoggedIn(result.token, result.user);
+  };
+
+  const handleEnrollSecurityKey = async () => {
+    setErrorMsg(null);
+    setPending(true);
+    try {
+      const { publicKey } = await enrollWebAuthnBegin(sessionToken);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const credential = await startRegistration({ optionsJSON: publicKey as any });
+      finishEnrollment(await enrollWebAuthnFinish(sessionToken, credential));
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Security key registration failed");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const showMFAStep = (methods: string[]) => {
+    setMfaMethods(methods);
+    setPhase(methods.includes("webauthn") ? "webauthn" : "totp");
+  };
+
+  useEffect(() => {
+    if (!takeSSOContinue()) return;
+    setPending(true);
+    authResume()
+      .then((result) => {
+        setCurrentUsername(result.username ?? "");
+        if (result.next === "mfa_setup") {
+          showEnrollment(result.session_token);
+          return;
+        }
+        setSessionToken(result.session_token);
+        showMFAStep(result.mfa_methods ?? []);
+      })
+      .catch(() => setErrorMsg("Your sign-in has expired. Sign in again."))
+      .finally(() => setPending(false));
+  }, []);
   const [capsLockOn, setCapsLockOn] = useState(false);
 
   // Reflect the Caps Lock state so we can warn before a failed password attempt.
@@ -72,16 +170,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
     setPending(true);
     try {
       const result = await authBegin(usernameInput);
+      if (result.next === "redirect" && result.redirect_url) {
+        // The account signs in through its identity provider.
+        window.location.assign(result.redirect_url);
+        return;
+      }
       setCurrentUsername(usernameInput);
       setSessionToken(result.session_token);
       if (result.next === "mfa") {
-        const methods = result.mfa_methods ?? [];
-        setMfaMethods(methods);
-        if (methods.includes("webauthn")) {
-          setPhase("webauthn");
-        } else {
-          setPhase("totp");
-        }
+        showMFAStep(result.mfa_methods ?? []);
       } else {
         setPhase("password");
       }
@@ -142,6 +239,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       const result = await authStep(sessionToken, "password", passwordInput);
       if (result.token && result.user) {
         onLoggedIn(result.token, result.user as UserInfo);
+      } else if (result.next === "mfa_setup" && result.session_token) {
+        showEnrollment(result.session_token);
       } else {
         setErrorMsg("Invalid credentials");
       }
@@ -169,6 +268,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
       ? "Enter your authenticator code"
       : phase === "webauthn"
       ? "Verify your identity"
+      : phase === "enroll"
+      ? "Set up two-factor authentication"
       : "Enter your password";
 
   const loginForm = (
@@ -206,6 +307,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
               Continue
             </Button>
           </ActionGroup>
+          {loginMethods.length > 0 && (
+            <div aria-label="Other sign-in options" role="group" style={{ marginTop: 8 }}>
+              <Content component="p" style={{ textAlign: "center", margin: "8px 0" }}>
+                or
+              </Content>
+              {loginMethods.map((m) => (
+                <Button
+                  key={m.id}
+                  variant="secondary"
+                  isBlock
+                  style={{ marginBottom: 8 }}
+                  onClick={() => window.location.assign(m.start_url)}
+                >
+                  Sign in with {m.display_name}
+                </Button>
+              ))}
+            </div>
+          )}
         </Form>
       )}
 
@@ -283,6 +402,42 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
               </Button>
             </div>
           )}
+        </div>
+      )}
+
+      {phase === "enroll" && (
+        <div>
+          <Content style={{ marginBottom: 24 }}>
+            <Content component="h3">{currentUsername}</Content>
+            <Content>
+              Your organization requires two-factor authentication. Set up an authenticator app
+              (such as FreeOTP, Aegis or Google Authenticator) or a security key to finish signing
+              in.
+            </Content>
+          </Content>
+          <ActionGroup>
+            <Button variant="primary" onClick={() => setEnrollOpen(true)} isDisabled={pending}>
+              Set up an authenticator app
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleEnrollSecurityKey}
+              isDisabled={pending}
+              isLoading={pending}
+            >
+              Use a security key
+            </Button>
+            <Button variant="link" onClick={resetToPhase1} isDisabled={pending}>
+              Back
+            </Button>
+          </ActionGroup>
+          <MFASetupModal
+            isOpen={enrollOpen}
+            onClose={() => setEnrollOpen(false)}
+            onSuccess={() => undefined}
+            enrollmentToken={sessionToken}
+            onEnrolled={finishEnrollment}
+          />
         </div>
       )}
 

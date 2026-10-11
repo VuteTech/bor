@@ -116,8 +116,13 @@ export async function login(
 
 export interface AuthBeginResponse {
   session_token: string;
-  next: "mfa" | "password";
+  next: "mfa" | "password" | "redirect" | "mfa_setup";
   mfa_methods: string[]; // e.g. ["webauthn", "totp"]
+  // Set when next is "redirect": the account signs in through an external
+  // identity provider.
+  redirect_url?: string;
+  // Set by a resumed identity provider sign-in.
+  username?: string;
 }
 
 export interface AuthStepResponse {
@@ -133,6 +138,11 @@ export async function authBegin(username: string): Promise<AuthBeginResponse> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username }),
   });
+}
+
+/** Continues an identity provider sign-in that needs a Bor second factor. */
+export async function authResume(): Promise<AuthBeginResponse> {
+  return apiRequest<AuthBeginResponse>("/api/v1/auth/resume", { method: "POST" });
 }
 
 export async function authStep(
@@ -167,6 +177,8 @@ export interface MFASetupFinishResult {
 export interface MFASettings {
   mfa_required: boolean;
   totp_algorithm: "SHA256" | "SHA512";
+  /** Users without a second factor may set one up while signing in. */
+  allow_self_enrollment?: boolean;
 }
 
 export async function getMFAStatus(): Promise<MFAStatus> {
@@ -248,8 +260,16 @@ export async function checkSession(): Promise<UserInfo> {
 
 /* ── Public server config ── */
 
+/** An external "Sign in with ..." option offered by a server extension. */
+export interface LoginMethod {
+  id: string;
+  display_name: string;
+  start_url: string;
+}
+
 export interface PublicConfig {
   privacy_policy_url: string;
+  login_methods?: LoginMethod[];
 }
 
 export async function getPublicConfig(): Promise<PublicConfig> {
@@ -342,6 +362,46 @@ export async function deleteWebAuthnCredential(id: string): Promise<void> {
     }
     throw new Error(detail);
   }
+}
+
+/* ── MFA enrollment while signing in ── */
+// When MFA is required and the account has no second factor, the password
+// step (or an identity provider sign-in) answers next "mfa_setup" with an
+// enrollment token that only these endpoints accept.
+
+export interface EnrollmentResult {
+  token: string;
+  user: UserInfo;
+  backup_codes?: string[];
+}
+
+function enrollRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  return apiRequest<T>(`/api/v1/auth/enroll/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function enrollTOTPBegin(
+  sessionToken: string
+): Promise<{ secret: string; algorithm: string; qr_image: string }> {
+  return enrollRequest("totp/begin", { session_token: sessionToken });
+}
+
+export function enrollTOTPFinish(sessionToken: string, code: string): Promise<EnrollmentResult> {
+  return enrollRequest("totp/finish", { session_token: sessionToken, code });
+}
+
+export function enrollWebAuthnBegin(sessionToken: string): Promise<{ publicKey: unknown }> {
+  return enrollRequest("webauthn/begin", { session_token: sessionToken });
+}
+
+export function enrollWebAuthnFinish(
+  sessionToken: string,
+  credential: unknown
+): Promise<EnrollmentResult> {
+  return enrollRequest("webauthn/finish", { session_token: sessionToken, credential });
 }
 
 export async function webAuthnAuthBegin(

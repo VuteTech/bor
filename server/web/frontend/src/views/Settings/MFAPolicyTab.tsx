@@ -27,6 +27,7 @@ export const MFAPolicyTab: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [mfaRequired, setMfaRequired] = useState(false);
   const [totpAlgorithm, setTotpAlgorithm] = useState<"SHA256" | "SHA512">("SHA256");
+  const [selfEnrollment, setSelfEnrollment] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +36,7 @@ export const MFAPolicyTab: React.FC = () => {
       const settings = await getMFASettings();
       setMfaRequired(settings.mfa_required);
       setTotpAlgorithm(settings.totp_algorithm);
+      setSelfEnrollment(settings.allow_self_enrollment ?? true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load MFA settings");
     } finally {
@@ -54,16 +56,18 @@ export const MFAPolicyTab: React.FC = () => {
       const updated = await updateMFASettings({
         mfa_required: mfaRequired,
         totp_algorithm: totpAlgorithm,
+        allow_self_enrollment: selfEnrollment,
       } as MFASettings);
       setMfaRequired(updated.mfa_required);
       setTotpAlgorithm(updated.totp_algorithm);
+      setSelfEnrollment(updated.allow_self_enrollment ?? true);
       setSuccess("MFA settings saved successfully.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save MFA settings");
     } finally {
       setSaving(false);
     }
-  }, [mfaRequired, totpAlgorithm]);
+  }, [mfaRequired, totpAlgorithm, selfEnrollment]);
 
   if (loading) return <Spinner size="lg" aria-label="Loading" />;
 
@@ -85,7 +89,7 @@ export const MFAPolicyTab: React.FC = () => {
       />
 
       <Form style={{ maxWidth: 600 }}>
-        <FormGroup label="Require MFA for all local users" fieldId="mfa-required">
+        <FormGroup label="Require MFA for all users" fieldId="mfa-required">
           <Switch
             id="mfa-required"
             isChecked={mfaRequired}
@@ -95,8 +99,28 @@ export const MFAPolicyTab: React.FC = () => {
           <FormHelperText>
             <HelperText>
               <HelperTextItem>
-                When enabled, all local user accounts must configure TOTP MFA before
-                they can log in.
+                When enabled, every sign-in needs a second factor: an authenticator app or
+                security key registered in Bor, or (for single sign-on accounts, depending
+                on the connection) the identity provider's own MFA.
+              </HelperTextItem>
+            </HelperText>
+          </FormHelperText>
+        </FormGroup>
+
+        <FormGroup label="Set up MFA while signing in" fieldId="mfa-self-enrollment">
+          <Switch
+            id="mfa-self-enrollment"
+            isChecked={selfEnrollment}
+            onChange={(_ev, v) => setSelfEnrollment(v)}
+            label={selfEnrollment ? "Allowed" : "Not allowed"}
+          />
+          <FormHelperText>
+            <HelperText>
+              <HelperTextItem>
+                When MFA is required, a user without a second factor sets one up right after
+                entering their password (or signing in at their identity provider) and only
+                then gets a session. Turn this off to refuse such sign-ins instead; an
+                administrator must then help the user enroll.
               </HelperTextItem>
             </HelperText>
           </FormHelperText>

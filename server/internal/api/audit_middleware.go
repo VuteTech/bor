@@ -208,6 +208,12 @@ func parseResourceFromPath(path string) (resource, action string) {
 	return resourceType, resourceID
 }
 
+// AuditClientIP returns the client IP for an audit record, anonymized when
+// anonymize is set (GDPR). Used by server extensions.
+func AuditClientIP(r *http.Request, anonymize bool) string {
+	return extractAuditIP(r, anonymize)
+}
+
 // extractAuditIP extracts the client IP, optionally anonymizing it for GDPR.
 func extractAuditIP(r *http.Request, anonymize bool) string {
 	ip := extractIP(r)

@@ -24,6 +24,7 @@ import {
   TabTitleText,
   Flex,
   FlexItem,
+  Label,
 } from "@patternfly/react-core";
 import { Table, Thead, Tr, Th, Tbody, Td } from "@patternfly/react-table";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
@@ -162,7 +163,14 @@ export const UserGroupsTab: React.FC = () => {
           <Tbody>
             {groups.map((g) => (
               <Tr key={g.id}>
-                <Td>{g.name}</Td>
+                <Td>
+                  {g.name}
+                  {g.managed_by && (
+                    <Label isCompact color="blue" style={{ marginLeft: 8 }}>
+                      Identity provider
+                    </Label>
+                  )}
+                </Td>
                 <Td>{g.description}</Td>
                 <Td>{formatDate(g.created_at)}</Td>
                 {(canEdit || canDelete) && (
@@ -176,7 +184,7 @@ export const UserGroupsTab: React.FC = () => {
                         <PencilAltIcon />
                       </Button>
                     )}
-                    {canDelete && (
+                    {canDelete && !g.managed_by && (
                       <Button
                         variant="plain"
                         aria-label={`Delete group ${g.name}`}
@@ -341,7 +349,7 @@ const EditGroupModal: React.FC<{
           </Tab>
           <Tab eventKey="members" title={<TabTitleText>Members</TabTitleText>}>
             <div style={{ padding: "16px 0" }}>
-              <MembersTab groupId={group.id} />
+              <MembersTab groupId={group.id} readOnly={!!group.managed_by} />
             </div>
           </Tab>
           <Tab eventKey="roles" title={<TabTitleText>Role Assignments</TabTitleText>}>
@@ -365,6 +373,7 @@ const DetailsTab: React.FC<{
   const [description, setDescription] = useState(group.description);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const managed = !!group.managed_by;
 
   const handleSave = async () => {
     setSaving(true);
@@ -382,6 +391,14 @@ const DetailsTab: React.FC<{
   return (
     <>
       <LiveAlert id="err-edit-group" message={error} isInline style={{ marginBottom: 16 }} />
+      {managed && (
+        <LiveAlert
+          variant="info"
+          isInline
+          message={`This group's name and members come from the identity provider (${group.managed_by}). Assign its roles in Role Assignments.`}
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <Form>
         <FormGroup label="Name" isRequired fieldId="eg-name">
           <TextInput
@@ -389,6 +406,7 @@ const DetailsTab: React.FC<{
             value={name}
             onChange={(_ev, v) => setName(v)}
             isRequired
+            isDisabled={managed}
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? "err-edit-group" : undefined}
           />
@@ -398,12 +416,13 @@ const DetailsTab: React.FC<{
             id="eg-desc"
             value={description}
             onChange={(_ev, v) => setDescription(v)}
+            isDisabled={managed}
           />
         </FormGroup>
         <Button
           variant="primary"
           onClick={handleSave}
-          isDisabled={saving || !name}
+          isDisabled={saving || !name || managed}
           isLoading={saving}
         >
           Save
@@ -415,7 +434,7 @@ const DetailsTab: React.FC<{
 
 /* ── Members Tab ── */
 
-const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
+const MembersTab: React.FC<{ groupId: string; readOnly?: boolean }> = ({ groupId, readOnly }) => {
   const [members, setMembers] = useState<UserGroupMember[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -491,24 +510,26 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
     <>
       <LiveAlert message={error} isInline style={{ marginBottom: 16 }} />
 
-      <Flex style={{ marginBottom: 16 }}>
-        <FlexItem align={{ default: "alignRight" }}>
-          <Button
-            variant="primary"
-            icon={<PlusCircleIcon />}
-            onClick={() => setShowAdd(true)}
-          >
-            Add Member
-          </Button>
-        </FlexItem>
-      </Flex>
+      {!readOnly && (
+        <Flex style={{ marginBottom: 16 }}>
+          <FlexItem align={{ default: "alignRight" }}>
+            <Button
+              variant="primary"
+              icon={<PlusCircleIcon />}
+              onClick={() => setShowAdd(true)}
+            >
+              Add Member
+            </Button>
+          </FlexItem>
+        </Flex>
+      )}
 
       <Table aria-label="Group members" variant="compact">
         <Thead>
           <Tr>
             <Th>User</Th>
             <Th>Added At</Th>
-            <Th>Actions</Th>
+            {!readOnly && <Th>Actions</Th>}
           </Tr>
         </Thead>
         <Tbody>
@@ -516,21 +537,23 @@ const MembersTab: React.FC<{ groupId: string }> = ({ groupId }) => {
             <Tr key={m.id}>
               <Td>{userName(m.user_id)}</Td>
               <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
-              <Td>
-                <Button
-                  variant="plain"
-                  isDanger
-                  aria-label="Remove"
-                  onClick={() => setRemoveTarget(m)}
-                >
-                  <TrashIcon />
-                </Button>
-              </Td>
+              {!readOnly && (
+                <Td>
+                  <Button
+                    variant="plain"
+                    isDanger
+                    aria-label="Remove"
+                    onClick={() => setRemoveTarget(m)}
+                  >
+                    <TrashIcon />
+                  </Button>
+                </Td>
+              )}
             </Tr>
           ))}
           {members.length === 0 && (
             <Tr>
-              <Td colSpan={3}>No members in this group.</Td>
+              <Td colSpan={readOnly ? 2 : 3}>No members in this group.</Td>
             </Tr>
           )}
         </Tbody>
