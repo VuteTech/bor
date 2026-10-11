@@ -144,15 +144,18 @@ type ComplianceReport struct {
 
 // User represents a system user for authentication
 type User struct {
-	ID           string    `json:"id" db:"id"`
-	Username     string    `json:"username" db:"username"`
-	PasswordHash string    `json:"-" db:"password_hash"`
-	Email        string    `json:"email" db:"email"`
-	FullName     string    `json:"full_name" db:"full_name"`
-	Source       string    `json:"source" db:"source"` // "local" or "ldap"
-	Enabled      bool      `json:"enabled" db:"enabled"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ID           string `json:"id" db:"id"`
+	Username     string `json:"username" db:"username"`
+	PasswordHash string `json:"-" db:"password_hash"`
+	Email        string `json:"email" db:"email"`
+	FullName     string `json:"full_name" db:"full_name"`
+	Source       string `json:"source" db:"source"` // "local", "ldap" or "federated"
+	// FederationProvider names the external login connection that owns a
+	// federated account; nil for local and LDAP users.
+	FederationProvider *string   `json:"federation_provider,omitempty" db:"federation_provider"`
+	Enabled            bool      `json:"enabled" db:"enabled"`
+	CreatedAt          time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Legacy role constants (kept for backward compatibility during migration)
@@ -237,6 +240,9 @@ func IsBuiltInRole(name string) bool {
 const (
 	SourceLocal = "local"
 	SourceLDAP  = "ldap"
+	// SourceFederated accounts sign in only through an external identity
+	// provider (a server extension); they have no usable password.
+	SourceFederated = "federated"
 )
 
 // LoginRequest represents a login request
@@ -320,11 +326,14 @@ type SetRolePermissionsRequest struct {
 
 // UserGroup represents a logical grouping of users (identity domain)
 type UserGroup struct {
-	ID          string    `json:"id" db:"id"`
-	Name        string    `json:"name" db:"name"`
-	Description string    `json:"description" db:"description"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID          string `json:"id" db:"id"`
+	Name        string `json:"name" db:"name"`
+	Description string `json:"description" db:"description"`
+	// ManagedBy names the server extension that owns the group's name and
+	// membership (e.g. "sso:scim/corp"); nil for groups managed in Bor.
+	ManagedBy *string   `json:"managed_by,omitempty" db:"managed_by"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // CreateUserGroupRequest represents a request to create a user group
@@ -596,6 +605,10 @@ type MFADisableRequest struct {
 type MFASettings struct {
 	MFARequired   bool   `json:"mfa_required"`
 	TOTPAlgorithm string `json:"totp_algorithm"` // "SHA256" or "SHA512"
+	// AllowSelfEnrollment lets a user without a second factor set one up
+	// while signing in when MFA is required (default true). nil on update
+	// keeps the current value.
+	AllowSelfEnrollment *bool `json:"allow_self_enrollment,omitempty"`
 }
 
 // ─── Kanidm-style auth flow Models ────────────────────────────────────────────
@@ -608,8 +621,21 @@ type AuthBeginRequest struct {
 // AuthBeginResponse is returned by POST /api/v1/auth/begin
 type AuthBeginResponse struct {
 	SessionToken string   `json:"session_token"` // short-lived JWT for the auth state machine
-	Next         string   `json:"next"`          // "mfa" or "password"
+	Next         string   `json:"next"`          // "mfa", "password" or "redirect"
 	MFAMethods   []string `json:"mfa_methods"`   // e.g. ["webauthn","totp"] when next=="mfa"
+	// RedirectURL is set when next=="redirect": the account signs in through
+	// an external identity provider and the browser should go there.
+	RedirectURL string `json:"redirect_url,omitempty"`
+	// Username is set when an identity provider sign-in is resumed.
+	Username string `json:"username,omitempty"`
+}
+
+// LoginMethodInfo is an external "Sign in with ..." option listed by
+// GET /api/v1/config.
+type LoginMethodInfo struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	StartURL    string `json:"start_url"`
 }
 
 // AuthStepRequest is sent by POST /api/v1/auth/step
@@ -626,6 +652,8 @@ type AuthStepResponse struct {
 	Next         string `json:"next,omitempty"`
 	Token        string `json:"token,omitempty"` // full JWT — populated on final step
 	User         *User  `json:"user,omitempty"`
+	// AuditDetail describes the completed login for the audit log.
+	AuditDetail string `json:"-"`
 }
 
 // ─── WebAuthn Models ──────────────────────────────────────────────────────────

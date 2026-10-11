@@ -26,12 +26,22 @@ import {
 import CopyIcon from "@patternfly/react-icons/dist/esm/icons/copy-icon";
 import DownloadIcon from "@patternfly/react-icons/dist/esm/icons/download-icon";
 import { LiveAlert } from "../../components/LiveAlert";
-import { mfaSetupBegin, mfaSetupFinish } from "../../apiClient/authApi";
+import {
+  EnrollmentResult,
+  enrollTOTPBegin,
+  enrollTOTPFinish,
+  mfaSetupBegin,
+  mfaSetupFinish,
+} from "../../apiClient/authApi";
 
 interface MFASetupModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Set while signing in: the setup uses this enrollment token instead of
+   *  a session, and onEnrolled receives the new login. */
+  enrollmentToken?: string;
+  onEnrolled?: (result: EnrollmentResult) => void;
 }
 
 type Step = "qr" | "backup";
@@ -40,7 +50,10 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  enrollmentToken,
+  onEnrolled,
 }) => {
+  const [enrolled, setEnrolled] = useState<EnrollmentResult | null>(null);
   const [step, setStep] = useState<Step>("qr");
   const [secret, setSecret] = useState("");
   const [qrBlobUrl, setQrBlobUrl] = useState("");
@@ -58,6 +71,13 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     setLoading(true);
     setError(null);
     try {
+      if (enrollmentToken) {
+        const result = await enrollTOTPBegin(enrollmentToken);
+        setSecret(result.secret);
+        setAlgorithm(result.algorithm);
+        setQrBlobUrl(result.qr_image);
+        return;
+      }
       const result = await mfaSetupBegin();
       setSecret(result.secret);
       setAlgorithm(result.algorithm);
@@ -80,7 +100,7 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enrollmentToken]);
 
   useEffect(() => {
     if (isOpen) {
@@ -108,6 +128,13 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     setVerifying(true);
     setError(null);
     try {
+      if (enrollmentToken) {
+        const result = await enrollTOTPFinish(enrollmentToken, totpCode);
+        setEnrolled(result);
+        setBackupCodes(result.backup_codes ?? []);
+        setStep("backup");
+        return;
+      }
       const result = await mfaSetupFinish(totpCode);
       setBackupCodes(result.backup_codes);
       setStep("backup");
@@ -118,15 +145,23 @@ export const MFASetupModal: React.FC<MFASetupModalProps> = ({
     }
   };
 
+  const finished = () => {
+    if (enrolled && onEnrolled) {
+      onEnrolled(enrolled);
+    } else {
+      onSuccess();
+    }
+  };
+
   const handleDone = () => {
-    onSuccess();
+    finished();
     onClose();
   };
 
   // At the backup step MFA is already enabled server-side, so dismissing the
   // dialog (X / Escape / backdrop) must still report success to the parent.
   const handleModalClose = () => {
-    if (step === "backup") onSuccess();
+    if (step === "backup") finished();
     onClose();
   };
 

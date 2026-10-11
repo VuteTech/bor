@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -116,6 +117,21 @@ type AuthService struct {
 	adminPassword   string // initial admin password; used once when no users exist
 	nodeGroupRepo   *database.NodeGroupRepository
 	nodeGroupScopes func() bool
+	// externalLogin resolves where a federated account signs in (see
+	// WithExternalLogins); nil when no extension owns federated accounts.
+	externalLogin func(federationProvider, username string) (string, bool)
+}
+
+// ErrFederatedAccount is returned when a password is offered for an account
+// that signs in only through an external identity provider.
+var ErrFederatedAccount = errors.New("this account signs in through its identity provider")
+
+// WithExternalLogins lets server extensions own federated accounts: resolve
+// returns the URL that starts the login for an account of the given
+// federation provider, or false when no extension (currently) handles it.
+func (s *AuthService) WithExternalLogins(resolve func(federationProvider, username string) (string, bool)) *AuthService {
+	s.externalLogin = resolve
+	return s
 }
 
 // WithNodeGroupScopes enables node-group-scoped role bindings while enabled
@@ -193,9 +209,13 @@ type Claims struct {
 type AuthSessionClaims struct {
 	UserID      string `json:"user_id"`
 	Username    string `json:"username"`
-	Source      string `json:"source"` // "local" or "ldap"
+	Source      string `json:"source"` // "local", "ldap" or "federated"
 	TOTPDone    bool   `json:"totp_done"`
 	SessionType string `json:"session_type"` // always "auth_session"
+	// Method and Connection are set for federated sign-ins, which reach the
+	// step flow only after their identity provider login.
+	Method     string `json:"method,omitempty"`
+	Connection string `json:"connection,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -215,6 +235,9 @@ func (s *AuthService) VerifyPassword(ctx context.Context, username, password str
 	user, err := s.userRepo.GetByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up user: %w", err)
+	}
+	if user != nil && user.Source == models.SourceFederated {
+		return nil, ErrFederatedAccount
 	}
 	if user != nil && user.Source == models.SourceLocal {
 		if !user.Enabled {
@@ -261,6 +284,125 @@ func (s *AuthService) userHasMFA(ctx context.Context, userID string) (bool, erro
 	return false, nil
 }
 
+// UserMFAMethods returns the second factors the user has set up, in the
+// order the login page offers them ("webauthn" before "totp").
+func (s *AuthService) UserMFAMethods(ctx context.Context, userID string) ([]string, error) {
+	var methods []string
+	if s.webauthnSvc != nil {
+		hasCreds, err := s.webauthnSvc.HasCredentials(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check user WebAuthn credentials: %w", err)
+		}
+		if hasCreds {
+			methods = append(methods, "webauthn")
+		}
+	}
+	if s.mfaSvc != nil {
+		enabled, err := s.mfaSvc.IsMFAEnabled(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check user MFA: %w", err)
+		}
+		if enabled {
+			methods = append(methods, "totp")
+		}
+	}
+	return methods, nil
+}
+
+// FederatedSessionToken starts the step flow for a federated user who has
+// signed in at their identity provider and must still pass a Bor second
+// factor. Only the extension host calls it, after verifying the identity
+// provider's response; the step flow then accepts the second factor alone.
+func (s *AuthService) FederatedSessionToken(user *models.User, method, connection string) (string, error) {
+	if user == nil || user.Source != models.SourceFederated {
+		return "", ErrFederatedAccount
+	}
+	claims := &AuthSessionClaims{
+		UserID:      user.ID,
+		Username:    user.Username,
+		Source:      models.SourceFederated,
+		SessionType: "auth_session",
+		Method:      method,
+		Connection:  connection,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   user.ID,
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.jwtSecret))
+}
+
+// ResumeFederated continues a federated sign-in held by
+// FederatedSessionToken: it returns the session token and the second
+// factors the login page should ask for.
+func (s *AuthService) ResumeFederated(ctx context.Context, sessionToken string) (*models.AuthBeginResponse, error) {
+	claims, err := s.validateSessionToken(sessionToken)
+	if err != nil {
+		return nil, err
+	}
+	if claims.Source != models.SourceFederated {
+		return nil, errors.New("not a federated sign-in")
+	}
+	user, err := s.federatedLoginUser(ctx, claims.UserID)
+	if err != nil {
+		return nil, err
+	}
+	methods, err := s.UserMFAMethods(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(methods) == 0 {
+		// The identity provider login succeeded and MFA is required: the
+		// user sets up a Bor second factor now (exthost only holds such a
+		// sign-in when self-enrollment is allowed).
+		enroll, err := s.needsEnrollment(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !enroll || !s.selfEnrollmentAllowed(ctx) {
+			return nil, errors.New("no second factor is set up")
+		}
+		token, err := s.enrollmentToken(user, claims.Method, claims.Connection)
+		if err != nil {
+			return nil, err
+		}
+		return &models.AuthBeginResponse{SessionToken: token, Next: "mfa_setup", Username: user.Username}, nil
+	}
+	return &models.AuthBeginResponse{SessionToken: sessionToken, Next: "mfa", MFAMethods: methods, Username: user.Username}, nil
+}
+
+// federatedLoginUser loads an enabled federated account for the step flow.
+func (s *AuthService) federatedLoginUser(ctx context.Context, userID string) (*models.User, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || user == nil || user.Source != models.SourceFederated {
+		return nil, errors.New("invalid federated sign-in")
+	}
+	if !user.Enabled {
+		return nil, errors.New("user account is disabled")
+	}
+	return user, nil
+}
+
+// LoginAuditDetail describes a step-flow login for the audit log. Federated
+// sign-ins record their connection and the Bor second factor used.
+func LoginAuditDetail(claims *AuthSessionClaims, factor string) string {
+	if claims == nil || claims.Source != models.SourceFederated {
+		return "via=step"
+	}
+	detail, _ := json.Marshal(map[string]string{
+		"method": claims.Method, "connection": claims.Connection,
+		"mfa": "true", "second_factor": "bor-" + factor,
+	})
+	return string(detail)
+}
+
+// MFARequiredByPolicy reports whether the administrator requires MFA for
+// every sign-in.
+func (s *AuthService) MFARequiredByPolicy(ctx context.Context) bool {
+	return s.globalMFARequired(ctx)
+}
+
 // globalMFARequired reports whether MFA is required for all accounts by policy.
 func (s *AuthService) globalMFARequired(ctx context.Context) bool {
 	if s.mfaSvc == nil {
@@ -285,9 +427,120 @@ func (s *AuthService) enforceMFACompleted(ctx context.Context, userID string, sc
 		return nil
 	}
 	if s.globalMFARequired(ctx) {
-		return fmt.Errorf("multi-factor authentication setup is required for this account; contact your administrator")
+		return errMFASetupRequired
 	}
 	return nil
+}
+
+// errMFASetupRequired means MFA is required but the user has no second
+// factor; with self-enrollment allowed, the sign-in continues with
+// enrollment instead.
+var errMFASetupRequired = errors.New("multi-factor authentication setup is required for this account; contact your administrator")
+
+// ErrMFASetupRequired is returned, after the password was verified, when
+// MFA is required, the account has no second factor and self-enrollment is
+// off.
+var ErrMFASetupRequired = errMFASetupRequired
+
+// enrollmentSessionType marks a token that only permits setting up a second
+// factor (it is never a session).
+const enrollmentSessionType = "mfa_enrollment"
+
+// enrollmentLifetime bounds how long a user has to set up a second factor.
+const enrollmentLifetime = 10 * time.Minute
+
+// selfEnrollmentAllowed reports the administrator's setting.
+func (s *AuthService) selfEnrollmentAllowed(ctx context.Context) bool {
+	if s.mfaSvc == nil {
+		return false
+	}
+	ok, err := s.mfaSvc.SelfEnrollmentAllowed(ctx)
+	return err == nil && ok
+}
+
+// MFAEnrollmentPossible reports whether a user who must set up a second
+// factor may do it while signing in.
+func (s *AuthService) MFAEnrollmentPossible(ctx context.Context) bool {
+	return s.selfEnrollmentAllowed(ctx)
+}
+
+// needsEnrollment reports that MFA is required and the user has no factor.
+func (s *AuthService) needsEnrollment(ctx context.Context, userID string) (bool, error) {
+	if !s.globalMFARequired(ctx) {
+		return false, nil
+	}
+	has, err := s.userHasMFA(ctx, userID)
+	return !has, err
+}
+
+// enrollmentToken lets a user who has proven their first factor set up a
+// second one; only the enrollment endpoints accept it.
+func (s *AuthService) enrollmentToken(user *models.User, method, connection string) (string, error) {
+	claims := &AuthSessionClaims{
+		UserID:      user.ID,
+		Username:    user.Username,
+		Source:      user.Source,
+		SessionType: enrollmentSessionType,
+		Method:      method,
+		Connection:  connection,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(enrollmentLifetime)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   user.ID,
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.jwtSecret))
+}
+
+// enrollmentStep answers a sign-in whose first factor succeeded but whose
+// second factor must first be set up.
+func (s *AuthService) enrollmentStep(user *models.User, method, connection string) (*models.AuthStepResponse, error) {
+	token, err := s.enrollmentToken(user, method, connection)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate enrollment token: %w", err)
+	}
+	return &models.AuthStepResponse{SessionToken: token, Next: "mfa_setup"}, nil
+}
+
+// EnrollmentUser validates an enrollment token and returns its user, who
+// must still be enabled and still lack a second factor (a token cannot
+// replace a factor that is already set up).
+func (s *AuthService) EnrollmentUser(ctx context.Context, token string) (*models.User, *AuthSessionClaims, error) {
+	parsed, err := jwt.ParseWithClaims(token, &AuthSessionClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	}, jwt.WithExpirationRequired())
+	if err != nil {
+		return nil, nil, errors.New("invalid enrollment token")
+	}
+	claims, ok := parsed.Claims.(*AuthSessionClaims)
+	if !ok || !parsed.Valid || claims.SessionType != enrollmentSessionType || claims.UserID == "" {
+		return nil, nil, errors.New("invalid enrollment token")
+	}
+	user, err := s.userRepo.GetByID(ctx, claims.UserID)
+	if err != nil || user == nil || !user.Enabled {
+		return nil, nil, errors.New("invalid enrollment token")
+	}
+	has, err := s.userHasMFA(ctx, user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if has {
+		return nil, nil, errors.New("a second factor is already set up; sign in again")
+	}
+	return user, claims, nil
+}
+
+// EnrollmentAuditDetail describes a login completed by enrolling a factor.
+func EnrollmentAuditDetail(claims *AuthSessionClaims, factor string) string {
+	detail := map[string]string{"via": "mfa_enrollment", "mfa": "true", "second_factor": "bor-" + factor}
+	if claims.Method != "" {
+		detail["method"], detail["connection"] = claims.Method, claims.Connection
+	}
+	out, _ := json.Marshal(detail)
+	return string(out)
 }
 
 // Login authenticates a user and returns a JWT token.
@@ -305,6 +558,9 @@ func (s *AuthService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 		return nil, fmt.Errorf("failed to look up user: %w", err)
 	}
 
+	if user != nil && user.Source == models.SourceFederated {
+		return nil, ErrFederatedAccount
+	}
 	if user != nil && user.Source == models.SourceLocal {
 		if mfaErr := s.requireSingleShotMFAAllowed(ctx, user.ID); mfaErr != nil {
 			return nil, mfaErr
@@ -392,6 +648,12 @@ func (s *AuthService) authenticateLDAP(ctx context.Context, username, password s
 			return nil, fmt.Errorf("failed to create LDAP user: %w", err)
 		}
 	} else {
+		// An existing account that is not an LDAP account must never be
+		// signed into with an LDAP password: a federated or local account
+		// with the same username belongs to someone else.
+		if user.Source != models.SourceLDAP {
+			return nil, fmt.Errorf("invalid username or password")
+		}
 		if !user.Enabled {
 			return nil, fmt.Errorf("user account is disabled")
 		}
@@ -678,22 +940,22 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenString string) (*C
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
-	// Reject auth-session tokens — they must not be used as bearer tokens.
-	// We parse the raw map to check the session_type field because Claims
-	// does not carry it.
-	if raw, ok2 := token.Claims.(*Claims); ok2 {
-		// Re-parse as MapClaims to check session_type without a full decode.
-		mapToken, _ := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, func(_ *jwt.Token) (interface{}, error) {
-			return []byte(s.jwtSecret), nil
-		})
-		if mapToken != nil {
-			if mc, ok3 := mapToken.Claims.(jwt.MapClaims); ok3 {
-				if st, ok4 := mc["session_type"].(string); ok4 && st == "auth_session" {
-					return nil, fmt.Errorf("invalid token: auth session tokens cannot be used as bearer tokens")
-				}
-			}
+	// Only login session tokens are bearer tokens. Every other token signed
+	// with the same key carries a type (step-flow and enrollment sessions:
+	// session_type; refresh tokens: token_type; step-up tokens: purpose and
+	// an audience) and is refused here.
+	mapToken, _, err := jwt.NewParser().ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+	mc, _ := mapToken.Claims.(jwt.MapClaims)
+	for _, typed := range []string{"session_type", "token_type", "purpose", "aud"} {
+		if _, present := mc[typed]; present {
+			return nil, fmt.Errorf("invalid token: not a login session")
 		}
-		_ = raw
+	}
+	if claims.UserID == "" {
+		return nil, fmt.Errorf("invalid token claims")
 	}
 
 	// Server-side revocation: reject tokens issued before the user's cut-off.
@@ -820,31 +1082,27 @@ func (s *AuthService) AuthBegin(ctx context.Context, req *models.AuthBeginReques
 		return nil, fmt.Errorf("user account is disabled")
 	}
 
+	// Federated accounts never use a password: send the browser to the
+	// identity provider that owns the account.
+	if user.Source == models.SourceFederated {
+		provider := ""
+		if user.FederationProvider != nil {
+			provider = *user.FederationProvider
+		}
+		if s.externalLogin != nil {
+			if url, ok := s.externalLogin(provider, user.Username); ok {
+				return &models.AuthBeginResponse{Next: "redirect", RedirectURL: url}, nil
+			}
+		}
+		return nil, fmt.Errorf("this account signs in through an identity provider that is not available")
+	}
+
 	source := user.Source
 
 	// Check whether MFA is needed. Applies to all user sources (local and LDAP).
-	// Only future OAuth/SAML sources, which delegate authentication entirely to an
-	// external IdP, would be exempt — they are not yet implemented.
-	var mfaMethods []string
-	if s.mfaSvc != nil {
-		var enabled bool
-		enabled, err = s.mfaSvc.IsMFAEnabled(ctx, user.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check user MFA: %w", err)
-		}
-		if enabled {
-			mfaMethods = append(mfaMethods, "totp")
-		}
-	}
-	if s.webauthnSvc != nil {
-		var hasCreds bool
-		hasCreds, err = s.webauthnSvc.HasCredentials(ctx, user.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check user WebAuthn credentials: %w", err)
-		}
-		if hasCreds {
-			mfaMethods = append([]string{"webauthn"}, mfaMethods...)
-		}
+	mfaMethods, err := s.UserMFAMethods(ctx, user.ID)
+	if err != nil {
+		return nil, err
 	}
 
 	sessionToken, err := s.generateSessionToken(user.ID, user.Username, source, false)
@@ -879,6 +1137,22 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		if err := s.mfaSvc.VerifyCode(ctx, sessionClaims.UserID, req.Credential); err != nil {
 			return nil, fmt.Errorf("invalid TOTP code")
 		}
+		// A federated user has already signed in at their identity
+		// provider: the code completes the login.
+		if sessionClaims.Source == models.SourceFederated {
+			user, err := s.federatedLoginUser(ctx, sessionClaims.UserID)
+			if err != nil {
+				return nil, err
+			}
+			loginResp, err := s.IssueTokenByUserID(ctx, user.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &models.AuthStepResponse{
+				Token: loginResp.Token, User: &loginResp.User,
+				AuditDetail: LoginAuditDetail(sessionClaims, "totp"),
+			}, nil
+		}
 		// Issue new session token with totp_done=true.
 		newToken, err := s.generateSessionToken(sessionClaims.UserID, sessionClaims.Username, sessionClaims.Source, true)
 		if err != nil {
@@ -890,12 +1164,26 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		}, nil
 
 	case "password":
+		if sessionClaims.Source == models.SourceFederated {
+			return nil, ErrFederatedAccount
+		}
 		// UserID is empty for first-time LDAP users (not yet in local DB).
 		// In that case, skip MFA checks (no local record) and go straight to LDAP.
 		if sessionClaims.UserID == "" && sessionClaims.Source == models.SourceLDAP {
 			loginResp, err := s.authenticateLDAP(ctx, sessionClaims.Username, req.Credential)
 			if err != nil {
 				return nil, err
+			}
+			// A first LDAP login is subject to the MFA policy too.
+			enroll, err := s.needsEnrollment(ctx, loginResp.User.ID)
+			if err != nil {
+				return nil, err
+			}
+			if enroll {
+				if !s.selfEnrollmentAllowed(ctx) {
+					return nil, ErrMFASetupRequired
+				}
+				return s.enrollmentStep(&loginResp.User, "", "")
 			}
 			return &models.AuthStepResponse{Next: "done", Token: loginResp.Token, User: &loginResp.User}, nil
 		}
@@ -907,11 +1195,21 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		if !user.Enabled {
 			return nil, fmt.Errorf("user account is disabled")
 		}
+		if user.Source == models.SourceFederated {
+			return nil, ErrFederatedAccount
+		}
 
 		// Enforce the second factor: if the user has MFA configured (or MFA is
 		// required by policy) it must have been completed earlier in this flow.
+		// A missing second factor is reported only after the password has
+		// been verified below, so the answer reveals nothing to someone who
+		// only knows the username.
+		setupNeeded := false
 		if mfaErr := s.enforceMFACompleted(ctx, user.ID, sessionClaims); mfaErr != nil {
-			return nil, mfaErr
+			if !errors.Is(mfaErr, errMFASetupRequired) {
+				return nil, mfaErr
+			}
+			setupNeeded = true
 		}
 
 		var loginResp *models.LoginResponse
@@ -922,6 +1220,12 @@ func (s *AuthService) AuthStep(ctx context.Context, req *models.AuthStepRequest)
 		}
 		if err != nil {
 			return nil, err
+		}
+		if setupNeeded {
+			if !s.selfEnrollmentAllowed(ctx) {
+				return nil, ErrMFASetupRequired
+			}
+			return s.enrollmentStep(user, "", "")
 		}
 
 		return &models.AuthStepResponse{

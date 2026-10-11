@@ -4,8 +4,10 @@
 
 /**
  * RevealKeyModal - reveals an escrowed LUKS recovery key. Requires a reason
- * (audited) and step-up re-authentication (password, plus a TOTP code when
- * the account has one enrolled). The key is shown once, never cached in
+ * (audited) and step-up re-authentication: password plus a TOTP code when
+ * the account has one enrolled, or for single sign-on accounts a fresh
+ * login at the identity provider in a popup (plus the TOTP code when still
+ * needed). The key is shown once, never cached in
  * client state beyond this modal, and auto-hidden after two minutes
  *.
  */
@@ -14,6 +16,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Button,
   ClipboardCopy,
+  Content,
   Form,
   FormGroup,
   FormHelperText,
@@ -29,12 +32,16 @@ import {
 
 import { LiveAlert } from "../../components/LiveAlert";
 import {
+  collectStepUp,
+  getStepUpMethod,
   issueStepUp,
   LuksVolume,
   revealRecoveryKey,
   RevealRecoveryKeyResponse,
   STEP_UP_PURPOSE_REVEAL,
+  StepUpMethod,
 } from "../../apiClient/diskEncryptionApi";
+import { reauthenticateInPopup } from "../../utils/stepUpPopup";
 
 const AUTO_HIDE_MS = 2 * 60 * 1000;
 
@@ -54,7 +61,12 @@ export const RevealKeyModal: React.FC<Props> = ({ volume, escrowId, onClose }) =
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<RevealRecoveryKeyResponse | null>(null);
   const [hidden, setHidden] = useState(false);
+  const [method, setMethod] = useState<StepUpMethod | null>(null);
+  // Identity provider re-authentication done; collecting may need TOTP.
+  const [reauthDone, setReauthDone] = useState(false);
+  const [totpNeeded, setTotpNeeded] = useState(false);
   const hideTimer = useRef<number | null>(null);
+  const isRedirect = method?.method === "redirect";
 
   useEffect(() => {
     if (!volume) return;
@@ -65,6 +77,12 @@ export const RevealKeyModal: React.FC<Props> = ({ volume, escrowId, onClose }) =
     setError(null);
     setRevealed(null);
     setHidden(false);
+    setMethod(null);
+    setReauthDone(false);
+    setTotpNeeded(false);
+    getStepUpMethod(STEP_UP_PURPOSE_REVEAL)
+      .then(setMethod)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Re-authentication is not available"));
     return () => {
       if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
     };
@@ -75,7 +93,27 @@ export const RevealKeyModal: React.FC<Props> = ({ volume, escrowId, onClose }) =
     setBusy(true);
     setError(null);
     try {
-      const stepUp = await issueStepUp(STEP_UP_PURPOSE_REVEAL, password, totpCode || undefined);
+      let stepUp: { token: string };
+      if (isRedirect && method?.url) {
+        // window.open must run before any await to count as a user action.
+        if (!reauthDone) {
+          await reauthenticateInPopup(method.url);
+          setReauthDone(true);
+        }
+        try {
+          stepUp = await collectStepUp(totpCode || undefined);
+        } catch (e: unknown) {
+          if (e instanceof Error && e.message === "totp_required") {
+            setTotpNeeded(true);
+            setError("Enter your authenticator code to finish.");
+            return;
+          }
+          setReauthDone(false);
+          throw e;
+        }
+      } else {
+        stepUp = await issueStepUp(STEP_UP_PURPOSE_REVEAL, password, totpCode || undefined);
+      }
       const res = await revealRecoveryKey(volume.id, reason.trim(), stepUp.token, escrowId);
       setPassword("");
       setTotpCode("");
@@ -95,7 +133,10 @@ export const RevealKeyModal: React.FC<Props> = ({ volume, escrowId, onClose }) =
     onClose();
   };
 
-  const canSubmit = reason.trim() !== "" && password !== "" && !busy;
+  const canSubmit =
+    reason.trim() !== "" &&
+    !busy &&
+    (isRedirect ? !totpNeeded || totpCode !== "" : method !== null && password !== "");
 
   return (
     <Modal
@@ -138,43 +179,53 @@ export const RevealKeyModal: React.FC<Props> = ({ volume, escrowId, onClose }) =
                 aria-label="Reason for revealing the recovery key"
               />
             </FormGroup>
-            <FormGroup label="Your password" isRequired fieldId="reveal-password">
-              <TextInput
-                id="reveal-password"
-                type="password"
-                value={password}
-                onChange={(_e, v) => setPassword(v)}
-                isRequired
-                autoComplete="current-password"
-                aria-label="Password for re-authentication"
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? "reveal-error" : undefined}
-              />
-            </FormGroup>
-            <FormGroup
-              label={
-                <>
-                  <abbr title="Time-based One-Time Password">TOTP</abbr> code
-                </>
-              }
-              fieldId="reveal-totp"
-            >
-              <TextInput
-                id="reveal-totp"
-                value={totpCode}
-                onChange={(_e, v) => setTotpCode(v)}
-                autoComplete="one-time-code"
-                aria-label="TOTP code"
-              />
-              <FormHelperText>
-                <HelperText>
-                  <HelperTextItem>
-                    Required when your account has multi-factor authentication enrolled (the
-                    server may require enrollment before any reveal).
-                  </HelperTextItem>
-                </HelperText>
-              </FormHelperText>
-            </FormGroup>
+            {isRedirect ? (
+              <Content component="p">
+                {totpNeeded
+                  ? "Signed in again. Enter your authenticator code to reveal the key."
+                  : "You will sign in again with your identity provider in a pop-up window."}
+              </Content>
+            ) : (
+              <FormGroup label="Your password" isRequired fieldId="reveal-password">
+                <TextInput
+                  id="reveal-password"
+                  type="password"
+                  value={password}
+                  onChange={(_e, v) => setPassword(v)}
+                  isRequired
+                  autoComplete="current-password"
+                  aria-label="Password for re-authentication"
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "reveal-error" : undefined}
+                />
+              </FormGroup>
+            )}
+            {(!isRedirect || totpNeeded) && (
+              <FormGroup
+                label={
+                  <>
+                    <abbr title="Time-based One-Time Password">TOTP</abbr> code
+                  </>
+                }
+                fieldId="reveal-totp"
+              >
+                <TextInput
+                  id="reveal-totp"
+                  value={totpCode}
+                  onChange={(_e, v) => setTotpCode(v)}
+                  autoComplete="one-time-code"
+                  aria-label="TOTP code"
+                />
+                <FormHelperText>
+                  <HelperText>
+                    <HelperTextItem>
+                      Required when your account has multi-factor authentication enrolled (the
+                      server may require enrollment before any reveal).
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
+              </FormGroup>
+            )}
             <LiveAlert id="reveal-error" variant="danger" isInline message={error} />
           </Form>
         ) : (
@@ -221,7 +272,7 @@ export const RevealKeyModal: React.FC<Props> = ({ volume, escrowId, onClose }) =
         {!revealed ? (
           <>
             <Button variant="danger" onClick={() => void doReveal()} isDisabled={!canSubmit} isLoading={busy}>
-              Reveal key
+              {isRedirect && !reauthDone ? "Re-authenticate and reveal" : "Reveal key"}
             </Button>
             <Button variant="link" onClick={close} isDisabled={busy}>
               Cancel

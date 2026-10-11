@@ -164,8 +164,23 @@ func (h *UserGroupHandler) Get(w http.ResponseWriter, r *http.Request, id string
 	}
 }
 
+// refuseManaged answers 409 and returns true when the group's name and
+// membership belong to a server extension (e.g. SCIM provisioning).
+func (h *UserGroupHandler) refuseManaged(w http.ResponseWriter, r *http.Request, groupID, action string) bool {
+	group, err := h.userGroupSvc.GetUserGroup(r.Context(), groupID)
+	if err != nil || group == nil || group.ManagedBy == nil {
+		return false
+	}
+	writeJSONError(w, http.StatusConflict, "this group is managed by "+*group.ManagedBy+"; change it in the identity provider")
+	auditDenial(r, "user_group", action, groupID, "group is managed by "+*group.ManagedBy)
+	return true
+}
+
 // Update handles PUT /api/v1/user-groups/{id}
 func (h *UserGroupHandler) Update(w http.ResponseWriter, r *http.Request, id string) {
+	if h.refuseManaged(w, r, id, "update") {
+		return
+	}
 	var req models.UpdateUserGroupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -192,6 +207,9 @@ func (h *UserGroupHandler) Update(w http.ResponseWriter, r *http.Request, id str
 
 // Delete handles DELETE /api/v1/user-groups/{id}
 func (h *UserGroupHandler) Delete(w http.ResponseWriter, r *http.Request, id string) {
+	if h.refuseManaged(w, r, id, "delete") {
+		return
+	}
 	if err := h.userGroupSvc.DeleteUserGroup(r.Context(), id); err != nil {
 		log.Printf("Failed to delete user group: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -222,7 +240,7 @@ func (h *UserGroupHandler) handleMembers(w http.ResponseWriter, r *http.Request,
 
 	switch r.Method {
 	case http.MethodDelete:
-		h.RemoveMember(w, r, memberID)
+		h.RemoveMember(w, r, groupID, memberID)
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 	}
@@ -257,6 +275,9 @@ func (h *UserGroupHandler) AddMember(w http.ResponseWriter, r *http.Request, gro
 
 	if req.UserID == "" {
 		http.Error(w, `{"error":"user_id is required"}`, http.StatusBadRequest)
+		return
+	}
+	if h.refuseManaged(w, r, groupID, "add_member") {
 		return
 	}
 
@@ -296,7 +317,20 @@ func (h *UserGroupHandler) AddMember(w http.ResponseWriter, r *http.Request, gro
 }
 
 // RemoveMember handles DELETE /api/v1/user-groups/{id}/members/{member_id}
-func (h *UserGroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request, memberID string) {
+func (h *UserGroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request, groupID, memberID string) {
+	member, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil {
+		log.Printf("Failed to look up group member: %v", err)
+		http.Error(w, `{"error":"failed to remove member"}`, http.StatusInternalServerError)
+		return
+	}
+	if member == nil || member.GroupID != groupID {
+		http.Error(w, `{"error":"member not found"}`, http.StatusNotFound)
+		return
+	}
+	if h.refuseManaged(w, r, groupID, "remove_member") {
+		return
+	}
 	if err := h.memberRepo.Delete(r.Context(), memberID); err != nil {
 		log.Printf("Failed to remove group member: %v", err)
 		http.Error(w, `{"error":"failed to remove member"}`, http.StatusInternalServerError)

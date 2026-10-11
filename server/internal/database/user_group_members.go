@@ -6,6 +6,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -62,6 +64,41 @@ func (r *UserGroupMemberRepository) ListByGroupID(ctx context.Context, groupID s
 	}
 
 	return members, rows.Err()
+}
+
+// ListByUserID returns the user's group memberships.
+func (r *UserGroupMemberRepository) ListByUserID(ctx context.Context, userID string) ([]*models.UserGroupMember, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, group_id, user_id, created_at FROM user_group_members WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list user's group memberships: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var members []*models.UserGroupMember
+	for rows.Next() {
+		m := &models.UserGroupMember{}
+		if err := rows.Scan(&m.ID, &m.GroupID, &m.UserID, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan group member: %w", err)
+		}
+		members = append(members, m)
+	}
+	return members, rows.Err()
+}
+
+// GetByID returns a membership, or nil when it does not exist.
+func (r *UserGroupMemberRepository) GetByID(ctx context.Context, id string) (*models.UserGroupMember, error) {
+	m := &models.UserGroupMember{}
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, group_id, user_id, created_at FROM user_group_members WHERE id = $1`, id,
+	).Scan(&m.ID, &m.GroupID, &m.UserID, &m.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group member: %w", err)
+	}
+	return m, nil
 }
 
 // Delete removes a member from a group

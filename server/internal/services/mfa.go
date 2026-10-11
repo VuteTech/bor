@@ -272,10 +272,25 @@ func (s *MFAService) GetMFASettings(ctx context.Context) (*models.MFASettings, e
 	if alg == "" {
 		alg = "SHA256"
 	}
+	selfEnroll, err := s.SelfEnrollmentAllowed(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &models.MFASettings{
-		MFARequired:   required == "true",
-		TOTPAlgorithm: alg,
+		MFARequired:         required == "true",
+		TOTPAlgorithm:       alg,
+		AllowSelfEnrollment: &selfEnroll,
 	}, nil
+}
+
+// SelfEnrollmentAllowed reports whether users without a second factor may
+// set one up while signing in when MFA is required (the default).
+func (s *MFAService) SelfEnrollmentAllowed(ctx context.Context) (bool, error) {
+	v, err := s.settingsRepo.Get(ctx, "mfa_self_enrollment")
+	if err != nil {
+		return false, err
+	}
+	return v != "false", nil
 }
 
 // UpdateMFASettings persists global MFA settings.
@@ -290,6 +305,11 @@ func (s *MFAService) UpdateMFASettings(ctx context.Context, settings *models.MFA
 	}
 	if err := s.settingsRepo.Set(ctx, "mfa_required", required); err != nil {
 		return err
+	}
+	if settings.AllowSelfEnrollment != nil {
+		if err := s.settingsRepo.Set(ctx, "mfa_self_enrollment", fmt.Sprint(*settings.AllowSelfEnrollment)); err != nil {
+			return err
+		}
 	}
 	return s.settingsRepo.Set(ctx, "totp_algorithm", alg)
 }

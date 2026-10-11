@@ -27,8 +27,8 @@ func NewUserRepository(db *DB) *UserRepository {
 // Create inserts a new user into the database
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 	query := `
-		INSERT INTO users (username, password_hash, email, full_name, source, enabled, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO users (username, password_hash, email, full_name, source, federation_provider, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id`
 
 	now := time.Now()
@@ -37,7 +37,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 
 	err := r.db.QueryRowContext(ctx, query,
 		user.Username, user.PasswordHash, user.Email, user.FullName,
-		user.Source, user.Enabled, user.CreatedAt, user.UpdatedAt,
+		user.Source, user.FederationProvider, user.Enabled, user.CreatedAt, user.UpdatedAt,
 	).Scan(&user.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
@@ -49,13 +49,13 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 // GetByID retrieves a user by ID
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, error) {
 	query := `
-		SELECT id, username, password_hash, email, full_name, source, enabled, created_at, updated_at
+		SELECT id, username, password_hash, email, full_name, source, federation_provider, enabled, created_at, updated_at
 		FROM users WHERE id = $1`
 
 	user := &models.User{}
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Username, &user.PasswordHash, &user.Email,
-		&user.FullName, &user.Source, &user.Enabled,
+		&user.FullName, &user.Source, &user.FederationProvider, &user.Enabled,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -71,13 +71,13 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*models.User, 
 // GetByUsername retrieves a user by username
 func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*models.User, error) {
 	query := `
-		SELECT id, username, password_hash, email, full_name, source, enabled, created_at, updated_at
+		SELECT id, username, password_hash, email, full_name, source, federation_provider, enabled, created_at, updated_at
 		FROM users WHERE username = $1`
 
 	user := &models.User{}
 	err := r.db.QueryRowContext(ctx, query, username).Scan(
 		&user.ID, &user.Username, &user.PasswordHash, &user.Email,
-		&user.FullName, &user.Source, &user.Enabled,
+		&user.FullName, &user.Source, &user.FederationProvider, &user.Enabled,
 		&user.CreatedAt, &user.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -93,7 +93,7 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 // List returns all users with optional pagination
 func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*models.User, error) {
 	query := `
-		SELECT id, username, password_hash, email, full_name, source, enabled, created_at, updated_at
+		SELECT id, username, password_hash, email, full_name, source, federation_provider, enabled, created_at, updated_at
 		FROM users ORDER BY username LIMIT $1 OFFSET $2`
 
 	rows, err := r.db.QueryContext(ctx, query, limit, offset)
@@ -107,7 +107,7 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*models
 		user := &models.User{}
 		err := rows.Scan(
 			&user.ID, &user.Username, &user.PasswordHash, &user.Email,
-			&user.FullName, &user.Source, &user.Enabled,
+			&user.FullName, &user.Source, &user.FederationProvider, &user.Enabled,
 			&user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
@@ -117,6 +117,18 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*models
 	}
 
 	return users, rows.Err()
+}
+
+// UpdateUsername renames a user.
+func (r *UserRepository) UpdateUsername(ctx context.Context, id, username string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE users SET username = $1, updated_at = NOW() WHERE id = $2`, username, id)
+	if err != nil {
+		return fmt.Errorf("failed to rename user: %w", err)
+	}
+	if n, err := result.RowsAffected(); err != nil || n == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
 }
 
 // Update updates user fields

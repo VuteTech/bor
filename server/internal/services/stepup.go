@@ -36,6 +36,9 @@ var (
 	ErrStepUpMFARequired = errors.New("enroll MFA (TOTP) to perform this action")
 	// ErrStepUpInvalid is returned for failed re-authentication.
 	ErrStepUpInvalid = errors.New("re-authentication failed")
+	// ErrStepUpTOTPNeeded is returned when the user's TOTP code is needed
+	// to complete the re-authentication.
+	ErrStepUpTOTPNeeded = fmt.Errorf("%w: a TOTP code is required", ErrStepUpInvalid)
 	// ErrStepUpTokenInvalid is returned for missing, expired, replayed or
 	// wrong-purpose step-up tokens.
 	ErrStepUpTokenInvalid = errors.New("a valid step-up token is required for this action")
@@ -84,11 +87,24 @@ func (s *StepUpService) Issue(ctx context.Context, userID, username, purpose, pa
 		return "", ErrStepUpInvalid
 	}
 
+	if err := s.checkMFA(ctx, userID, totpCode, false); err != nil {
+		return "", err
+	}
+	return s.issueToken(userID, purpose)
+}
+
+// checkMFA applies the step-up second-factor rules. factorDone reports that
+// the re-authentication already included a second factor (asserted by an
+// identity provider).
+func (s *StepUpService) checkMFA(ctx context.Context, userID, totpCode string, factorDone bool) error {
+	if factorDone {
+		return nil
+	}
 	mfaEnrolled := false
 	if s.mfaSvc != nil {
 		enrolled, mfaErr := s.mfaSvc.IsMFAEnabled(ctx, userID)
 		if mfaErr != nil {
-			return "", fmt.Errorf("check MFA enrollment: %w", mfaErr)
+			return fmt.Errorf("check MFA enrollment: %w", mfaErr)
 		}
 		mfaEnrolled = enrolled
 	}
@@ -97,15 +113,18 @@ func (s *StepUpService) Issue(ctx context.Context, userID, username, purpose, pa
 		// An enrolled second factor is always verified, even when the
 		// deployment does not require one.
 		if totpCode == "" {
-			return "", fmt.Errorf("%w: a TOTP code is required", ErrStepUpInvalid)
+			return ErrStepUpTOTPNeeded
 		}
 		if verifyErr := s.mfaSvc.VerifyCode(ctx, userID, totpCode); verifyErr != nil {
-			return "", ErrStepUpInvalid
+			return ErrStepUpInvalid
 		}
 	case s.requireMFA:
-		return "", ErrStepUpMFARequired
+		return ErrStepUpMFARequired
 	}
+	return nil
+}
 
+func (s *StepUpService) issueToken(userID, purpose string) (string, error) {
 	now := time.Now()
 	claims := &StepUpClaims{
 		Purpose: purpose,
@@ -123,6 +142,99 @@ func (s *StepUpService) Issue(ctx context.Context, userID, username, purpose, pa
 		return "", fmt.Errorf("sign step-up token: %w", err)
 	}
 	return signed, nil
+}
+
+// stepUpPendingAudience marks a federated re-authentication that the web UI
+// has not collected yet.
+const stepUpPendingAudience = "bor-step-up-pending"
+
+// pendingStepUpClaims are the claims of a held federated re-authentication.
+type pendingStepUpClaims struct {
+	Purpose    string `json:"purpose"`
+	FactorDone bool   `json:"factor_done"`
+	jwt.RegisteredClaims
+}
+
+// HoldFederated records that a federated user has just re-authenticated at
+// their identity provider for purpose. factorDone reports that the identity
+// provider's login counts as the second factor. The result is kept in an
+// httpOnly cookie until CollectFederated.
+func (s *StepUpService) HoldFederated(userID, purpose string, factorDone bool) (string, error) {
+	if userID == "" || purpose == "" {
+		return "", fmt.Errorf("%w: user and purpose are required", ErrStepUpInvalid)
+	}
+	now := time.Now()
+	claims := &pendingStepUpClaims{
+		Purpose:    purpose,
+		FactorDone: factorDone,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			Audience:  jwt.ClaimStrings{stepUpPendingAudience},
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(stepUpLifetime)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.jwtSecret))
+}
+
+// CollectFederated turns a held federated re-authentication into a step-up
+// token for the signed-in user, after the second factor when one is still
+// needed (ErrStepUpTOTPNeeded asks for it; the held step-up stays valid).
+// It returns the purpose with the token. A held step-up is collected once.
+func (s *StepUpService) CollectFederated(ctx context.Context, pending, userID, totpCode string) (token, purpose string, err error) {
+	parsed, err := jwt.ParseWithClaims(pending, &pendingStepUpClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	}, jwt.WithAudience(stepUpPendingAudience), jwt.WithExpirationRequired())
+	if err != nil {
+		return "", "", ErrStepUpTokenInvalid
+	}
+	claims, ok := parsed.Claims.(*pendingStepUpClaims)
+	if !ok || !parsed.Valid || claims.Subject != userID || claims.ID == "" || claims.Purpose == "" {
+		return "", "", ErrStepUpTokenInvalid
+	}
+	if s.isUsed(claims.ID) {
+		return "", "", ErrStepUpTokenInvalid
+	}
+	if mfaErr := s.checkMFA(ctx, userID, totpCode, claims.FactorDone); mfaErr != nil {
+		return "", "", mfaErr
+	}
+	if !s.markUsed(claims.ID, claims.ExpiresAt) {
+		return "", "", ErrStepUpTokenInvalid
+	}
+	token, err = s.issueToken(userID, claims.Purpose)
+	return token, claims.Purpose, err
+}
+
+func (s *StepUpService) isUsed(jti string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, used := s.usedJTIs[jti]
+	return used
+}
+
+// markUsed records jti as used; it returns false when it already was.
+func (s *StepUpService) markUsed(jti string, expiresAt *jwt.NumericDate) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for id, exp := range s.usedJTIs {
+		if now.After(exp) {
+			delete(s.usedJTIs, id)
+		}
+	}
+	if _, used := s.usedJTIs[jti]; used {
+		return false
+	}
+	exp := now.Add(stepUpLifetime)
+	if expiresAt != nil {
+		exp = expiresAt.Time
+	}
+	s.usedJTIs[jti] = exp
+	return true
 }
 
 // Lifetime returns the token lifetime in seconds.
@@ -153,22 +265,8 @@ func (s *StepUpService) Consume(tokenString, userID, purpose string) error {
 		return ErrStepUpTokenInvalid
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	// Prune expired entries so the map stays bounded.
-	for jti, exp := range s.usedJTIs {
-		if now.After(exp) {
-			delete(s.usedJTIs, jti)
-		}
-	}
-	if _, used := s.usedJTIs[claims.ID]; used {
+	if !s.markUsed(claims.ID, claims.ExpiresAt) {
 		return ErrStepUpTokenInvalid
 	}
-	exp := now.Add(stepUpLifetime)
-	if claims.ExpiresAt != nil {
-		exp = claims.ExpiresAt.Time
-	}
-	s.usedJTIs[claims.ID] = exp
 	return nil
 }

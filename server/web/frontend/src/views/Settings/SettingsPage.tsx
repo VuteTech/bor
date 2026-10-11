@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   PageSection,
@@ -19,6 +19,8 @@ import { AgentNotificationsTab } from "./AgentNotificationsTab";
 import { MFAPolicyTab } from "./MFAPolicyTab";
 import { FlatpakRepositoriesTab } from "./FlatpakRepositoriesTab";
 import { TangServersTab } from "./TangServersTab";
+import { ExtensionPanelTab } from "./ExtensionPanelTab";
+import { ExtSettingsPanel, fetchExtPanels } from "../../apiClient/extPanelsApi";
 
 export const SettingsPage: React.FC = () => {
   const canUsers = hasPermission("user:view");
@@ -27,6 +29,15 @@ export const SettingsPage: React.FC = () => {
   const canSettings = hasPermission("settings:manage");
   const canFlatpak = hasPermission("flatpak_repo:view");
   const canTang = hasPermission("tang_server:view");
+
+  // Settings pages contributed by server extensions (e.g. single sign-on).
+  const [extPanels, setExtPanels] = useState<ExtSettingsPanel[]>([]);
+  useEffect(() => {
+    if (!canSettings) return;
+    fetchExtPanels()
+      .then(setExtPanels)
+      .catch(() => setExtPanels([]));
+  }, [canSettings]);
 
   // Active tab is kept in the URL (?tab=) so it survives refresh, is
   // bookmarkable, and works with the browser Back button.
@@ -64,55 +75,64 @@ export const SettingsPage: React.FC = () => {
         activeKey={activeTab}
         onSelect={(_ev, key) => setActiveTab(key as string)}
       >
-        {canUsers && (
-          <Tab eventKey="users" title={<TabTitleText>Users</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <UsersTab />
-            </div>
-          </Tab>
-        )}
-        {canRoles && (
-          <Tab eventKey="roles" title={<TabTitleText>Roles</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <RolesTab />
-            </div>
-          </Tab>
-        )}
-        {canUserGroups && (
-          <Tab eventKey="user-groups" title={<TabTitleText>User Groups</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <UserGroupsTab />
-            </div>
-          </Tab>
-        )}
-        {canSettings && (
-          <Tab eventKey="agent-notifications" title={<TabTitleText>Agent Notifications</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <AgentNotificationsTab />
-            </div>
-          </Tab>
-        )}
-        {canSettings && (
-          <Tab eventKey="mfa-settings" title={<TabTitleText><abbr title="Multi-Factor Authentication">MFA</abbr> Policy</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <MFAPolicyTab />
-            </div>
-          </Tab>
-        )}
-        {canFlatpak && (
-          <Tab eventKey="flatpak-repos" title={<TabTitleText>Flatpak Repositories</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <FlatpakRepositoriesTab />
-            </div>
-          </Tab>
-        )}
-        {canTang && (
-          <Tab eventKey="tang-servers" title={<TabTitleText>Tang Servers</TabTitleText>}>
-            <div style={{ paddingTop: 16 }}>
-              <TangServersTab />
-            </div>
-          </Tab>
-        )}
+        {[
+          canUsers && (
+            <Tab key="users" eventKey="users" title={<TabTitleText>Users</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <UsersTab />
+              </div>
+            </Tab>
+          ),
+          canRoles && (
+            <Tab key="roles" eventKey="roles" title={<TabTitleText>Roles</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <RolesTab />
+              </div>
+            </Tab>
+          ),
+          canUserGroups && (
+            <Tab key="user-groups" eventKey="user-groups" title={<TabTitleText>User Groups</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <UserGroupsTab />
+              </div>
+            </Tab>
+          ),
+          canSettings && (
+            <Tab key="agent-notifications" eventKey="agent-notifications" title={<TabTitleText>Agent Notifications</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <AgentNotificationsTab />
+              </div>
+            </Tab>
+          ),
+          canSettings && (
+            <Tab key="mfa-settings" eventKey="mfa-settings" title={<TabTitleText><abbr title="Multi-Factor Authentication">MFA</abbr> Policy</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <MFAPolicyTab />
+              </div>
+            </Tab>
+          ),
+          canFlatpak && (
+            <Tab key="flatpak-repos" eventKey="flatpak-repos" title={<TabTitleText>Flatpak Repositories</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <FlatpakRepositoriesTab />
+              </div>
+            </Tab>
+          ),
+          canTang && (
+            <Tab key="tang-servers" eventKey="tang-servers" title={<TabTitleText>Tang Servers</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <TangServersTab />
+              </div>
+            </Tab>
+          ),
+          ...extPanels.map((p) => (
+            <Tab key={p.id} eventKey={`ext-${p.id}`} title={<TabTitleText>{p.title}</TabTitleText>}>
+              <div style={{ paddingTop: 16 }}>
+                <ExtensionPanelTab dataUrl={p.data_url} />
+              </div>
+            </Tab>
+          )),
+        ]}
       </Tabs>
     </PageSection>
   );

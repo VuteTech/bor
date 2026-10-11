@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -20,6 +21,111 @@ import (
 // actions can reuse it.
 type StepUpHandler struct {
 	svc *services.StepUpService
+
+	// Federated accounts re-authenticate at their identity provider.
+	users           func(ctx context.Context, id string) (*models.User, error)
+	resolveExternal func(federationProvider, username, purpose string) (string, bool)
+}
+
+// WithExternalStepUp lets server extensions re-authenticate the federated
+// accounts they own: resolve returns the URL that starts it.
+func (h *StepUpHandler) WithExternalStepUp(users func(ctx context.Context, id string) (*models.User, error), resolve func(federationProvider, username, purpose string) (string, bool)) *StepUpHandler {
+	h.users = users
+	h.resolveExternal = resolve
+	return h
+}
+
+// Method handles GET /api/v1/auth/step-up/method?purpose=...: it tells the
+// web UI how the signed-in user re-authenticates: "password" (with a TOTP
+// code when asked), or "redirect" to url in a popup followed by Collect.
+func (h *StepUpHandler) Method(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		diskEncHTTPError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		diskEncHTTPError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	resp := models.StepUpMethodResponse{Method: "password"}
+	if h.users != nil {
+		user, err := h.users(r.Context(), claims.UserID)
+		if err != nil || user == nil {
+			diskEncHTTPError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		if user.Source == models.SourceFederated {
+			provider := ""
+			if user.FederationProvider != nil {
+				provider = *user.FederationProvider
+			}
+			url, ok := "", false
+			if h.resolveExternal != nil {
+				url, ok = h.resolveExternal(provider, user.Username, r.URL.Query().Get("purpose"))
+			}
+			if !ok {
+				diskEncHTTPError(w, http.StatusServiceUnavailable, "re-authentication through your identity provider is not available")
+				return
+			}
+			resp = models.StepUpMethodResponse{Method: "redirect", URL: url}
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	diskEncJSON(w, http.StatusOK, &resp)
+}
+
+// Collect handles POST /api/v1/auth/step-up/collect: after a federated
+// re-authentication it returns the step-up token, asking for a TOTP code
+// first when one is still needed (409 "totp_required").
+func (h *StepUpHandler) Collect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		diskEncHTTPError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	claims := GetUserFromContext(r.Context())
+	if claims == nil {
+		diskEncHTTPError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var req struct {
+		TOTPCode string `json:"totp_code"`
+	}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+			diskEncHTTPError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+	c, err := r.Cookie(PendingStepUpCookieName)
+	if err != nil || c.Value == "" {
+		diskEncHTTPError(w, http.StatusUnauthorized, "re-authenticate first")
+		return
+	}
+	token, _, err := h.svc.CollectFederated(r.Context(), c.Value, claims.UserID, req.TOTPCode)
+	switch {
+	case errors.Is(err, services.ErrStepUpTOTPNeeded):
+		diskEncHTTPError(w, http.StatusConflict, "totp_required")
+		return
+	case errors.Is(err, services.ErrStepUpMFARequired):
+		clearPendingStepUpCookie(w)
+		diskEncHTTPError(w, http.StatusForbidden, err.Error())
+		return
+	case errors.Is(err, services.ErrStepUpTokenInvalid):
+		clearPendingStepUpCookie(w)
+		diskEncHTTPError(w, http.StatusUnauthorized, "re-authenticate first")
+		return
+	case errors.Is(err, services.ErrStepUpInvalid):
+		diskEncHTTPError(w, http.StatusUnauthorized, err.Error())
+		return
+	case err != nil:
+		log.Printf("step-up: collect: %v", err)
+		diskEncHTTPError(w, http.StatusInternalServerError, "failed to issue step-up token")
+		return
+	}
+	clearPendingStepUpCookie(w)
+	w.Header().Set("Cache-Control", "no-store")
+	diskEncJSON(w, http.StatusOK, &models.StepUpResponse{Token: token, ExpiresIn: h.svc.Lifetime()})
 }
 
 // NewStepUpHandler creates a StepUpHandler.

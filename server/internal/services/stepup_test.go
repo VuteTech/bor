@@ -5,6 +5,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -86,5 +87,47 @@ func TestStepUpSessionTokenIsNotStepUp(t *testing.T) {
 	}
 	if err := s.Consume(sessionToken, "user-1", StepUpPurposeRevealRecoveryKey); !errors.Is(err, ErrStepUpTokenInvalid) {
 		t.Fatalf("Consume(session JWT) = %v, want ErrStepUpTokenInvalid", err)
+	}
+}
+
+func TestStepUp_FederatedHoldAndCollect(t *testing.T) {
+	ctx := context.Background()
+	svc := NewStepUpService(nil, nil, "test-secret", true)
+
+	pending, err := svc.HoldFederated("u1", StepUpPurposeRevealRecoveryKey, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, otherErr := svc.CollectFederated(ctx, pending, "someone-else", ""); !errors.Is(otherErr, ErrStepUpTokenInvalid) {
+		t.Errorf("another user collected the step-up: %v", otherErr)
+	}
+	token, purpose, err := svc.CollectFederated(ctx, pending, "u1", "")
+	if err != nil || purpose != StepUpPurposeRevealRecoveryKey {
+		t.Fatalf("collect = %q, %v", purpose, err)
+	}
+	if err := svc.Consume(token, "u1", StepUpPurposeRevealRecoveryKey); err != nil {
+		t.Errorf("collected token rejected: %v", err)
+	}
+	if _, _, err := svc.CollectFederated(ctx, pending, "u1", ""); !errors.Is(err, ErrStepUpTokenInvalid) {
+		t.Errorf("held step-up collected twice: %v", err)
+	}
+	if err := svc.Consume(pending, "u1", StepUpPurposeRevealRecoveryKey); err == nil {
+		t.Error("a held step-up passed as a step-up token")
+	}
+
+	// Without the identity provider's MFA, the deployment's MFA rule applies.
+	noMFA, _ := svc.HoldFederated("u1", StepUpPurposeRevealRecoveryKey, false)
+	if _, _, err := svc.CollectFederated(ctx, noMFA, "u1", ""); !errors.Is(err, ErrStepUpMFARequired) {
+		t.Errorf("collect without MFA = %v, want ErrStepUpMFARequired", err)
+	}
+	relaxed := NewStepUpService(nil, nil, "test-secret", false)
+	if _, _, err := relaxed.CollectFederated(ctx, noMFA, "u1", ""); err != nil {
+		t.Errorf("collect without MFA, not required: %v", err)
+	}
+
+	other := NewStepUpService(nil, nil, "another-secret", true)
+	forged, _ := other.HoldFederated("u1", StepUpPurposeRevealRecoveryKey, true)
+	if _, _, err := svc.CollectFederated(ctx, forged, "u1", ""); !errors.Is(err, ErrStepUpTokenInvalid) {
+		t.Errorf("held step-up signed with another key accepted: %v", err)
 	}
 }

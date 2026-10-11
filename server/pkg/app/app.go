@@ -30,6 +30,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/config"
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/escrow"
+	"github.com/VuteTech/Bor/server/internal/exthost"
 	"github.com/VuteTech/Bor/server/internal/flatpakcatalog"
 	grpcserver "github.com/VuteTech/Bor/server/internal/grpc"
 	"github.com/VuteTech/Bor/server/internal/metrics"
@@ -37,6 +38,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/edition"
+	"github.com/VuteTech/Bor/server/pkg/ext"
 	enrollpb "github.com/VuteTech/Bor/server/pkg/grpc/enrollment"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"github.com/VuteTech/Bor/server/web"
@@ -69,6 +71,9 @@ type Options struct {
 	// Edition selects the optional features the server runs with; nil means
 	// the community edition (no optional features).
 	Edition edition.Edition
+	// Extensions are optional modules (login methods, routes, storage)
+	// initialized at startup; see pkg/ext. The community edition has none.
+	Extensions []ext.Module
 }
 
 // Run starts the server and blocks until it receives SIGINT or SIGTERM,
@@ -195,6 +200,9 @@ func Run(opts Options) {
 	settingsRepo := database.NewSettingsRepository(db)
 	flatpakRepo := database.NewFlatpakCatalogRepository(db)
 	revocationRepo := database.NewRevocationRepository(db)
+	externalIdentityRepo := database.NewExternalIdentityRepository(db)
+	// Login methods and federated-account claims of extension modules.
+	extLogins := exthost.NewRegistry()
 	enrollmentTokenRepo := database.NewEnrollmentTokenRepository(db)
 	policyHubStateRepo := database.NewPolicyHubStateRepository(db)
 	mfaRepo := database.NewMFARepository(db)
@@ -266,7 +274,8 @@ func Run(opts Options) {
 	// Initialize auth service
 	authSvc := services.NewAuthServiceWithMFAAndWebAuthn(userRepo, roleRepo, userRoleBindingRepo, cfg.Security.JWTSecret, cfg.Security.JWTLifetime, cfg.Security.RefreshLifetime, ldapSvc, mfaSvc, webauthnSvc).
 		WithAdminPassword(cfg.Security.AdminPassword).
-		WithNodeGroupScopes(nodeGroupRepo, nodeGroupScopes)
+		WithNodeGroupScopes(nodeGroupRepo, nodeGroupScopes).
+		WithExternalLogins(extLogins.Resolve)
 
 	// Initialize policy service
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
@@ -361,7 +370,8 @@ func Run(opts Options) {
 	authHandler := api.NewAuthHandler(authSvc, mfaSvc, webauthnSvc).
 		WithPrivacyPolicyURL(cfg.UI.PrivacyPolicyURL).
 		WithAuditService(auditSvc).
-		WithEdition(ed)
+		WithEdition(ed).
+		WithLoginMethods(extLogins.Methods)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo, roleRepo).
@@ -465,7 +475,7 @@ func Run(opts Options) {
 	stepUpSvc := services.NewStepUpService(authSvc, mfaSvc, cfg.Security.JWTSecret, cfg.DiskEncryption.RequireMFAForReveal)
 	diskEncHandler := api.NewDiskEncryptionHandler(diskEncSvc, stepUpSvc, cfg.Audit.AnonymizeIPs)
 	tangServersHandler := api.NewTangServersHandler(tangSvc)
-	stepUpHandler := api.NewStepUpHandler(stepUpSvc)
+	stepUpHandler := api.NewStepUpHandler(stepUpSvc).WithExternalStepUp(authSvc.GetUser, extLogins.ResolveStepUp)
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()
@@ -493,6 +503,11 @@ func Run(opts Options) {
 	mux.Handle("/api/v1/auth/login", authRateLimit(http.HandlerFunc(authHandler.Login)))
 	mux.Handle("/api/v1/auth/begin", authRateLimit(http.HandlerFunc(authHandler.Begin)))
 	mux.Handle("/api/v1/auth/step", authRateLimit(http.HandlerFunc(authHandler.Step)))
+	mux.Handle("/api/v1/auth/resume", authRateLimit(http.HandlerFunc(authHandler.Resume)))
+	mux.Handle("/api/v1/auth/enroll/totp/begin", authRateLimit(http.HandlerFunc(authHandler.EnrollTOTPBegin)))
+	mux.Handle("/api/v1/auth/enroll/totp/finish", authRateLimit(http.HandlerFunc(authHandler.EnrollTOTPFinish)))
+	mux.Handle("/api/v1/auth/enroll/webauthn/begin", authRateLimit(http.HandlerFunc(authHandler.EnrollWebAuthnBegin)))
+	mux.Handle("/api/v1/auth/enroll/webauthn/finish", authRateLimit(http.HandlerFunc(authHandler.EnrollWebAuthnFinish)))
 	mux.Handle("/api/v1/auth/webauthn/begin", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthBegin)))
 	mux.Handle("/api/v1/auth/webauthn/finish", authRateLimit(http.HandlerFunc(authHandler.WebAuthnAuthFinish)))
 	mux.HandleFunc("/api/v1/auth/logout", authHandler.Logout)
@@ -630,7 +645,7 @@ func Run(opts Options) {
 
 	// Settings routes
 	mux.Handle("/api/v1/settings/agent-notifications", authMiddleware(gate.Require("settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.AgentNotifications)))))
-	mux.Handle("/api/v1/settings/mfa", authMiddleware(gate.Require("settings", "manage")(http.HandlerFunc(settingsHandler.MFASettings))))
+	mux.Handle("/api/v1/settings/mfa", authMiddleware(gate.Require("settings", "manage")(auditMw(http.HandlerFunc(settingsHandler.MFASettings)))))
 
 	// Flatpak repositories (server catalog sources) and the read-only catalog
 	// used by the policy editor.
@@ -655,6 +670,8 @@ func Run(opts Options) {
 	// Step-up re-authentication: a single-use token for privileged actions
 	// (recovery-key reveal). Rate limited like the other credential endpoints.
 	mux.Handle("/api/v1/auth/step-up", authRateLimit(authMiddleware(stepUpHandler)))
+	mux.Handle("/api/v1/auth/step-up/method", authMiddleware(http.HandlerFunc(stepUpHandler.Method)))
+	mux.Handle("/api/v1/auth/step-up/collect", authRateLimit(authMiddleware(http.HandlerFunc(stepUpHandler.Collect))))
 
 	// Disk encryption: the fleet recovery-key directory, per-node detail,
 	// reveal (own permission + step-up; emits explicit audit events instead
@@ -711,6 +728,27 @@ func Run(opts Options) {
 
 	// Fedora COPR proxy — resolves chroot baseurl and signing key server-side
 	mux.Handle("/api/v1/copr-info", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(coprHandler.ServeHTTP))))
+
+	// Extension modules mount their routes under /api/v1/ext/<module>/.
+	mux.Handle("/api/v1/ext-panels", authMiddleware(gate.Require("settings", "manage")(http.HandlerFunc(extLogins.Panels))))
+	if extErr := exthost.Init(context.Background(), &exthost.Deps{
+		Mux:             mux,
+		AuthMiddleware:  authMiddleware,
+		Gate:            gate,
+		AuditMiddleware: auditMw,
+		DB:              db,
+		Users:           userRepo,
+		Identities:      externalIdentityRepo,
+		Groups:          userGroupRepo,
+		Members:         userGroupMemberRepo,
+		Auth:            authSvc,
+		StepUp:          stepUpSvc,
+		AuditSvc:        auditSvc,
+		AnonymizeIPs:    cfg.Audit.AnonymizeIPs,
+		SecretRoot:      cfg.Security.JWTSecret,
+	}, extLogins, opts.Extensions); extErr != nil {
+		log.Fatalf("Failed to initialize extensions: %v", extErr)
+	}
 
 	// Serve embedded frontend on root path
 	mux.Handle("/", api.FrontendHandler(web.StaticFiles))

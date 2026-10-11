@@ -6,6 +6,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -26,6 +27,14 @@ type AuthHandler struct {
 	auditSvc         *services.AuditService
 	privacyPolicyURL string
 	edition          edition.Edition
+	loginMethods     func() []models.LoginMethodInfo
+}
+
+// WithLoginMethods lists external login methods (from server extensions) in
+// GET /api/v1/config, so the login page can offer them.
+func (h *AuthHandler) WithLoginMethods(methods func() []models.LoginMethodInfo) *AuthHandler {
+	h.loginMethods = methods
+	return h
 }
 
 // WithEdition reports the running edition and its enabled features in
@@ -157,6 +166,11 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.authSvc.AuthStep(r.Context(), &req)
+	if errors.Is(err, services.ErrMFASetupRequired) {
+		h.emitAuthAudit(r, "auth.step."+req.Type, "", false, "step="+req.Type+" mfa_setup_required")
+		writeJSONError(w, http.StatusForbidden, "Two-factor authentication is required, but your account has none. Contact your administrator to set it up.")
+		return
+	}
 	if err != nil {
 		log.Printf("AuthStep failed: %v", err)
 		h.emitAuthAudit(r, "auth.step."+req.Type, "", false, "step="+req.Type)
@@ -166,7 +180,11 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 
 	// When the final JWT is issued, set it as an httpOnly cookie.
 	if resp.Token != "" && resp.User != nil {
-		h.emitAuthAudit(r, "auth.login", resp.User.Username, true, "via=step")
+		detail := resp.AuditDetail
+		if detail == "" {
+			detail = "via=step"
+		}
+		h.emitAuthAudit(r, "auth.login", resp.User.Username, true, detail)
 		SetSessionCookie(w, resp.Token, h.authSvc.TokenLifetime())
 		SetCSRFCookie(w)
 		if refreshToken, rtErr := h.authSvc.GenerateRefreshToken(resp.User); rtErr == nil {
@@ -180,6 +198,34 @@ func (h *AuthHandler) Step(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
 		log.Printf("Failed to encode auth step response: %v", err)
+	}
+}
+
+// Resume handles POST /api/v1/auth/resume: it continues a federated sign-in
+// that an identity provider login started and that still needs a Bor
+// second factor. The sign-in is held in an httpOnly cookie, which this
+// consumes; the response continues the step flow like Begin's.
+func (h *AuthHandler) Resume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	c, err := r.Cookie(PendingLoginCookieName)
+	clearPendingLoginCookie(w)
+	if err != nil || c.Value == "" {
+		http.Error(w, `{"error":"no sign-in to continue"}`, http.StatusUnauthorized)
+		return
+	}
+	resp, err := h.authSvc.ResumeFederated(r.Context(), c.Value)
+	if err != nil {
+		log.Printf("Resume of federated sign-in failed: %v", err)
+		http.Error(w, `{"error":"no sign-in to continue"}`, http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := json.NewEncoder(w).Encode(resp); err != nil { //nolint:gosec // intentionally marshaling auth tokens in auth endpoint response
+		log.Printf("Failed to encode auth resume response: %v", err)
 	}
 }
 
@@ -256,6 +302,12 @@ func (h *AuthHandler) MFAStatus(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to get MFA status for user %s: %v", claims.UserID, err)
 		http.Error(w, `{"error":"failed to get MFA status"}`, http.StatusInternalServerError)
 		return
+	}
+	// A federated account's second factor is performed by its identity
+	// provider (checked when its session starts), so the local enrollment
+	// requirement does not apply to it.
+	if user, uErr := h.authSvc.GetUser(r.Context(), claims.UserID); uErr == nil && user != nil && user.Source == models.SourceFederated {
+		status.MFARequired = false
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -622,6 +674,7 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 	err = h.webauthnSvc.FinishAuthentication(r.Context(), sessionClaims.UserID, body.Credential)
 	if err != nil {
 		log.Printf("WebAuthn auth finish failed for user %s: %v", sessionClaims.UserID, err)
+		h.emitAuthAudit(r, "auth.login", sessionClaims.Username, false, "via=webauthn")
 		http.Error(w, `{"error":"WebAuthn authentication failed"}`, http.StatusUnauthorized)
 		return
 	}
@@ -636,6 +689,11 @@ func (h *AuthHandler) WebAuthnAuthFinish(w http.ResponseWriter, r *http.Request)
 		Token: loginResp.Token,
 		User:  &loginResp.User,
 	}
+	detail := services.LoginAuditDetail(sessionClaims, "webauthn")
+	if detail == "via=step" {
+		detail = "via=webauthn"
+	}
+	h.emitAuthAudit(r, "auth.login", loginResp.User.Username, true, detail)
 	SetSessionCookie(w, loginResp.Token, h.authSvc.TokenLifetime())
 	SetCSRFCookie(w)
 	if refreshToken, rtErr := h.authSvc.GenerateRefreshToken(&loginResp.User); rtErr == nil {
@@ -885,9 +943,14 @@ func (h *AuthHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
+	methods := []models.LoginMethodInfo{}
+	if h.loginMethods != nil {
+		methods = h.loginMethods()
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"privacy_policy_url": h.privacyPolicyURL,
+		"login_methods":      methods,
 	}); err != nil {
 		log.Printf("PublicConfig: encode error: %v", err)
 	}

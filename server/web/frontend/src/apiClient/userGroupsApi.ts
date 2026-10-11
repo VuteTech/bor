@@ -26,6 +26,8 @@ export interface UserGroup {
   id: string;
   name: string;
   description: string;
+  /** Set when an identity provider (SCIM) owns the name and membership. */
+  managed_by?: string;
   created_at: string;
   updated_at: string;
 }
