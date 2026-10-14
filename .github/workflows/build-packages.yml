@@ -219,7 +219,7 @@ jobs:
           echo "apk_version=${APK_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download built agent packages (all architectures)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: agent-packages-${{ steps.version.outputs.version }}-*
           path: builds
@@ -299,7 +299,7 @@ jobs:
           echo "apk_version=${APK_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download assembled agent repository
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: agent-repo-${{ steps.version.outputs.version }}
           path: builds/agent-repo
@@ -355,7 +355,7 @@ jobs:
       # (Containerfile COPYs builds/agent-repo). Without this step the tracked
       # placeholder keeps the COPY valid but the feature off.
       - name: Download agent package repository
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: agent-repo-${{ steps.version.outputs.pkg_version }}
           path: builds/agent-repo
