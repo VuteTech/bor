@@ -1,0 +1,20 @@
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant UI as Web UI / REST
+    participant ES as EnrollmentService<br/>(web port)
+    participant DB as PostgreSQL
+    participant Agent as bor-agent
+
+    Admin->>UI: POST /api/v1/node-groups/{id}/tokens
+    UI->>DB: store SHA-256(token), node_group_id, expires_at (now + 5 min)
+    UI-->>Admin: plaintext token (shown once)
+    Admin->>Agent: bor-agent --token-file FILE
+    Agent->>Agent: generate ECDSA P-256 key + CSR
+    Agent->>ES: Enroll(enrollment_token, csr_pem, node_name)
+    ES->>DB: DELETE ... RETURNING (consume token, check expiry)
+    ES->>ES: SignCSR (CN forced to node_name, 90-day cert)
+    ES->>DB: create node + group membership, store cert serial
+    ES-->>Agent: node_id, signed_cert_pem, ca_cert_pem, assigned_node_group
+    Agent->>Agent: write agent.key, agent.crt, ca.crt to data_dir
+    Agent->>Agent: print next steps and exit

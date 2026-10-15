@@ -1,0 +1,4 @@
+# MkDocs 2.0 is incompatible with Material for MkDocs (plugins and theme);
+# stay on 1.x until Material supports it.
+mkdocs>=1.6,<2
+mkdocs-material>=9.5,<10

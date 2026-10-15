@@ -221,7 +221,7 @@ func enforceVolume(ctx context.Context, cfg *Config, client EscrowClient, pol *p
 			items = append(items, Item{
 				SchemaID: "luks:adoption", Key: vi.LuksUUID,
 				Status:  pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT,
-				Message: "adoption required - no unlock credential (run `bor-agent luks adopt`, see docs/disk-encryption.md#adoption)",
+				Message: "adoption required - no unlock credential (run `bor-agent luks adopt`, see doc/policy-types/disk-encryption.md#adopt-existing-machines)",
 			})
 			return items
 		}

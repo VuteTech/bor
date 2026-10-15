@@ -1,0 +1,147 @@
+site_name: Bor Documentation
+site_url: https://docs.getbor.dev/
+site_description: User and administrator documentation for Bor, the Linux desktop policy management system.
+repo_url: https://github.com/VuteTech/Bor
+repo_name: VuteTech/Bor
+edit_uri: edit/master/doc/
+copyright: Copyright &copy; 2026 Vute Tech LTD and Bor contributors - LGPL-3.0-or-later
+
+docs_dir: doc
+exclude_docs: |
+  requirements.txt
+  diagrams/
+  tools/
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: light green
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: light green
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  # Diagram sources live in doc/diagrams/*.mmd and are pulled into pages
+  # with a snippet line inside a mermaid fence. check_paths makes a missing
+  # source file fail the build.
+  - pymdownx.snippets:
+      base_path: [doc]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Concepts: getting-started/concepts.md
+      - Quick start: getting-started/quickstart.md
+  - Installation:
+      - Requirements: installation/requirements.md
+      - Installing the server: installation/server.md
+      - Installing the agent: installation/agent.md
+      - Upgrading and removing: installation/upgrade-uninstall.md
+  - Configuration:
+      - Server configuration: configuration/server.md
+      - Agent configuration: configuration/agent.md
+      - TLS and certificates: configuration/tls.md
+      - LDAP and Active Directory: configuration/ldap.md
+      - Kerberos enrollment: configuration/kerberos.md
+      - Multi-factor authentication: configuration/mfa.md
+  - User guide:
+      - The web interface: user-guide/web-ui.md
+      - Nodes: user-guide/nodes.md
+      - Node groups: user-guide/node-groups.md
+      - Policies: user-guide/policies.md
+      - Policy bindings: user-guide/bindings.md
+      - Compliance: user-guide/compliance.md
+      - Users, groups and roles: user-guide/users-and-roles.md
+      - Audit log: user-guide/audit-log.md
+      - Settings: user-guide/settings.md
+  - Policy types:
+      - policy-types/index.md
+      - Firefox: policy-types/firefox.md
+      - Thunderbird: policy-types/thunderbird.md
+      - Chrome and Chromium: policy-types/chrome.md
+      - Microsoft Edge: policy-types/edge.md
+      - KDE Plasma (KConfig): policy-types/kconfig.md
+      - GNOME (dconf): policy-types/dconf.md
+      - Polkit: policy-types/polkit.md
+      - Firewalld: policy-types/firewalld.md
+      - Flatpak: policy-types/flatpak.md
+      - Packages and repositories: policy-types/packages.md
+      - Session access: policy-types/session-access.md
+      - Disk encryption: policy-types/disk-encryption.md
+  - Operations:
+      - Monitoring: operations/monitoring.md
+      - Backup and restore: operations/backup.md
+      - Troubleshooting: operations/troubleshooting.md
+  - Security:
+      - Security and compliance: security/compliance.md
+      - Hardening guide: security/hardening.md
+  - Reference:
+      - Files and ports: reference/files-and-ports.md
+      - Command line: reference/cli.md
+      - Permissions: reference/permissions.md
+  - Development:
+      - development/index.md
+      - Development environment: development/setup.md
+      - Building and packaging: development/building.md
+      - Architecture: development/architecture.md
+      - Protocol and code generation: development/protocol.md
+      - Server internals: development/server.md
+      - Agent internals: development/agent.md
+      - Database and migrations: development/database.md
+      - Frontend: development/frontend.md
+      - Adding a policy type: development/adding-a-policy-type.md
+      - Editions and extensions: development/editions.md
+      - Testing and linting: development/testing.md
+      - Internals:
+          - dconf: development/internals/dconf.md
+          - Polkit: development/internals/polkit.md
+      - Writing documentation: development/documentation.md
+      - Contributing: development/contributing.md
+      - AI-assisted contributions: development/ai-assisted-contributions.md

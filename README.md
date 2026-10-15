@@ -3,7 +3,7 @@
 🌐 [getbor.dev](https://getbor.dev) ·
 📦 [GitHub](https://github.com/VuteTech/Bor) ·
 📖 [Contributing](docs/CONTRIBUTING.md) ·
-🔒 [Security](docs/SECURITY.md)
+🔒 [Security](doc/security/compliance.md)
 
 ---
 
@@ -108,7 +108,7 @@ the agent, enrolls it with a one-time token and starts the service — managed
 nodes never need internet access. A static version of the instructions is
 served by the instance itself at `https://your-hostname:8443/agent/`.
 
-See [docs/agent-packages.md](docs/agent-packages.md) for the per-platform
+See [Installing the agent](doc/installation/agent.md) for the per-platform
 details, repository signing and key rotation, and air-gap notes. Packages
 can also be downloaded manually from
 [getbor.dev/download](https://getbor.dev/download/).
@@ -158,8 +158,8 @@ is already part of the module:
 make server-pkcs11   # -> server/server  (FIPS 140-3 + PKCS#11)
 ```
 
-See [docs/SECURITY.md](docs/SECURITY.md#hsm-integration-pkcs11) for the full
-configuration guide and a SoftHSMv2 example.
+See [TLS and certificates](doc/configuration/tls.md#store-the-ca-key-in-an-hsm-pkcs11)
+for the full configuration guide and a SoftHSMv2 example.
 
 ### FIPS 140-3 runtime enforcement
 
@@ -344,7 +344,8 @@ kconfig:
 
 ## Documentation
 
-- [Security](docs/SECURITY.md) — cryptographic algorithms, FIPS 140-3 compliance, EU standards, deployment checklist, HSM integration
+- [User documentation](doc/index.md) - installation, configuration, web UI and policy types (MkDocs site, `mkdocs serve`)
+- [Security and compliance](doc/security/compliance.md) - cryptographic algorithms, FIPS 140-3, EU standards; see also the [Hardening guide](doc/security/hardening.md)
 - [Architecture](docs/ARCHITECTURE.md) — detailed design and data flows
 - [Contributing](docs/CONTRIBUTING.md) — setup, coding standards, PR process
 

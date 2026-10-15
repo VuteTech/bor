@@ -1,6 +1,6 @@
 -- Disk encryption (LUKS2) policy type: volume inventory, escrowed recovery
 -- keys and the external Tang server registry.
--- See docs/disk-encryption.md.
+-- See doc/policy-types/disk-encryption.md.
 
 -- Per-node LUKS volume inventory; also the anchor for escrowed keys.
 -- node_id is ON DELETE SET NULL: decommissioned disks may still need

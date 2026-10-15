@@ -1,0 +1,11 @@
+{
+  "name": "bor-doc-screenshots",
+  "private": true,
+  "description": "Capture the web UI screenshots used by the Bor documentation",
+  "scripts": {
+    "shoot": "node doc-shoot.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

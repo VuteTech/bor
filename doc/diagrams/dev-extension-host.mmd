@@ -1,0 +1,10 @@
+flowchart TB
+    M["distribution main package"] -->|"app.Run(Options)"| APP["server/pkg/app"]
+    APP --> ED["Options.Edition (pkg/edition)"]
+    APP --> EXT["Options.Extensions []ext.Module"]
+    EXT -->|"Init(ctx, Host)"| H["internal/exthost Host"]
+    H --> R1["HandlePublic / HandleAdmin<br/>/api/v1/ext/NAME/"]
+    H --> R2["Logins(): login methods, account claims"]
+    H --> R3["RegisterSettingsPanel"]
+    H --> R4["Identity, Audit, Secrets, DB, RunMigrations"]
+    ED --> ME["/api/v1/auth/me: edition + features"]

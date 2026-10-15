@@ -89,7 +89,7 @@ export const POLICY_TYPE_CATEGORIES: { id: PolicyTypeCategory; label: string }[]
   { id: "system", label: "System & security" },
 ];
 
-const DOCS_BASE = "https://github.com/VuteTech/Bor/blob/master/docs";
+const DOCS_BASE = "https://github.com/VuteTech/Bor/blob/master/doc/policy-types";
 
 const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 

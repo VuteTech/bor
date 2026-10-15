@@ -56,7 +56,10 @@ sshkey.*
 id_rsa*
 id_ed25519*
 *.keytab
-dev/
+dev/*
+# Screenshot tooling for the documentation is shared (node_modules stays
+# ignored by the rule below).
+!dev/screenshots/
 
 # Node modules (for frontend)
 node_modules/

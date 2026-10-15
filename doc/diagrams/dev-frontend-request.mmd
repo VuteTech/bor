@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant V as View component
+    participant C as apiClient
+    participant S as Server REST API
+    V->>C: getPolicies()
+    C->>S: GET /api/v1/... (cookies, X-CSRF-Token on writes)
+    alt 401 Unauthorized
+        C->>S: POST /api/v1/auth/refresh (bor_refresh cookie)
+        S-->>C: new bor_session (and bor_csrf)
+        C->>S: retry with fresh X-CSRF-Token
+    end
+    alt still 401
+        C-->>V: throw Error
+        C->>V: bor:session-expired event -> Shell shows login
+    else ok
+        S-->>C: JSON
+        C-->>V: typed result
+    end
