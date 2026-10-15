@@ -52,6 +52,10 @@ const SSO_ERRORS: Record<string, string> = {
   mfa_setup_required:
     "Multi-factor authentication is required, but no Bor authenticator or security key is set up for your account. Contact your administrator.",
   unavailable: "This sign-in method is not available right now.",
+  link_needs_approval:
+    "Your existing Bor account is an administrator account. An administrator must approve linking it to single sign-on (Settings > Users).",
+  email_ambiguous: "Several Bor accounts use your email address. Contact your administrator.",
+  email_unverified: "Your identity provider did not confirm your email address, so it cannot be linked to your Bor account.",
 };
 
 /** Reads and clears ?sso_continue=mfa, left by an identity provider sign-in
@@ -86,6 +90,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
   const [mfaMethods, setMfaMethods] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(() => takeSSOError());
+  const [signedOut] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("logged_out") !== "1") return false;
+    params.delete("logged_out");
+    const query = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
+    return true;
+  });
   const [loginMethods, setLoginMethods] = useState<LoginMethod[]>([]);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -274,6 +286,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoggedIn }) => {
 
   const loginForm = (
     <div style={{ padding: "24px 0" }}>
+      {signedOut && !errorMsg && (
+        <LiveAlert
+          variant="info"
+          message="You have been signed out, also at your identity provider."
+          isInline
+          style={{ marginBottom: 16 }}
+        />
+      )}
       <LiveAlert
         message={errorMsg}
         isInline

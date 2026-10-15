@@ -536,6 +536,7 @@ type Registry struct {
 	methods []ext.LoginMethod
 	claims  map[string]func(username string) string
 	stepUps map[string]func(username, purpose string) string
+	logouts map[string]string
 	panels  []ext.SettingsPanel
 }
 
@@ -544,7 +545,17 @@ func NewRegistry() *Registry {
 	return &Registry{
 		claims:  make(map[string]func(string) string),
 		stepUps: make(map[string]func(string, string) string),
+		logouts: make(map[string]string),
 	}
+}
+
+// ResolveLogout returns where an account of federationProvider goes after
+// logging out of Bor.
+func (reg *Registry) ResolveLogout(federationProvider string) (string, bool) {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	url, ok := reg.logouts[federationProvider]
+	return url, ok
 }
 
 // Panels serves GET /api/v1/ext-panels: the modules' settings panels.
@@ -642,6 +653,19 @@ func (l *logins) ClaimAccounts(federationProvider string, startURL func(string) 
 		}
 		return u
 	}
+	return nil
+}
+
+func (l *logins) ClaimLogout(federationProvider, logoutURL string) error {
+	if federationProvider == "" || !strings.HasPrefix(logoutURL, l.prefix) {
+		return fmt.Errorf("logout claim needs a federation provider and a URL under %s", l.prefix)
+	}
+	l.reg.mu.Lock()
+	defer l.reg.mu.Unlock()
+	if _, taken := l.reg.logouts[federationProvider]; taken {
+		return fmt.Errorf("logout of %q is already claimed", federationProvider)
+	}
+	l.reg.logouts[federationProvider] = logoutURL
 	return nil
 }
 

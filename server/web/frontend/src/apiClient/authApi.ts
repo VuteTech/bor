@@ -278,11 +278,18 @@ export async function getPublicConfig(): Promise<PublicConfig> {
   return res.json();
 }
 
-export async function logout(): Promise<void> {
-  await fetch("/api/v1/auth/logout", {
+/** Logs out. For single sign-on accounts the result names the URL that ends
+ *  the identity provider session too (single logout). */
+export async function logout(): Promise<{ redirect_url?: string }> {
+  const res = await fetch("/api/v1/auth/logout", {
     method: "POST",
     credentials: "same-origin",
   });
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
 
 /* ── WebAuthn ── */

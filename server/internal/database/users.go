@@ -119,6 +119,69 @@ func (r *UserRepository) List(ctx context.Context, limit, offset int) ([]*models
 	return users, rows.Err()
 }
 
+// ListByEmail returns the users with this email address (case-insensitive).
+func (r *UserRepository) ListByEmail(ctx context.Context, email string) ([]*models.User, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, username, password_hash, email, full_name, source, federation_provider, enabled, created_at, updated_at
+		FROM users WHERE email <> '' AND lower(email) = lower($1) ORDER BY created_at`, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users by email: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var users []*models.User
+	for rows.Next() {
+		u := &models.User{}
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Email, &u.FullName, &u.Source,
+			&u.FederationProvider, &u.Enabled, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+// ConvertToFederated makes a local or LDAP account a federated account of
+// connection: its password stops working and any link approval is used up.
+func (r *UserRepository) ConvertToFederated(ctx context.Context, id, connection string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE users SET source = 'federated', federation_provider = $2, password_hash = '',
+		       sso_link_allowed_until = NULL, updated_at = NOW()
+		WHERE id = $1 AND source IN ('local', 'ldap')`, id, connection)
+	if err != nil {
+		return fmt.Errorf("failed to convert user: %w", err)
+	}
+	if n, err := result.RowsAffected(); err != nil || n == 0 {
+		return fmt.Errorf("user not found or already federated")
+	}
+	return nil
+}
+
+// SetSSOLinkAllowedUntil records (or with nil clears) an administrator's
+// approval to link the account to a single sign-on identity by email.
+func (r *UserRepository) SetSSOLinkAllowedUntil(ctx context.Context, id string, until *time.Time) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE users SET sso_link_allowed_until = $2 WHERE id = $1`, id, until)
+	if err != nil {
+		return fmt.Errorf("failed to update link approval: %w", err)
+	}
+	if n, err := result.RowsAffected(); err != nil || n == 0 {
+		return fmt.Errorf("user not found")
+	}
+	return nil
+}
+
+// SSOLinkAllowedUntil returns the link approval, or nil.
+func (r *UserRepository) SSOLinkAllowedUntil(ctx context.Context, id string) (*time.Time, error) {
+	var until sql.NullTime
+	err := r.db.QueryRowContext(ctx, `SELECT sso_link_allowed_until FROM users WHERE id = $1`, id).Scan(&until)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to read link approval: %w", err)
+	}
+	if !until.Valid {
+		return nil, nil
+	}
+	return &until.Time, nil
+}
+
 // UpdateUsername renames a user.
 func (r *UserRepository) UpdateUsername(ctx context.Context, id, username string) error {
 	result, err := r.db.ExecContext(ctx, `UPDATE users SET username = $1, updated_at = NOW() WHERE id = $2`, username, id)
@@ -233,7 +296,10 @@ func (r *UserRepository) GetTokensValidAfter(ctx context.Context, id string) (ti
 // InvalidateTokens sets the token-invalidation cut-off for a user to NOW(),
 // revoking every access/refresh token issued before this call.
 func (r *UserRepository) InvalidateTokens(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE users SET tokens_valid_after = NOW() WHERE id = $1`, id)
+	// The server's clock, not the database's: tokens carry the server's
+	// issue time, and a session started right after a revocation must
+	// compare as later even when the clocks differ slightly.
+	_, err := r.db.ExecContext(ctx, `UPDATE users SET tokens_valid_after = $2 WHERE id = $1`, id, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to invalidate tokens: %w", err)
 	}

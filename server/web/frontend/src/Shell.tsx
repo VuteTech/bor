@@ -234,7 +234,14 @@ export const Shell: React.FC = () => {
 
   const performLogout = useCallback(() => {
     clearPermissions();
-    logout().catch(() => { /* best-effort server notification */ });
+    logout()
+      .then((res) => {
+        // Single logout: also end the identity provider session.
+        if (res.redirect_url && res.redirect_url.startsWith("/api/v1/ext/")) {
+          window.location.assign(res.redirect_url);
+        }
+      })
+      .catch(() => { /* best-effort server notification */ });
     setIsLoggedIn(false);
     setCurrentUser("");
     setMfaGateActive(false);

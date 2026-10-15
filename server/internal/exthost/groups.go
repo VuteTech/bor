@@ -7,11 +7,15 @@ package exthost
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 
+	"github.com/VuteTech/Bor/server/internal/api"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/ext"
@@ -30,6 +34,69 @@ func (i *identity) LinkFederatedIdentity(ctx context.Context, userID, provider, 
 	}
 	i.auditChange(ctx, "user.link_identity", "users", u.ID, map[string]string{"username": u.Username, "provider": provider})
 	return nil
+}
+
+func (i *identity) LinkAccountByEmail(ctx context.Context, connection, provider, subject, email string) (*ext.User, error) {
+	email = strings.TrimSpace(email)
+	if email == "" || connection == "" || provider == "" || subject == "" {
+		return nil, errors.New("ext: connection, provider, subject and email are required")
+	}
+	all, err := i.deps.Users.ListByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []*models.User
+	for _, u := range all {
+		if u.Source == models.SourceLocal || u.Source == models.SourceLDAP {
+			candidates = append(candidates, u)
+		}
+	}
+	switch {
+	case len(candidates) == 0:
+		return nil, nil
+	case len(candidates) > 1:
+		return nil, ext.ErrEmailAmbiguous
+	}
+	u := candidates[0]
+	if !u.Enabled {
+		return nil, ext.ErrUserDisabled
+	}
+	admin, err := i.deps.Auth.IsAdministrator(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	if admin {
+		until, err := i.deps.Users.SSOLinkAllowedUntil(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		if until == nil || time.Now().After(*until) {
+			i.auditChange(ctx, "user.link_identity", "users", u.ID, map[string]string{
+				"username": u.Username, "provider": provider, "via": "email", "result": "needs_approval",
+			})
+			return nil, ext.ErrLinkNeedsApproval
+		}
+	}
+	previous := u.Source
+	if err := i.deps.Auth.InvalidateUserTokens(ctx, u.ID); err != nil {
+		return nil, err
+	}
+	if err := i.deps.Users.ConvertToFederated(ctx, u.ID, connection); err != nil {
+		return nil, err
+	}
+	if err := i.deps.Identities.Link(ctx, provider, subject, u.ID); err != nil {
+		return nil, err
+	}
+	i.auditChange(ctx, "user.link_identity", "users", u.ID, map[string]string{
+		"username": u.Username, "provider": provider, "connection": connection, "via": "email",
+		"previous_source": previous, "admin_approved": fmt.Sprint(admin),
+	})
+	u.Source, u.FederationProvider = models.SourceFederated, &connection
+	return toExt(u), nil
+}
+
+func (i *identity) ConsumeLogoutTicket(w http.ResponseWriter, r *http.Request) (string, bool) {
+	return api.ConsumeLogoutTicket(w, r, i.deps.Auth)
 }
 
 func (i *identity) RenameFederatedUser(ctx context.Context, userID, username string) error {

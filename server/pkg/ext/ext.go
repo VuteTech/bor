@@ -158,6 +158,11 @@ var (
 	ErrGroupNameTaken = errors.New("ext: a user group with this name already exists")
 	// ErrNotOwner means the group is not managed by the caller.
 	ErrNotOwner = errors.New("ext: the group is not managed by this owner")
+	// ErrEmailAmbiguous means several accounts have the email address.
+	ErrEmailAmbiguous = errors.New("ext: several accounts have this email address")
+	// ErrLinkNeedsApproval means the account is an administrator account
+	// and an administrator has not approved linking it.
+	ErrLinkNeedsApproval = errors.New("ext: linking this administrator account needs an administrator's approval")
 	// ErrLastSuperAdmin means the change would leave no Super Admin.
 	ErrLastSuperAdmin = errors.New("ext: the last Super Admin cannot be disabled or deleted")
 )
@@ -184,6 +189,21 @@ type Identity interface {
 	// for the first time. It fails when the identity is linked to another
 	// user. Only federated accounts can be linked (ErrNotFederated).
 	LinkFederatedIdentity(ctx context.Context, userID, provider, subject string) error
+	// LinkAccountByEmail converts the existing local or LDAP account with
+	// this email address into a federated account of connection, linked to
+	// (provider, subject): from then on it signs in only through that
+	// connection, keeping its roles, second factors and history, and its
+	// sessions are revoked. The module must have verified that the identity
+	// provider vouches for the address. It returns nil when no local or LDAP
+	// account has the address, ErrEmailAmbiguous when several do,
+	// ErrUserDisabled for a disabled account, and ErrLinkNeedsApproval for an
+	// administrator account without a current approval.
+	LinkAccountByEmail(ctx context.Context, connection, provider, subject, email string) (*User, error)
+	// ConsumeLogoutTicket returns the user who has just logged out of Bor in
+	// this browser (set by the logout endpoint for a ClaimLogout URL) and
+	// clears it. ok is false when there is none: the module must then not
+	// end the identity provider session.
+	ConsumeLogoutTicket(w http.ResponseWriter, r *http.Request) (userID string, ok bool)
 	// RenameFederatedUser changes a federated account's username (identity
 	// providers rename users). ErrUsernameTaken when the name is in use.
 	RenameFederatedUser(ctx context.Context, userID, username string) error
@@ -277,6 +297,11 @@ type LoginRegistry interface {
 	// module forces a fresh login at the identity provider and then calls
 	// Identity.CompleteStepUp.
 	ClaimStepUp(federationProvider string, startURL func(username, purpose string) string) error
+	// ClaimLogout sends the browser to logoutURL (a module route) after one
+	// of those accounts logged out of Bor, to end the identity provider
+	// session too (single logout). The route calls
+	// Identity.ConsumeLogoutTicket.
+	ClaimLogout(federationProvider, logoutURL string) error
 }
 
 // Event is an audit record.

@@ -28,6 +28,8 @@ type AuthHandler struct {
 	privacyPolicyURL string
 	edition          edition.Edition
 	loginMethods     func() []models.LoginMethodInfo
+	// externalLogoutURL resolves single logout of federated accounts.
+	externalLogoutURL func(federationProvider string) (string, bool)
 }
 
 // WithLoginMethods lists external login methods (from server extensions) in
@@ -715,18 +717,49 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	// Best-effort server-side revocation: derive the user from the presented
 	// token (cookie or bearer) and advance their token cut-off.
+	redirect := ""
 	if token := tokenFromRequest(r); token != "" {
 		if claims, err := h.authSvc.ValidateToken(r.Context(), token); err == nil && claims != nil {
 			if err := h.authSvc.InvalidateUserTokens(r.Context(), claims.UserID); err != nil {
 				log.Printf("Logout: failed to invalidate tokens for user %s: %v", claims.UserID, err) //nolint:gosec // user id derived from a verified JWT, not raw input
 			}
 			h.emitAuthAudit(r, "auth.logout", claims.Username, true, "")
+			redirect = h.externalLogout(w, r, claims.UserID)
 		}
 	}
 	ClearSessionCookie(w)
 	clearCSRFCookie(w)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"ok":true}`))
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "redirect_url": redirect})
+}
+
+// WithExternalLogout lets server extensions end the identity provider
+// session of the federated accounts they own (single logout).
+func (h *AuthHandler) WithExternalLogout(resolve func(federationProvider string) (string, bool)) *AuthHandler {
+	h.externalLogoutURL = resolve
+	return h
+}
+
+// externalLogout returns where a federated user's browser goes to end the
+// identity provider session, and hands it a logout ticket.
+func (h *AuthHandler) externalLogout(w http.ResponseWriter, r *http.Request, userID string) string {
+	if h.externalLogoutURL == nil {
+		return ""
+	}
+	user, err := h.authSvc.GetUser(r.Context(), userID)
+	if err != nil || user == nil || user.Source != models.SourceFederated || user.FederationProvider == nil {
+		return ""
+	}
+	url, ok := h.externalLogoutURL(*user.FederationProvider)
+	if !ok {
+		return ""
+	}
+	ticket, err := h.authSvc.LogoutTicket(user.ID)
+	if err != nil {
+		return ""
+	}
+	setLogoutTicketCookie(w, ticket)
+	return url
 }
 
 // Refresh handles POST /api/v1/auth/refresh — issues a new access token
