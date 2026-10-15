@@ -1,4 +1,5 @@
 site_name: Bor Documentation
+site_url: https://docs.getbor.dev/
 site_description: User and administrator documentation for Bor, the Linux desktop policy management system.
 repo_url: https://github.com/VuteTech/Bor
 repo_name: VuteTech/Bor
