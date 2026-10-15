@@ -20,6 +20,11 @@ and compliance rules every change has to follow.
 Security problems are reported privately; see
 [Reporting security vulnerabilities](#reporting-security-vulnerabilities).
 
+Contributions made with the help of AI coding assistants are welcome under
+the rules in [AI-assisted contributions](ai-assisted-contributions.md): you
+must understand and test everything you submit, and disclose tool use in
+the pull request.
+
 ## Pull request workflow
 
 Bor uses the fork and branch workflow against `master`.

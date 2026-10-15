@@ -143,3 +143,4 @@ nav:
           - Polkit: development/internals/polkit.md
       - Writing documentation: development/documentation.md
       - Contributing: development/contributing.md
+      - AI-assisted contributions: development/ai-assisted-contributions.md
