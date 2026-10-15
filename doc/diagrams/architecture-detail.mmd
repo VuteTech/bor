@@ -1,0 +1,22 @@
+flowchart TB
+    admin(["Administrators<br/>(web browser)"])
+
+    subgraph server["Bor server"]
+        ui["<b>Web port (443 or 8443)</b><br/>TLS, client certificate optional<br/>web UI, REST API, enrollment,<br/>agent packages at /agent/"]
+        ca["<b>Internal CA</b><br/>signs agent certificates"]
+        hub["<b>Policy hub</b><br/>revision counter,<br/>pushes changes"]
+        policy["<b>Port 8444</b><br/>mutual TLS, client certificate required<br/>policy stream, certificate renewal"]
+        ui -. "signs CSR" .-> ca
+        hub -- "changes" --> policy
+    end
+
+    db[("<b>PostgreSQL</b><br/>policies, nodes,<br/>users, audit log")]
+
+    subgraph node["Managed Linux desktop (node)"]
+        agent["<b>bor-agent</b> (root)<br/>writes policy files, runs firewall-cmd,<br/>flatpak, PackageKit, cryptsetup, ...<br/>restores tampered files,<br/>reports compliance"]
+    end
+
+    admin -- "HTTPS" --> ui
+    server <--> db
+    ui <-- "enrollment (once)" --> agent
+    policy <== "policy stream (always open)" ==> agent

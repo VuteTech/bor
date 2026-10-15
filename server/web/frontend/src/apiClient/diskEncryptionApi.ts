@@ -6,7 +6,7 @@
  * Disk encryption API client - the fleet recovery-key directory, per-node
  * detail, reveal (step-up protected) and rotate, plus the Tang server
  * registry (Settings -> Tang servers) and the generic step-up endpoint.
- * See docs/disk-encryption.md
+ * See doc/policy-types/disk-encryption.md
  */
 
 import { authHeaders } from "./authApi";

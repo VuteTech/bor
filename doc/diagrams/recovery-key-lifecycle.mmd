@@ -1,0 +1,11 @@
+stateDiagram-v2
+    direction TB
+    state "expired<br/>(key material wiped immediately)" as expired
+    [*] --> pending: key escrowed
+    pending --> active: key slot confirmed
+    pending --> expired: no key slot within 24 h
+    active --> superseded: rotation
+    superseded --> retired: key slot removed
+    retired --> destroyed: retention period ends
+    expired --> [*]
+    destroyed --> [*]

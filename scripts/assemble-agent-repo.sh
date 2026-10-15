@@ -248,7 +248,7 @@ sudo dnf install -y bor-agent</code></pre>
 and Arch packages are direct downloads — paths in
 <a href="manifest.json">manifest.json</a>. If this instance uses its
 auto-generated certificate, trust <a href="ca.crt">ca.crt</a> first. Details:
-<code>docs/agent-packages.md</code> in the Bor repository.</p>
+<code>doc/installation/agent.md</code> in the Bor repository.</p>
 <script>
   for (const el of document.querySelectorAll(".origin")) {
     el.textContent = window.location.origin;

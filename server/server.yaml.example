@@ -110,7 +110,7 @@ ca:
 # (HTTP-01 challenge) or port 443 (TLS-ALPN-01).
 #
 # Mutually exclusive with tls.cert_file / tls.key_file.
-# See docs/acme.md for full documentation.
+# See doc/configuration/tls.md for full documentation.
 #
 #acme:
 #  enabled: true

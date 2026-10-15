@@ -1,0 +1,11 @@
+flowchart LR
+    admin(["Administrators<br/>(web browser)"])
+    db[("PostgreSQL")]
+    server["<b>bor-server</b><br/>web UI, REST API,<br/>internal CA"]
+    agent["<b>bor-agent</b><br/>root daemon on every<br/>managed desktop"]
+    local[("Policy files and<br/>system tools")]
+
+    admin -- "HTTPS (web port, 443 or 8443)" --> server
+    db --- server
+    server <== "enrollment: web port (TLS)<br/>policy stream :8444 (mTLS)" ==> agent
+    agent -- "enforces, watches,<br/>reports compliance" --> local

@@ -1,0 +1,7 @@
+stateDiagram-v2
+    direction LR
+    [*] --> DRAFT: Create
+    DRAFT --> RELEASED: Release
+    RELEASED --> ARCHIVED: Archive
+    RELEASED --> DRAFT: Unpublish
+    ARCHIVED --> DRAFT: Restore to draft
