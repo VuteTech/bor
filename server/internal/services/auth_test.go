@@ -226,3 +226,21 @@ func TestValidateToken_RefusesOtherTokenTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestLogoutTicket(t *testing.T) {
+	authSvc := &AuthService{jwtSecret: "test-secret-key", tokenLifetime: time.Hour}
+	ticket, err := authSvc.LogoutTicket("u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, err := authSvc.ValidateLogoutTicket(ticket); err != nil || id != "u1" {
+		t.Errorf("ticket = %q, %v", id, err)
+	}
+	if _, err := authSvc.ValidateToken(context.Background(), ticket); err == nil {
+		t.Error("a logout ticket was accepted as a login session")
+	}
+	session, _ := authSvc.generateToken(&models.User{ID: "u1", Username: "alice"})
+	if _, err := authSvc.ValidateLogoutTicket(session); err == nil {
+		t.Error("a login session was accepted as a logout ticket")
+	}
+}

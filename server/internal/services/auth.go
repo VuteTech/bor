@@ -122,6 +122,13 @@ type AuthService struct {
 	externalLogin func(federationProvider, username string) (string, bool)
 }
 
+func init() {
+	// Issue times with sub-second precision, so a session started right
+	// after a revocation (tokens_valid_after) compares as later, and one
+	// started just before it as earlier.
+	jwt.TimePrecision = time.Microsecond
+}
+
 // ErrFederatedAccount is returned when a password is offered for an account
 // that signs in only through an external identity provider.
 var ErrFederatedAccount = errors.New("this account signs in through its identity provider")
@@ -1348,6 +1355,61 @@ func (s *AuthService) GetUser(ctx context.Context, id string) (*models.User, err
 func (s *AuthService) GetUserGrants(ctx context.Context, userID string) (authz.Grants, error) {
 	return authz.ComputeGrants(ctx, s.bindingRepo, s.roleRepo, userID,
 		authz.GrantOptions{NodeGroupScopes: s.nodeGroupScopesEnabled()})
+}
+
+// logoutAudience marks logout tickets (never a session).
+const logoutAudience = "bor-logout"
+
+// LogoutTicket proves, for two minutes, that userID has just logged out of
+// Bor in this browser; single logout modules require it before ending the
+// identity provider session.
+func (s *AuthService) LogoutTicket(userID string) (string, error) {
+	now := time.Now()
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.RegisteredClaims{
+		Subject:   userID,
+		Audience:  jwt.ClaimStrings{logoutAudience},
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(2 * time.Minute)),
+	}).SignedString([]byte(s.jwtSecret))
+}
+
+// ValidateLogoutTicket returns the user of a logout ticket.
+func (s *AuthService) ValidateLogoutTicket(ticket string) (string, error) {
+	claims := &jwt.RegisteredClaims{}
+	t, err := jwt.ParseWithClaims(ticket, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(s.jwtSecret), nil
+	}, jwt.WithAudience(logoutAudience), jwt.WithExpirationRequired())
+	if err != nil || !t.Valid || claims.Subject == "" {
+		return "", errors.New("invalid logout ticket")
+	}
+	return claims.Subject, nil
+}
+
+// administrativePermissions let their holder change who may do what; an
+// account holding any of them, anywhere, is an administrator.
+var administrativePermissions = [][2]string{
+	{"role", "create"}, {"role", "edit"}, {"role", "delete"}, {"role", "manage"},
+	{"user", "create"}, {"user", "edit"}, {"user", "delete"}, {"user", "manage"},
+	{"user_group", "create"}, {"user_group", "edit"}, {"settings", "manage"},
+}
+
+// IsAdministrator reports whether the user holds an administrative
+// permission (directly or through a user group, globally or for a node
+// group).
+func (s *AuthService) IsAdministrator(ctx context.Context, userID string) (bool, error) {
+	grants, err := s.GetUserGrants(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range administrativePermissions {
+		if !grants.Scope(p[0], p[1]).IsEmpty() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // GetUserPermissions returns the sorted "resource:action" permissions the

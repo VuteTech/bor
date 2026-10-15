@@ -46,7 +46,9 @@ import {
   User,
   UserRoleBinding,
   CreateUserRequest,
+  allowSSOLink,
 } from "../../apiClient/usersApi";
+import { getPublicConfig } from "../../apiClient/authApi";
 import { fetchRoles, Role } from "../../apiClient/rolesApi";
 import {
   FEATURE_NODE_GROUP_SCOPED_RBAC,
@@ -76,6 +78,37 @@ export const UsersTab: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  // Single sign-on is offered (an extension registered login methods).
+  const [ssoAvailable, setSsoAvailable] = useState(false);
+  const [linkTarget, setLinkTarget] = useState<User | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  useEffect(() => {
+    getPublicConfig()
+      .then((cfg) => setSsoAvailable((cfg.login_methods ?? []).length > 0))
+      .catch(() => setSsoAvailable(false));
+  }, []);
+
+  const confirmAllowLink = async () => {
+    if (!linkTarget) return;
+    setLinkBusy(true);
+    setLinkError(null);
+    try {
+      const res = await allowSSOLink(linkTarget.id);
+      addToast({
+        variant: "success",
+        title: res.administrator ? "Linking approved for 24 hours" : "No approval needed",
+        detail: res.administrator
+          ? `${linkTarget.username} can now sign in with single sign-on once; the account then becomes an SSO account.`
+          : `${linkTarget.username} is not an administrator account; it is linked at its first single sign-on sign-in.`,
+      });
+      setLinkTarget(null);
+    } catch (e: unknown) {
+      setLinkError(e instanceof Error ? e.message : "Failed to approve");
+    } finally {
+      setLinkBusy(false);
+    }
+  };
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const { addToast } = useToast();
@@ -203,6 +236,18 @@ export const UsersTab: React.FC = () => {
                         {u.enabled ? "Disable" : "Enable"}
                       </Button>
                     )}
+                    {canEdit && ssoAvailable && (u.source === "local" || u.source === "ldap") && (
+                      <Button
+                        variant="plain"
+                        aria-label={`Allow linking user ${u.username} to single sign-on`}
+                        onClick={() => {
+                          setLinkError(null);
+                          setLinkTarget(u);
+                        }}
+                      >
+                        Allow SSO link
+                      </Button>
+                    )}
                     {canDelete && (
                       <Button
                         variant="plain"
@@ -220,6 +265,19 @@ export const UsersTab: React.FC = () => {
           </Tbody>
         </Table>
       )}
+
+      <ConfirmModal
+        isOpen={linkTarget !== null}
+        title="Allow linking to single sign-on?"
+        confirmLabel="Allow for 24 hours"
+        isBusy={linkBusy}
+        error={linkError}
+        onConfirm={confirmAllowLink}
+        onCancel={() => setLinkTarget(null)}
+      >
+        {linkTarget &&
+          `For the next 24 hours, a single sign-on login whose verified email matches ${linkTarget.email || "this account's email"} takes over ${linkTarget.username}. The account then signs in only through the identity provider; its password stops working. Administrator accounts need this approval; others are linked without it on connections that link by email.`}
+      </ConfirmModal>
 
       <ConfirmModal
         isOpen={deleteTarget !== null}

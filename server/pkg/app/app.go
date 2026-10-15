@@ -371,7 +371,8 @@ func Run(opts Options) {
 		WithPrivacyPolicyURL(cfg.UI.PrivacyPolicyURL).
 		WithAuditService(auditSvc).
 		WithEdition(ed).
-		WithLoginMethods(extLogins.Methods)
+		WithLoginMethods(extLogins.Methods).
+		WithExternalLogout(extLogins.ResolveLogout)
 	userHandler := api.NewUserHandler(authSvc)
 	roleHandler := api.NewRoleHandler(roleRepo, permRepo, userRoleBindingRepo)
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo, roleRepo).
@@ -730,6 +731,7 @@ func Run(opts Options) {
 	mux.Handle("/api/v1/copr-info", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(coprHandler.ServeHTTP))))
 
 	// Extension modules mount their routes under /api/v1/ext/<module>/.
+	mux.Handle("/api/v1/sso-link-approvals/", authMiddleware(gate.Require("user", "edit")(auditMw(api.NewSSOLinkApprovalHandler(authSvc, userRepo)))))
 	mux.Handle("/api/v1/ext-panels", authMiddleware(gate.Require("settings", "manage")(http.HandlerFunc(extLogins.Panels))))
 	if extErr := exthost.Init(context.Background(), &exthost.Deps{
 		Mux:             mux,

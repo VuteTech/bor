@@ -143,6 +143,34 @@ func clearPendingStepUpCookie(w http.ResponseWriter) {
 	})
 }
 
+// logoutTicketCookie carries a logout ticket to single logout modules.
+const (
+	logoutTicketCookie = "bor_logout"
+	logoutTicketPath   = "/api/v1/ext/"
+)
+
+func setLogoutTicketCookie(w http.ResponseWriter, ticket string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: logoutTicketCookie, Value: ticket, Path: logoutTicketPath, MaxAge: 120,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// ConsumeLogoutTicket returns the user who has just logged out in this
+// browser and clears the ticket.
+func ConsumeLogoutTicket(w http.ResponseWriter, r *http.Request, authSvc *services.AuthService) (string, bool) {
+	c, err := r.Cookie(logoutTicketCookie)
+	http.SetCookie(w, &http.Cookie{
+		Name: logoutTicketCookie, Value: "", Path: logoutTicketPath, MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+	if err != nil || c.Value == "" {
+		return "", false
+	}
+	userID, err := authSvc.ValidateLogoutTicket(c.Value)
+	return userID, err == nil
+}
+
 // ClearSessionCookie removes the session and refresh cookies.
 func ClearSessionCookie(w http.ResponseWriter) {
 	SetSessionCookie(w, "", -1)

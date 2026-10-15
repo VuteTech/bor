@@ -148,3 +148,17 @@ export async function deleteBinding(id: string): Promise<void> {
     { method: "DELETE", headers: authHeaders() }
   );
 }
+
+/** Approval to link an administrator account to a single sign-on identity
+ *  by email at its next sign-in (valid 24 hours). */
+export interface SSOLinkApproval {
+  administrator: boolean;
+  allowed_until: string | null;
+}
+
+export async function allowSSOLink(userId: string): Promise<SSOLinkApproval> {
+  return apiRequest<SSOLinkApproval>(`/api/v1/sso-link-approvals/${encodeURIComponent(userId)}`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+}
