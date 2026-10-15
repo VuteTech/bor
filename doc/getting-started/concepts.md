@@ -141,20 +141,23 @@ merges them into one result per type, but the merge rules differ by type:
 
 The policy type pages describe the details for each type.
 
-## Revisions, streaming and delta sync
+## Revisions and streaming
 
 The server keeps a monotonic **revision** counter (stored in the database, so
 it survives restarts). Every policy or binding change bumps it and is pushed
 immediately to the agents it affects.
 
 1. On connect, the agent sends the last revision it has applied.
-2. If the agent is new or restarted, the server sends a full **snapshot** of
-   every policy the node should have.
-3. If the agent was only briefly disconnected, the server sends the missed
-   changes (created, updated, deleted policies) as a delta, or a full
-   snapshot when the delta is no longer available.
-4. The stream then stays open and the server pushes further changes as they
-   happen. There is no polling interval.
+2. If the agent is new, restarted, or missed any change while it was
+   disconnected, the server sends a full **snapshot** of every policy the
+   node should have. An agent that is already up to date gets no snapshot.
+3. The stream then stays open. When a policy or binding of one of the
+   node's groups changes, the server signals the agent and sends it a fresh
+   snapshot. There is no polling interval.
+
+Snapshots contain only the policies of the node's own groups. The agent
+keeps the last revision in memory, so after an agent restart the first
+connection always receives a full snapshot.
 
 If the connection drops, the agent reconnects with exponential backoff that
 starts at one second and is capped at 60 seconds.

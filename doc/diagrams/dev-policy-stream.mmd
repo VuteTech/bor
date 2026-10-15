@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant Agent as bor-agent
+    participant PS as PolicyServer<br/>(policy port, mTLS)
+    participant Hub as PolicyHub
+    participant DB as PostgreSQL
+    actor Admin
+
+    Agent->>PS: SubscribePolicyUpdates(last_known_revision)
+    PS->>PS: identity = verified certificate CN
+    alt revision 0 or ahead of server
+        PS->>DB: released policies with enabled bindings for node groups
+        PS-->>Agent: SNAPSHOT x N (last one snapshot_complete)
+    else behind and delta available, no resync events
+        Note over PS,Hub: not reached today - only resync events are published
+        PS->>Hub: EventsSince(revision)
+        PS-->>Agent: CREATED / UPDATED / DELETED events
+    else behind, delta compacted or contains a resync
+        PS-->>Agent: full SNAPSHOT
+    end
+    PS->>DB: node status = online
+    Note over PS,Hub: watch mode, Subscribe(clientID)
+    Admin->>Hub: policy or binding change -> PublishResync(groupIDs)
+    Hub->>DB: SaveRevision (high-water mark)
+    Hub-->>PS: resync signal
+    PS-->>Agent: full SNAPSHOT if node groups overlap
+    Agent->>PS: ReportCompliance per policy
+    Note over Agent,PS: stream breaks -> node offline
+    Agent->>Agent: wait backoff (1s, 2s, 4s ... max 60s)
+    Agent->>PS: SubscribePolicyUpdates(last revision seen)

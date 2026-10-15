@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant Agent as bor-agent
+    participant PS as PolicyServer<br/>(policy port, mTLS)
+    participant DB as PostgreSQL
+
+    Note over Agent: at daemon start-up only
+    Agent->>Agent: CertExpiringSoon(agent.crt, 30 days)?
+    alt expires within 30 days
+        Agent->>Agent: new ECDSA P-256 key, CSR with same CN
+        Agent->>PS: RenewCertificate(csr_pem) using current cert
+        PS->>PS: interceptor - verified chain, serial not revoked
+        PS->>DB: look up node by certificate CN
+        PS->>PS: SignCSR (CN = node name, 90 days)
+        PS->>DB: update node cert serial and expiry
+        PS-->>Agent: signed_cert_pem
+        Agent->>Agent: write agent.key, then agent.crt
+    end
+    Agent->>PS: connect policy stream with current credentials

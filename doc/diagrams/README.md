@@ -23,3 +23,11 @@ the website), use the Mermaid CLI:
 | `architecture-detail.mmd` | `getting-started/concepts.md` |
 | `policy-lifecycle.mmd` | `getting-started/concepts.md` |
 | `recovery-key-lifecycle.mmd` | `policy-types/disk-encryption.md` |
+| `dev-release-pipeline.mmd` | `development/building.md` |
+| `dev-components.mmd` | `development/architecture.md` |
+| `dev-enrollment.mmd` | `development/architecture.md` |
+| `dev-policy-stream.mmd` | `development/architecture.md` |
+| `dev-cert-renewal.mmd` | `development/architecture.md` |
+| `dev-frontend-request.mmd` | `development/frontend.md` |
+| `dev-policy-type-touchpoints.mmd` | `development/adding-a-policy-type.md` |
+| `dev-extension-host.mmd` | `development/editions.md` |

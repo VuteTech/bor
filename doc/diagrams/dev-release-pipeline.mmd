@@ -1,0 +1,33 @@
+flowchart TD
+    trigger["push (any branch), pull_request, release published"]
+    test["test<br/>go test server + agent"]
+    lint["lint<br/>check-frontend-tokens, golangci-lint"]
+    bsb["build-server-backend<br/>go build ./..."]
+    ba["build-agent<br/>go build ./..."]
+    bsf["build-server-frontend<br/>npm ci, typecheck, build"]
+    bap["build-agent-packages<br/>amd64, arm64, ppc64le"]
+    repo["assemble-agent-repo<br/>apt + dnf metadata, GPG signing"]
+    bsp["build-server-packages<br/>amd64, arm64, ppc64le<br/>embeds the agent repo"]
+    img["build-image<br/>server/Containerfile, 3 platforms"]
+    rel["GitHub release assets<br/>(release only)"]
+    ghcr["ghcr.io push<br/>(master and release)"]
+    oci["OCI archive artifact<br/>(other branches)"]
+
+    trigger --> test
+    trigger --> lint
+    test --> bsb
+    test --> ba
+    test --> bsf
+    lint --> bsb
+    lint --> ba
+    lint --> bsf
+    bsb --> bap
+    ba --> bap
+    bsf --> bap
+    bap --> repo
+    repo --> bsp
+    repo --> img
+    bap --> rel
+    bsp --> rel
+    img --> ghcr
+    img --> oci

@@ -1,0 +1,38 @@
+flowchart LR
+    browser(["Browser<br/>(PatternFly UI)"])
+
+    subgraph server["bor-server (server/pkg/app)"]
+        web["<b>Web port</b><br/>enrollment_port, default 8443<br/>VerifyClientCertIfGiven"]
+        router{"Content-Type<br/>application/grpc*<br/>and HTTP/2?"}
+        rest["REST mux<br/>SecurityHeaders, CSRF,<br/>Auth, PermissionGate, Audit"]
+        enroll["EnrollmentService<br/>(gRPC)"]
+        pol["<b>Policy port</b><br/>policy_port, default 8444<br/>RequireAndVerifyClientCert, TLS 1.3"]
+        polsvc["PolicyService<br/>(gRPC)"]
+        hub["PolicyHub<br/>revision + event log"]
+        svc["internal/services"]
+        repo["internal/database<br/>repositories"]
+        ca["internal/pki<br/>CA"]
+        audit["Audit sinks<br/>DB, syslog CEF/OCSF"]
+        metrics["/metrics<br/>127.0.0.1:9090"]
+    end
+
+    db[("PostgreSQL")]
+    agent["bor-agent<br/>(root daemon)"]
+
+    browser -- "HTTPS + cookies" --> web
+    agent -- "Enroll, KerberosEnroll" --> web
+    web --> router
+    router -- "yes" --> enroll
+    router -- "no" --> rest
+    rest --> svc
+    enroll --> ca
+    enroll --> svc
+    agent <== "SubscribePolicyUpdates,<br/>ReportCompliance, RenewCertificate, ..." ==> pol
+    pol --> polsvc
+    polsvc --> hub
+    polsvc --> svc
+    rest -- "policy and binding changes" --> hub
+    svc --> repo
+    svc --> audit
+    repo --> db
+    audit --> db

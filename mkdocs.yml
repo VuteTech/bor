@@ -9,6 +9,7 @@ docs_dir: doc
 exclude_docs: |
   requirements.txt
   diagrams/
+  tools/
 
 theme:
   name: material

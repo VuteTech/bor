@@ -1,0 +1,13 @@
+flowchart LR
+    P["proto/policy/TYPE.proto"] -->|make proto| G1["server/pkg/grpc/policy (Go)"]
+    P -->|make proto| G2["frontend src/generated/proto (TS)"]
+    G2 --> R["policyTypes/registry.tsx"]
+    G2 --> E["PolicyContentEditor + editor"]
+    E -->|content JSON| API["REST: Policy.content"]
+    API --> V["services: validatePolicyContent"]
+    V --> DB[("policies table")]
+    DB --> M["grpc/server.go modelToProto: typed_content"]
+    M -->|policy stream| A["agent main.go: cache + syncAll*"]
+    A --> EN["agent/internal/policy: enforce"]
+    EN --> CR["ReportComplianceWithStatus"]
+    A --> FW["filewatcher hooks"]
