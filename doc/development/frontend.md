@@ -432,6 +432,12 @@ Two consequences follow:
 - **The server must be rebuilt (or restarted with `go run`) to serve a new
   bundle.** With `npm run dev` running, restart `make run-server` after a
   rebuild to see the change.
+- **Generated sources are committed as well.** `src/generated/proto/*.ts`
+  comes from `make proto`. `src/generated/kconfig_catalogue.ts` is the
+  bundled copy of the KDE settings catalogue the server embeds
+  (`server/assets/kconfig_builtin_catalogue.json`); edit the JSON, run
+  `make kconfig-catalogue` (or `npm run gen:kconfig-catalogue`) and commit
+  both files. The server test suite validates the JSON.
 
 ### Typecheck
 

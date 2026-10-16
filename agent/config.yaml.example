@@ -81,6 +81,32 @@ chrome:
   # Flatpak Chromium (org.chromium.Chromium) — set empty to disable
   flatpak_chromium_policies_path: "/var/lib/flatpak/extension/org.chromium.Chromium.Extension.system-policies/x86_64/1/policies/managed"
 
+# KDE Plasma (KConfig) policy enforcement.
+# All values are optional; the defaults shown are used when the section is absent.
+#kconfig:
+#  # Directory for the managed KDE configuration files. The agent puts it
+#  # first in XDG_CONFIG_DIRS through /etc/xdg/plasma-workspace/env/00-bor.sh
+#  # (Plasma sessions) and /etc/profile.d/99-bor.sh (login shells).
+#  config_path: "/etc/bor/xdg"
+#  # Directory for generated data files (look-and-feel packages with the
+#  # deployed wallpaper and panel layout, Plasma update scripts). The hook
+#  # scripts put it first in XDG_DATA_DIRS.
+#  data_path: "/etc/bor/share"
+#  # Also mirror System Settings module restrictions into /etc/kde5rc.
+#  # Plasma 5 and 6 read them from kdeglobals, so leave this off unless a
+#  # very old KDE Frameworks release needs it.
+#  write_kde5rc: false
+#  # After each sync, read the written settings back with kreadconfig in a
+#  # logged-in user's session and report settings the user overrides (only
+#  # possible for non-enforced defaults) as non-compliant. Also checks that
+#  # the running Plasma session has the managed directory in XDG_CONFIG_DIRS.
+#  probe_effective: false
+#  # Expose the config directory to Flatpak applications through a
+#  # system-wide "flatpak override" while KDE policies apply, so sandboxed
+#  # KDE applications (Okular, Kate, ... from Flathub) read the managed
+#  # settings. Node-wide settings only; ignored when flatpak is not installed.
+#  flatpak_override: true
+
 # Flatpak policy enforcement (remotes and applications via the flatpak CLI).
 # All values are optional; the defaults shown are used when the section is absent.
 #flatpak:

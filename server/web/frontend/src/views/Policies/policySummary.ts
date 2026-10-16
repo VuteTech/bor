@@ -11,7 +11,19 @@ import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
 import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
 import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
 import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
-import { KCM_MODULES, KCONFIG_ALL_POLICIES } from "./editors/kconfigModel";
+import {
+  FILL_MODE_LABELS,
+  HISTORY_MODE_LABELS,
+  KCM_MODULES,
+  catalogueEntryForSetting,
+  hasKonsoleProfileContent,
+  hasLayoutContent,
+  isExtraWrite,
+  konsoleProfileFileName,
+  layoutBaseTheme,
+  parseKConfigContent,
+} from "./editors/kconfigModel";
+import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
 
 export interface SettingsRow {
   setting: string;
@@ -20,7 +32,7 @@ export interface SettingsRow {
 }
 
 export function formatDisplayValue(val: unknown): string {
-  if (val === undefined || val === null) return "—";
+  if (val === undefined || val === null) return "-";
   if (typeof val === "boolean") return val ? "Yes" : "No";
   if (Array.isArray(val)) return val.length > 0 ? val.join(", ") : "(empty)";
   if (typeof val === "object") return JSON.stringify(val);
@@ -154,41 +166,77 @@ export function buildSettingsRows(policyType: string, content: string): Settings
   }
 
   if (policyType === "Kconfig") {
-    const parsed = raw as Record<string, unknown>;
-    const enforcedFields = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as string[]) : [];
+    // Older typed content is shown through the same upgrade the editor uses.
+    const kc = parseKConfigContent(content).content;
 
-    // URL restrictions
-    if (Array.isArray(parsed.urlRestrictions)) {
-      (parsed.urlRestrictions as Record<string, unknown>[]).forEach((r, i) => {
-        const proto = (r.protocol as string) || "*";
-        const host = (r.host as string) || "*";
-        const path = (r.path as string) ? `/${r.path}` : "";
-        const summary = `${r.action} ${proto}://${host}${path} → ${r.enabled ? "allow" : "deny"}`;
-        rows.push({ setting: `Security › URL Restrictions › rule_${i + 1}`, value: summary, locked: "Yes" });
-      });
+    for (const s of kc.settings) {
+      if (isExtraWrite(s)) continue; // written together with its main setting
+      const entry = catalogueEntryForSetting(s);
+      const setting = entry ? `${entry.category} › ${entry.label}` : `Custom › ${targetLabel(s.file, s.groupPath, s.key)}`;
+      let value: string;
+      if (s.delete) value = "Deleted ([$d])";
+      else if (entry?.type === "Bool") value = boolDisplay(entry, s.value ?? "");
+      else value = (s.value ?? "") === "" ? "(empty)" : (s.value as string);
+      if (s.locale) value += ` [${s.locale}]`;
+      if (s.expand) value += " [$e]";
+      rows.push({ setting, value, locked: s.immutable ? "Yes" : "No" });
     }
 
-    // KCM restrictions
-    if (Array.isArray(parsed.kcmRestrictions)) {
-      for (const modId of parsed.kcmRestrictions as string[]) {
-        const mod = KCM_MODULES.find(m => m.id === modId);
-        rows.push({
-          setting: `System Settings Restrictions › ${mod ? mod.label : modId}`,
-          value: "Restricted",
-          locked: "Yes",
-        });
-      }
-    }
-
-    // All other typed fields
-    for (const def of KCONFIG_ALL_POLICIES) {
-      if (def.type === "url-restrictions" || def.type === "kcm-restrictions") continue;
-      if (!(def.key in parsed) || parsed[def.key] === null || parsed[def.key] === undefined) continue;
+    const showOnly = kc.kcmMode === "KCM_SHOW_ONLY_LISTED";
+    for (const modId of kc.kcmRestrictions) {
+      const mod = KCM_MODULES.find((m) => m.id === modId);
       rows.push({
-        setting: `${def.group} › ${def.label}`,
-        value: formatDisplayValue(parsed[def.key]),
-        locked: enforcedFields.includes(def.key) ? "Yes" : "No",
+        setting: `System Settings Modules › ${mod ? mod.label : modId}`,
+        value: showOnly ? "Visible (every other module hidden)" : "Hidden",
+        locked: "Yes",
       });
+    }
+
+    kc.urlRestrictions.forEach((r, i) => {
+      const proto = r.protocol || "*";
+      const host = r.host || "*";
+      const path = r.path ? `/${r.path}` : "";
+      rows.push({ setting: `URL Restrictions › rule_${i + 1}`, value: `${r.action} ${proto}://${host}${path} -> ${r.enabled ? "allow" : "deny"}`, locked: "Yes" });
+    });
+
+    if (kc.fileImmutableKdeglobals) {
+      rows.push({ setting: `Advanced › kdeglobals ${groupPathLabel(["$i"])}`, value: "Whole file immutable", locked: "Yes" });
+    }
+
+    if (kc.unixGroups.length > 0) {
+      rows.push({ setting: "Scope › Unix groups", value: kc.unixGroups.join(", "), locked: null });
+    }
+
+    if (hasKonsoleProfileContent(kc.konsoleProfile)) {
+      const k = kc.konsoleProfile;
+      const bits: string[] = [];
+      if (k.command.trim()) bits.push(`command ${k.command.trim()}`);
+      bits.push((HISTORY_MODE_LABELS[k.historyMode] ?? k.historyMode).toLowerCase() + (k.historyMode === "1" && k.historySize > 0 ? ` (${k.historySize} lines)` : ""));
+      if (k.colorScheme.trim()) bits.push(`colour scheme ${k.colorScheme.trim()}`);
+      if (k.font.trim()) bits.push(`font ${k.font.trim()}`);
+      if (k.setDefault || k.lock) bits.push("default profile");
+      rows.push({ setting: `Applications › Konsole profile ${konsoleProfileFileName(k)}`, value: bits.join(", "), locked: k.lock ? "Yes" : "No" });
+    }
+
+    if (kc.hiddenApplications.length > 0) {
+      rows.push({ setting: "Applications › Hidden applications", value: kc.hiddenApplications.join(", "), locked: null });
+    }
+
+    if (hasLayoutContent(kc.layout)) {
+      const l = kc.layout;
+      if (l.wallpaperImage.trim()) {
+        rows.push({ setting: "Desktop Layout › Wallpaper image", value: `${l.wallpaperImage.trim()} (${FILL_MODE_LABELS[l.wallpaperFillMode || "2"] ?? l.wallpaperFillMode})`, locked: l.lockPackage ? "Yes" : "No" });
+      }
+      if (l.layoutScript.trim()) {
+        rows.push({ setting: "Desktop Layout › Panel layout script", value: `${l.layoutScript.trim().split("\n").length} line(s)`, locked: l.lockPackage ? "Yes" : "No" });
+      }
+      const base = layoutBaseTheme(kc);
+      rows.push({ setting: "Desktop Layout › Base theme", value: base ? `${base.value} (defaults copied, wallpaper replaced)` : "Breeze fallback", locked: base ? (base.immutable ? "Yes" : "No") : null });
+      const how: string[] = ["new users"];
+      if (l.lockPackage) how.push("existing users at every login");
+      else if (l.applyOnce) how.push("existing users once");
+      if (l.applyLive) how.push("logged-in sessions now");
+      rows.push({ setting: "Desktop Layout › Applied to", value: how.join(", "), locked: null });
     }
 
     return rows;
@@ -218,7 +266,7 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       if (subj.require_active) who.push("active session only");
       rows.push({
         setting: `Rule ${idx + 1} › ${rule.description || actions.join(", ") || "(no actions)"}`,
-        value: `${result} — ${who.length > 0 ? who.join(", ") : "everyone"}${rule.description && actions.length > 0 ? ` (${actions.join(", ")})` : ""}`,
+        value: `${result} - ${who.length > 0 ? who.join(", ") : "everyone"}${rule.description && actions.length > 0 ? ` (${actions.join(", ")})` : ""}`,
         locked: null,
       });
     }
@@ -245,7 +293,7 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     if (fw.forwardPorts?.length) {
       rows.push({
         setting: "Forward ports",
-        value: fw.forwardPorts.map((p) => `${fmtPort(p)} → ${p.toAddr ?? ""}${p.toPort !== undefined ? `:${p.toPort}` : ""}`).join(", "),
+        value: fw.forwardPorts.map((p) => `${fmtPort(p)} -> ${p.toAddr ?? ""}${p.toPort !== undefined ? `:${p.toPort}` : ""}`).join(", "),
         locked: null,
       });
     }
@@ -385,7 +433,7 @@ export function buildSettingsRows(policyType: string, content: string): Settings
         ...(rule.users ?? []).map((u) => `user ${u}`),
         ...(rule.groups ?? []).map((g) => `group ${g}`),
       ];
-      const windows = (rule.windows ?? []).map((w) => `${(w.days ?? []).join("/")} ${w.start ?? "?"}–${w.end ?? "?"}`);
+      const windows = (rule.windows ?? []).map((w) => `${(w.days ?? []).join("/")} ${w.start ?? "?"}-${w.end ?? "?"}`);
       const tail = rule.endAction ? `, then ${rule.endAction.toLowerCase().replace(/_/g, " ")}` : "";
       rows.push({
         setting: `Rule ${idx + 1} › ${rule.description || targets.join(", ") || "(no users or groups)"}`,

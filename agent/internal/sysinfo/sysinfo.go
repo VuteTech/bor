@@ -7,10 +7,13 @@ package sysinfo
 
 import (
 	"bufio"
+	"context"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 )
 
 // OSInfo holds detected operating system information.
@@ -217,30 +220,67 @@ func collectDesktopEnvs() []DesktopInfo {
 	return envs
 }
 
+// PlasmaVersion returns the installed KDE Plasma version ("6.3.4"), or ""
+// when Plasma is not installed or the version cannot be read.
+func PlasmaVersion() string {
+	if de, ok := detectKDE(); ok {
+		return de.Version
+	}
+	return ""
+}
+
+// Desktop detection runs the shells' --version. The results are cached:
+// the agent asks for them on every heartbeat and every reconnect, and
+// starting a Qt application just to print its version is not free.
+const desktopDetectTTL = time.Hour
+
+var (
+	desktopDetectMu sync.Mutex
+	desktopDetected = map[string]cachedDesktop{}
+)
+
+type cachedDesktop struct {
+	info DesktopInfo
+	ok   bool
+	at   time.Time
+}
+
+// detectDesktop runs tool --version with env added, caches the outcome and
+// turns the last field of the output into the version. minFields guards
+// against unexpected output ("plasmashell 6.1.4" has 2, "GNOME Shell 46.1"
+// has 3).
+func detectDesktop(name, tool string, env []string, minFields int) (DesktopInfo, bool) {
+	desktopDetectMu.Lock()
+	defer desktopDetectMu.Unlock()
+	if c, ok := desktopDetected[tool]; ok && time.Since(c.at) < desktopDetectTTL {
+		return c.info, c.ok
+	}
+	info, ok := DesktopInfo{}, false
+	if _, err := exec.LookPath(tool); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, tool, "--version")
+		cmd.Env = append(os.Environ(), env...)
+		if out, err := cmd.Output(); err == nil {
+			ver := ""
+			if parts := strings.Fields(strings.TrimSpace(string(out))); len(parts) >= minFields {
+				ver = parts[len(parts)-1]
+			}
+			info, ok = DesktopInfo{Name: name, Version: ver}, true
+		}
+	}
+	desktopDetected[tool] = cachedDesktop{info: info, ok: ok, at: time.Now()}
+	return info, ok
+}
+
 func detectKDE() (DesktopInfo, bool) {
-	out, err := exec.Command("plasmashell", "--version").Output()
-	if err != nil {
-		return DesktopInfo{}, false
-	}
-	// "plasmashell 6.1.4"
-	line := strings.TrimSpace(string(out))
-	ver := ""
-	if parts := strings.Fields(line); len(parts) >= 2 {
-		ver = parts[len(parts)-1]
-	}
-	return DesktopInfo{Name: "KDE Plasma", Version: ver}, true
+	// plasmashell is a Qt GUI application: without a display the default
+	// (xcb/wayland) platform plugin aborts and dumps core before --version
+	// is handled. The "minimal" platform needs no display; "offscreen"
+	// crashes on some Plasma 6 builds.
+	return detectDesktop("KDE Plasma", "plasmashell", []string{"QT_QPA_PLATFORM=minimal", "QT_LOGGING_RULES=*=false"}, 2)
 }
 
 func detectGNOME() (DesktopInfo, bool) {
-	out, err := exec.Command("gnome-shell", "--version").Output()
-	if err != nil {
-		return DesktopInfo{}, false
-	}
-	// "GNOME Shell 46.1"
-	line := strings.TrimSpace(string(out))
-	ver := ""
-	if parts := strings.Fields(line); len(parts) >= 3 {
-		ver = parts[len(parts)-1]
-	}
-	return DesktopInfo{Name: "GNOME", Version: ver}, true
+	return detectDesktop("GNOME", "gnome-shell", nil, 3)
 }

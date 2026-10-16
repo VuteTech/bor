@@ -78,16 +78,12 @@ func TestValidateKConfigPolicy_AllBoolFields(t *testing.T) {
 		{"actionFileNew", `{"actionFileNew": false}`},
 		{"actionFileOpen", `{"actionFileOpen": false}`},
 		{"actionFileSave", `{"actionFileSave": false}`},
-		{"restrictWallpaper", `{"restrictWallpaper": false}`},
-		{"restrictIcons", `{"restrictIcons": false}`},
-		{"restrictAutostart", `{"restrictAutostart": false}`},
-		{"restrictColors", `{"restrictColors": false}`},
-		{"restrictCursors", `{"restrictCursors": false}`},
 		{"borderlessMaximizedWindows", `{"borderlessMaximizedWindows": true}`},
 		{"plasmoidUnlockedDesktop", `{"plasmoidUnlockedDesktop": false}`},
 		{"allowConfigureWhenLocked", `{"allowConfigureWhenLocked": false}`},
 		{"autoLock", `{"autoLock": true}`},
 		{"lockOnResume", `{"lockOnResume": true}`},
+		{"lockOnStart", `{"lockOnStart": true}`},
 	}
 
 	for _, tt := range tests {
@@ -100,10 +96,50 @@ func TestValidateKConfigPolicy_AllBoolFields(t *testing.T) {
 	}
 }
 
+func TestValidateKConfigPolicy_LegacyOnlyRejected(t *testing.T) {
+	// The resource-restriction fields parse but have no effect on Plasma 5/6;
+	// a policy made only of them is rejected with a message that names them.
+	for _, field := range []string{"restrictWallpaper", "restrictIcons", "restrictAutostart", "restrictColors", "restrictCursors"} {
+		t.Run(field, func(t *testing.T) {
+			err := ValidateKConfigPolicy(`{"` + field + `": true, "enforcedFields": ["` + field + `"]}`)
+			if err == nil {
+				t.Fatal("expected error for legacy-only policy")
+			}
+			if !strings.Contains(err.Error(), field) || !strings.Contains(err.Error(), "no effect") {
+				t.Errorf("error should name the legacy field and say it has no effect, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateKConfigPolicy_LegacyWithEffectiveAccepted(t *testing.T) {
+	// Old content that still carries a legacy field alongside real settings
+	// keeps parsing, so it can be opened and the legacy field removed.
+	err := ValidateKConfigPolicy(`{"restrictWallpaper": true, "shellAccess": false}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateKConfigPolicy_IntField(t *testing.T) {
 	err := ValidateKConfigPolicy(`{"lockTimeout": 300}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_ScreenLockFields(t *testing.T) {
+	content := `{"autoLock": true, "lockTimeout": 10, "lockGrace": 0, "lockOnStart": true, "lockScreenImage": "/usr/share/backgrounds/lock.png"}`
+	if err := ValidateKConfigPolicy(content); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_NegativeLockValues(t *testing.T) {
+	for _, content := range []string{`{"lockTimeout": -1}`, `{"lockGrace": -5}`} {
+		if err := ValidateKConfigPolicy(content); err == nil {
+			t.Errorf("expected error for %s", content)
+		}
 	}
 }
 
@@ -117,6 +153,7 @@ func TestValidateKConfigPolicy_StringFields(t *testing.T) {
 		{"wallpaperImage", `{"wallpaperImage": "/usr/share/wallpapers/Flow.jpg"}`},
 		{"wallpaperFillMode", `{"wallpaperFillMode": "2"}`},
 		{"wallpaperColor", `{"wallpaperColor": "0,0,0"}`},
+		{"lockScreenImage", `{"lockScreenImage": "/usr/share/wallpapers/Lock.jpg"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -128,18 +165,54 @@ func TestValidateKConfigPolicy_StringFields(t *testing.T) {
 	}
 }
 
+func TestValidateKConfigPolicy_StringLineBreakRejected(t *testing.T) {
+	// A line break would let a value inject extra INI keys.
+	err := ValidateKConfigPolicy(`{"iconTheme": "breeze\n[KDE Action Restrictions]\nshell_access=true"}`)
+	if err == nil {
+		t.Fatal("expected error for value with line break")
+	}
+	if !strings.Contains(err.Error(), "iconTheme") {
+		t.Errorf("error should name the field, got: %v", err)
+	}
+}
+
+func TestValidateKConfigPolicy_StringTooLong(t *testing.T) {
+	err := ValidateKConfigPolicy(`{"iconTheme": "` + strings.Repeat("a", maxKConfigStringLen+1) + `"}`)
+	if err == nil {
+		t.Fatal("expected error for over-long value")
+	}
+}
+
 func TestValidateKConfigPolicy_KcmRestrictions(t *testing.T) {
-	err := ValidateKConfigPolicy(`{"kcmRestrictions": ["kcm_bluetooth", "kcm_wifi"]}`)
+	err := ValidateKConfigPolicy(`{"kcmRestrictions": ["kcm_bluetooth", "kcm_wifi", "kcmspellchecking", "kcm_about-distro"]}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestValidateKConfigPolicy_KcmInvalidID(t *testing.T) {
+	for _, id := range []string{"kcm bad", "../x", "kcm=1", "", "a\nb"} {
+		err := ValidateKConfigPolicy(`{"kcmRestrictions": [` + strconvQuote(id) + `]}`)
+		if err == nil {
+			t.Errorf("expected error for module id %q", id)
+		}
+	}
+}
+
+// strconvQuote is a tiny JSON string quoter for the test inputs above.
+func strconvQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	return `"` + s + `"`
 }
 
 func TestValidateKConfigPolicy_URLRestrictionValid(t *testing.T) {
 	content := `{
 		"urlRestrictions": [
 			{"action": "open", "protocol": "http", "host": "example.com", "enabled": true},
-			{"action": "list", "protocol": "file", "enabled": false}
+			{"action": "list", "protocol": "file", "enabled": false},
+			{"action": "open", "protocol": "file", "path": "$HOME", "enabled": true}
 		]
 	}`
 	err := ValidateKConfigPolicy(content)
@@ -168,6 +241,19 @@ func TestValidateKConfigPolicy_URLRestrictionEmptyAction(t *testing.T) {
 	}
 }
 
+func TestValidateKConfigPolicy_URLRestrictionCommaRejected(t *testing.T) {
+	// Rules are rendered as eight comma-separated fields; a comma in a field
+	// would shift every following field.
+	content := `{"urlRestrictions": [{"action": "open", "protocol": "http", "host": "a.com,b.com", "enabled": false}]}`
+	err := ValidateKConfigPolicy(content)
+	if err == nil {
+		t.Fatal("expected error for comma in host")
+	}
+	if !strings.Contains(err.Error(), "host") {
+		t.Errorf("error should name the field, got: %v", err)
+	}
+}
+
 func TestValidateKConfigPolicy_AllURLRestrictionActions(t *testing.T) {
 	for _, action := range []string{"open", "list", "redirect"} {
 		content := `{"urlRestrictions": [{"action": "` + action + `", "protocol": "http", "enabled": true}]}`
@@ -190,6 +276,7 @@ func TestParseKConfigPolicyContent_Valid(t *testing.T) {
 	content := `{
 		"shellAccess": false,
 		"lockTimeout": 300,
+		"lockGrace": 5,
 		"enforcedFields": ["shellAccess", "lockTimeout"]
 	}`
 	kcp, err := ParseKConfigPolicyContent(content)
@@ -201,6 +288,9 @@ func TestParseKConfigPolicyContent_Valid(t *testing.T) {
 	}
 	if kcp.LockTimeout == nil || *kcp.LockTimeout != 300 {
 		t.Errorf("expected LockTimeout 300, got %v", kcp.LockTimeout)
+	}
+	if kcp.LockGrace == nil || *kcp.LockGrace != 5 {
+		t.Errorf("expected LockGrace 5, got %v", kcp.LockGrace)
 	}
 	if len(kcp.EnforcedFields) != 2 {
 		t.Errorf("expected 2 enforced fields, got %d", len(kcp.EnforcedFields))

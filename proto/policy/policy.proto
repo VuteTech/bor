@@ -54,6 +54,11 @@ service PolicyService {
   rpc ReportPolkitCatalogue(ReportPolkitCatalogueRequest)
       returns (ReportPolkitCatalogueResponse);
 
+  // ReportKConfigCatalogue is called by agents at startup to publish the
+  // KDE settings schemas and System Settings modules installed on their node.
+  rpc ReportKConfigCatalogue(ReportKConfigCatalogueRequest)
+      returns (ReportKConfigCatalogueResponse);
+
   // ─── Disk encryption ─────────────
   // All five RPCs run on the mTLS policy port; the node identity is the
   // verified certificate CN, and every volume lookup is scoped to it.

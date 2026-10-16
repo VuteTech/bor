@@ -22,6 +22,256 @@ func writeFile(t *testing.T, path string, data []byte) {
 	}
 }
 
+func kcBool(v bool) *bool    { return &v }
+func kcStr(v string) *string { return &v }
+func kcInt(v int32) *int32   { return &v }
+
+// findEntry returns the first entry matching file, group and key, or nil.
+func findEntry(entries []*pb.KConfigEntry, file, group, key string) *pb.KConfigEntry {
+	for _, e := range entries {
+		if e.File == file && e.Group == group && e.Key == key {
+			return e
+		}
+	}
+	return nil
+}
+
+func TestKConfigPolicyToEntries_KeyNames(t *testing.T) {
+	pol := &pb.KConfigPolicy{
+		EnforcedFields:             []string{"shellAccess", "autoLock", "kcmRestrictions"},
+		ShellAccess:                kcBool(false),
+		RunCommand:                 kcBool(false),
+		ActionLogout:               kcBool(false),
+		PlasmoidUnlockedDesktop:    kcBool(false),
+		AllowConfigureWhenLocked:   kcBool(false),
+		BorderlessMaximizedWindows: kcBool(true),
+		AutoLock:                   kcBool(true),
+		LockOnResume:               kcBool(true),
+		LockOnStart:                kcBool(true),
+		LockTimeout:                kcInt(10),
+		LockGrace:                  kcInt(0),
+		LockScreenImage:            kcStr("/usr/share/backgrounds/lock.png"),
+		IconTheme:                  kcStr("breeze"),
+		KcmRestrictions:            []string{"kcm_autostart"},
+		// Legacy resource restrictions must be ignored.
+		RestrictWallpaper: kcBool(true), //nolint:staticcheck // SA1019: testing that the deprecated field is ignored
+		RestrictAutostart: kcBool(true), //nolint:staticcheck // SA1019: testing that the deprecated field is ignored
+	}
+
+	entries := KConfigPolicyToEntries(pol)
+
+	want := []struct{ file, group, key, value string }{
+		{"kdeglobals", "KDE Action Restrictions", "shell_access", "false"},
+		{"kdeglobals", "KDE Action Restrictions", "run_command", "false"},
+		{"kdeglobals", "KDE Action Restrictions", "action/run_command", "false"},
+		{"kdeglobals", "KDE Action Restrictions", "logout", "false"},
+		{"kdeglobals", "KDE Action Restrictions", "action/logout", "false"},
+		{"kdeglobals", "KDE Action Restrictions", "plasma/plasmashell/unlockedDesktop", "false"},
+		{"kdeglobals", "KDE Action Restrictions", "plasma/allow_configure_when_locked", "false"},
+		{"kwinrc", "Windows", "BorderlessMaximizedWindows", "true"},
+		{"kscreenlockerrc", "Daemon", "Autolock", "true"},
+		{"kscreenlockerrc", "Daemon", "LockOnResume", "true"},
+		{"kscreenlockerrc", "Daemon", "LockOnStart", "true"},
+		{"kscreenlockerrc", "Daemon", "Timeout", "10"},
+		{"kscreenlockerrc", "Daemon", "LockGrace", "0"},
+		{"kscreenlockerrc", "Greeter", "WallpaperPlugin", "org.kde.image"},
+		{"kscreenlockerrc", "Greeter][Wallpaper][org.kde.image][General", "Image", "/usr/share/backgrounds/lock.png"},
+		{"kdeglobals", "Icons", "Theme", "breeze"},
+		{"kdeglobals", "KDE Control Module Restrictions", "kcm_autostart", "false"},
+	}
+	for _, w := range want {
+		e := findEntry(entries, w.file, w.group, w.key)
+		if e == nil {
+			t.Errorf("missing entry %s [%s] %s", w.file, w.group, w.key)
+			continue
+		}
+		if e.Value != w.value {
+			t.Errorf("%s [%s] %s = %q, want %q", w.file, w.group, w.key, e.Value, w.value)
+		}
+	}
+
+	// Enforcement follows enforcedFields; keys derived from one field share it.
+	if e := findEntry(entries, "kdeglobals", "KDE Action Restrictions", "shell_access"); e == nil || !e.Enforced {
+		t.Error("shell_access should be enforced")
+	}
+	if e := findEntry(entries, "kdeglobals", "KDE Action Restrictions", "action/logout"); e == nil || e.Enforced {
+		t.Error("action/logout should not be enforced (actionLogout not in enforcedFields)")
+	}
+	if e := findEntry(entries, "kdeglobals", "KDE Control Module Restrictions", "kcm_autostart"); e == nil || !e.Enforced {
+		t.Error("KCM restrictions are always enforced")
+	}
+
+	// Things that must NOT be emitted.
+	for _, e := range entries {
+		switch {
+		case e.Group == "KDE Resource Restrictions":
+			t.Errorf("legacy resource restriction emitted: %+v", e)
+		case e.File == "plasmarc":
+			t.Errorf("plasmarc must not be written (Plasma 6 reads the Kiosk action instead): %+v", e)
+		case e.File == "kde5rc" || e.File == "kde6rc":
+			t.Errorf("KCM restrictions belong in kdeglobals, got file %q", e.File)
+		case e.Key == "AutoLock":
+			t.Error("screen locker key must be spelled Autolock")
+		}
+	}
+}
+
+func TestKConfigPolicyToEntries_Nil(t *testing.T) {
+	if got := KConfigPolicyToEntries(nil); got != nil {
+		t.Errorf("expected nil for nil policy, got %v", got)
+	}
+}
+
+func TestMergeKConfigPolicies_PriorityWins(t *testing.T) {
+	sources := []KConfigPolicySource{
+		{ID: "low", Name: "Baseline", Priority: 10, Policy: &pb.KConfigPolicy{
+			ShellAccess: kcBool(true), EnforcedFields: []string{"shellAccess"},
+		}},
+		{ID: "high", Name: "Lab lockdown", Priority: 50, Policy: &pb.KConfigPolicy{
+			ShellAccess: kcBool(false), EnforcedFields: []string{"shellAccess"},
+		}},
+	}
+
+	res, err := MergeKConfigPolicies(sources, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(res.Files["kdeglobals"])
+	if !strings.Contains(content, "shell_access[$i]=false") {
+		t.Errorf("higher-priority value should win, got:\n%s", content)
+	}
+	if strings.Contains(content, "shell_access=true") || strings.Count(content, "shell_access") != 1 {
+		t.Errorf("key must be written exactly once, got:\n%s", content)
+	}
+
+	high := res.Items["high"]
+	if len(high) != 1 || high[0].Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+		t.Errorf("winner should report one compliant item, got %+v", high)
+	}
+	low := res.Items["low"]
+	if len(low) != 1 || low[0].Status != pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE {
+		t.Fatalf("loser should report one inapplicable item, got %+v", low)
+	}
+	if !strings.Contains(low[0].Message, "Lab lockdown") || !strings.Contains(low[0].Message, "applied value: false") {
+		t.Errorf("loser message should name the winner and the applied value, got %q", low[0].Message)
+	}
+	if low[0].SchemaId != "kdeglobals" || low[0].Key != "[KDE Action Restrictions] shell_access" {
+		t.Errorf("unexpected item identity: %q / %q", low[0].SchemaId, low[0].Key)
+	}
+}
+
+func TestMergeKConfigPolicies_TieBrokenByID(t *testing.T) {
+	sources := []KConfigPolicySource{
+		{ID: "b-policy", Name: "B", Priority: 5, Policy: &pb.KConfigPolicy{IconTheme: kcStr("from-b")}},
+		{ID: "a-policy", Name: "A", Priority: 5, Policy: &pb.KConfigPolicy{IconTheme: kcStr("from-a")}},
+	}
+
+	// Run twice with different input order: the result must not change.
+	for _, order := range [][]KConfigPolicySource{sources, {sources[1], sources[0]}} {
+		res, err := MergeKConfigPolicies(order, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(res.Files["kdeglobals"]), "Theme=from-a") {
+			t.Errorf("tie should be broken by policy ID (a-policy wins), got:\n%s", res.Files["kdeglobals"])
+		}
+	}
+}
+
+func TestMergeKConfigPolicies_SameValueNotOverridden(t *testing.T) {
+	sources := []KConfigPolicySource{
+		{ID: "one", Name: "One", Priority: 1, Policy: &pb.KConfigPolicy{RunCommand: kcBool(false), EnforcedFields: []string{"runCommand"}}},
+		{ID: "two", Name: "Two", Priority: 2, Policy: &pb.KConfigPolicy{RunCommand: kcBool(false), EnforcedFields: []string{"runCommand"}}},
+	}
+
+	res, err := MergeKConfigPolicies(sources, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"one", "two"} {
+		for _, it := range res.Items[id] {
+			if it.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+				t.Errorf("policy %s: identical values must both be compliant, got %+v", id, it)
+			}
+		}
+	}
+	content := string(res.Files["kdeglobals"])
+	// Both derived keys appear exactly once (not twice, once per policy).
+	if strings.Count(content, "\nrun_command[$i]=false\n") != 1 || strings.Count(content, "\naction/run_command[$i]=false\n") != 1 {
+		t.Errorf("run_command and action/run_command should each appear once, got:\n%s", content)
+	}
+}
+
+func TestMergeKConfigPolicies_URLRulesAdditive(t *testing.T) {
+	sources := []KConfigPolicySource{
+		{ID: "a", Name: "A", Priority: 1, Policy: &pb.KConfigPolicy{UrlRestrictions: []*pb.KConfigUrlRestriction{
+			{Action: "list", Protocol: "smb", Enabled: false},
+			{Action: "open", Protocol: "ftp", Enabled: false},
+		}}},
+		{ID: "b", Name: "B", Priority: 9, Policy: &pb.KConfigPolicy{UrlRestrictions: []*pb.KConfigUrlRestriction{
+			{Action: "open", Protocol: "file", Host: "", Path: "$HOME", Enabled: true},
+		}}},
+	}
+
+	res, err := MergeKConfigPolicies(sources, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(res.Files["kdeglobals"])
+	if strings.Count(content, "rule_count[$i]=") != 1 || !strings.Contains(content, "rule_count[$i]=3") {
+		t.Errorf("expected a single rule_count=3, got:\n%s", content)
+	}
+	for _, rule := range []string{"list,,,,smb,,,false", "open,,,,ftp,,,false", "open,,,,file,,$HOME,true"} {
+		if !strings.Contains(content, rule) {
+			t.Errorf("missing rule %q in:\n%s", rule, content)
+		}
+	}
+	if len(res.Items["a"]) != 2 || len(res.Items["b"]) != 1 {
+		t.Errorf("expected one item per rule, got a=%d b=%d", len(res.Items["a"]), len(res.Items["b"]))
+	}
+}
+
+func TestMergeKConfigPolicies_RejectsLineBreaks(t *testing.T) {
+	sources := []KConfigPolicySource{
+		{ID: "p", Name: "P", Priority: 1, Policy: &pb.KConfigPolicy{
+			IconTheme:   kcStr("breeze\n[KDE Action Restrictions]\nshell_access=true"),
+			ShellAccess: kcBool(false),
+		}},
+	}
+
+	res, err := MergeKConfigPolicies(sources, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(res.Files["kdeglobals"])
+	if strings.Contains(content, "Theme=") || strings.Contains(content, "shell_access=true") {
+		t.Errorf("value with line break must not be written, got:\n%s", content)
+	}
+	if !strings.Contains(content, "shell_access=false") {
+		t.Errorf("valid entries must still be written, got:\n%s", content)
+	}
+	var sawError bool
+	for _, it := range res.Items["p"] {
+		if it.Status == pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR && strings.Contains(it.Key, "Theme") {
+			sawError = true
+		}
+	}
+	if !sawError {
+		t.Errorf("expected an error item for the rejected value, got %+v", res.Items["p"])
+	}
+}
+
+func TestMergeKConfigPolicies_Empty(t *testing.T) {
+	res, err := MergeKConfigPolicies(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Files != nil || len(res.Items) != 0 || len(res.Entries) != 0 {
+		t.Errorf("expected empty result, got %+v", res)
+	}
+}
+
 func TestMergeKConfigEntries_SinglePolicy(t *testing.T) {
 	entries := []*pb.KConfigEntry{
 		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "shell_access", Value: "false", Type: "bool", Enforced: true},
@@ -43,14 +293,14 @@ func TestMergeKConfigEntries_SinglePolicy(t *testing.T) {
 	}
 
 	content := string(data)
-	// Both entries are enforced, so group header should have [$i]
-	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
-		t.Errorf("expected group-level [$i] enforcement, got:\n%s", content)
+	// Both entries are enforced: the markers sit on the keys, never on the group
+	if !strings.Contains(content, "[KDE Action Restrictions]\n") {
+		t.Errorf("expected the group header, got:\n%s", content)
 	}
-	if !strings.Contains(content, "run_command=false") {
+	if !strings.Contains(content, "run_command[$i]=false") {
 		t.Errorf("expected run_command=false, got:\n%s", content)
 	}
-	if !strings.Contains(content, "shell_access=false") {
+	if !strings.Contains(content, "shell_access[$i]=false") {
 		t.Errorf("expected shell_access=false, got:\n%s", content)
 	}
 }
@@ -109,29 +359,6 @@ func TestMergeKConfigEntries_MixedEnforcement(t *testing.T) {
 	}
 }
 
-func TestMergeKConfigEntries_MultiplePoliciesMerged(t *testing.T) {
-	// Entries from two different policies combined into a single slice
-	entries := []*pb.KConfigEntry{
-		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "shell_access", Value: "false", Type: "bool", Enforced: true},
-		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "run_command", Value: "false", Type: "bool", Enforced: true},
-	}
-
-	files, err := MergeKConfigEntries(entries)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data := files["kdeglobals"]
-	content := string(data)
-
-	if !strings.Contains(content, "shell_access=false") {
-		t.Errorf("expected shell_access from first policy, got:\n%s", content)
-	}
-	if !strings.Contains(content, "run_command=false") {
-		t.Errorf("expected run_command from second policy, got:\n%s", content)
-	}
-}
-
 func TestMergeKConfigEntries_NoEnforcement(t *testing.T) {
 	entries := []*pb.KConfigEntry{
 		{File: "kscreenlockerrc", Group: "Daemon", Key: "Timeout", Value: "300", Type: "int", Enforced: false},
@@ -167,7 +394,7 @@ func TestMergeKConfigEntries_EmptyInput(t *testing.T) {
 func TestMergeKConfigEntries_MultipleGroups(t *testing.T) {
 	entries := []*pb.KConfigEntry{
 		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "shell_access", Value: "false", Type: "bool", Enforced: true},
-		{File: "kdeglobals", Group: "KDE Resource Restrictions", Key: "wallpaper", Value: "false", Type: "bool", Enforced: true},
+		{File: "kdeglobals", Group: "Icons", Key: "Theme", Value: "breeze", Type: "string", Enforced: true},
 	}
 
 	files, err := MergeKConfigEntries(entries)
@@ -177,15 +404,30 @@ func TestMergeKConfigEntries_MultipleGroups(t *testing.T) {
 
 	content := string(files["kdeglobals"])
 	// Should have both groups
-	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
+	if !strings.Contains(content, "[KDE Action Restrictions]\n") {
 		t.Errorf("expected Action Restrictions group, got:\n%s", content)
 	}
-	if !strings.Contains(content, "[KDE Resource Restrictions][$i]") {
-		t.Errorf("expected Resource Restrictions group, got:\n%s", content)
+	if !strings.Contains(content, "[Icons]\n") {
+		t.Errorf("expected Icons group, got:\n%s", content)
 	}
 	// Groups should be separated by a blank line
 	if !strings.Contains(content, "\n\n[") {
 		t.Errorf("expected blank line between groups, got:\n%s", content)
+	}
+}
+
+func TestMergeKConfigEntries_NestedGroupHeader(t *testing.T) {
+	entries := []*pb.KConfigEntry{
+		{File: "kscreenlockerrc", Group: "Greeter][Wallpaper][org.kde.image][General", Key: "Image", Value: "/srv/lock.png", Enforced: true},
+	}
+
+	files, err := MergeKConfigEntries(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(files["kscreenlockerrc"])
+	if !strings.Contains(content, "[Greeter][Wallpaper][org.kde.image][General]\nImage[$i]=/srv/lock.png\n") {
+		t.Errorf("expected nested group header, got:\n%s", content)
 	}
 }
 
@@ -207,7 +449,7 @@ func TestBackupOriginal_CreatesBackup(t *testing.T) {
 		t.Errorf("backup content mismatch: got %q", backup)
 	}
 
-	// Second call should be idempotent — overwrite original and verify
+	// Second call should be idempotent - overwrite original and verify
 	// backup still has old content.
 	writeFile(t, target, []byte("overwritten"))
 	if err := BackupOriginal(target); err != nil {
@@ -370,7 +612,7 @@ func TestSyncKConfigFiles_CleanupRestoresOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Second sync: empty map — should restore original.
+	// Second sync: empty map - should restore original.
 	if err := SyncKConfigFiles(dir, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +648,7 @@ func TestSyncKConfigFiles_CleanupDeletesWhenNoOriginal(t *testing.T) {
 		t.Fatalf("managed file should exist: %v", err)
 	}
 
-	// Second sync: empty map — should delete (no original).
+	// Second sync: empty map - should delete (no original).
 	if err := SyncKConfigFiles(dir, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +677,7 @@ func TestSyncKConfigFiles_PartialCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Second sync: only kdeglobals — kwinrc should be restored.
+	// Second sync: only kdeglobals - kwinrc should be restored.
 	files2 := map[string][]byte{
 		"kdeglobals": []byte("[G1]\nk1=v1-updated\n"),
 	}
@@ -482,16 +724,16 @@ func TestMergeKConfigEntries_URLRestrictionsSinglePolicy(t *testing.T) {
 	}
 
 	content := string(files["kdeglobals"])
-	if !strings.Contains(content, "[KDE URL Restrictions][$i]") {
-		t.Errorf("expected group header with [$i], got:\n%s", content)
+	if !strings.Contains(content, "[KDE URL Restrictions]\n") {
+		t.Errorf("expected the group header, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_1=open,,,,http,example.com,,true") {
+	if !strings.Contains(content, "rule_1[$i]=open,,,,http,example.com,,true") {
 		t.Errorf("expected rule_1, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_2=list,,,,file,,,false") {
+	if !strings.Contains(content, "rule_2[$i]=list,,,,file,,,false") {
 		t.Errorf("expected rule_2, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_count=2") {
+	if !strings.Contains(content, "rule_count[$i]=2") {
 		t.Errorf("expected rule_count=2, got:\n%s", content)
 	}
 }
@@ -518,21 +760,21 @@ func TestMergeKConfigEntries_URLRestrictionsMultiplePolicies(t *testing.T) {
 	// Should have 3 rules renumbered sequentially.
 	// rule_1 entries from both policies sort by original index (1),
 	// stable sort preserves insertion order: a.com first, then b.com.
-	if !strings.Contains(content, "rule_1=open,,,,http,a.com,,true") {
+	if !strings.Contains(content, "rule_1[$i]=open,,,,http,a.com,,true") {
 		t.Errorf("expected rule_1=a.com, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_2=redirect,,,,file,b.com,,true") {
+	if !strings.Contains(content, "rule_2[$i]=redirect,,,,file,b.com,,true") {
 		t.Errorf("expected rule_2=b.com, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_3=list,,,,https,a.com,,false") {
+	if !strings.Contains(content, "rule_3[$i]=list,,,,https,a.com,,false") {
 		t.Errorf("expected rule_3 from policy A rule_2, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_count=3") {
+	if !strings.Contains(content, "rule_count[$i]=3") {
 		t.Errorf("expected rule_count=3, got:\n%s", content)
 	}
 
 	// Should NOT contain duplicate rule_count entries.
-	if strings.Count(content, "rule_count=") != 1 {
+	if strings.Count(content, "rule_count[$i]=") != 1 {
 		t.Errorf("expected exactly one rule_count, got:\n%s", content)
 	}
 }
@@ -554,138 +796,100 @@ func TestMergeKConfigEntries_URLRestrictionsWithOtherGroups(t *testing.T) {
 	content := string(files["kdeglobals"])
 
 	// URL restrictions should be present and correct.
-	if !strings.Contains(content, "rule_1=open,,,,http,example.com,,true") {
+	if !strings.Contains(content, "rule_1[$i]=open,,,,http,example.com,,true") {
 		t.Errorf("expected URL restriction rule, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_count=1") {
+	if !strings.Contains(content, "rule_count[$i]=1") {
 		t.Errorf("expected rule_count=1, got:\n%s", content)
 	}
 
 	// Action restrictions should be unaffected.
-	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
+	if !strings.Contains(content, "[KDE Action Restrictions]\n") {
 		t.Errorf("expected Action Restrictions group, got:\n%s", content)
 	}
-	if !strings.Contains(content, "shell_access=false") {
+	if !strings.Contains(content, "shell_access[$i]=false") {
 		t.Errorf("expected shell_access=false, got:\n%s", content)
 	}
 }
 
-func TestSplitKCMRestrictions(t *testing.T) {
+func TestKCMRestrictionsForKde5rc(t *testing.T) {
 	entries := []*pb.KConfigEntry{
-		{File: "kde5rc", Group: "KDE Control Module Restrictions", Key: "kcm_access", Value: "false", Enforced: true},
+		{File: "kdeglobals", Group: "KDE Control Module Restrictions", Key: "kcm_access", Value: "false", Enforced: true},
 		{File: "kdeglobals", Group: "KDE Action Restrictions", Key: "shell_access", Value: "false", Enforced: true},
-		{File: "kde5rc", Group: "KDE Control Module Restrictions", Key: "kcm_bluetooth", Value: "false", Enforced: true},
+		{File: "kdeglobals", Group: "KDE Control Module Restrictions", Key: "kcm_bluetooth", Value: "false", Enforced: true},
 		{File: "kwinrc", Group: "Windows", Key: "BorderlessMaximizedWindows", Value: "true", Enforced: false},
 	}
 
-	kcm, other := SplitKCMRestrictions(entries)
-
+	kcm := KCMRestrictionsForKde5rc(entries)
 	if len(kcm) != 2 {
 		t.Fatalf("expected 2 KCM entries, got %d", len(kcm))
 	}
-	if len(other) != 2 {
-		t.Fatalf("expected 2 other entries, got %d", len(other))
-	}
-
 	for _, e := range kcm {
-		if e.File != "kde5rc" || e.Group != "KDE Control Module Restrictions" {
-			t.Errorf("unexpected KCM entry: file=%q group=%q", e.File, e.Group)
+		if e.File != "kde5rc" || e.Group != "KDE Control Module Restrictions" || e.Value != "false" || !e.Enforced {
+			t.Errorf("unexpected kde5rc entry: %+v", e)
 		}
 	}
-	for _, e := range other {
-		if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
-			t.Errorf("KCM entry should not be in other: %+v", e)
-		}
+	// The originals are untouched (copies were made).
+	if entries[0].File != "kdeglobals" {
+		t.Error("source entries must not be modified")
+	}
+
+	if got := KCMRestrictionsForKde5rc(nil); len(got) != 0 {
+		t.Errorf("expected no entries for nil input, got %d", len(got))
 	}
 }
 
-func TestSplitKCMRestrictions_Empty(t *testing.T) {
-	kcm, other := SplitKCMRestrictions(nil)
-	if len(kcm) != 0 || len(other) != 0 {
-		t.Errorf("expected empty results for nil input, got kcm=%d other=%d", len(kcm), len(other))
-	}
-}
-
-func TestSplitKCMRestrictions_OnlyKCM(t *testing.T) {
-	entries := []*pb.KConfigEntry{
-		{File: "kde5rc", Group: "KDE Control Module Restrictions", Key: "kcm_access", Value: "false", Enforced: true},
-	}
-
-	kcm, other := SplitKCMRestrictions(entries)
-	if len(kcm) != 1 || len(other) != 0 {
-		t.Errorf("expected 1 KCM and 0 other, got kcm=%d other=%d", len(kcm), len(other))
-	}
-}
-
-func TestSyncKCMRestrictions_WriteAndRestore(t *testing.T) {
+// useTempKde5rc points the /etc rc paths at a temp dir for the test.
+func useTempKde5rc(t *testing.T) (kde5, kde6 string) {
+	t.Helper()
 	dir := t.TempDir()
+	orig5, orig6 := kde5rcPath, legacyKde6rcPath
+	kde5rcPath = filepath.Join(dir, "kde5rc")
+	legacyKde6rcPath = filepath.Join(dir, "kde6rc")
+	t.Cleanup(func() { kde5rcPath, legacyKde6rcPath = orig5, orig6 })
+	return kde5rcPath, legacyKde6rcPath
+}
 
-	// Override kcmRestrictionPaths for testing.
-	origPaths := kcmRestrictionPaths
-	kcmRestrictionPaths = []string{
-		filepath.Join(dir, "kde5rc"),
-		filepath.Join(dir, "kde6rc"),
-	}
-	defer func() { kcmRestrictionPaths = origPaths }()
-
+func TestSyncKde5rc_WriteAndRestore(t *testing.T) {
+	kde5, kde6 := useTempKde5rc(t)
 	content := []byte("[KDE Control Module Restrictions][$i]\nkcm_access=false\n")
 
-	// Write KCM restrictions.
-	if err := SyncKCMRestrictions(content); err != nil {
+	if err := SyncKde5rc(content); err != nil {
 		t.Fatal(err)
 	}
 
-	// Both files should exist with managed header + content.
-	for _, name := range []string{"kde5rc", "kde6rc"} {
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatalf("expected %s to exist: %v", name, err)
-		}
-		if !strings.HasPrefix(string(data), ManagedFileHeader) {
-			t.Errorf("%s should have managed header", name)
-		}
-		if !strings.Contains(string(data), "kcm_access=false") {
-			t.Errorf("%s should contain kcm_access=false", name)
-		}
+	data, err := os.ReadFile(kde5)
+	if err != nil {
+		t.Fatalf("expected kde5rc to exist: %v", err)
+	}
+	if !strings.HasPrefix(string(data), ManagedFileHeader) || !strings.Contains(string(data), "kcm_access=false") {
+		t.Errorf("kde5rc should have managed header and content, got:\n%s", data)
+	}
+	if _, err := os.Stat(kde6); !os.IsNotExist(err) {
+		t.Error("kde6rc must never be written")
 	}
 
-	// Restore (nil content).
-	if err := SyncKCMRestrictions(nil); err != nil {
+	// Restore (nil content): removed because no original existed.
+	if err := SyncKde5rc(nil); err != nil {
 		t.Fatal(err)
 	}
-
-	// Files should be removed (no originals existed).
-	for _, name := range []string{"kde5rc", "kde6rc"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
-			t.Errorf("%s should be removed after restore with no original", name)
-		}
+	if _, err := os.Stat(kde5); !os.IsNotExist(err) {
+		t.Error("kde5rc should be removed after restore with no original")
 	}
 }
 
-func TestSyncKCMRestrictions_PreservesOriginal(t *testing.T) {
-	dir := t.TempDir()
+func TestSyncKde5rc_PreservesOriginal(t *testing.T) {
+	kde5, _ := useTempKde5rc(t)
+	writeFile(t, kde5, []byte("[General]\noriginal=true\n"))
 
-	origPaths := kcmRestrictionPaths
-	kcmRestrictionPaths = []string{filepath.Join(dir, "kde5rc")}
-	defer func() { kcmRestrictionPaths = origPaths }()
-
-	// Write an original file.
-	writeFile(t, filepath.Join(dir, "kde5rc"), []byte("[General]\noriginal=true\n"))
-
-	content := []byte("[KDE Control Module Restrictions][$i]\nkcm_access=false\n")
-
-	// Write KCM restrictions.
-	if err := SyncKCMRestrictions(content); err != nil {
+	if err := SyncKde5rc([]byte("[KDE Control Module Restrictions][$i]\nkcm_access=false\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncKde5rc(nil); err != nil {
 		t.Fatal(err)
 	}
 
-	// Restore.
-	if err := SyncKCMRestrictions(nil); err != nil {
-		t.Fatal(err)
-	}
-
-	// Original should be restored.
-	data, err := os.ReadFile(filepath.Join(dir, "kde5rc"))
+	data, err := os.ReadFile(kde5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -694,10 +898,99 @@ func TestSyncKCMRestrictions_PreservesOriginal(t *testing.T) {
 	}
 }
 
-func TestProfileScriptContent(t *testing.T) {
-	got := profileScriptContent("/etc/bor/xdg")
-	want := "export XDG_CONFIG_DIRS=/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n"
-	if got != want {
-		t.Errorf("profileScriptContent mismatch:\ngot:  %q\nwant: %q", got, want)
+func TestSyncKde5rc_RestoresLegacyKde6rc(t *testing.T) {
+	_, kde6 := useTempKde5rc(t)
+
+	// An older agent wrote kde6rc (sentinel backup: it did not exist before).
+	writeFile(t, kde6+BackupSuffix, nil)
+	writeFile(t, kde6, []byte(ManagedFileHeader+"[KDE Control Module Restrictions][$i]\nkcm_access=false\n"))
+
+	// Any sync, even one that writes nothing, cleans it up.
+	if err := SyncKde5rc(nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(kde6); !os.IsNotExist(err) {
+		t.Error("legacy kde6rc should be removed")
+	}
+	if _, err := os.Stat(kde6 + BackupSuffix); !os.IsNotExist(err) {
+		t.Error("legacy kde6rc backup should be removed")
+	}
+
+	// A distro-shipped kde6rc without a Bor backup is left alone.
+	writeFile(t, kde6, []byte("[General]\ndistro=true\n"))
+	if err := SyncKde5rc(nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(kde6); string(data) != "[General]\ndistro=true\n" {
+		t.Errorf("unmanaged kde6rc must not be touched, got %q", data)
+	}
+}
+
+func TestEnvScriptContent(t *testing.T) {
+	got := envScriptContent(EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share"})
+	if !strings.Contains(got, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) {
+		t.Errorf("expected export line, got:\n%s", got)
+	}
+	if strings.Contains(got, "readonly") {
+		t.Errorf("readonly breaks session scripts and must not be used, got:\n%s", got)
+	}
+	// The guard makes running both hooks idempotent.
+	if !strings.Contains(got, `*":/etc/bor/xdg:"*) ;;`) {
+		t.Errorf("expected idempotency guard, got:\n%s", got)
+	}
+}
+
+func TestEnsureEnvScripts(t *testing.T) {
+	dir := t.TempDir()
+	origProfile, origPlasma, origLegacy := profileScriptPath, plasmaEnvScriptPath, legacyPlasmaEnvScriptPath
+	profileScriptPath = filepath.Join(dir, "profile.d", "99-bor.sh")
+	plasmaEnvScriptPath = filepath.Join(dir, "xdg", "plasma-workspace", "env", "zz-bor.sh")
+	legacyPlasmaEnvScriptPath = filepath.Join(dir, "xdg", "plasma-workspace", "env", "00-bor.sh")
+	t.Cleanup(func() {
+		profileScriptPath, plasmaEnvScriptPath, legacyPlasmaEnvScriptPath = origProfile, origPlasma, origLegacy
+	})
+
+	// The hook name of earlier releases goes away on the first sync.
+	if err := os.MkdirAll(filepath.Dir(legacyPlasmaEnvScriptPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, legacyPlasmaEnvScriptPath, []byte("# old hook\n"))
+
+	hook := EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share"}
+	if err := EnsureEnvScripts(hook); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacyPlasmaEnvScriptPath); !os.IsNotExist(err) {
+		t.Errorf("legacy hook should be removed, stat err = %v", err)
+	}
+
+	want := map[string]string{
+		profileScriptPath:   profileScriptContent(hook),
+		plasmaEnvScriptPath: envScriptContent(hook),
+	}
+	for _, path := range EnvScriptPaths() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s should exist: %v", path, err)
+		}
+		if string(data) != want[path] {
+			t.Errorf("%s content mismatch:\n%s", path, data)
+		}
+		fi, _ := os.Stat(path)
+		if fi.Mode().Perm() != 0o755 {
+			t.Errorf("%s should be 0755, got %o", path, fi.Mode().Perm())
+		}
+	}
+
+	// A second run with the same path is a no-op; a changed path rewrites.
+	if err := EnsureEnvScripts(hook); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureEnvScripts(EnvHook{ConfigPath: "/opt/bor/xdg", DataPath: "/opt/bor/share"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(profileScriptPath)
+	if !strings.Contains(string(data), "/opt/bor/xdg") {
+		t.Errorf("script should be rewritten for the new path, got:\n%s", data)
 	}
 }

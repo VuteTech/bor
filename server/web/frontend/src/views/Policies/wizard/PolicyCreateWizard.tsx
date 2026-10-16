@@ -301,6 +301,7 @@ export const PolicyCreateWizard: React.FC = () => {
                     contentRaw={state.content}
                     onChange={setContent}
                     onValidityChange={setContentValid}
+                    policyName={state.name}
                   />
                   <LiveAlert
                     message={state.contentValid ? contentError : "Fix the invalid JSON value to continue."}

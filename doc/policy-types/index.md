@@ -20,7 +20,7 @@ The **Type** column shows the label used in the create wizard
 | [Thunderbird](thunderbird.md) | Thunderbird enterprise policies: updates, security, add-ons, network | `/etc/thunderbird/policies/policies.json`; Flatpak: `/var/lib/flatpak/extension/net.thunderbird.Thunderbird.systemconfig/<arch>/stable/policies/policies.json` | Thunderbird from distribution packages or Flatpak |
 | [Chrome](chrome.md) | Managed policies for Google Chrome and Chromium | `bor_managed.json` in `/etc/opt/chrome/policies/managed`, `/etc/chromium/policies/managed`, `/etc/chromium-browser/policies/managed` and the Flatpak Chromium extension directory | Google Chrome or Chromium from packages or Flatpak |
 | [Microsoft Edge](edge.md) | Managed policies for Microsoft Edge on Linux | `/etc/opt/edge/policies/managed/bor_managed.json` | Microsoft Edge for Linux |
-| [KDE Plasma](kconfig.md) (Kconfig) | KDE Kiosk action and resource restrictions, System Settings module lockdown, URL restrictions, screen locking, appearance | `/etc/bor/xdg/*` (system-wide KDE config files), `/etc/kde5rc`, `/etc/kde6rc`, `/etc/profile.d/99-bor.sh` | KDE Plasma 5 or 6 |
+| [KDE Plasma](kconfig.md) (Kconfig) | KDE Kiosk restrictions, desktop layout lock, System Settings module lockdown, URL restrictions, a catalogue of Plasma and KDE application settings (screen lock, session, power, appearance, privacy, Dolphin, Konsole, Kate, Spectacle, Okular, KWallet, KDE PIM, ...) or any KConfig key, a deployed Konsole profile and applications hidden from menus | `/etc/bor/xdg/*` (system-wide KDE config files), `/etc/bor/xdg/groups/<group>/*` (files of policies scoped to a Unix group), `/etc/bor/share/*` (generated look-and-feel package, Plasma scripts, Konsole profile, hidden application entries), `/etc/xdg/plasma-workspace/env/zz-bor.sh`, `/etc/profile.d/99-bor.sh`; optionally `/etc/kde5rc` and a Flatpak system override | KDE Plasma 5 or 6 |
 | [Dconf](dconf.md) | Mandatory GSettings keys with optional locks for GNOME and other GSettings-based software | `/etc/dconf/db/<database>.d/00-bor`, `/etc/dconf/db/<database>.d/locks/bor`, `/etc/dconf/profile/user`, then `dconf update` | `dconf` command; `gsettings` for compliance checks |
 | [Polkit](polkit.md) | Which users and groups may run privileged actions | `/etc/polkit-1/rules.d/<priority>-bor-<id>.rules` (one file per policy) | polkit with JavaScript rules support |
 | [Firewall](firewalld.md) (firewalld) | firewalld zone services, ports, rich rules and target | `/etc/firewalld/zones/<zone>.xml`, then a firewalld reload | firewalld installed and running |
@@ -67,7 +67,7 @@ type**:
 |---|---|---|
 | Firefox, Thunderbird | Merged into one `policies.json`. Nested settings are merged field by field; lists (extensions to install, bookmarks, cookie allow lists and so on) are concatenated. | Binding priority is **not** used. When two policies set the same single-valued setting to different values, which one wins is not defined. |
 | Chrome, Microsoft Edge | Merged into one `bor_managed.json`. Objects are merged recursively, lists are concatenated. | Binding priority is **not** used. Conflicting single values: the winner is not defined. |
-| KDE Plasma | All entries from all policies are written into the same KDE config files. URL restriction rules from all policies are combined and renumbered; System Settings module restrictions are combined. | Binding priority is **not** used. Do not set the same key in two policies. |
+| KDE Plasma | All entries from all policies are written into the same KDE config files, each key once; policies scoped to Unix groups are written into per-group files that only members receive. URL restriction rules from all policies are combined and renumbered; System Settings module restrictions are combined. | The policy with the **higher** binding priority wins (ties: the lexically smaller policy ID). The losing policy reports the overridden setting as Inapplicable with the message "Overridden by higher-priority policy ...". |
 | Dconf | Entries are merged by schema, path and key. | The policy with the **higher** binding priority wins. The losing policy reports the overridden key as Inapplicable with the message "Overridden by a higher-priority policy". The database name comes from the highest-priority policy that sets one. |
 | Polkit | Not merged: every policy gets its own rules file. | Files are evaluated in file-name order, and the file name starts with the binding priority, so the **lower** priority number is evaluated first. The first rule that returns a result wins. |
 | Firewall | Policies targeting the same zone are merged; services, ports and rich rules are combined. | The zone target comes from the policy with the **higher** binding priority. |
@@ -77,7 +77,7 @@ type**:
 | Disk encryption | `require_*` settings and recovery-key escrow are combined with OR; the shortest non-zero rotation interval applies. | Every other setting, including the full Tang server list, comes from the **higher** priority policy. |
 
 !!! tip "Design policies so they do not overlap"
-    For the four browser types and KDE Plasma the outcome of two policies
+    For the four browser types the outcome of two policies
     that set the same single-valued setting differently is not
     deterministic. Split settings so that each one is owned by exactly one
     policy (for example a baseline policy for telemetry and updates and a
@@ -106,7 +106,7 @@ Watched files per type:
 |---|---|
 | Firefox, Thunderbird | The system `policies.json` and the Flatpak copy (only while at least one policy of the type applies) |
 | Chrome, Microsoft Edge | Each `bor_managed.json` (only while at least one policy of the type applies) |
-| KDE Plasma | Managed files under `/etc/bor/xdg`; `/etc/kde5rc` and `/etc/kde6rc` while module restrictions are set |
+| KDE Plasma | Managed files under `/etc/bor/xdg`; the two `XDG_CONFIG_DIRS` hook scripts while at least one policy applies; `/etc/kde5rc` only when `kconfig.write_kde5rc` is set and module restrictions exist |
 | Dconf | `00-bor` and `locks/bor` in each database directory in use |
 | Polkit | Every Bor-generated file in `/etc/polkit-1/rules.d` |
 | Firewall | Bor-managed zone files in the zones directory |
@@ -137,10 +137,13 @@ per node and policy. The possible states are:
 
 What "compliant" means depends on the type:
 
-- **Firefox, Thunderbird, Chrome, Microsoft Edge, KDE Plasma**: the agent
+- **Firefox, Thunderbird, Chrome, Microsoft Edge**: the agent
   reports compliant with the message "Deployed" once the managed files are
   written. It does not inspect the running application. If the write fails,
   the policy is reported non-compliant with the error message.
+- **KDE Plasma**: one item per setting; compliant once written, inapplicable
+  when a higher-priority policy overrides it, error when a value could not
+  be written. The running session is not inspected.
 - **Dconf**: every key is read back with `gsettings get` and compared with
   the policy value. Per-key results are shown in the expandable row.
 - **Polkit**: the rules file on disk is compared with the expected content,
@@ -160,7 +163,7 @@ that type. If none remain, it cleans up:
 |---|---|
 | Firefox, Thunderbird | The system `policies.json` is restored from the `policies.json.bor-backup` copy taken before Bor first wrote it; if there was no file before, it is deleted. The Flatpak copy is deleted. |
 | Chrome, Microsoft Edge | `bor_managed.json` is deleted from every policy directory. Other JSON files in those directories are not touched. |
-| KDE Plasma | Each managed file under `/etc/bor/xdg`, `/etc/kde5rc` and `/etc/kde6rc` is restored from its `.bor-backup` copy, or deleted if it did not exist before. `/etc/profile.d/99-bor.sh` stays in place. |
+| KDE Plasma | Each managed file under `/etc/bor/xdg` (and `/etc/kde5rc` when mirrored) is restored from its `.bor-backup` copy, or deleted if it did not exist before. The `XDG_CONFIG_DIRS` hook scripts stay in place. |
 | Dconf | The keyfile and locks file are emptied (written without entries) and `dconf update` runs, so the keys return to their defaults or user values. |
 | Polkit | The policy's rules file is deleted. |
 | Firewall | Managed zone files are restored from their backups and firewalld is reloaded. |

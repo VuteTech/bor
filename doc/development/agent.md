@@ -127,7 +127,7 @@ called after every change, after every snapshot and by tamper restore.
 |---|---|---|
 | `syncAllFirefox`, `syncAllThunderbird` | `policies.json` (system and Flatpak extension paths); original file backed up on first write and restored when no policies remain | `proto.Merge` of all cached policies |
 | `syncAllChrome`, `syncAllEdge` | `bor_managed.json` in each managed policy directory | proto merge |
-| `syncAllKConfig` | INI files under `/etc/bor/xdg` with `[$i]` immutability markers, plus `/etc/kde5rc` / `/etc/kde6rc` | entries grouped by file and group |
+| `syncAllKConfig` | INI files under `/etc/bor/xdg` with `[$i]` immutability markers, per-group overlays under `/etc/bor/xdg/groups/<slug>/` for policies scoped to Unix groups, the `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` hook scripts (with GID-matched group directories), look-and-feel package, Plasma scripts, Konsole profiles and hidden application entries under `/etc/bor/share` (group-scoped ones under `groups/<slug>/`), optionally `/etc/kde5rc` and a Flatpak system override | `MergeKConfigPolicies`: sorted by priority descending (ties by ID), first writer wins per `(file, group, key)` within a scope (node-wide or one per group); losers reported as inapplicable items |
 | `syncAllDConf` | keyfile `00-bor` and a locks file in `/etc/dconf/db/<db>.d`, then `dconf update` | sorted by priority ascending, last writer wins per `(schema, path, key)` |
 | `syncAllPolkit` | one rules file per policy in `/etc/polkit-1/rules.d`, file name derived from priority and policy ID | separate files, ordered by priority |
 | `syncAllFirewalld` | zone XML in `/etc/firewalld/zones`, `firewall-cmd --check-config` and `--reload` | rules grouped per target zone (`SyncFirewalldFromProto`) |
@@ -224,7 +224,8 @@ func syncAllWidget(ctx context.Context, client *policyclient.Client, cfg *config
 ```
 
 Currently watched locations: Firefox, Thunderbird, Chrome and Edge policy
-JSON; KConfig files under `/etc/bor/xdg` and `/etc/kde5rc`, `/etc/kde6rc`;
+JSON; KConfig files under `/etc/bor/xdg`, the two `XDG_CONFIG_DIRS` hook
+scripts and, when enabled, `/etc/kde5rc`;
 `/etc/dconf/`; `/etc/polkit-1/rules.d`; Bor package repository and key
 files; firewalld zones; `/etc/security/time.conf`; the Flatpak state
 directory `/etc/bor/flatpak`; the disk-encryption dracut drop-in and

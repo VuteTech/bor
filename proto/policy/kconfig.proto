@@ -6,15 +6,123 @@ option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
 // KConfigEntry represents a resolved KDE Kiosk INI entry.
 // Used internally by the agent after expanding a KConfigPolicy; not stored
-// in the database directly.
+// in the database directly. group holds nested groups joined with "]["
+// ("Containments][1" renders as [Containments][1]).
 message KConfigEntry {
   string file = 1;
   string group = 2;
   string key = 3;
   string value = 4;
   string type = 5;
-  bool enforced = 6;
+  bool enforced = 6;   // [$i]
+  bool expand = 7;     // [$e]: KConfig expands $VARIABLES on read
+  bool delete = 8;     // [$d]: entry is marked deleted (value ignored)
+  string locale = 9;   // optional locale suffix: key[de]=...
 }
+
+// KConfigSetting is one generic KDE configuration entry to write. It covers
+// every KConfig file and key, including those the catalogue does not know.
+message KConfigSetting {
+  // Config file basename inside the managed directory, e.g. "kdeglobals",
+  // "dolphinrc", "kscreenlockerrc". Never a path.
+  string file = 1;
+  // Nested group path: ["Containments", "1"] renders as [Containments][1].
+  repeated string group_path = 2;
+  string key = 3;
+  // Value in KConfig text form ("true", "5", "breeze", "a,b,c", "0,0,0").
+  string value = 4;
+  // immutable writes the KDE Kiosk [$i] marker so users cannot override it.
+  bool immutable = 5;
+  // expand writes [$e] so KDE expands $VARIABLES in the value on read.
+  bool expand = 6;
+  // delete writes key[$d], which removes a distribution default for users.
+  bool delete = 7;
+  // locale writes a locale-specific value: key[de]=...
+  string locale = 8;
+  // catalogue_id is the catalogue entry this setting came from, if any.
+  // It is informational: the editor uses it for labels and grouping.
+  string catalogue_id = 9;
+}
+
+// KcmRestrictionMode says how kcm_restrictions is interpreted.
+enum KcmRestrictionMode {
+  // Hide the listed System Settings modules (default).
+  KCM_HIDE_LISTED = 0;
+  // Show only the listed modules; the agent hides every other module
+  // installed on the node.
+  KCM_SHOW_ONLY_LISTED = 1;
+}
+
+// KConfigCatalogueEntry describes one known KDE setting: where it is
+// written, its type and choices, and how the editor presents it. Entries
+// come from the built-in catalogue shipped with the server and, later,
+// from the KConfigXT schemas reported by nodes.
+message KConfigCatalogueEntry {
+  // Stable identifier, e.g. "kiosk.shell_access", "dolphin.ShowFullPath".
+  string id = 1;
+  string file = 2;
+  repeated string group_path = 3;
+  string key = 4;
+  // KConfigXT type: Bool, Int, UInt, Double, String, StringList, Enum,
+  // Path, Url, Color, Font.
+  string type = 5;
+  string label = 6;
+  string description = 7;
+  string default_value = 8;
+  // Allowed values for Enum entries.
+  repeated string choices = 9;
+  string range_min = 10;
+  string range_max = 11;
+  // Editor group, e.g. "Session & Shell", "Screen Lock", "Applications/Dolphin".
+  string category = 12;
+  // inverted marks KDE Kiosk restrictions: false restricts, true allows.
+  // The editor shows a Restricted / Allowed switch.
+  bool inverted = 13;
+  // immutable_default: new entries start as enforced ([$i]).
+  bool immutable_default = 14;
+  // Plasma major versions the setting applies to; empty means any.
+  repeated string plasma_major = 15;
+  // What must reload for the setting to take effect: "kwin", "plasmashell",
+  // "screenlocker", "kded", "app" (restart the application) or "logout".
+  string reload = 16;
+  // Closest Windows Group Policy setting, shown as a hint.
+  string windows_equivalent = 17;
+  // "builtin", "kcfg" (node-reported) or "custom".
+  string source = 18;
+  // Additional entries written together with this one (composite
+  // settings), e.g. the wallpaper plugin next to a wallpaper image.
+  repeated KConfigSetting extra_writes = 19;
+}
+
+// KcmModule is one System Settings module installed on a node.
+message KcmModule {
+  string id = 1;    // e.g. "kcm_autostart"
+  string name = 2;  // display name from the module's desktop entry
+}
+
+// LookAndFeelPackage is a global theme (Plasma look-and-feel package)
+// installed on a node, as System Settings lists it.
+message LookAndFeelPackage {
+  string id = 1;    // e.g. "org.kde.breezedark.desktop"
+  string name = 2;  // display name from the package metadata
+}
+
+// ReportKConfigCatalogueRequest is sent by the agent on connect to publish
+// the KConfigXT schemas (/usr/share/config.kcfg) and the System Settings
+// modules installed on the node. The server stores the entries next to
+// the built-in catalogue so the editor can show what a node offers.
+message ReportKConfigCatalogueRequest {
+  string client_id = 1;
+  repeated KConfigCatalogueEntry entries = 2;
+  repeated KcmModule kcms = 3;
+  // Plasma version if detectable, e.g. "6.3.4".
+  string plasma_version = 4;
+  // Global themes installed on the node (distribution and vendor
+  // packages; the ones Bor generates are not reported).
+  repeated LookAndFeelPackage look_and_feel = 5;
+}
+
+message ReportKConfigCatalogueResponse {}
 
 // KConfigUrlRestriction describes one KDE URL restriction rule.
 message KConfigUrlRestriction {
@@ -33,37 +141,53 @@ message KConfigUrlRestriction {
 // enforced_fields lists the camelCase JSON field names that should be written
 // with the KDE Kiosk [$i] immutability marker; url_restrictions and
 // kcm_restrictions are always enforced and therefore not listed here.
+//
+// Kiosk restriction booleans follow KDE's convention: false restricts the
+// capability, true (or an absent field) leaves it allowed.
 message KConfigPolicy {
   reserved 1;
   reserved "entries";
 
   repeated string enforced_fields = 2;
 
-  // Action Restrictions  (kdeglobals, [KDE Action Restrictions])
+  // Session and shell restrictions  (kdeglobals, [KDE Action Restrictions])
+  // shell_access: terminals, command execution and the user autostart folder.
   optional bool shell_access = 3;
+  // run_command: written as both "run_command" and "action/run_command"
+  // (the second hides the entry from the desktop menu, as KDE documents).
   optional bool run_command = 4;
+  // action_logout: written as both "logout" and "action/logout".
   optional bool action_logout = 5;
   optional bool action_file_new = 6;
   optional bool action_file_open = 7;
   optional bool action_file_save = 8;
 
-  // Resource Restrictions  (kdeglobals, [KDE Resource Restrictions])
-  optional bool restrict_wallpaper = 9;
-  optional bool restrict_icons = 10;
-  optional bool restrict_autostart = 11;
-  optional bool restrict_colors = 12;
-  optional bool restrict_cursors = 13;
+  // Resource Restrictions ([KDE Resource Restrictions]) were a KDE 4
+  // KStandardDirs feature; KF5 and KF6 KAuthorized never read that group.
+  // These fields are kept so that old content still parses, but the agent
+  // ignores them and the editor only offers to remove them.
+  optional bool restrict_wallpaper = 9 [deprecated = true];
+  optional bool restrict_icons = 10 [deprecated = true];
+  optional bool restrict_autostart = 11 [deprecated = true];
+  optional bool restrict_colors = 12 [deprecated = true];
+  optional bool restrict_cursors = 13 [deprecated = true];
 
   // Window Manager  (kwinrc, [Windows])
   optional bool borderless_maximized_windows = 14;
 
-  // Desktop  (plasmarc, [General])
+  // Plasma desktop lockdown  (kdeglobals, [KDE Action Restrictions])
+  // plasmoid_unlocked_desktop -> plasma/plasmashell/unlockedDesktop:
+  // false locks panels, widgets and launcher favourites (Plasma 5 and 6).
   optional bool plasmoid_unlocked_desktop = 15;
+  // allow_configure_when_locked -> plasma/allow_configure_when_locked
+  // (documented Kiosk key; not honoured by Plasma 6 in our tests).
   optional bool allow_configure_when_locked = 16;
 
   // Screen Lock  (kscreenlockerrc, [Daemon])
+  // auto_lock -> Autolock (case matters: KConfig keys are case-sensitive).
   optional bool auto_lock = 17;
   optional bool lock_on_resume = 18;
+  // lock_timeout -> Timeout, in minutes.
   optional int32 lock_timeout = 19;
 
   // Appearance
@@ -76,6 +200,110 @@ message KConfigPolicy {
   // Security  (kdeglobals, [KDE URL Restrictions])
   repeated KConfigUrlRestriction url_restrictions = 25;
 
-  // System Settings  (kde5rc, [KDE Control Module Restrictions])
+  // System Settings  (kdeglobals, [KDE Control Module Restrictions]).
+  // KAuthorized reads this group from the application's config merged with
+  // kdeglobals, so no /etc/kde5rc write is needed; the agent can still mirror
+  // it there when kconfig.write_kde5rc is set.
   repeated string kcm_restrictions = 26;
+
+  // Screen Lock, continued  (kscreenlockerrc)
+  // lock_grace -> [Daemon] LockGrace, seconds before the password is required.
+  optional int32 lock_grace = 27;
+  // lock_on_start -> [Daemon] LockOnStart, lock the screen right after login.
+  optional bool lock_on_start = 28;
+  // lock_screen_image -> [Greeter][Wallpaper][org.kde.image][General] Image,
+  // plus [Greeter] WallpaperPlugin=org.kde.image. Unlike the desktop
+  // wallpaper this cascades reliably from system configuration.
+  optional string lock_screen_image = 29;
+
+  // Generic entries. New policies express everything except URL and
+  // control-module restrictions this way; the typed fields above remain
+  // valid for existing content.
+  repeated KConfigSetting settings = 30;
+
+  // How kcm_restrictions is interpreted (hide listed, or show only listed).
+  KcmRestrictionMode kcm_mode = 31;
+
+  // Write a file-level [$i] marker into kdeglobals, which makes every
+  // user's kdeglobals ignored. For kiosk desktops only.
+  bool file_immutable_kdeglobals = 32;
+
+  // Desktop look for new users (wallpaper, optional panel layout) through
+  // a generated look-and-feel package; optionally applied once to existing
+  // users and live to logged-in sessions. One package per node: the
+  // highest-priority policy with a layout wins.
+  KConfigLayout layout = 33;
+
+  // Unix group names (local, LDAP or Active Directory as resolved on the
+  // node) the policy is limited to. Empty = every user on the node. The
+  // agent writes the policy's files into a per-group directory that the
+  // login hook adds to XDG_CONFIG_DIRS for members only. Enforced
+  // node-wide entries cannot be relaxed per group (KDE semantics), so put
+  // group differences into scoped policies only.
+  repeated string unix_groups = 34;
+
+  // Konsole terminal profile deployed as konsole/<Name>.profile in the
+  // data directory. One per scope: the highest-priority policy wins.
+  KonsoleProfile konsole_profile = 35;
+
+  // Desktop file ids (org.kde.konsole.desktop) hidden from the application
+  // menu, KRunner and other launchers through a NoDisplay override in the
+  // data directory. Lists from all policies are combined. Hiding removes
+  // the entry from menus; it does not prevent running the program.
+  repeated string hidden_applications = 36;
+}
+
+// KonsoleProfile is a Konsole terminal profile. The agent writes it as
+// konsole/<Name>.profile into the data directory (first in XDG_DATA_DIRS)
+// and, with set_default or lock, selects it in konsolerc.
+message KonsoleProfile {
+  // Profile and file name (Managed -> Managed.profile). Letters, digits,
+  // space, dot, underscore and dash; empty = "Managed".
+  string name = 1;
+  // [General] Command: the program the profile starts, e.g. /bin/bash.
+  string command = 2;
+  // [Scrolling] HistoryMode: "0" no scrollback, "1" fixed size,
+  // "2" unlimited; "" keeps Konsole's default.
+  string history_mode = 3;
+  // [Scrolling] HistorySize in lines, used with history_mode "1".
+  int32 history_size = 4;
+  // [Appearance] ColorScheme, e.g. Breeze, BlackOnWhite, WhiteOnBlack.
+  string color_scheme = 5;
+  // [Appearance] Font in Qt's text form, e.g. "Hack,10,-1,5,50,0,0,0,0,0".
+  string font = 6;
+  // Further profile entries as INI text, e.g.
+  // "[Terminal Features]\nBlinkingCursorEnabled=false".
+  string extra_ini = 7;
+  // Write konsolerc [Desktop Entry] DefaultProfile so new windows and
+  // tabs use this profile.
+  bool set_default = 8;
+  // Enforce the default profile and restrict Konsole's profile actions
+  // (manage-profiles, edit-current-profile, switch-profile) so users
+  // cannot switch to or create another profile.
+  bool lock = 9;
+}
+
+// KConfigLayout describes the desktop look the agent deploys as a
+// look-and-feel package named after the policy.
+message KConfigLayout {
+  // Absolute path or file:// URL of the wallpaper image, readable by every
+  // user, e.g. /usr/share/backgrounds/corporate.png. Empty = keep the
+  // theme's wallpaper.
+  string wallpaper_image = 1;
+  // KDE image wallpaper FillMode: 0 stretch, 1 preserve aspect fit,
+  // 2 preserve aspect crop (default), 3 tile, 6 pad. Empty = 2.
+  string wallpaper_fill_mode = 2;
+  // Optional Plasma desktop scripting (JavaScript) that builds panels and
+  // widgets, installed as the package's desktop layout. Runs for users who
+  // log in for the first time. Empty = Plasma's default layout.
+  string layout_script = 3;
+  // Also run once for every existing user at their next login: sets the
+  // wallpaper on all desktops and, when layout_script is set, replaces the
+  // user's panels with the scripted layout.
+  bool apply_once = 4;
+  // Apply the wallpaper to currently logged-in sessions right away.
+  bool apply_live = 5;
+  // Write the LookAndFeelPackage selection as immutable, so users cannot
+  // choose another global theme.
+  bool lock_package = 6;
 }

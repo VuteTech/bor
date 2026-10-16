@@ -7,6 +7,7 @@
     "dev": "webpack --mode development --watch",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
+    "gen:kconfig-catalogue": "node scripts/gen-kconfig-catalogue.mjs",
     "typecheck": "tsc --noEmit"
   },
   "private": "true",

@@ -121,6 +121,23 @@ type ChromeConfig struct {
 // KConfigConfig holds KDE Kiosk (KConfig) policy settings.
 type KConfigConfig struct {
 	ConfigPath string `yaml:"config_path"` // base directory for KDE config files (default /etc/bor/xdg)
+	// WriteKde5rc also mirrors System Settings module restrictions into
+	// /etc/kde5rc. Plasma 5 and 6 read them from kdeglobals, so this is only
+	// for very old KDE Frameworks releases (default false).
+	WriteKde5rc bool `yaml:"write_kde5rc"`
+	// ProbeEffective reads written settings back with kreadconfig in a
+	// logged-in user's session after each sync and reports user overrides
+	// of non-enforced defaults as non-compliant (default false).
+	ProbeEffective bool `yaml:"probe_effective"`
+	// DataPath is the directory for generated data files (look-and-feel
+	// packages, Plasma update scripts), put first in XDG_DATA_DIRS by the
+	// hook scripts (default /etc/bor/share).
+	DataPath string `yaml:"data_path"`
+	// FlatpakOverride exposes the config directory to Flatpak applications
+	// through a system-wide `flatpak override` while KDE policies apply,
+	// so sandboxed KDE applications read the managed settings (default true;
+	// only when flatpak is installed).
+	FlatpakOverride bool `yaml:"flatpak_override"`
 }
 
 // EnrollmentConfig holds enrollment and mTLS settings.
@@ -200,7 +217,9 @@ func DefaultConfig() *Config {
 			StateFile: "/var/lib/bor/agent/flatpak-state.json",
 		},
 		KConfig: KConfigConfig{
-			ConfigPath: "/etc/bor/xdg",
+			ConfigPath:      "/etc/bor/xdg",
+			DataPath:        "/etc/bor/share",
+			FlatpakOverride: true,
 		},
 		Enrollment: EnrollmentConfig{
 			DataDir: "/var/lib/bor/agent",

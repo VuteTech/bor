@@ -42,14 +42,26 @@ const defaultConfigPath = "/etc/bor/config.yaml"
 // Version is set at build time via -ldflags "-X main.Version=x.y.z".
 var Version = "dev"
 
-// kconfigCache maps policy ID → typed KConfig policy for all active Kconfig policies.
+// kconfigCacheEntry is one active KDE Plasma policy with its binding priority.
+type kconfigCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.KConfigPolicy
+}
+
+// kconfigCache maps policy ID -> KConfig policy + priority for all active Kconfig policies.
 // It is maintained across streaming events so that a full re-merge and
 // sync can be performed whenever any single policy changes or is deleted.
-var kconfigCache = make(map[string]*pb.KConfigPolicy)
+var kconfigCache = make(map[string]kconfigCacheEntry)
 
 // kconfigSnapshotStaging accumulates KConfig policies during a SNAPSHOT.
 // It is nil when not inside a snapshot sequence.
-var kconfigSnapshotStaging map[string]*pb.KConfigPolicy
+var kconfigSnapshotStaging map[string]kconfigCacheEntry
+
+// kconfigCatalogueReported is set once this node's KDE settings catalogue
+// (KConfigXT schemas and System Settings modules) reached the server.
+var kconfigCatalogueReported bool
 
 // kdeNotifier handles desktop notifications and app reconfigure via D-Bus.
 var kdeNotifier = notify.New()
@@ -62,7 +74,7 @@ var notifyConfig = notify.Config{
 	Message:  "Desktop policies have been updated. Please log out and log back in for all changes to take effect.",
 }
 
-// firefoxCache maps policy ID → proto policy for all active Firefox policies.
+// firefoxCache maps policy ID -> proto policy for all active Firefox policies.
 var firefoxCache = make(map[string]*pb.FirefoxPolicy)
 
 // firefoxSnapshotStaging accumulates Firefox proto policies during a SNAPSHOT.
@@ -78,7 +90,7 @@ var firefoxNotifyConfig = notify.Config{
 	Message:  "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
 }
 
-// thunderbirdCache maps policy ID → proto policy for all active Thunderbird policies.
+// thunderbirdCache maps policy ID -> proto policy for all active Thunderbird policies.
 var thunderbirdCache = make(map[string]*pb.ThunderbirdPolicy)
 
 // thunderbirdSnapshotStaging accumulates Thunderbird proto policies during a SNAPSHOT.
@@ -94,7 +106,7 @@ var thunderbirdNotifyConfig = notify.Config{
 	Message:  "Thunderbird policies have been updated. Please restart Thunderbird for all changes to take effect.",
 }
 
-// chromeCache maps policy ID → proto policy for all active Chrome policies.
+// chromeCache maps policy ID -> proto policy for all active Chrome policies.
 var chromeCache = make(map[string]*pb.ChromePolicy)
 
 // chromeSnapshotStaging accumulates Chrome proto policies during a SNAPSHOT.
@@ -111,7 +123,7 @@ var chromeNotifyConfig = notify.Config{
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
 
-// edgeCache maps policy ID → proto policy for all active Edge policies.
+// edgeCache maps policy ID -> proto policy for all active Edge policies.
 var edgeCache = make(map[string]*pb.EdgePolicy)
 
 // edgeSnapshotStaging accumulates Edge proto policies during a SNAPSHOT.
@@ -136,7 +148,7 @@ type dconfCacheEntry struct {
 	policy   *pb.DConfPolicy
 }
 
-// dconfCache maps policy ID → DConf policy + priority for all active Dconf policies.
+// dconfCache maps policy ID -> DConf policy + priority for all active Dconf policies.
 var dconfCache = make(map[string]dconfCacheEntry)
 
 // dconfSnapshotStaging accumulates DConf policies during a SNAPSHOT.
@@ -154,7 +166,7 @@ type polkitCacheEntry struct {
 	policy   *pb.PolkitPolicy
 }
 
-// polkitCache maps policy ID → Polkit policy + priority for all active Polkit policies.
+// polkitCache maps policy ID -> Polkit policy + priority for all active Polkit policies.
 var polkitCache = make(map[string]polkitCacheEntry)
 
 // polkitSnapshotStaging accumulates Polkit policies during a SNAPSHOT.
@@ -168,7 +180,7 @@ type firewalldCacheEntry struct {
 	policy   *pb.FirewalldPolicy
 }
 
-// firewalldCache maps policy ID → Firewalld policy + priority for all active Firewalld policies.
+// firewalldCache maps policy ID -> Firewalld policy + priority for all active Firewalld policies.
 var firewalldCache = make(map[string]firewalldCacheEntry)
 
 // firewalldSnapshotStaging accumulates Firewalld policies during a SNAPSHOT.
@@ -182,7 +194,7 @@ type flatpakCacheEntry struct {
 	policy   *pb.FlatpakPolicy
 }
 
-// flatpakCache maps policy ID → Flatpak policy + priority for all active Flatpak policies.
+// flatpakCache maps policy ID -> Flatpak policy + priority for all active Flatpak policies.
 var flatpakCache = make(map[string]flatpakCacheEntry)
 
 // flatpakSnapshotStaging accumulates Flatpak policies during a SNAPSHOT.
@@ -223,7 +235,7 @@ type sessionAccessCacheEntry struct {
 	policy   *pb.SessionAccessPolicy
 }
 
-// sessionAccessCache maps policy ID → SessionAccess policy for all active
+// sessionAccessCache maps policy ID -> SessionAccess policy for all active
 // SessionAccess policies.
 var sessionAccessCache = make(map[string]sessionAccessCacheEntry)
 
@@ -297,7 +309,7 @@ type packageCacheEntry struct {
 	policy   *pb.PackagePolicy
 }
 
-// packageCache maps policy ID → PackagePolicy + priority for all active Package policies.
+// packageCache maps policy ID -> PackagePolicy + priority for all active Package policies.
 var packageCache = make(map[string]packageCacheEntry)
 
 // packageSnapshotStaging accumulates Package policies during a SNAPSHOT.
@@ -376,7 +388,7 @@ func main() {
 	// covers intentional re-enrollment (moving a node to a different group,
 	// CA rotation, etc.).
 	if resolvedToken != "" && policyclient.IsEnrolled(paths) {
-		log.Println("Enrollment token provided for an already-enrolled agent – removing old certificates for re-enrollment")
+		log.Println("Enrollment token provided for an already-enrolled agent - removing old certificates for re-enrollment")
 		if removeErr := policyclient.RemoveEnrollmentCerts(paths); removeErr != nil {
 			log.Fatalf("Failed to remove old enrollment certificates: %v", removeErr)
 		}
@@ -390,7 +402,7 @@ func main() {
 		// This covers FreeIPA and Active Directory (Samba AD) joined hosts.
 		if cfg.Kerberos.Enabled && cfg.Kerberos.KeytabFile != "" && cfg.Kerberos.ServicePrincipal != "" {
 			if _, statErr := os.Stat(cfg.Kerberos.KeytabFile); statErr == nil {
-				log.Printf("Kerberos keytab found at %s – attempting Kerberos enrollment", cfg.Kerberos.KeytabFile)
+				log.Printf("Kerberos keytab found at %s - attempting Kerberos enrollment", cfg.Kerberos.KeytabFile)
 				krbErr := policyclient.EnrollWithKerberos(
 					cfg.Server.EnrollmentAddr(),
 					cfg.Kerberos.KeytabFile,
@@ -402,12 +414,12 @@ func main() {
 					paths,
 				)
 				if krbErr != nil {
-					log.Printf("Kerberos enrollment failed: %v – falling back to token-based enrollment", krbErr)
+					log.Printf("Kerberos enrollment failed: %v - falling back to token-based enrollment", krbErr)
 				} else {
 					enrolled = true
 				}
 			} else {
-				log.Printf("Kerberos enrollment configured but keytab not found at %s – skipping", cfg.Kerberos.KeytabFile)
+				log.Printf("Kerberos enrollment configured but keytab not found at %s - skipping", cfg.Kerberos.KeytabFile)
 			}
 		}
 
@@ -419,7 +431,7 @@ func main() {
 					"Generate a token from the Node Groups page in the Bor web UI.\n" +
 					"Alternatively, configure Kerberos enrollment in /etc/bor/config.yaml.")
 			}
-			log.Println("Not yet enrolled – starting token-based enrollment...")
+			log.Println("Not yet enrolled - starting token-based enrollment...")
 			if enrollErr := policyclient.Enroll(
 				cfg.Server.EnrollmentAddr(),
 				resolvedToken,
@@ -449,7 +461,7 @@ To follow the agent logs:
 `, cfg.Enrollment.DataDir)
 		os.Exit(0)
 	}
-	log.Println("Agent is enrolled – using mTLS credentials")
+	log.Println("Agent is enrolled - using mTLS credentials")
 
 	agentAddr := cfg.Server.PolicyAddr()
 
@@ -462,7 +474,7 @@ To follow the agent logs:
 	} else if expiring {
 		log.Println("Certificate expires within 30 days, renewing...")
 		if renewErr := policyclient.RenewCertificate(agentAddr, paths.CACert, paths.CertFile, paths.KeyFile); renewErr != nil {
-			log.Printf("Warning: certificate renewal failed: %v — will retry next cycle", renewErr)
+			log.Printf("Warning: certificate renewal failed: %v - will retry next cycle", renewErr)
 		}
 	}
 
@@ -473,7 +485,7 @@ To follow the agent logs:
 		paths.CACert,   // CA cert received during enrollment
 		paths.CertFile, // agent client cert signed by CA
 		paths.KeyFile,  // agent private key
-		false,          // never skip verify after enrollment – we have the CA cert
+		false,          // never skip verify after enrollment - we have the CA cert
 	)
 	if err != nil {
 		log.Fatalf("Failed to create policy client: %v", err)
@@ -553,7 +565,7 @@ To follow the agent logs:
 	logDiskEncryptionProbe(ctx, cfg)
 	defer stopDiskEncTicker()
 
-	// Run the policy enforcement loop — prefer streaming, fall back to polling.
+	// Run the policy enforcement loop - prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
 	log.Println("Bor Agent stopped")
@@ -646,6 +658,30 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			}()
 		}
 
+		// Scan KConfigXT schemas and System Settings modules and report the
+		// KDE settings catalogue on first connect. Best-effort: nodes without
+		// KDE report nothing.
+		if !kconfigCatalogueReported {
+			go func() {
+				entries, err := policy.ScanKConfigSchemas()
+				if err != nil {
+					log.Printf("kconfig: schema scan failed (non-fatal): %v", err)
+					return
+				}
+				kcms := policy.InstalledKCMModules()
+				themes := policy.InstalledLookAndFeelPackages()
+				if len(entries) == 0 && len(kcms) == 0 && len(themes) == 0 {
+					return
+				}
+				if err := client.ReportKConfigCatalogue(ctx, entries, kcms, themes, sysinfo.PlasmaVersion()); err != nil {
+					log.Printf("kconfig: ReportKConfigCatalogue failed (non-fatal): %v", err)
+				} else {
+					log.Printf("kconfig: reported %d settings, %d System Settings modules and %d global themes to server", len(entries), len(kcms), len(themes))
+					kconfigCatalogueReported = true
+				}
+			}()
+		}
+
 		// Discover polkit actions and report the catalogue on first connect.
 		// Best-effort: pkaction may not be installed on all nodes.
 		if !polkitActionsReported {
@@ -677,10 +713,10 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		)
 
 		if ctx.Err() != nil {
-			return // parent context cancelled — shutting down
+			return // parent context cancelled - shutting down
 		}
 
-		log.Printf("Policy stream disconnected: %v — reconnecting in %v", err, backoff)
+		log.Printf("Policy stream disconnected: %v - reconnecting in %v", err, backoff)
 
 		select {
 		case <-ctx.Done():
@@ -723,7 +759,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				hadKconfigPolicies := len(kconfigCache) > 0
 				chromeChanged := len(chromeCache) > 0
 				edgeChanged := len(edgeCache) > 0
-				kconfigCache = make(map[string]*pb.KConfigPolicy)
+				kconfigCache = make(map[string]kconfigCacheEntry)
 				kconfigSnapshotStaging = nil
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
 				firefoxSnapshotStaging = nil
@@ -807,9 +843,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			edgeSnapshotStaging[pi.ID] = pi.EdgePolicy
 		case "Kconfig":
 			if kconfigSnapshotStaging == nil {
-				kconfigSnapshotStaging = make(map[string]*pb.KConfigPolicy)
+				kconfigSnapshotStaging = make(map[string]kconfigCacheEntry)
 			}
-			kconfigSnapshotStaging[pi.ID] = pi.KConfigPolicy
+			kconfigSnapshotStaging[pi.ID] = kconfigCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.KConfigPolicy}
 		case "Dconf":
 			if dconfSnapshotStaging == nil {
 				dconfSnapshotStaging = make(map[string]dconfCacheEntry)
@@ -862,7 +898,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if kconfigSnapshotStaging != nil {
 				kconfigCache = kconfigSnapshotStaging
 			} else {
-				kconfigCache = make(map[string]*pb.KConfigPolicy)
+				kconfigCache = make(map[string]kconfigCacheEntry)
 			}
 			kconfigSnapshotStaging = nil
 
@@ -964,7 +1000,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			go triggerDiskEncryptionSync(ctx, client, cfg)
 
 			if *postInitialSync {
-				// Resync from a live admin change — notify if content changed.
+				// Resync from a live admin change - notify if content changed.
 				if len(kconfigChanged) > 0 {
 					kdeNotifier.ScheduleNotification(notifyConfig, kconfigChanged)
 				}
@@ -1013,7 +1049,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				edgeNotifier.ScheduleNotification(edgeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
 		case "Kconfig":
-			kconfigCache[pi.ID] = pi.KConfigPolicy
+			kconfigCache[pi.ID] = kconfigCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.KConfigPolicy}
 			if changed := syncAllKConfig(ctx, client, cfg); len(changed) > 0 {
 				kdeNotifier.ScheduleNotification(notifyConfig, changed)
 			}
@@ -1224,7 +1260,7 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 	defer updateWatcher(cfg)
 
 	result := policy.SyncFirewalldFromProto(entries, cfg.Firewalld.ZonesDir)
-	log.Printf("Firewalld policies synced (%d policies): %s — %s",
+	log.Printf("Firewalld policies synced (%d policies): %s - %s",
 		len(ids), result.Status.String(), result.Message)
 	for _, id := range ids {
 		_ = client.ReportComplianceWithStatus(ctx, id, result.Status, result.Message, nil)
@@ -1235,7 +1271,7 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 // the Layer-1 enforcer's rule set, applies the Layer-2 pam_time managed block,
 // and reports per-policy compliance. Enforcement actions (locks/logoffs/
 // warnings) happen asynchronously in the enforcer loop and go to the log, not
-// compliance — compliance reflects enforcement *state* (tooling present,
+// compliance - compliance reflects enforcement *state* (tooling present,
 // config valid), not events.
 func syncAllSessionAccess(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
 	sessionAccessMu.Lock()
@@ -1254,7 +1290,7 @@ func syncAllSessionAccess(ctx context.Context, client *policyclient.Client, cfg 
 	pam := applySessionPam(cfg, sources)
 
 	status, message := sessionAccessCompliance(rules, warnings, &pam)
-	log.Printf("SessionAccess policies synced (%d policies, %d rules): %s — %s",
+	log.Printf("SessionAccess policies synced (%d policies, %d rules): %s - %s",
 		len(ids), len(rules), status.String(), message)
 	for _, id := range ids {
 		_ = client.ReportComplianceWithStatus(ctx, id, status, message, nil)
@@ -1314,7 +1350,7 @@ func applySessionPam(cfg *config.Config, sources []policy.SessionPolicySource) s
 		suppressManagedWrites(cfg, policy.TimeConfPath)
 		defer updateWatcher(cfg)
 		if len(lines) == 0 {
-			// PAM requested but no restricted users → nothing to enforce.
+			// PAM requested but no restricted users -> nothing to enforce.
 			teardownSessionPam(cfg)
 			res.state = "applied (no restricted users)"
 			return res
@@ -1388,98 +1424,351 @@ func sessionAccessCompliance(rules []policy.SessionRule, warnings []string, pam 
 	}
 }
 
-// syncAllKConfig re-merges all cached KConfig policies and syncs the
-// resulting files to disk. KCM (Control Module) restriction entries are
-// split out and written directly to /etc/kde5rc and /etc/kde6rc; all
-// other entries go to the XDG overlay. When the cache is empty,
-// SyncKConfigFiles restores all previously managed files from backups.
+// kconfigSyncMu serialises KConfig syncs; kconfigGroupRetryPending (guarded
+// by it) says whether a retry for unknown Unix groups is already scheduled.
+var (
+	kconfigSyncMu            sync.Mutex
+	kconfigGroupRetryPending bool
+)
+
+// kconfigGroupRetryInterval is how long the agent waits before looking up
+// Unix groups it could not resolve again.
+const kconfigGroupRetryInterval = 10 * time.Minute
+
+// syncAllKConfig re-merges all cached KDE Plasma policies by binding
+// priority and syncs the resulting files to the XDG overlay. Control
+// module restrictions live in kdeglobals like every other restriction and
+// are mirrored into /etc/kde5rc only when kconfig.write_kde5rc is set.
+// When the cache is empty, every managed file is restored from its backup.
+// Compliance is reported per policy with one item per setting; settings
+// overridden by a higher-priority policy are reported as inapplicable.
 //
 // Returns the set of written file basenames (nil when nothing was
 // written). The caller decides whether to schedule a notification.
 func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *config.Config) map[string]bool {
-	var allEntries []*pb.KConfigEntry
-	var ids []string
-	for id, pol := range kconfigCache {
-		allEntries = append(allEntries, policy.KConfigPolicyToEntries(pol)...)
-		ids = append(ids, id)
+	// Syncs come from the policy stream, the file watcher and the group
+	// retry timer; one at a time keeps the files and the watcher consistent.
+	kconfigSyncMu.Lock()
+	defer kconfigSyncMu.Unlock()
+
+	sources := make([]policy.KConfigPolicySource, 0, len(kconfigCache))
+	for _, e := range kconfigCache {
+		sources = append(sources, policy.KConfigPolicySource{ID: e.id, Name: e.name, Priority: e.priority, Policy: e.policy, Groups: e.policy.GetUnixGroups()})
 	}
 
-	// Split KCM restriction entries from other KConfig entries.
-	// KCM restrictions go to /etc/kde5rc and /etc/kde6rc directly.
-	kcmEntries, otherEntries := policy.SplitKCMRestrictions(allEntries)
+	reportError := func(msg string) {
+		for _, s := range sources {
+			_ = client.ReportComplianceWithStatus(ctx, s.ID, pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, msg, nil)
+		}
+	}
 
-	files, err := policy.MergeKConfigEntries(otherEntries)
+	// Show-only module lists need the node's installed modules.
+	var installedKCMs []string
+	for _, s := range sources {
+		if s.Policy.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED {
+			installedKCMs = policy.InstalledKCMs()
+			break
+		}
+	}
+
+	merged, err := policy.MergeKConfigPolicies(sources, installedKCMs)
 	if err != nil {
 		log.Printf("Error merging KConfig policies: %v", err)
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to merge policies: "+err.Error())
-		}
+		reportError("failed to merge policies: " + err.Error())
 		return nil
 	}
 
-	if err := policy.EnsureProfileScript(cfg.KConfig.ConfigPath); err != nil {
-		log.Printf("Warning: failed to ensure profile.d script: %v", err)
+	// Optional mirror of the control-module restrictions for /etc/kde5rc.
+	var kde5rcContent []byte
+	if cfg.KConfig.WriteKde5rc {
+		if kcmEntries := policy.KCMRestrictionsForKde5rc(merged.Entries); len(kcmEntries) > 0 {
+			kcmFiles, err := policy.MergeKConfigEntries(kcmEntries)
+			if err != nil {
+				log.Printf("Error rendering %s: %v", policy.Kde5rcPath(), err)
+				reportError("failed to render " + policy.Kde5rcPath() + ": " + err.Error())
+				return nil
+			}
+			kde5rcContent = kcmFiles["kde5rc"]
+		}
 	}
 
-	// Suppress watcher events for all files about to be written (current and new).
-	var incomingPaths []string
-	for name := range files {
+	// Data directory (first in XDG_DATA_DIRS): the look-and-feel package
+	// and update script of the desktop layout, plus the application files
+	// (Konsole profile, hidden desktop entries) node-wide and per group.
+	dataFiles := make(map[string][]byte)
+	renderLayout := func(sel *policy.KConfigLayoutSelection, prefix string) {
+		// A base theme set in the layout policy must exist on this node;
+		// otherwise the package falls back to Breeze and the policy says so.
+		var base *policy.LookAndFeelBase
+		if sel.BaseTheme != "" {
+			if b, ok := policy.LoadLookAndFeelBase(sel.BaseTheme); ok {
+				base = b
+			} else {
+				merged.Items[sel.PolicyID] = append(merged.Items[sel.PolicyID], &pb.ComplianceItemResult{
+					SchemaId: prefix + "layout",
+					Key:      "base theme",
+					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+					Message:  fmt.Sprintf("Base theme %q is not installed on this node; the generated look uses KDE's Breeze defaults", sel.BaseTheme),
+				})
+			}
+		}
+		// The wallpaper has to be a file every user can read; a missing or
+		// private file leaves the desktop unchanged without any message
+		// from Plasma, so the policy says so.
+		if err := policy.CheckWallpaperFile(policy.WallpaperPath(sel.Layout.GetWallpaperImage())); err != nil {
+			merged.Items[sel.PolicyID] = append(merged.Items[sel.PolicyID], &pb.ComplianceItemResult{
+				SchemaId: prefix + "layout",
+				Key:      "wallpaper",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				Message:  err.Error(),
+			})
+		}
+		for rel, data := range policy.RenderLayoutFilesFor(sel, base) {
+			dataFiles[prefix+rel] = data
+		}
+	}
+	if sel := merged.NodeLayout(); sel != nil {
+		renderLayout(sel, "")
+	}
+	for slug, sel := range merged.GroupLayouts {
+		renderLayout(sel, policy.GroupDataPrefix(slug))
+	}
+	for rel, data := range policy.RenderAppFiles(merged.Apps, policy.InstalledDesktopFile) {
+		dataFiles[rel] = data
+	}
+	for slug, apps := range merged.GroupApps {
+		for rel, data := range policy.RenderAppFiles(apps, policy.InstalledDesktopFile) {
+			dataFiles[policy.GroupDataPrefix(slug)+rel] = data
+		}
+	}
+
+	// Suppress watcher events for everything about to be written: overlay
+	// files, data files (current and new), the /etc rc mirror (and its
+	// legacy sibling) and the hook scripts.
+	incomingPaths := make([]string, 0, len(merged.Files)+len(dataFiles)+4)
+	for name := range merged.Files {
 		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.ConfigPath, name))
 	}
-	incomingPaths = append(incomingPaths, "/etc/kde5rc", "/etc/kde6rc")
+	for rel := range dataFiles {
+		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.DataPath, rel))
+	}
+	for slug, files := range merged.GroupFiles {
+		for name := range files {
+			incomingPaths = append(incomingPaths, filepath.Join(policy.GroupOverlayRoot(cfg.KConfig.ConfigPath), slug, name))
+		}
+	}
+	incomingPaths = append(incomingPaths, policy.ListDataFiles(cfg.KConfig.DataPath)...)
+	incomingPaths = append(incomingPaths, policy.ListGroupOverlayFiles(cfg.KConfig.ConfigPath)...)
+	incomingPaths = append(incomingPaths, policy.Kde5rcPath(), policy.LegacyKde6rcPath())
+	incomingPaths = append(incomingPaths, policy.EnvScriptPaths()...)
 	suppressManagedWrites(cfg, incomingPaths...)
 	defer updateWatcher(cfg)
 
-	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, files); err != nil {
-		log.Printf("Error syncing KConfig files: %v", err)
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to sync KConfig files: "+err.Error())
+	// Group scopes: resolve the group names on this node so the hook can
+	// match members by numeric GID. Unknown groups get their files written
+	// but not activated, and say so.
+	groupDirs, unresolved := policy.ResolveGroupDirs(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath, merged.Groups, policy.LookupGroupGID)
+	for _, g := range unresolved {
+		for _, pid := range g.PolicyIDs {
+			merged.Items[pid] = append(merged.Items[pid], &pb.ComplianceItemResult{
+				SchemaId: policy.GroupOverlayDir + "/" + g.Slug,
+				Key:      "unix group",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				Message:  fmt.Sprintf("Group %q is not known on this node; its settings are written but not activated", g.Name),
+			})
 		}
-		return nil
 	}
-
-	// Sync KCM restrictions to /etc/kde5rc and /etc/kde6rc.
-	var kcmContent []byte
-	if len(kcmEntries) > 0 {
-		kcmFiles, err := policy.MergeKConfigEntries(kcmEntries)
-		if err != nil {
-			log.Printf("Error merging KCM restriction entries: %v", err)
-			for _, id := range ids {
-				_ = client.ReportCompliance(ctx, id, false, "failed to merge KCM restrictions: "+err.Error())
+	// Groups appear later (created by an admin, or an identity service that
+	// starts after the agent): look them up again without waiting for a
+	// policy change. One timer at a time; the lock above is held here.
+	if len(unresolved) > 0 && !kconfigGroupRetryPending {
+		kconfigGroupRetryPending = true
+		log.Printf("KConfig: %d Unix group(s) unknown on this node; retrying the lookup in %s", len(unresolved), kconfigGroupRetryInterval)
+		time.AfterFunc(kconfigGroupRetryInterval, func() {
+			kconfigSyncMu.Lock()
+			kconfigGroupRetryPending = false
+			kconfigSyncMu.Unlock()
+			if ctx.Err() == nil {
+				syncAllKConfig(ctx, client, cfg)
 			}
-			return nil
-		}
-		kcmContent = kcmFiles["kde5rc"]
+		})
 	}
 
-	if err := policy.SyncKCMRestrictions(kcmContent); err != nil {
-		log.Printf("Error syncing KCM restrictions: %v", err)
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to sync KCM restrictions: "+err.Error())
+	// Enforced desktop layouts are applied again at every login: the hook
+	// gets the update script of each one (node-wide and per group).
+	hook := policy.EnvHook{ConfigPath: cfg.KConfig.ConfigPath, DataPath: cfg.KConfig.DataPath, Groups: groupDirs}
+	if sel := merged.NodeLayout(); sel != nil && sel.Enforced {
+		if rel := sel.UpdateScriptPath(); rel != "" {
+			hook.Reapply = filepath.Join(cfg.KConfig.DataPath, rel)
 		}
+	}
+	gidBySlug := make(map[string]uint32, len(groupDirs))
+	for i, g := range hook.Groups {
+		gidBySlug[g.Slug] = g.GID
+		sel := merged.GroupLayouts[g.Slug]
+		hook.Groups[i].Layout = sel != nil
+		if sel != nil && sel.Enforced {
+			if rel := sel.UpdateScriptPath(); rel != "" {
+				hook.Groups[i].Reapply = filepath.Join(cfg.KConfig.DataPath, policy.GroupDataPrefix(g.Slug), rel)
+			}
+		}
+	}
+	if err := policy.EnsureEnvScripts(hook); err != nil {
+		log.Printf("Warning: failed to ensure XDG hook scripts: %v", err)
+	}
+
+	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, merged.Files); err != nil {
+		log.Printf("Error syncing KConfig files: %v", err)
+		reportError("failed to sync KConfig files: " + err.Error())
 		return nil
 	}
 
-	log.Printf("KConfig policies synced to %s (%d policies, %d files)", cfg.KConfig.ConfigPath, len(ids), len(files))
-	if len(kcmEntries) > 0 {
-		log.Printf("KCM restrictions synced to /etc/kde5rc and /etc/kde6rc")
-	}
-	for _, id := range ids {
-		_ = client.ReportCompliance(ctx, id, true, "Deployed")
-	}
-
-	if len(files) == 0 && len(kcmEntries) == 0 {
+	if _, err := policy.SyncGroupOverlays(cfg.KConfig.ConfigPath, merged.GroupFiles); err != nil {
+		log.Printf("Error syncing KConfig group overlays: %v", err)
+		reportError("failed to sync KConfig group overlays: " + err.Error())
 		return nil
 	}
-	changedFiles := make(map[string]bool, len(files)+2)
-	for name := range files {
+
+	// Flatpak: expose the config directory to sandboxed KDE applications
+	// while policies apply; remove the override when none remain.
+	if policy.FlatpakAvailable(cfg.Flatpak.Binary) {
+		run := func(args ...string) (string, error) {
+			fctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			out, err := exec.CommandContext(fctx, cfg.Flatpak.Binary, args...).CombinedOutput() //nolint:gosec // G204: binary from agent config, fixed arguments
+			return string(out), err
+		}
+		changed, err := policy.EnsureFlatpakOverride(run, cfg.KConfig.ConfigPath, cfg.KConfig.FlatpakOverride && len(sources) > 0)
+		switch {
+		case err != nil:
+			log.Printf("Warning: Flatpak override for KDE settings: %v", err)
+		case changed:
+			log.Printf("Flatpak override for %s updated", cfg.KConfig.ConfigPath)
+		}
+	}
+
+	changedData, dataErr := policy.SyncDataFiles(cfg.KConfig.DataPath, dataFiles)
+	if dataErr != nil {
+		log.Printf("Error syncing KDE data files: %v", dataErr)
+		reportError("failed to sync KDE data files: " + dataErr.Error())
+		return nil
+	}
+	// Live wallpaper: the node-wide look goes to every logged-in user who
+	// is not covered by a group layout; a group's look to its members. An
+	// unresolved group has no members on this node yet.
+	liveWallpaper := func(sel *policy.KConfigLayoutSelection, prefix string, allow func(uid uint32, user string) bool) {
+		if sel == nil || !sel.Layout.GetApplyLive() || sel.Layout.GetWallpaperImage() == "" || !policy.LayoutFilesChanged(cfg.KConfig.DataPath, prefix, changedData) {
+			return
+		}
+		notify.ApplyWallpaperToSessionsIf(policy.WallpaperPath(sel.Layout.GetWallpaperImage()), policy.WallpaperFillModeName(sel.Layout.GetWallpaperFillMode()), allow)
+	}
+	liveWallpaper(merged.NodeLayout(), "", func(_ uint32, user string) bool {
+		for slug := range merged.GroupLayouts {
+			if gid, ok := gidBySlug[slug]; ok && policy.UserInGroup(user, gid) {
+				return false
+			}
+		}
+		return true
+	})
+	for slug, sel := range merged.GroupLayouts {
+		gid, ok := gidBySlug[slug]
+		if !ok {
+			continue
+		}
+		liveWallpaper(sel, policy.GroupDataPrefix(slug), func(_ uint32, user string) bool { return policy.UserInGroup(user, gid) })
+	}
+	if policy.AppFilesChanged(changedData) {
+		// Logged-in sessions see hidden or restored desktop entries once
+		// their application cache is rebuilt; new logins rebuild it anyway.
+		notify.RebuildSycocaInSessions()
+	}
+
+	if err := policy.SyncKde5rc(kde5rcContent); err != nil {
+		log.Printf("Error syncing %s: %v", policy.Kde5rcPath(), err)
+		reportError("failed to sync " + policy.Kde5rcPath() + ": " + err.Error())
+		return nil
+	}
+
+	if cfg.KConfig.ProbeEffective {
+		probeKConfigSession(cfg, merged)
+	}
+
+	log.Printf("KConfig policies synced to %s (%d policies, %d files)", cfg.KConfig.ConfigPath, len(sources), len(merged.Files))
+	if kde5rcContent != nil {
+		log.Printf("KCM restrictions mirrored to %s", policy.Kde5rcPath())
+	}
+
+	for _, s := range sources {
+		items := merged.Items[s.ID]
+		if len(items) == 0 {
+			// Only legacy resource restrictions, which no supported Plasma reads.
+			_ = client.ReportComplianceWithStatus(ctx, s.ID, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+				"No effective settings: the policy only contains legacy resource restrictions, which KDE Plasma 5 and 6 ignore", nil)
+			continue
+		}
+		status, msg := rollupProtoItems(items, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed")
+		_ = client.ReportComplianceWithStatus(ctx, s.ID, status, msg, items)
+	}
+
+	if len(merged.Files) == 0 {
+		return nil
+	}
+	changedFiles := make(map[string]bool, len(merged.Files))
+	for name := range merged.Files {
 		changedFiles[name] = true
 	}
-	if len(kcmEntries) > 0 {
-		changedFiles["kde5rc"] = true
-		changedFiles["kde6rc"] = true
-	}
 	return changedFiles
+}
+
+// probeKConfigSession reads the written KDE settings back with kreadconfig
+// in a logged-in user's session and downgrades the items whose effective
+// value differs: a user setting overriding a non-enforced default. It also
+// checks that the running Plasma session sees the managed directory.
+// Best-effort: without a graphical session or kreadconfig it does nothing.
+func probeKConfigSession(cfg *config.Config, merged *policy.KConfigMergeResult) {
+	uid, ok := notify.FirstGraphicalSessionUID()
+	if !ok {
+		return
+	}
+	tool := policy.KConfigReadTool(exec.LookPath)
+	// A UTF-8 locale keeps kreadconfig from warning about the C locale on
+	// every call; the values it prints are ASCII either way.
+	env := []string{"XDG_CONFIG_DIRS=" + cfg.KConfig.ConfigPath + ":/etc/xdg", "LANG=C.UTF-8", "LC_ALL=C.UTF-8"}
+	run := func(name string, args ...string) (string, error) {
+		return notify.RunAsSessionUser(uid, env, name, args...)
+	}
+
+	mismatches := make(map[string]policy.KConfigProbeResult)
+	for _, r := range policy.ProbeKConfigEffective(merged.Entries, run, tool) {
+		if r.Mismatch {
+			mismatches[r.File+"\x00"+r.ItemKey] = r
+		}
+	}
+	for _, items := range merged.Items {
+		for _, it := range items {
+			if it.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT || it.Message != "Deployed" {
+				continue
+			}
+			if r, found := mismatches[it.SchemaId+"\x00"+it.Key]; found {
+				it.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT
+				it.Message = fmt.Sprintf("Effective value for the logged-in user is %q, policy value is %q: a user setting overrides this default; enforce it to fix", r.Actual, r.Expected)
+			}
+		}
+	}
+
+	if found, running := policy.SessionSeesConfigDir(uid, cfg.KConfig.ConfigPath); running && !found {
+		for id, items := range merged.Items {
+			if len(items) == 0 {
+				continue
+			}
+			merged.Items[id] = append(items, &pb.ComplianceItemResult{
+				SchemaId: "session",
+				Key:      "XDG_CONFIG_DIRS",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT,
+				Message:  "The running Plasma session does not have " + cfg.KConfig.ConfigPath + " in XDG_CONFIG_DIRS; the user must log out and back in",
+			})
+		}
+	}
 }
 
 // syncAllFirefox re-merges all cached Firefox proto policies and syncs
@@ -1507,7 +1796,7 @@ func syncAllFirefox(ctx context.Context, client *policyclient.Client, cfg *confi
 	}
 
 	// Flatpak Firefox: write to the system-wide extension directory.
-	// This is best-effort — Flatpak Firefox may not be installed.
+	// This is best-effort - Flatpak Firefox may not be installed.
 	if cfg.Firefox.FlatpakPoliciesPath != "" {
 		if err := policy.SyncFirefoxFlatpakPoliciesFromProto(cfg.Firefox.FlatpakPoliciesPath, policies); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Firefox policies: %v", err)
@@ -1567,7 +1856,7 @@ func syncAllThunderbird(ctx context.Context, client *policyclient.Client, cfg *c
 	}
 
 	// Flatpak Thunderbird: write to the system-wide extension directory.
-	// This is best-effort — Flatpak Thunderbird may not be installed.
+	// This is best-effort - Flatpak Thunderbird may not be installed.
 	if cfg.Thunderbird.FlatpakPoliciesPath != "" {
 		if err := policy.SyncThunderbirdFlatpakPoliciesFromProto(cfg.Thunderbird.FlatpakPoliciesPath, policies); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Thunderbird policies: %v", err)
@@ -1653,7 +1942,7 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 		return false
 	}
 
-	// Flatpak Chromium is best-effort — log warning but don't fail.
+	// Flatpak Chromium is best-effort - log warning but don't fail.
 	if cfg.Chrome.FlatpakChromiumPoliciesPath != "" {
 		if err := policy.SyncChromeFromProto(policies, []string{cfg.Chrome.FlatpakChromiumPoliciesPath}); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Chromium policies: %v", err)
@@ -1879,10 +2168,10 @@ func triggerPackageSync(ctx context.Context, client *policyclient.Client, cfg *c
 }
 
 // syncAllPackages enforces all active PackagePolicy entries in two phases:
-//  1. Repository files (fast, file I/O) — written and compliance-reported immediately.
-//  2. Package state via PackageKit D-Bus (slow) — reported after operations complete.
+//  1. Repository files (fast, file I/O) - written and compliance-reported immediately.
+//  2. Package state via PackageKit D-Bus (slow) - reported after operations complete.
 func syncAllPackages(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
-	// Snapshot the cache under a short-lived read — the global maps are only
+	// Snapshot the cache under a short-lived read - the global maps are only
 	// mutated by the stream goroutine, which never blocks on pkgSyncMu.
 	entries := make([]packageCacheEntry, 0, len(packageCache))
 	for _, e := range packageCache {
@@ -2008,8 +2297,8 @@ func triggerFlatpakSync(ctx context.Context, client *policyclient.Client, cfg *c
 }
 
 // syncAllFlatpak enforces all active Flatpak policies in two phases:
-//  1. Remotes (fast: managed files + remote-add/remote-modify) — reported immediately.
-//  2. Applications (slow: downloads) — reported when every operation finished.
+//  1. Remotes (fast: managed files + remote-add/remote-modify) - reported immediately.
+//  2. Applications (slow: downloads) - reported when every operation finished.
 //
 // Must be called with flatpakSyncMu held.
 func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
@@ -2047,14 +2336,14 @@ func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *confi
 	if !policy.FlatpakAvailable(opts.Binary) {
 		stopFlatpakUpdaterLocked()
 		msg := "flatpak is not installed on this node"
-		log.Printf("Flatpak policies synced (%d policies): INAPPLICABLE — %s", len(ids), msg)
+		log.Printf("Flatpak policies synced (%d policies): INAPPLICABLE - %s", len(ids), msg)
 		report(pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, msg, nil)
 		return
 	}
 	if _, err := policy.FlatpakVersion(ctx, &opts); err != nil {
 		stopFlatpakUpdaterLocked()
 		msg := "flatpak is installed but unusable: " + err.Error()
-		log.Printf("Flatpak policies synced (%d policies): ERROR — %s", len(ids), msg)
+		log.Printf("Flatpak policies synced (%d policies): ERROR - %s", len(ids), msg)
 		report(pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, msg, nil)
 		return
 	}
@@ -2068,7 +2357,7 @@ func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *confi
 		if errors.As(err, &inapp) {
 			status = pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE
 		}
-		log.Printf("Flatpak policies synced (%d policies): %s — %v", len(ids), status.String(), err)
+		log.Printf("Flatpak policies synced (%d policies): %s - %v", len(ids), status.String(), err)
 		report(status, err.Error(), nil)
 		return
 	}
@@ -2092,7 +2381,7 @@ func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *confi
 	allItems = append(allItems, remoteItems...)
 	allItems = append(allItems, appItems...)
 	status, msg := policy.RollupFlatpakCompliance(allItems)
-	log.Printf("Flatpak policies synced (%d policies, %d remotes, %d apps): %s — %s",
+	log.Printf("Flatpak policies synced (%d policies, %d remotes, %d apps): %s - %s",
 		len(ids), len(desired.Remotes), len(desired.Apps), status.String(), msg)
 	report(status, msg, flatpakItemsToProto(allItems))
 
@@ -2359,11 +2648,19 @@ func getManagedPaths(cfg *config.Config) []string {
 			paths = append(paths, filepath.Join(cfg.KConfig.ConfigPath, name))
 		}
 	}
-	// KCM restriction files in /etc.
-	for _, pol := range kconfigCache {
-		if len(pol.GetKcmRestrictions()) > 0 {
-			paths = append(paths, "/etc/kde5rc", "/etc/kde6rc")
-			break
+	// Hook scripts, generated data files and the optional /etc/kde5rc
+	// mirror, while policies apply.
+	if len(kconfigCache) > 0 {
+		paths = append(paths, policy.EnvScriptPaths()...)
+		paths = append(paths, policy.ListDataFiles(cfg.KConfig.DataPath)...)
+		paths = append(paths, policy.ListGroupOverlayFiles(cfg.KConfig.ConfigPath)...)
+		if cfg.KConfig.WriteKde5rc {
+			for _, e := range kconfigCache {
+				if len(e.policy.GetKcmRestrictions()) > 0 {
+					paths = append(paths, policy.Kde5rcPath())
+					break
+				}
+			}
 		}
 	}
 
@@ -2446,7 +2743,7 @@ func suppressManagedWrites(cfg *config.Config, extra ...string) {
 func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *config.Config, path string) {
 	log.Printf("Tamper protection: restoring %s", path)
 
-	// Collect process info before restoring — the modifying process may still
+	// Collect process info before restoring - the modifying process may still
 	// hold the file open (e.g. an editor), giving us user/comm attribution.
 	holders := procinfo.FindFileHolders(path)
 	procs := make([]policyclient.TamperProcess, len(holders))
@@ -2457,7 +2754,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 
 	switch {
 	case strings.HasPrefix(path, cfg.KConfig.ConfigPath+string(filepath.Separator)) ||
-		path == "/etc/kde5rc" || path == "/etc/kde6rc":
+		strings.HasPrefix(path, cfg.KConfig.DataPath+string(filepath.Separator)) ||
+		path == policy.Kde5rcPath() || slices.Contains(policy.EnvScriptPaths(), path):
 		syncAllKConfig(ctx, client, cfg)
 	case path == cfg.Firefox.PoliciesPath || path == cfg.Firefox.FlatpakPoliciesPath:
 		syncAllFirefox(ctx, client, cfg)
@@ -2488,7 +2786,7 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
 	default:
-		log.Printf("Tamper protection: unrecognised managed path %s — no restore action taken", path)
+		log.Printf("Tamper protection: unrecognised managed path %s - no restore action taken", path)
 	}
 
 	if err := client.ReportTamperEvent(ctx, path, procs); err != nil {

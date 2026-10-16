@@ -42,8 +42,8 @@ const NotifyDebounce = 10 * time.Second
 // to active user sessions via D-Bus.
 type Notifier struct {
 	mu           sync.Mutex
-	lastSent     map[uint32]time.Time // UID → last notification time
-	lastNotifyID map[uint32]uint32    // UID → last notify-send notification ID
+	lastSent     map[uint32]time.Time // UID -> last notification time
+	lastNotifyID map[uint32]uint32    // UID -> last notify-send notification ID
 
 	debounceMu    sync.Mutex
 	debounceTimer *time.Timer
@@ -110,7 +110,7 @@ type session struct {
 // (e.g. "kwinrc", "kdeglobals"). cfg controls whether notifications
 // are sent, the cooldown, and the message text.
 //
-// All errors are logged but never returned — notification is
+// All errors are logged but never returned - notification is
 // best-effort and must not block policy enforcement.
 func (n *Notifier) NotifyAndReconfigure(cfg Config, changedFiles map[string]bool) {
 	if !cfg.Enabled && len(changedFiles) == 0 {
@@ -296,20 +296,122 @@ func runAsUser(s session, name string, args ...string) error {
 	return nil
 }
 
+// ApplyWallpaperToSessions sets the wallpaper of every active graphical
+// session right away with plasma-apply-wallpaperimage. fillMode is the
+// tool's fill-mode name or "" for its default. Best-effort: failures are
+// logged, never returned.
+func ApplyWallpaperToSessions(imagePath, fillMode string) {
+	ApplyWallpaperToSessionsIf(imagePath, fillMode, nil)
+}
+
+// ApplyWallpaperToSessionsIf is ApplyWallpaperToSessions limited to the
+// sessions whose user passes allow (UID and user name); nil allows all.
+// Group-scoped layouts use it so that only members get their wallpaper.
+func ApplyWallpaperToSessionsIf(imagePath, fillMode string, allow func(uid uint32, user string) bool) {
+	sessions, err := activeGraphicalSessions()
+	if err != nil {
+		log.Printf("notify: failed to enumerate sessions for wallpaper: %v", err)
+		return
+	}
+	seen := make(map[uint32]bool)
+	for _, s := range sessions {
+		if seen[s.UID] {
+			continue
+		}
+		seen[s.UID] = true
+		if allow != nil && !allow(s.UID, s.User) {
+			continue
+		}
+		args := []string{}
+		if fillMode != "" {
+			args = append(args, "--fill-mode", fillMode)
+		}
+		args = append(args, imagePath)
+		if err := runAsUser(s, "plasma-apply-wallpaperimage", args...); err != nil {
+			log.Printf("notify: wallpaper apply failed for UID %d: %v", s.UID, err)
+		} else {
+			log.Printf("notify: wallpaper applied for user %s (UID %d)", s.User, s.UID)
+		}
+	}
+}
+
+// RebuildSycocaInSessions refreshes the application cache of every active
+// graphical session (kbuildsycoca6, or kbuildsycoca5 on Plasma 5) so that
+// hidden or restored desktop entries show up without a new login.
+// Best-effort: failures are logged, never returned.
+func RebuildSycocaInSessions() {
+	sessions, err := activeGraphicalSessions()
+	if err != nil {
+		log.Printf("notify: failed to enumerate sessions for the application cache: %v", err)
+		return
+	}
+	tool := ""
+	for _, candidate := range []string{"kbuildsycoca6", "kbuildsycoca5"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			tool = candidate
+			break
+		}
+	}
+	if tool == "" {
+		return
+	}
+	seen := make(map[uint32]bool)
+	for _, s := range sessions {
+		if seen[s.UID] {
+			continue
+		}
+		seen[s.UID] = true
+		if err := runAsUser(s, tool); err != nil {
+			log.Printf("notify: application cache rebuild failed for UID %d: %v", s.UID, err)
+		}
+	}
+}
+
+// FirstGraphicalSessionUID returns the UID of the first active graphical
+// login session, if there is one.
+func FirstGraphicalSessionUID() (uint32, bool) {
+	sessions, err := activeGraphicalSessions()
+	if err != nil || len(sessions) == 0 {
+		return 0, false
+	}
+	return sessions[0].UID, true
+}
+
+// RunAsSessionUser runs name with args as the user who owns the active
+// graphical session with the given UID, with extraEnv added to the minimal
+// session environment, and returns the command's standard output.
+func RunAsSessionUser(uid uint32, extraEnv []string, name string, args ...string) (string, error) {
+	sessions, err := activeGraphicalSessions()
+	if err != nil {
+		return "", err
+	}
+	for _, s := range sessions {
+		if s.UID == uid {
+			return runAsUserOutputEnv(s, extraEnv, name, args...)
+		}
+	}
+	return "", fmt.Errorf("no active graphical session for UID %d", uid)
+}
+
 // runAsUserOutput is like runAsUser but returns the command's stdout.
 func runAsUserOutput(s session, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...) //nolint:gosec // G204: all call sites pass hardcoded binary names ("notify-send", etc.)
+	return runAsUserOutputEnv(s, nil, name, args...)
+}
+
+// runAsUserOutputEnv is runAsUserOutput with additional environment variables.
+func runAsUserOutputEnv(s session, extraEnv []string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...) //nolint:gosec // G204: all call sites pass hardcoded binary names ("notify-send", "kreadconfig6", etc.)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid: s.UID,
 			Gid: s.GID,
 		},
 	}
-	cmd.Env = []string{
+	cmd.Env = append([]string{
 		fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus", s.UID),
 		fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", s.UID),
 		"HOME=/home/" + s.User,
-	}
+	}, extraEnv...)
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
