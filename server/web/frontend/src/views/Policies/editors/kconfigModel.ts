@@ -3,39 +3,41 @@
 // Copyright (C) 2026 Bor contributors
 
 /**
- * KDE Plasma (Kconfig) policy model: the hand-written catalogue of Kiosk
- * settings, the KIO protocol and KCM module tables, and the pure content
- * helpers used by `KconfigPolicyEditor` and the settings summary.
- * (The Kconfig proto carries no UI annotations, so unlike the browser types
- * this catalogue is not generated.)
+ * KDE Plasma (Kconfig) policy content model: the JSON shape the editor
+ * writes (generic settings plus control-module and URL restrictions), the
+ * upgrade of content written by older editors, the INI preview and import,
+ * presets, and the KIO protocol and KCM module tables used by the special
+ * editors.
  *
- * Kiosk restriction booleans follow KDE's convention: `false` restricts.
- * Defs with `inverted: true` present that as a "Restricted / Allowed" switch
- * and store `false` when restricted, so the stored content stays what the
- * agent and KDE expect.
+ * Settings follow KDE's conventions as they are: Kiosk restriction keys
+ * store `false` to restrict, `[$i]` is the `immutable` flag, `[$e]` is
+ * `expand`, `[$d]` is `delete`.
  */
 
-export interface KConfigPolicyDef {
-  key: string;  // camelCase JSON field name (matches protojson output)
-  label: string;
-  group: string;
-  type: "boolean" | "string" | "select" | "int" | "color" | "url-restrictions" | "kcm-restrictions";
-  selectOptions?: string[];
-  defaultValue?: string;
-  /** KDE semantics: false restricts. Shown as a Restricted / Allowed switch. */
-  inverted?: boolean;
-  /** Switch labels for booleans. Defaults: inverted → Restricted / Allowed, else Enabled / Disabled. */
-  onLabel?: string;
-  offLabel?: string;
-  /** Where the agent writes the setting, as "file · [Group] · key". */
-  target?: string;
-  /** One or two sentences shown under the title. */
-  help?: string;
-  /** Setting with no effect on Plasma 5/6; the editor only offers to remove it. */
-  legacy?: boolean;
+import {
+  KCONFIG_VALUE_PLACEHOLDER,
+  findCatalogueEntry,
+  findCatalogueEntryByTarget,
+  groupPathLabel,
+  targetKey,
+  type KConfigCatalogueEntry,
+} from "./kconfigCatalogue";
+
+/* ── Content shape (camelCase protojson of KConfigPolicy) ── */
+
+export interface KConfigSettingJson {
+  file: string;
+  groupPath: string[];
+  key: string;
+  value?: string;
+  immutable?: boolean;
+  expand?: boolean;
+  delete?: boolean;
+  locale?: string;
+  catalogueId?: string;
 }
 
-/* ── URL Restriction rule model (KDE Kiosk) ── */
+export type KcmMode = "KCM_HIDE_LISTED" | "KCM_SHOW_ONLY_LISTED";
 
 export interface UrlRestrictionRule {
   action: "open" | "list" | "redirect";
@@ -48,142 +50,675 @@ export interface UrlRestrictionRule {
   enabled: boolean;
 }
 
-const ACTIONS = "kdeglobals · [KDE Action Restrictions]";
-const LOCKER = "kscreenlockerrc · [Daemon]";
+export interface KConfigContent {
+  settings: KConfigSettingJson[];
+  kcmRestrictions: string[];
+  kcmMode: KcmMode;
+  urlRestrictions: UrlRestrictionRule[];
+  fileImmutableKdeglobals: boolean;
+}
 
-export const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
-  // Session & shell
-  {
-    key: "shellAccess", label: "Restrict shell access", group: "Session & Shell", type: "boolean", inverted: true,
-    target: `${ACTIONS} · shell_access`,
-    help: "Removes terminal access and arbitrary command execution (KRunner, Dolphin's Open Terminal) and disables the user's autostart folder.",
-  },
-  {
-    key: "runCommand", label: "Restrict KRunner command execution", group: "Session & Shell", type: "boolean", inverted: true,
-    target: `${ACTIONS} · run_command, action/run_command`,
-    help: "Disables KRunner (Alt+F2 / Alt+Space) and hides the Run Command entry from the desktop menu.",
-  },
-  {
-    key: "actionLogout", label: "Restrict logout, shutdown and restart", group: "Session & Shell", type: "boolean", inverted: true,
-    target: `${ACTIONS} · logout, action/logout`,
-    help: "Removes the leave actions from the launcher and the desktop menu. Combine with Lock desktop layout for kiosk desktops.",
-  },
-  {
-    key: "plasmoidUnlockedDesktop", label: "Lock desktop layout", group: "Session & Shell", type: "boolean", inverted: true,
-    onLabel: "Locked", offLabel: "Unlocked",
-    target: `${ACTIONS} · plasma/plasmashell/unlockedDesktop`,
-    help: "Users cannot move, add or remove panels and widgets or edit launcher favourites (Plasma 5 and 6).",
-  },
-  {
-    key: "allowConfigureWhenLocked", label: "Restrict configuring widgets while locked (Plasma 5)", group: "Session & Shell", type: "boolean", inverted: true,
-    target: `${ACTIONS} · plasma/allow_configure_when_locked`,
-    help: "Documented Kiosk key for Plasma 5. Plasma 6 does not read it; use Lock desktop layout there.",
-  },
-  // Application menu actions
-  {
-    key: "actionFileNew", label: "Restrict File › New", group: "Application Menu Actions", type: "boolean", inverted: true,
-    target: `${ACTIONS} · action/file_new`, help: "Applies to every KDE application that uses the standard action.",
-  },
-  {
-    key: "actionFileOpen", label: "Restrict File › Open", group: "Application Menu Actions", type: "boolean", inverted: true,
-    target: `${ACTIONS} · action/file_open`, help: "Applies to every KDE application that uses the standard action.",
-  },
-  {
-    key: "actionFileSave", label: "Restrict File › Save", group: "Application Menu Actions", type: "boolean", inverted: true,
-    target: `${ACTIONS} · action/file_save`, help: "Applies to every KDE application that uses the standard action.",
-  },
-  // System Settings Restrictions
-  { key: "kcmRestrictions", label: "System Settings Modules", group: "System Settings Restrictions", type: "kcm-restrictions" },
-  // Window Manager
-  {
-    key: "borderlessMaximizedWindows", label: "Borderless maximized windows", group: "Window Manager", type: "boolean",
-    target: "kwinrc · [Windows] · BorderlessMaximizedWindows",
-  },
-  // Screen Lock
-  {
-    key: "autoLock", label: "Lock automatically after inactivity", group: "Screen Lock", type: "boolean",
-    target: `${LOCKER} · Autolock`,
-  },
-  {
-    key: "lockTimeout", label: "Inactivity timeout (minutes)", group: "Screen Lock", type: "int", defaultValue: "5",
-    target: `${LOCKER} · Timeout`, help: "Minutes of inactivity before the screen locks. KDE's default is 5.",
-  },
-  {
-    key: "lockGrace", label: "Grace period before a password is required (seconds)", group: "Screen Lock", type: "int", defaultValue: "5",
-    target: `${LOCKER} · LockGrace`, help: "Seconds after locking during which the screen unlocks without a password. 0 asks for the password immediately.",
-  },
-  {
-    key: "lockOnResume", label: "Lock on resume from sleep", group: "Screen Lock", type: "boolean",
-    target: `${LOCKER} · LockOnResume`,
-  },
-  {
-    key: "lockOnStart", label: "Lock the screen immediately at login", group: "Screen Lock", type: "boolean",
-    target: `${LOCKER} · LockOnStart`,
-  },
-  {
-    key: "lockScreenImage", label: "Lock screen wallpaper image path", group: "Screen Lock", type: "string",
-    target: "kscreenlockerrc · [Greeter][Wallpaper][org.kde.image][General] · Image",
-    help: "Absolute path readable by every user, for example /usr/share/backgrounds/corporate-lock.png. Cascades reliably from system configuration.",
-  },
-  // Appearance
-  { key: "iconTheme", label: "Icon theme", group: "Appearance", type: "string", target: "kdeglobals · [Icons] · Theme" },
-  {
-    key: "wallpaperPlugin", label: "Wallpaper plugin", group: "Appearance", type: "string", defaultValue: "org.kde.image",
-    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1] · wallpaperplugin",
-  },
-  {
-    key: "wallpaperImage", label: "Wallpaper image path", group: "Appearance", type: "string",
-    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1][Wallpaper][org.kde.image][General] · Image",
-    help: "Writes containment 1 of the desktop layout file, which does not match every desktop. Not reliable; prefer the lock screen wallpaper until the desktop layout feature ships.",
-  },
-  {
-    key: "wallpaperFillMode", label: "Wallpaper fill mode", group: "Appearance", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2",
-    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1][Wallpaper][org.kde.image][General] · FillMode",
-  },
-  {
-    key: "wallpaperColor", label: "Wallpaper background color", group: "Appearance", type: "color",
-    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1][Wallpaper][org.kde.image][General] · Color",
-  },
-  // Security
-  { key: "urlRestrictions", label: "URL Restrictions", group: "Security", type: "url-restrictions" },
-];
+export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
+  settings: [],
+  kcmRestrictions: [],
+  kcmMode: "KCM_HIDE_LISTED",
+  urlRestrictions: [],
+  fileImmutableKdeglobals: false,
+};
+
+/** Result of loading content: the normalised model plus what the upgrade did. */
+export interface KConfigLoadResult {
+  content: KConfigContent;
+  /** Typed fields from older content that became generic settings. */
+  convertedFields: string[];
+  /** Legacy resource-restriction fields that were dropped (no effect on Plasma 5/6). */
+  droppedFields: string[];
+  /** True when serialising `content` would differ from the input. */
+  changed: boolean;
+}
+
+/* ── Older typed content ── */
+
+type LegacyTarget =
+  | { catalogueId: string; kind: "bool" | "int" | "string" }
+  | { file: string; groupPath: string[]; key: string; kind: "bool" | "int" | "string" };
+
+const APPLETS_RC = "plasma-org.kde.plasma.desktop-appletsrc";
+
+/** Typed fields older editors wrote, and where they live now. */
+const LEGACY_TYPED_FIELDS: Record<string, LegacyTarget> = {
+  shellAccess: { catalogueId: "kiosk.shell_access", kind: "bool" },
+  runCommand: { catalogueId: "kiosk.run_command", kind: "bool" },
+  actionLogout: { catalogueId: "kiosk.logout", kind: "bool" },
+  actionFileNew: { catalogueId: "kiosk.action.file_new", kind: "bool" },
+  actionFileOpen: { catalogueId: "kiosk.action.file_open", kind: "bool" },
+  actionFileSave: { catalogueId: "kiosk.action.file_save", kind: "bool" },
+  plasmoidUnlockedDesktop: { catalogueId: "kiosk.plasma_unlocked_desktop", kind: "bool" },
+  allowConfigureWhenLocked: { catalogueId: "kiosk.plasma_allow_configure_when_locked", kind: "bool" },
+  borderlessMaximizedWindows: { catalogueId: "kwin.BorderlessMaximizedWindows", kind: "bool" },
+  autoLock: { catalogueId: "screenlocker.Autolock", kind: "bool" },
+  lockOnResume: { catalogueId: "screenlocker.LockOnResume", kind: "bool" },
+  lockOnStart: { catalogueId: "screenlocker.LockOnStart", kind: "bool" },
+  lockTimeout: { catalogueId: "screenlocker.Timeout", kind: "int" },
+  lockGrace: { catalogueId: "screenlocker.LockGrace", kind: "int" },
+  lockScreenImage: { catalogueId: "screenlocker.Greeter.Image", kind: "string" },
+  iconTheme: { catalogueId: "kde.IconTheme", kind: "string" },
+  wallpaperPlugin: { file: APPLETS_RC, groupPath: ["Containments", "1"], key: "wallpaperplugin", kind: "string" },
+  wallpaperImage: { file: APPLETS_RC, groupPath: ["Containments", "1", "Wallpaper", "org.kde.image", "General"], key: "Image", kind: "string" },
+  wallpaperFillMode: { file: APPLETS_RC, groupPath: ["Containments", "1", "Wallpaper", "org.kde.image", "General"], key: "FillMode", kind: "string" },
+  wallpaperColor: { file: APPLETS_RC, groupPath: ["Containments", "1", "Wallpaper", "org.kde.image", "General"], key: "Color", kind: "string" },
+};
+
+/** Legacy [KDE Resource Restrictions] fields: KDE Plasma 5 and 6 never read them. */
+const LEGACY_DROPPED_FIELDS = ["restrictWallpaper", "restrictIcons", "restrictAutostart", "restrictColors", "restrictCursors"];
+
+function asString(v: unknown): string {
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (v === null || v === undefined) return "";
+  return String(v);
+}
+
+function normaliseSetting(raw: Record<string, unknown>): KConfigSettingJson | null {
+  const file = asString(raw.file);
+  const key = asString(raw.key);
+  const groupPath = Array.isArray(raw.groupPath) ? (raw.groupPath as unknown[]).map(asString) : [];
+  if (!file || !key) return null;
+  const s: KConfigSettingJson = { file, groupPath, key };
+  if (raw.value !== undefined && raw.value !== null) s.value = asString(raw.value);
+  if (raw.immutable === true) s.immutable = true;
+  if (raw.expand === true) s.expand = true;
+  if (raw.delete === true) s.delete = true;
+  if (typeof raw.locale === "string" && raw.locale) s.locale = raw.locale;
+  if (typeof raw.catalogueId === "string" && raw.catalogueId) s.catalogueId = raw.catalogueId;
+  return s;
+}
+
+/** Identity of a setting: file, group path, key and locale. */
+export function settingKey(s: Pick<KConfigSettingJson, "file" | "groupPath" | "key" | "locale">): string {
+  return targetKey(s.file, s.groupPath, s.key) + "\u0000" + (s.locale ?? "");
+}
+
+function dedupeSettings(settings: KConfigSettingJson[]): KConfigSettingJson[] {
+  const seen = new Set<string>();
+  const out: KConfigSettingJson[] = [];
+  for (const s of settings) {
+    const k = settingKey(s);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+  }
+  return out;
+}
 
 /**
- * Settings older policies may still contain. KDE dropped
- * [KDE Resource Restrictions] with Plasma 5 (it was a KDE 4 KStandardDirs
- * feature), so the agent ignores them; the editor only offers removal.
+ * Parses policy content. Content written by older editors (typed fields
+ * plus `enforcedFields`) is converted into generic settings; the legacy
+ * resource restrictions are dropped and reported.
  */
-const LEGACY_GROUP = "Legacy (no effect)";
-const LEGACY_HELP =
-  "KDE Plasma 5 and 6 do not read [KDE Resource Restrictions]; the agent ignores this setting and it should be removed from the policy. To stop wallpaper or theme changes, enforce the Appearance settings or lock the desktop layout instead.";
+export function parseKConfigContent(raw: string): KConfigLoadResult {
+  let parsed: Record<string, unknown> = {};
+  try {
+    const p = JSON.parse(raw || "{}");
+    if (p && typeof p === "object" && !Array.isArray(p)) parsed = p as Record<string, unknown>;
+  } catch {
+    /* treat unparsable content as empty */
+  }
 
-export const KCONFIG_LEGACY_POLICIES: KConfigPolicyDef[] = [
-  { key: "restrictWallpaper", label: "Wallpaper Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
-  { key: "restrictIcons", label: "Icon Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
-  { key: "restrictAutostart", label: "Autostart Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
-  { key: "restrictColors", label: "Color Scheme Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
-  { key: "restrictCursors", label: "Cursor Theme Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
+  const settings: KConfigSettingJson[] = [];
+  if (Array.isArray(parsed.settings)) {
+    for (const s of parsed.settings as unknown[]) {
+      if (s && typeof s === "object") {
+        const n = normaliseSetting(s as Record<string, unknown>);
+        if (n) settings.push(n);
+      }
+    }
+  }
+
+  const enforcedFields = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as unknown[]).map(asString) : [];
+  const convertedFields: string[] = [];
+  const droppedFields: string[] = [];
+
+  for (const [field, target] of Object.entries(LEGACY_TYPED_FIELDS)) {
+    if (!(field in parsed) || parsed[field] === null || parsed[field] === undefined) continue;
+    const value = asString(parsed[field]);
+    const immutable = enforcedFields.includes(field);
+    if ("catalogueId" in target) {
+      const entry = findCatalogueEntry(target.catalogueId);
+      if (entry) {
+        settings.push(...settingsForEntry(entry, value, immutable));
+        convertedFields.push(field);
+        continue;
+      }
+    }
+    if ("file" in target) {
+      settings.push({ file: target.file, groupPath: target.groupPath, key: target.key, value, ...(immutable ? { immutable: true } : {}) });
+      convertedFields.push(field);
+    }
+  }
+  for (const field of LEGACY_DROPPED_FIELDS) {
+    if (field in parsed && parsed[field] !== null && parsed[field] !== undefined) droppedFields.push(field);
+  }
+
+  const content: KConfigContent = {
+    settings: dedupeSettings(settings),
+    kcmRestrictions: Array.isArray(parsed.kcmRestrictions) ? (parsed.kcmRestrictions as unknown[]).map(asString).filter(Boolean) : [],
+    kcmMode: parsed.kcmMode === "KCM_SHOW_ONLY_LISTED" || parsed.kcmMode === 1 ? "KCM_SHOW_ONLY_LISTED" : "KCM_HIDE_LISTED",
+    urlRestrictions: parseUrlRestrictionRules(raw),
+    fileImmutableKdeglobals: parsed.fileImmutableKdeglobals === true,
+  };
+
+  const changed = convertedFields.length > 0 || droppedFields.length > 0 || "enforcedFields" in parsed;
+  return { content, convertedFields, droppedFields, changed };
+}
+
+/** Serialises the model to the JSON the server stores (only what is set). */
+export function serializeKConfigContent(c: KConfigContent): string {
+  const out: Record<string, unknown> = {};
+  if (c.settings.length > 0) {
+    out.settings = c.settings.map((s) => {
+      const o: Record<string, unknown> = { file: s.file, groupPath: s.groupPath, key: s.key };
+      if (s.delete) o.delete = true;
+      else o.value = s.value ?? "";
+      if (s.immutable) o.immutable = true;
+      if (s.expand) o.expand = true;
+      if (s.locale) o.locale = s.locale;
+      if (s.catalogueId) o.catalogueId = s.catalogueId;
+      return o;
+    });
+  }
+  if (c.kcmRestrictions.length > 0) out.kcmRestrictions = c.kcmRestrictions;
+  if (c.kcmMode === "KCM_SHOW_ONLY_LISTED") out.kcmMode = c.kcmMode;
+  if (c.urlRestrictions.length > 0) {
+    out.urlRestrictions = c.urlRestrictions.map((r) => ({
+      action: r.action,
+      referrerProtocol: r.referrerProtocol,
+      referrerHost: r.referrerHost,
+      referrerPath: r.referrerPath,
+      protocol: r.protocol,
+      host: r.host,
+      path: r.path,
+      enabled: r.enabled,
+    }));
+  }
+  if (c.fileImmutableKdeglobals) out.fileImmutableKdeglobals = true;
+  return JSON.stringify(out, null, 2);
+}
+
+export function hasAnyKConfigContent(c: KConfigContent): boolean {
+  return c.settings.length > 0 || c.kcmRestrictions.length > 0 || c.urlRestrictions.length > 0 || c.fileImmutableKdeglobals;
+}
+
+/* ── Catalogue-backed settings ── */
+
+/** The main setting plus the entry's extra writes, all tagged with the entry id. */
+export function settingsForEntry(entry: KConfigCatalogueEntry, value: string, immutable: boolean, expand = false): KConfigSettingJson[] {
+  const main: KConfigSettingJson = { file: entry.file, groupPath: entry.groupPath, key: entry.key, value, catalogueId: entry.id };
+  if (immutable) main.immutable = true;
+  if (expand) main.expand = true;
+  const extras = (entry.extraWrites ?? []).map((w) => {
+    const s: KConfigSettingJson = {
+      file: w.file,
+      groupPath: w.groupPath,
+      key: w.key,
+      value: w.value === KCONFIG_VALUE_PLACEHOLDER ? value : w.value,
+      catalogueId: entry.id,
+    };
+    if (w.immutable || immutable) s.immutable = true;
+    if (w.expand) s.expand = true;
+    if (w.delete) s.delete = true;
+    if (w.locale) s.locale = w.locale;
+    return s;
+  });
+  return [main, ...extras];
+}
+
+/** The main setting of a catalogue entry in the content, if configured. */
+export function findEntrySetting(c: KConfigContent, entry: KConfigCatalogueEntry): KConfigSettingJson | undefined {
+  const k = targetKey(entry.file, entry.groupPath, entry.key);
+  return c.settings.find((s) => targetKey(s.file, s.groupPath, s.key) === k && !s.locale);
+}
+
+export function upsertEntry(c: KConfigContent, entry: KConfigCatalogueEntry, value: string, immutable: boolean, expand = false): KConfigContent {
+  const fresh = settingsForEntry(entry, value, immutable, expand);
+  const freshKeys = new Set(fresh.map(settingKey));
+  const kept = c.settings.filter((s) => s.catalogueId !== entry.id && !freshKeys.has(settingKey(s)));
+  return { ...c, settings: [...kept, ...fresh] };
+}
+
+export function removeEntry(c: KConfigContent, entry: KConfigCatalogueEntry): KConfigContent {
+  const mainKey = targetKey(entry.file, entry.groupPath, entry.key);
+  return {
+    ...c,
+    settings: c.settings.filter((s) => s.catalogueId !== entry.id && targetKey(s.file, s.groupPath, s.key) !== mainKey),
+  };
+}
+
+/** Catalogue entry a setting belongs to: by id, else by its target. */
+export function catalogueEntryForSetting(s: KConfigSettingJson): KConfigCatalogueEntry | undefined {
+  return (s.catalogueId ? findCatalogueEntry(s.catalogueId) : undefined) ?? findCatalogueEntryByTarget(s.file, s.groupPath, s.key);
+}
+
+/** Settings the catalogue does not describe (shown under "Custom entries"). */
+export function customSettings(c: KConfigContent): KConfigSettingJson[] {
+  return c.settings.filter((s) => catalogueEntryForSetting(s) === undefined);
+}
+
+/** True for settings that only exist as another entry's extra write. */
+export function isExtraWrite(s: KConfigSettingJson): boolean {
+  const entry = s.catalogueId ? findCatalogueEntry(s.catalogueId) : undefined;
+  return entry !== undefined && targetKey(entry.file, entry.groupPath, entry.key) !== targetKey(s.file, s.groupPath, s.key);
+}
+
+export function upsertCustomSetting(c: KConfigContent, setting: KConfigSettingJson, replaceKey?: string): KConfigContent {
+  const k = settingKey(setting);
+  const kept = c.settings.filter((s) => settingKey(s) !== k && (replaceKey === undefined || settingKey(s) !== replaceKey));
+  return { ...c, settings: [...kept, setting] };
+}
+
+export function removeSettingByKey(c: KConfigContent, key: string): KConfigContent {
+  return { ...c, settings: c.settings.filter((s) => settingKey(s) !== key) };
+}
+
+/* ── Presets ── */
+
+export interface KConfigPresetSetting {
+  id: string;
+  value: string;
+  immutable: boolean;
+}
+
+export interface KConfigPreset {
+  id: string;
+  label: string;
+  description: string;
+  settings: KConfigPresetSetting[];
+  kcmRestrictions?: string[];
+}
+
+const SHARED_LAB_SETTINGS: KConfigPresetSetting[] = [
+  { id: "kiosk.shell_access", value: "false", immutable: true },
+  { id: "kiosk.run_command", value: "false", immutable: true },
+  { id: "kiosk.plasma_unlocked_desktop", value: "false", immutable: true },
+  { id: "kiosk.plasma_scripting_console", value: "false", immutable: true },
+  { id: "kiosk.lineedit_text_completion", value: "false", immutable: true },
+  { id: "ksmserver.loginMode", value: "emptySession", immutable: true },
+  { id: "ksmserver.confirmLogout", value: "false", immutable: true },
+  { id: "krunner.historyBehavior", value: "Disabled", immutable: true },
+  { id: "dolphin.RememberOpenedTabs", value: "false", immutable: true },
+  { id: "activity.what-to-remember", value: "2", immutable: true },
+  { id: "klipper.KeepClipboardContents", value: "false", immutable: true },
+  { id: "screenlocker.Autolock", value: "true", immutable: true },
+  { id: "screenlocker.Timeout", value: "10", immutable: true },
+  { id: "screenlocker.LockGrace", value: "0", immutable: true },
+  { id: "screenlocker.LockOnResume", value: "true", immutable: true },
 ];
 
-/** Looks a def up by its content key, including legacy defs. */
-export function findKConfigDef(key: string): KConfigPolicyDef | undefined {
-  return KCONFIG_ALL_POLICIES.find((p) => p.key === key) ?? KCONFIG_LEGACY_POLICIES.find((p) => p.key === key);
-}
+export const KCONFIG_PRESETS: KConfigPreset[] = [
+  {
+    id: "security-baseline",
+    label: "Security baseline",
+    description: "Screen lock with timeout and lock on resume, no automatic mounting of removable media, RDP server off, password reveal and store downloads restricted, wallet closes when idle, X11 keystroke snooping off.",
+    settings: [
+      { id: "screenlocker.Autolock", value: "true", immutable: true },
+      { id: "screenlocker.Timeout", value: "10", immutable: true },
+      { id: "screenlocker.LockGrace", value: "5", immutable: true },
+      { id: "screenlocker.LockOnResume", value: "true", immutable: true },
+      { id: "screenlocker.RequirePassword", value: "true", immutable: true },
+      { id: "automount.AutomountEnabled", value: "false", immutable: true },
+      { id: "automount.AutomountOnLogin", value: "false", immutable: true },
+      { id: "automount.AutomountOnPlugin", value: "false", immutable: true },
+      { id: "automount.AutomountUnknownDevices", value: "false", immutable: true },
+      { id: "krdp.Autostart", value: "false", immutable: true },
+      { id: "kiosk.lineedit_reveal_password", value: "false", immutable: true },
+      { id: "kiosk.ghns", value: "false", immutable: true },
+      { id: "kwallet.CloseWhenIdle", value: "true", immutable: true },
+      { id: "kwallet.IdleTimeout", value: "10", immutable: true },
+      { id: "kwin.XwaylandEavesdrops", value: "None", immutable: true },
+    ],
+    kcmRestrictions: ["kcm_krdpserver", "kcm_device_automounter"],
+  },
+  {
+    id: "shared-lab",
+    label: "Shared lab workstation",
+    description: "No shell or KRunner commands, locked desktop layout, clean session at every login, no history of searches, documents or clipboard, screen lock after 10 minutes, administrative System Settings pages hidden.",
+    settings: SHARED_LAB_SETTINGS,
+    kcmRestrictions: ["kcm_autostart", "kcm_kded", "kcm_cron", "kcm_krdpserver", "kcm_kaccounts", "kcm_device_automounter"],
+  },
+  {
+    id: "public-kiosk",
+    label: "Public kiosk",
+    description: "Everything in the shared lab preset plus no logout, lock, user switching or new sessions, locked toolbars, no application configuration dialogs, no untrusted launchers and no Open With.",
+    settings: [
+      ...SHARED_LAB_SETTINGS,
+      { id: "kiosk.logout", value: "false", immutable: true },
+      { id: "kiosk.lock_screen", value: "false", immutable: true },
+      { id: "kiosk.switch_user", value: "false", immutable: true },
+      { id: "kiosk.start_new_session", value: "false", immutable: true },
+      { id: "kiosk.movable_toolbars", value: "false", immutable: true },
+      { id: "kiosk.run_desktop_files", value: "false", immutable: true },
+      { id: "kiosk.open_with", value: "false", immutable: true },
+      { id: "kiosk.editfiletype", value: "false", immutable: true },
+      { id: "kiosk.ghns", value: "false", immutable: true },
+      { id: "kiosk.action.options_configure", value: "false", immutable: true },
+      { id: "kiosk.action.options_configure_keybinding", value: "false", immutable: true },
+      { id: "kiosk.action.options_configure_toolbars", value: "false", immutable: true },
+      { id: "kiosk.action.help_report_bug", value: "false", immutable: true },
+    ],
+    kcmRestrictions: ["kcm_autostart", "kcm_kded", "kcm_cron", "kcm_krdpserver", "kcm_kaccounts", "kcm_device_automounter"],
+  },
+  {
+    id: "branding",
+    label: "Branding defaults",
+    description: "Global theme, colour scheme, icon theme and Plasma style as defaults users may still change, with the splash screen disabled. Edit the values to match your corporate theme.",
+    settings: [
+      { id: "kde.LookAndFeelPackage", value: "org.kde.breeze.desktop", immutable: false },
+      { id: "kde.ColorScheme", value: "BreezeLight", immutable: false },
+      { id: "kde.IconTheme", value: "breeze", immutable: false },
+      { id: "plasma.Theme", value: "default", immutable: false },
+      { id: "ksplash.Theme", value: "None", immutable: false },
+      { id: "ksplash.Engine", value: "none", immutable: false },
+    ],
+  },
+];
 
-/** Value a freshly selected setting previews with: restrictions start restricted. */
-export function defaultKConfigValue(def: KConfigPolicyDef): string {
-  if (def.type === "boolean") return def.inverted ? "false" : "true";
-  if (def.defaultValue !== undefined) return def.defaultValue;
-  return def.type === "int" ? "0" : "";
-}
-
-/** Human-readable state of a boolean setting's stored value. */
-export function kconfigBoolDisplay(def: KConfigPolicyDef, value: string): string {
-  if (def.inverted) {
-    return value === "false" ? (def.onLabel ?? "Restricted") : (def.offLabel ?? "Allowed");
+/** Adds a preset's settings that are not configured yet; existing values stay. */
+export function applyKConfigPreset(c: KConfigContent, preset: KConfigPreset): { content: KConfigContent; added: number } {
+  let next = c;
+  let added = 0;
+  for (const p of preset.settings) {
+    const entry = findCatalogueEntry(p.id);
+    if (!entry || findEntrySetting(next, entry)) continue;
+    next = upsertEntry(next, entry, p.value, p.immutable);
+    added++;
   }
-  return value === "true" ? (def.onLabel ?? "Enabled") : (def.offLabel ?? "Disabled");
+  if (preset.kcmRestrictions) {
+    const missing = preset.kcmRestrictions.filter((m) => !next.kcmRestrictions.includes(m));
+    if (missing.length > 0) {
+      next = { ...next, kcmRestrictions: [...next.kcmRestrictions, ...missing] };
+      added += missing.length;
+    }
+  }
+  return { content: next, added };
 }
+
+/* ── INI preview (mirrors the agent's renderer) ── */
+
+interface PreviewEntry {
+  key: string;
+  value: string;
+  immutable: boolean;
+  expand: boolean;
+  del: boolean;
+  locale: string;
+}
+
+function renderKey(e: PreviewEntry, groupImmutable: boolean): string {
+  let k = e.key;
+  if (e.locale) k += `[${e.locale}]`;
+  let flags = "";
+  if (e.immutable && !groupImmutable) flags += "i";
+  if (e.expand) flags += "e";
+  if (e.del) flags += "d";
+  if (flags) k += `[$${flags}]`;
+  return k;
+}
+
+/** The files the agent would write for this policy alone, rendered like the agent does. */
+export function renderKConfigPreview(c: KConfigContent): { file: string; content: string; note?: string }[] {
+  const files = new Map<string, Map<string, PreviewEntry[]>>();
+  const add = (file: string, group: string, e: PreviewEntry) => {
+    let groups = files.get(file);
+    if (!groups) {
+      groups = new Map();
+      files.set(file, groups);
+    }
+    const arr = groups.get(group) ?? [];
+    arr.push(e);
+    groups.set(group, arr);
+  };
+
+  for (const s of c.settings) {
+    add(s.file, s.groupPath.join("]["), {
+      key: s.key,
+      value: s.value ?? "",
+      immutable: s.immutable === true,
+      expand: s.expand === true,
+      del: s.delete === true,
+      locale: s.locale ?? "",
+    });
+  }
+  c.urlRestrictions.forEach((r, i) => {
+    const value = [r.action, r.referrerProtocol, r.referrerHost, r.referrerPath, r.protocol, r.host, r.path, r.enabled ? "true" : "false"].join(",");
+    add("kdeglobals", "KDE URL Restrictions", { key: `rule_${i + 1}`, value, immutable: true, expand: false, del: false, locale: "" });
+  });
+  if (c.urlRestrictions.length > 0) {
+    add("kdeglobals", "KDE URL Restrictions", { key: "rule_count", value: String(c.urlRestrictions.length), immutable: true, expand: false, del: false, locale: "" });
+  }
+  for (const mod of c.kcmRestrictions) {
+    add("kdeglobals", "KDE Control Module Restrictions", {
+      key: mod,
+      value: c.kcmMode === "KCM_SHOW_ONLY_LISTED" ? "true" : "false",
+      immutable: true,
+      expand: false,
+      del: false,
+      locale: "",
+    });
+  }
+  if (c.fileImmutableKdeglobals && !files.has("kdeglobals")) files.set("kdeglobals", new Map());
+
+  const out: { file: string; content: string; note?: string }[] = [];
+  for (const file of Array.from(files.keys()).sort()) {
+    const groups = files.get(file)!;
+    const lines: string[] = [];
+    if (file === "kdeglobals" && c.fileImmutableKdeglobals) lines.push("[$i]", "");
+    const groupNames = Array.from(groups.keys()).sort();
+    groupNames.forEach((group, gi) => {
+      const entries = [...groups.get(group)!].sort((a, b) => (a.key === b.key ? a.locale.localeCompare(b.locale) : a.key < b.key ? -1 : 1));
+      const allImmutable = entries.length > 0 && entries.every((e) => e.immutable);
+      if (gi > 0) lines.push("");
+      lines.push(`[${group}]${allImmutable ? "[$i]" : ""}`);
+      for (const e of entries) {
+        const k = renderKey(e, allImmutable);
+        lines.push(e.del ? k : `${k}=${e.value}`);
+      }
+    });
+    const note =
+      file === "kdeglobals" && c.kcmMode === "KCM_SHOW_ONLY_LISTED" && c.kcmRestrictions.length > 0
+        ? "Show-only mode: every other module installed on a node is written as hidden there; only the listed modules are shown here."
+        : undefined;
+    out.push({ file, content: lines.join("\n") + "\n", note });
+  }
+  return out;
+}
+
+/* ── INI import ── */
+
+export interface KConfigImportResult {
+  content: KConfigContent;
+  imported: number;
+  warnings: string[];
+}
+
+/**
+ * Parses KConfig INI text and merges it into the content as settings for
+ * `file`. Known restriction groups go to the URL / module lists; keys the
+ * catalogue knows are tagged with their entry.
+ */
+export function importKConfigIni(c: KConfigContent, file: string, ini: string): KConfigImportResult {
+  const warnings: string[] = [];
+  let next: KConfigContent = { ...c, settings: [...c.settings], kcmRestrictions: [...c.kcmRestrictions], urlRestrictions: [...c.urlRestrictions] };
+  let imported = 0;
+  let groupPath: string[] = [];
+  let groupImmutable = false;
+
+  const lines = ini.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+
+    if (line.startsWith("[")) {
+      if (line === "[$i]") {
+        if (file === "kdeglobals") next = { ...next, fileImmutableKdeglobals: true };
+        else warnings.push(`line ${i + 1}: file-level [$i] is only supported for kdeglobals`);
+        continue;
+      }
+      const parts = Array.from(line.matchAll(/\[([^\]]*)\]/g)).map((m) => m[1]);
+      groupImmutable = parts.length > 0 && parts[parts.length - 1] === "$i";
+      groupPath = groupImmutable ? parts.slice(0, -1) : parts;
+      if (groupPath.length === 0) warnings.push(`line ${i + 1}: empty group header`);
+      continue;
+    }
+
+    if (groupPath.length === 0) {
+      warnings.push(`line ${i + 1}: key before any group header was skipped`);
+      continue;
+    }
+
+    const eq = line.indexOf("=");
+    const left = (eq >= 0 ? line.slice(0, eq) : line).trim();
+    const value = eq >= 0 ? line.slice(eq + 1) : "";
+    const m = /^([^[]+)((?:\[[^\]]*\])*)$/.exec(left);
+    if (!m) {
+      warnings.push(`line ${i + 1}: could not parse "${line}"`);
+      continue;
+    }
+    const key = m[1].trim();
+    let immutable = groupImmutable;
+    let expand = false;
+    let del = false;
+    let locale = "";
+    for (const mark of Array.from(m[2].matchAll(/\[([^\]]*)\]/g)).map((x) => x[1])) {
+      if (mark.startsWith("$")) {
+        if (mark.includes("i")) immutable = true;
+        if (mark.includes("e")) expand = true;
+        if (mark.includes("d")) del = true;
+      } else {
+        locale = mark;
+      }
+    }
+
+    const group = groupPath.join("][");
+    if (file === "kdeglobals" && group === "KDE URL Restrictions") {
+      if (key === "rule_count") continue;
+      const fields = value.split(",");
+      if (fields.length !== 8 || !["open", "list", "redirect"].includes(fields[0])) {
+        warnings.push(`line ${i + 1}: URL rule "${key}" does not have 8 fields and was skipped`);
+        continue;
+      }
+      next.urlRestrictions.push({
+        action: fields[0] as UrlRestrictionRule["action"],
+        referrerProtocol: fields[1],
+        referrerHost: fields[2],
+        referrerPath: fields[3],
+        protocol: fields[4],
+        host: fields[5],
+        path: fields[6],
+        enabled: fields[7].trim().toLowerCase() === "true",
+      });
+      imported++;
+      continue;
+    }
+    if (file === "kdeglobals" && group === "KDE Control Module Restrictions") {
+      if (value.trim() === "false" && !next.kcmRestrictions.includes(key)) {
+        next.kcmRestrictions.push(key);
+        imported++;
+      }
+      continue;
+    }
+
+    const setting: KConfigSettingJson = { file, groupPath: [...groupPath], key };
+    if (del) setting.delete = true;
+    else setting.value = value;
+    if (immutable) setting.immutable = true;
+    if (expand) setting.expand = true;
+    if (locale) setting.locale = locale;
+    const entry = findCatalogueEntryByTarget(file, groupPath, key);
+    if (entry) setting.catalogueId = entry.id;
+    next = upsertCustomSetting(next, setting);
+    imported++;
+  }
+
+  return { content: next, imported, warnings };
+}
+
+/** Parses "[Containments][1]" or "Containments/1" into a group path. */
+export function parseGroupPathInput(text: string): string[] {
+  const t = text.trim();
+  if (!t) return [];
+  if (t.startsWith("[")) return Array.from(t.matchAll(/\[([^\]]*)\]/g)).map((m) => m[1]).filter(Boolean);
+  return t.split("/").map((p) => p.trim()).filter(Boolean);
+}
+
+/** "[A][B]" for display. */
+export const groupPathText = groupPathLabel;
+
+/* ── URL restriction helpers ── */
+
+export function parseUrlRestrictionRules(content: string): UrlRestrictionRule[] {
+  try {
+    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
+    if (!Array.isArray(parsed.urlRestrictions)) return [];
+    return (parsed.urlRestrictions as Record<string, unknown>[]).map((r) => ({
+      action: (r.action as UrlRestrictionRule["action"]) || "open",
+      referrerProtocol: (r.referrerProtocol as string) || "",
+      referrerHost: (r.referrerHost as string) || "",
+      referrerPath: (r.referrerPath as string) || "",
+      protocol: (r.protocol as string) || "",
+      host: (r.host as string) || "",
+      path: (r.path as string) || "",
+      enabled: r.enabled === true,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export const DEFAULT_URL_RULE: UrlRestrictionRule = {
+  action: "open",
+  referrerProtocol: "",
+  referrerHost: "",
+  referrerPath: "",
+  protocol: "",
+  host: "",
+  path: "",
+  enabled: true,
+};
+
+export interface UrlRulePreset {
+  id: string;
+  label: string;
+  description: string;
+  rules: UrlRestrictionRule[];
+}
+
+const rule = (action: UrlRestrictionRule["action"], protocol: string, path: string, enabled: boolean): UrlRestrictionRule => ({
+  ...DEFAULT_URL_RULE,
+  action,
+  protocol,
+  path,
+  enabled,
+});
+
+export const URL_RULE_PRESETS: UrlRulePreset[] = [
+  {
+    id: "home-only",
+    label: "Home and temp folders only",
+    description: "KDE applications can open and list files only below the user's home directory and the temp directory.",
+    rules: [rule("open", "file", "", false), rule("list", "file", "", false), rule("open", "file", "$HOME", true), rule("list", "file", "$HOME", true), rule("open", "file", "$TMP", true), rule("list", "file", "$TMP", true)],
+  },
+  {
+    id: "no-smb",
+    label: "No Windows shares",
+    description: "Browsing and opening smb:// locations is denied.",
+    rules: [rule("list", "smb", "", false), rule("open", "smb", "", false)],
+  },
+  {
+    id: "no-remote-fs",
+    label: "No FTP, SFTP or FISH",
+    description: "Remote file access through ftp://, sftp:// and fish:// is denied.",
+    rules: [rule("open", "ftp", "", false), rule("list", "ftp", "", false), rule("open", "sftp", "", false), rule("list", "sftp", "", false), rule("open", "fish", "", false), rule("list", "fish", "", false)],
+  },
+];
 
 // KIO protocols available for URL restriction rules.
 export const KIO_PROTOCOLS = [
@@ -302,9 +837,9 @@ export const KCM_MODULES: { id: string; label: string }[] = [
 
 // Convert KDE "R,G,B" color string to hex "#rrggbb".
 export function rgbToHex(rgb: string): string {
-  const parts = rgb.split(",").map(s => parseInt(s.trim(), 10));
-  if (parts.length !== 3 || parts.some(isNaN)) return "#000000";
-  return "#" + parts.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+  const parts = rgb.split(",").map((s) => parseInt(s.trim(), 10));
+  if (parts.length < 3 || parts.slice(0, 3).some(isNaN)) return "#000000";
+  return "#" + parts.slice(0, 3).map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
 }
 
 // Convert hex "#rrggbb" to KDE "R,G,B" color string.
@@ -315,178 +850,4 @@ export function hexToRgb(hex: string): string {
   const g = parseInt(m.substring(2, 4), 16);
   const b = parseInt(m.substring(4, 6), 16);
   return `${r},${g},${b}`;
-}
-
-// FillMode display labels for the select dropdown.
-export const FILL_MODE_LABELS: Record<string, string> = {
-  "0": "0 — Stretch",
-  "1": "1 — Preserve Aspect Fit",
-  "2": "2 — Preserve Aspect Crop",
-  "3": "3 — Tile",
-  "6": "6 — Pad",
-};
-
-/**
- * Tree groups for the editor: every current setting, plus the legacy group
- * when the policy content still carries a legacy key (so it can be removed).
- */
-export function buildKConfigTree(configuredKeys: string[] = []): Map<string, KConfigPolicyDef[]> {
-  const groups = new Map<string, KConfigPolicyDef[]>();
-  for (const p of KCONFIG_ALL_POLICIES) {
-    const arr = groups.get(p.group) || [];
-    arr.push(p);
-    groups.set(p.group, arr);
-  }
-  const legacy = KCONFIG_LEGACY_POLICIES.filter((p) => configuredKeys.includes(p.key));
-  if (legacy.length > 0) groups.set(LEGACY_GROUP, legacy);
-  return groups;
-}
-
-// Detect which KConfig policy def keys are configured in the content JSON.
-// Returns the camelCase JSON key for each present field.
-export function detectKConfigConfiguredKeys(content: string): string[] {
-  try {
-    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
-    const result: string[] = [];
-    for (const def of [...KCONFIG_ALL_POLICIES, ...KCONFIG_LEGACY_POLICIES]) {
-      if (def.type === "url-restrictions") {
-        if (Array.isArray(parsed.urlRestrictions) && (parsed.urlRestrictions as unknown[]).length > 0) {
-          result.push("urlRestrictions");
-        }
-        continue;
-      }
-      if (def.type === "kcm-restrictions") {
-        if (Array.isArray(parsed.kcmRestrictions) && (parsed.kcmRestrictions as unknown[]).length > 0) {
-          result.push("kcmRestrictions");
-        }
-        continue;
-      }
-      if (def.key in parsed && parsed[def.key] !== null && parsed[def.key] !== undefined) {
-        result.push(def.key);
-      }
-    }
-    return result;
-  } catch { return []; }
-}
-
-// Extract the value + enforced state for a KConfig policy by its camelCase key.
-// Returns the value as a string (booleans → "true"/"false", numbers → string).
-export function extractKConfigEntry(content: string, defKey: string): { value: string; enforced: boolean } | undefined {
-  try {
-    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
-    if (!(defKey in parsed) || parsed[defKey] === null || parsed[defKey] === undefined) return undefined;
-    const rawVal = parsed[defKey];
-    const value = typeof rawVal === "boolean" ? (rawVal ? "true" : "false") : String(rawVal);
-    const enforced = Array.isArray(parsed.enforcedFields) && (parsed.enforcedFields as string[]).includes(defKey);
-    return { value, enforced };
-  } catch { return undefined; }
-}
-
-// Build KConfig content JSON by setting/updating a single field.
-// Booleans and ints are stored as their native JSON types; strings as strings.
-export function buildKConfigContent(policyDef: KConfigPolicyDef, value: string, enforced: boolean, existingContent?: string): string {
-  const parsed: Record<string, unknown> = {};
-  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
-
-  if (policyDef.type === "boolean") {
-    parsed[policyDef.key] = value === "true";
-  } else if (policyDef.type === "int") {
-    const n = parseInt(value, 10);
-    parsed[policyDef.key] = isNaN(n) ? 0 : n;
-  } else {
-    parsed[policyDef.key] = value;
-  }
-
-  let enforcedFields: string[] = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as string[]) : [];
-  if (enforced) {
-    if (!enforcedFields.includes(policyDef.key)) enforcedFields = [...enforcedFields, policyDef.key];
-  } else {
-    enforcedFields = enforcedFields.filter(f => f !== policyDef.key);
-  }
-  if (enforcedFields.length > 0) {
-    parsed.enforcedFields = enforcedFields;
-  } else {
-    delete parsed.enforcedFields;
-  }
-
-  return JSON.stringify(parsed, null, 2);
-}
-
-// Remove a KConfig field from the content JSON by its camelCase key.
-export function removeKConfigContentKey(defKey: string, existingContent: string): string {
-  const parsed: Record<string, unknown> = {};
-  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
-
-  delete parsed[defKey];
-
-  if (Array.isArray(parsed.enforcedFields)) {
-    const filtered = (parsed.enforcedFields as string[]).filter(f => f !== defKey);
-    if (filtered.length > 0) { parsed.enforcedFields = filtered; } else { delete parsed.enforcedFields; }
-  }
-
-  return JSON.stringify(parsed, null, 2);
-}
-
-// Parse URL restriction rules from the KConfig content JSON.
-export function parseUrlRestrictionRules(content: string): UrlRestrictionRule[] {
-  try {
-    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
-    if (!Array.isArray(parsed.urlRestrictions)) return [];
-    return (parsed.urlRestrictions as Record<string, unknown>[]).map(r => ({
-      action: (r.action as UrlRestrictionRule["action"]) || "open",
-      referrerProtocol: (r.referrerProtocol as string) || "",
-      referrerHost: (r.referrerHost as string) || "",
-      referrerPath: (r.referrerPath as string) || "",
-      protocol: (r.protocol as string) || "",
-      host: (r.host as string) || "",
-      path: (r.path as string) || "",
-      enabled: r.enabled === true,
-    }));
-  } catch { return []; }
-}
-
-// Build URL restriction content into the KConfig JSON (replaces urlRestrictions array).
-export function buildUrlRestrictionContent(rules: UrlRestrictionRule[], existingContent: string): string {
-  const parsed: Record<string, unknown> = {};
-  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
-
-  if (rules.length > 0) {
-    parsed.urlRestrictions = rules.map(r => ({
-      action: r.action,
-      referrerProtocol: r.referrerProtocol,
-      referrerHost: r.referrerHost,
-      referrerPath: r.referrerPath,
-      protocol: r.protocol,
-      host: r.host,
-      path: r.path,
-      enabled: r.enabled,
-    }));
-  } else {
-    delete parsed.urlRestrictions;
-  }
-
-  return JSON.stringify(parsed, null, 2);
-}
-
-// Parse KCM restriction module IDs from the KConfig content JSON.
-export function parseKcmRestrictions(content: string): string[] {
-  try {
-    const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
-    if (Array.isArray(parsed.kcmRestrictions)) return parsed.kcmRestrictions as string[];
-    return [];
-  } catch { return []; }
-}
-
-// Build KCM restriction content into the KConfig JSON (replaces kcmRestrictions array).
-export function buildKcmRestrictionContent(modules: string[], existingContent: string): string {
-  const parsed: Record<string, unknown> = {};
-  try { Object.assign(parsed, JSON.parse(existingContent || "{}")); } catch { /* ignore */ }
-
-  if (modules.length > 0) {
-    parsed.kcmRestrictions = modules;
-  } else {
-    delete parsed.kcmRestrictions;
-  }
-
-  return JSON.stringify(parsed, null, 2);
 }

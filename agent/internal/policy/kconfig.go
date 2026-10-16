@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,7 +135,7 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 	// Window Manager (kwinrc, [Windows])
 	add(boolE(KConfigFileKWin, "Windows", "BorderlessMaximizedWindows", "borderlessMaximizedWindows", pol.BorderlessMaximizedWindows))
 
-	// Screen lock (kscreenlockerrc, [Daemon]) — key names from
+	// Screen lock (kscreenlockerrc, [Daemon]) - key names from
 	// kscreenlockersettings.kcfg. Timeout is in minutes, LockGrace in seconds.
 	add(boolE(KConfigFileScreenLocker, "Daemon", "Autolock", "autoLock", pol.AutoLock))
 	add(boolE(KConfigFileScreenLocker, "Daemon", "LockOnResume", "lockOnResume", pol.LockOnResume))
@@ -157,7 +158,7 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 	add(strE(KConfigFileDesktopApplets, "Containments][1][Wallpaper][org.kde.image][General", "FillMode", "wallpaperFillMode", pol.WallpaperFillMode))
 	add(strE(KConfigFileDesktopApplets, "Containments][1][Wallpaper][org.kde.image][General", "Color", "wallpaperColor", pol.WallpaperColor))
 
-	// URL Restrictions (kdeglobals, [KDE URL Restrictions]) — always enforced
+	// URL Restrictions (kdeglobals, [KDE URL Restrictions]) - always enforced
 	for i, r := range pol.UrlRestrictions {
 		val := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%v",
 			r.GetAction(), r.GetReferrerProtocol(), r.GetReferrerHost(), r.GetReferrerPath(),
@@ -182,19 +183,46 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 		})
 	}
 
-	// KCM Restrictions (kdeglobals, [KDE Control Module Restrictions]) — always enforced
-	for _, mod := range pol.KcmRestrictions {
-		entries = append(entries, &pb.KConfigEntry{
-			File:     KConfigFileGlobals,
-			Group:    KConfigGroupKCMRestrictions,
-			Key:      mod,
-			Value:    "false",
-			Type:     "bool",
-			Enforced: true,
-		})
+	// KCM Restrictions (kdeglobals, [KDE Control Module Restrictions]) - always
+	// enforced. In show-only mode the list is an allow list that needs the
+	// node's installed modules; MergeKConfigPolicies expands it.
+	if pol.GetKcmMode() != pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED {
+		for _, mod := range pol.KcmRestrictions {
+			entries = append(entries, &pb.KConfigEntry{
+				File:     KConfigFileGlobals,
+				Group:    KConfigGroupKCMRestrictions,
+				Key:      mod,
+				Value:    "false",
+				Type:     "bool",
+				Enforced: true,
+			})
+		}
 	}
 
+	// Generic settings: any file, nested groups, all markers.
+	entries = append(entries, settingsToEntries(pol.Settings)...)
+
 	return entries
+}
+
+// settingsToEntries converts generic settings into INI entries. Group paths
+// are joined with "][" so that nested groups render as [A][B].
+func settingsToEntries(settings []*pb.KConfigSetting) []*pb.KConfigEntry {
+	out := make([]*pb.KConfigEntry, 0, len(settings))
+	for _, s := range settings {
+		out = append(out, &pb.KConfigEntry{
+			File:     s.GetFile(),
+			Group:    strings.Join(s.GetGroupPath(), "]["),
+			Key:      s.GetKey(),
+			Value:    s.GetValue(),
+			Type:     "string",
+			Enforced: s.GetImmutable(),
+			Expand:   s.GetExpand(),
+			Delete:   s.GetDelete(),
+			Locale:   s.GetLocale(),
+		})
+	}
+	return out
 }
 
 // KConfigPolicySource is one bound policy together with the binding
@@ -204,6 +232,12 @@ type KConfigPolicySource struct {
 	Name     string
 	Priority int32
 	Policy   *pb.KConfigPolicy
+}
+
+// kconfigWinner records which policy's entry owns a key during a merge.
+type kconfigWinner struct {
+	entry *pb.KConfigEntry
+	src   KConfigPolicySource
 }
 
 // KConfigMergeResult is the outcome of MergeKConfigPolicies.
@@ -220,12 +254,15 @@ type KConfigMergeResult struct {
 }
 
 // MergeKConfigPolicies combines all bound KDE Plasma policies into one set
-// of config files. Each (file, group, key) is written once: the policy
-// with the highest binding priority wins, ties are broken by policy ID so
-// the result never depends on event order. URL restriction rules are
+// of config files. Each (file, group, key, locale) is written once: the
+// policy with the highest binding priority wins, ties are broken by policy
+// ID so the result never depends on event order. URL restriction rules are
 // additive across policies and renumbered. Entries that cannot be written
 // safely (line breaks, odd key characters) are skipped and reported.
-func MergeKConfigPolicies(sources []KConfigPolicySource) (*KConfigMergeResult, error) {
+//
+// installedKCMs is the list of System Settings modules present on the node
+// (InstalledKCMs); it is only needed by policies in show-only module mode.
+func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string) (*KConfigMergeResult, error) {
 	ordered := make([]KConfigPolicySource, len(sources))
 	copy(ordered, sources)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -235,21 +272,33 @@ func MergeKConfigPolicies(sources []KConfigPolicySource) (*KConfigMergeResult, e
 		return ordered[i].ID < ordered[j].ID
 	})
 
-	type winner struct {
-		value    string
-		enforced bool
-		src      KConfigPolicySource
-	}
-	winners := make(map[string]winner)
+	winners := make(map[string]kconfigWinner)
 	res := &KConfigMergeResult{Items: make(map[string][]*pb.ComplianceItemResult, len(ordered))}
+	fileImmutable := make(map[string]bool)
 
 	item := func(e *pb.KConfigEntry, status pb.ComplianceStatus, msg string) *pb.ComplianceItemResult {
-		return &pb.ComplianceItemResult{
-			SchemaId: e.File,
-			Key:      fmt.Sprintf("[%s] %s", e.Group, e.Key),
-			Status:   status,
-			Message:  msg,
+		key := fmt.Sprintf("[%s] %s", e.Group, e.Key)
+		if e.Locale != "" {
+			key += "[" + e.Locale + "]"
 		}
+		return &pb.ComplianceItemResult{SchemaId: e.File, Key: key, Status: status, Message: msg}
+	}
+	entryID := func(e *pb.KConfigEntry) string {
+		return e.File + "\x00" + e.Group + "\x00" + e.Key + "\x00" + e.Locale
+	}
+	sameEffect := func(a, b *pb.KConfigEntry) bool {
+		return a.Value == b.Value && a.Enforced == b.Enforced && a.Expand == b.Expand && a.Delete == b.Delete
+	}
+	// claim records e as the winner for its id and returns false when another
+	// policy already owns the key.
+	claim := func(e *pb.KConfigEntry, src KConfigPolicySource) (kconfigWinner, bool) {
+		id := entryID(e)
+		if w, seen := winners[id]; seen {
+			return w, false
+		}
+		winners[id] = kconfigWinner{entry: e, src: src}
+		res.Entries = append(res.Entries, e)
+		return kconfigWinner{}, true
 	}
 
 	for _, src := range ordered {
@@ -271,21 +320,34 @@ func MergeKConfigPolicies(sources []KConfigPolicySource) (*KConfigMergeResult, e
 				continue
 			}
 
-			id := e.File + "\x00" + e.Group + "\x00" + e.Key
-			if w, seen := winners[id]; seen {
-				if w.value == e.Value && w.enforced == e.Enforced {
+			if w, ok := claim(e, src); !ok {
+				if sameEffect(w.entry, e) {
 					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
 						fmt.Sprintf("Same value as higher-priority policy %q", w.src.Name)))
 				} else {
 					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
-						fmt.Sprintf("Overridden by higher-priority policy %q (priority %d); applied value: %s", w.src.Name, w.src.Priority, w.value)))
+						fmt.Sprintf("Overridden by higher-priority policy %q (priority %d); applied value: %s", w.src.Name, w.src.Priority, w.entry.Value)))
 				}
 				continue
 			}
-
-			winners[id] = winner{value: e.Value, enforced: e.Enforced, src: src}
-			res.Entries = append(res.Entries, e)
 			items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
+		}
+
+		// Show-only module mode: the listed modules stay allowed (written as
+		// true so that they win over a lower-priority hide), every other
+		// installed module is hidden.
+		if src.Policy.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED && len(src.Policy.GetKcmRestrictions()) > 0 {
+			items = append(items, mergeShowOnlyKCMs(src, installedKCMs, claim))
+		}
+
+		if src.Policy.GetFileImmutableKdeglobals() {
+			fileImmutable[KConfigFileGlobals] = true
+			items = append(items, &pb.ComplianceItemResult{
+				SchemaId: KConfigFileGlobals,
+				Key:      "[$i]",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
+				Message:  "Whole file marked immutable",
+			})
 		}
 		res.Items[src.ID] = items
 	}
@@ -294,9 +356,56 @@ func MergeKConfigPolicies(sources []KConfigPolicySource) (*KConfigMergeResult, e
 	if err != nil {
 		return nil, err
 	}
+	for name := range fileImmutable {
+		if files == nil {
+			files = make(map[string][]byte)
+		}
+		// A bare [$i] line before the first group makes the whole file, and
+		// therefore every user's copy of it, immutable.
+		files[name] = append([]byte("[$i]\n\n"), files[name]...)
+	}
 	res.Files = files
 	return res, nil
 }
+
+// mergeShowOnlyKCMs expands a show-only module list against the installed
+// modules and returns the summary compliance item for it.
+func mergeShowOnlyKCMs(src KConfigPolicySource, installedKCMs []string, claim func(*pb.KConfigEntry, KConfigPolicySource) (kconfigWinner, bool)) *pb.ComplianceItemResult {
+	summary := &pb.ComplianceItemResult{
+		SchemaId: KConfigFileGlobals,
+		Key:      "[" + KConfigGroupKCMRestrictions + "] show only listed modules",
+	}
+	if len(installedKCMs) == 0 {
+		summary.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR
+		summary.Message = "the list of installed System Settings modules is not available on this node; show-only mode was not applied"
+		return summary
+	}
+
+	allowed := make(map[string]bool, len(src.Policy.GetKcmRestrictions()))
+	for _, mod := range src.Policy.GetKcmRestrictions() {
+		allowed[mod] = true
+	}
+	hidden := 0
+	for _, mod := range installedKCMs {
+		value := "false"
+		if allowed[mod] {
+			value = "true"
+		}
+		e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: KConfigGroupKCMRestrictions, Key: mod, Value: value, Type: "bool", Enforced: true}
+		if validateINIEntry(e) != nil {
+			continue
+		}
+		if _, ok := claim(e, src); ok && value == "false" {
+			hidden++
+		}
+	}
+	summary.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT
+	summary.Message = fmt.Sprintf("Hiding %d of %d installed modules; %d listed modules stay visible", hidden, len(installedKCMs), len(allowed))
+	return summary
+}
+
+// localePattern matches KConfig locale suffixes such as de, de_DE or sr@latin.
+var localePattern = regexp.MustCompile(`^[a-z]{2,3}(_[A-Z]{2})?(@[a-z]+)?$`)
 
 // validateINIEntry rejects entries that would corrupt the rendered INI file
 // or escape the managed directory. Server-side validation performs the same
@@ -305,18 +414,79 @@ func validateINIEntry(e *pb.KConfigEntry) error {
 	if e.File == "" || strings.HasPrefix(e.File, ".") || strings.ContainsAny(e.File, "/\\\x00") {
 		return fmt.Errorf("invalid config file name %q", e.File)
 	}
+	if e.Group == "" || strings.ContainsAny(e.Group, "\r\n") {
+		return fmt.Errorf("invalid group %q for key %q", e.Group, e.Key)
+	}
 	if e.Key == "" || strings.ContainsAny(e.Key, "=[]\r\n") {
 		return fmt.Errorf("key %q contains characters that are not allowed in a KConfig key", e.Key)
 	}
 	if strings.ContainsAny(e.Value, "\r\n") {
 		return fmt.Errorf("value for %q contains a line break and was not written", e.Key)
 	}
+	if e.Locale != "" && !localePattern.MatchString(e.Locale) {
+		return fmt.Errorf("invalid locale %q for key %q", e.Locale, e.Key)
+	}
 	return nil
+}
+
+// Where System Settings modules announce themselves. Every module ships a
+// kcm_*.desktop entry and/or a plugin under plasma/kcms/<category>/.
+var (
+	kcmDesktopDirs = []string{"/usr/share/applications", "/usr/local/share/applications"}
+	kcmPluginGlobs = []string{
+		"/usr/lib*/qt6/plugins/plasma/kcms/*/*.so",
+		"/usr/lib/*/qt6/plugins/plasma/kcms/*/*.so",
+		"/usr/lib*/qt/plugins/plasma/kcms/*/*.so",
+		"/usr/lib*/qt5/plugins/plasma/kcms/*/*.so",
+		"/usr/lib/*/qt5/plugins/plasma/kcms/*/*.so",
+	}
+)
+
+// InstalledKCMs lists the System Settings module ids installed on this
+// node (kcm_access, kcm_bluetooth, ...), sorted. Used to expand show-only
+// module lists.
+func InstalledKCMs() []string {
+	return InstalledKCMsFrom(kcmDesktopDirs, kcmPluginGlobs)
+}
+
+// InstalledKCMsFrom is InstalledKCMs with injectable locations for tests.
+func InstalledKCMsFrom(desktopDirs, pluginGlobs []string) []string {
+	seen := make(map[string]bool)
+	for _, dir := range desktopDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, "kcm") && strings.HasSuffix(name, ".desktop") {
+				seen[strings.TrimSuffix(name, ".desktop")] = true
+			}
+		}
+	}
+	for _, g := range pluginGlobs {
+		matches, err := filepath.Glob(g)
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			base := strings.TrimSuffix(filepath.Base(m), ".so")
+			if strings.HasPrefix(base, "kcm") {
+				seen[base] = true
+			}
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // MergeKConfigEntries takes already-parsed proto entries (flattened from
 // all policies), groups them by target file and INI group, renders INI
-// content with [$i] enforcement suffixes, and returns a map of file→INI bytes.
+// content with [$i] enforcement suffixes, and returns a map of file->INI bytes.
 func MergeKConfigEntries(entries []*pb.KConfigEntry) (map[string][]byte, error) {
 	if len(entries) == 0 {
 		return nil, nil
@@ -403,21 +573,50 @@ func renderINIGroup(buf *strings.Builder, g *kconfigGroup) {
 		fmt.Fprintf(buf, "[%s]\n", g.name)
 	}
 
-	// Sort entries by key for deterministic output.
+	// Sort entries by key (then locale) for deterministic output.
 	sorted := make([]*pb.KConfigEntry, len(g.entries))
 	copy(sorted, g.entries)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Key < sorted[j].Key
+		if sorted[i].Key != sorted[j].Key {
+			return sorted[i].Key < sorted[j].Key
+		}
+		return sorted[i].Locale < sorted[j].Locale
 	})
 
 	for _, e := range sorted {
-		if !allEnforced && e.Enforced {
-			// Key-level enforcement.
-			fmt.Fprintf(buf, "%s[$i]=%s\n", e.Key, e.Value)
+		buf.WriteString(renderINIKey(e, allEnforced))
+		if e.Delete {
+			// KConfig writes deleted entries as a bare key[$d] line.
+			buf.WriteString("\n")
 		} else {
-			fmt.Fprintf(buf, "%s=%s\n", e.Key, e.Value)
+			fmt.Fprintf(buf, "=%s\n", e.Value)
 		}
 	}
+}
+
+// renderINIKey renders "key", "key[de]" and the marker suffix: [$i] for
+// immutable entries (unless the whole group is), [$e] for variable
+// expansion and [$d] for deleted entries, combined as in key[$ie].
+func renderINIKey(e *pb.KConfigEntry, groupImmutable bool) string {
+	var sb strings.Builder
+	sb.WriteString(e.Key)
+	if e.Locale != "" {
+		sb.WriteString("[" + e.Locale + "]")
+	}
+	flags := ""
+	if e.Enforced && !groupImmutable {
+		flags += "i"
+	}
+	if e.Expand {
+		flags += "e"
+	}
+	if e.Delete {
+		flags += "d"
+	}
+	if flags != "" {
+		sb.WriteString("[$" + flags + "]")
+	}
+	return sb.String()
 }
 
 // BackupOriginal creates a backup of the original file before policy
@@ -428,7 +627,7 @@ func renderINIGroup(buf *strings.Builder, g *kconfigGroup) {
 func BackupOriginal(targetPath string) error {
 	backupPath := targetPath + BackupSuffix
 	if _, err := os.Stat(backupPath); err == nil {
-		return nil // backup already exists — never overwrite
+		return nil // backup already exists - never overwrite
 	}
 
 	data, err := os.ReadFile(targetPath) //nolint:gosec // G304: path comes from server-managed policy config
@@ -436,7 +635,7 @@ func BackupOriginal(targetPath string) error {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("failed to read original file %s: %w", targetPath, err)
 		}
-		// No original file — write empty sentinel so cleanup can delete.
+		// No original file - write empty sentinel so cleanup can delete.
 		data = nil
 	}
 
@@ -461,7 +660,7 @@ func RestoreOriginal(targetPath string) error {
 	}
 
 	if len(data) == 0 {
-		// Empty sentinel — no original existed; remove the managed file.
+		// Empty sentinel - no original existed; remove the managed file.
 		_ = os.Remove(targetPath)
 	} else {
 		if err := WriteFileAtomically(targetPath, data); err != nil {
@@ -531,7 +730,7 @@ func SyncKConfigFiles(basePath string, files map[string][]byte) error {
 			return fmt.Errorf("failed to write KConfig file %s: %w", name, err)
 		}
 
-		delete(prev, name) // still active — don't restore
+		delete(prev, name) // still active - don't restore
 	}
 
 	// Restore files that are no longer in the desired state.
@@ -573,7 +772,7 @@ func renumberURLRestrictions(g *kconfigGroup) {
 
 	for _, e := range g.entries {
 		if e.Key == "rule_count" {
-			continue // drop old rule_count — we'll regenerate it
+			continue // drop old rule_count - we'll regenerate it
 		}
 		n := parseRuleNum(e.Key)
 		if n > 0 {

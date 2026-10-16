@@ -17,8 +17,81 @@ import (
 // kcm_autostart or kcmspellchecking. The id becomes an INI key.
 var kcmModuleIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
-// maxKConfigStringLen bounds free-text values written into INI files.
-const maxKConfigStringLen = 4096
+var (
+	// kconfigFileNamePattern: a config file basename inside the managed
+	// directory ("kdeglobals", "plasma-org.kde.plasma.desktop-appletsrc").
+	kconfigFileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	// kconfigLocalePattern: KConfig locale suffixes such as de, de_DE, sr@latin.
+	kconfigLocalePattern = regexp.MustCompile(`^[a-z]{2,3}(_[A-Z]{2})?(@[a-z]+)?$`)
+	// kconfigCatalogueIDPattern: catalogue ids such as kiosk.shell_access.
+	kconfigCatalogueIDPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]*$`)
+)
+
+const (
+	// maxKConfigStringLen bounds free-text values written into INI files.
+	maxKConfigStringLen = 4096
+	// maxKConfigSettings bounds the generic settings list of one policy.
+	maxKConfigSettings = 500
+	// maxKConfigNameLen bounds file names, group names and keys.
+	maxKConfigNameLen = 256
+)
+
+// ValidateKConfigTarget checks that file, group path and key can be written
+// as an INI entry inside the managed directory. It is shared by the policy
+// validator and the catalogue test.
+func ValidateKConfigTarget(file string, groupPath []string, key string) error {
+	if !kconfigFileNamePattern.MatchString(file) || len(file) > maxKConfigNameLen {
+		return fmt.Errorf("invalid config file name %q (letters, digits, '.', '_' and '-' only; no paths)", file)
+	}
+	if len(groupPath) == 0 {
+		return fmt.Errorf("%s/%s: group path must not be empty", file, key)
+	}
+	for _, g := range groupPath {
+		if g == "" || len(g) > maxKConfigNameLen || strings.ContainsAny(g, "[]\r\n") {
+			return fmt.Errorf("%s/%s: invalid group name %q", file, key, g)
+		}
+	}
+	if key == "" || len(key) > maxKConfigNameLen || strings.ContainsAny(key, "=[]\r\n") {
+		return fmt.Errorf("%s: invalid key %q (no '=', '[', ']' or line breaks)", file, key)
+	}
+	return nil
+}
+
+// joinGroupPath renders a group path the way the agent keys entries.
+func joinGroupPath(path []string) string {
+	return strings.Join(path, "][")
+}
+
+// validateKConfigSettings checks the generic settings list of a policy.
+func validateKConfigSettings(settings []*pb.KConfigSetting) error {
+	if len(settings) > maxKConfigSettings {
+		return fmt.Errorf("too many settings (%d, max %d)", len(settings), maxKConfigSettings)
+	}
+	seen := make(map[string]int, len(settings))
+	for i, s := range settings {
+		if err := ValidateKConfigTarget(s.GetFile(), s.GetGroupPath(), s.GetKey()); err != nil {
+			return fmt.Errorf("settings[%d]: %w", i, err)
+		}
+		if strings.ContainsAny(s.GetValue(), "\r\n") {
+			return fmt.Errorf("settings[%d] (%s): value must not contain line breaks", i, s.GetKey())
+		}
+		if len(s.GetValue()) > maxKConfigStringLen {
+			return fmt.Errorf("settings[%d] (%s): value is too long (max %d characters)", i, s.GetKey(), maxKConfigStringLen)
+		}
+		if l := s.GetLocale(); l != "" && !kconfigLocalePattern.MatchString(l) {
+			return fmt.Errorf("settings[%d] (%s): invalid locale %q", i, s.GetKey(), l)
+		}
+		if id := s.GetCatalogueId(); len(id) > 128 || !kconfigCatalogueIDPattern.MatchString(id) {
+			return fmt.Errorf("settings[%d] (%s): invalid catalogue id %q", i, s.GetKey(), id)
+		}
+		id := s.GetFile() + "\x00" + joinGroupPath(s.GetGroupPath()) + "\x00" + s.GetKey() + "\x00" + s.GetLocale()
+		if j, dup := seen[id]; dup {
+			return fmt.Errorf("settings[%d] and settings[%d] both write %s [%s] %s", j, i, s.GetFile(), joinGroupPath(s.GetGroupPath()), s.GetKey())
+		}
+		seen[id] = i
+	}
+	return nil
+}
 
 // ValidateKConfigPolicy validates a KConfig policy content JSON string.
 func ValidateKConfigPolicy(content string) error {
@@ -99,6 +172,13 @@ func ValidateKConfigPolicy(content string) error {
 			return fmt.Errorf("kcm_restrictions[%d]: invalid module id %q (letters, digits, '_', '.', '-' only)", i, id)
 		}
 	}
+	if kcp.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED && len(kcp.KcmRestrictions) == 0 {
+		return fmt.Errorf("kcm_mode show-only needs at least one System Settings module to keep visible")
+	}
+
+	if err := validateKConfigSettings(kcp.Settings); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -142,7 +222,9 @@ func kconfigPolicyHasSettings(kcp *pb.KConfigPolicy) bool {
 		kcp.WallpaperFillMode != nil ||
 		kcp.WallpaperColor != nil ||
 		len(kcp.UrlRestrictions) > 0 ||
-		len(kcp.KcmRestrictions) > 0
+		len(kcp.KcmRestrictions) > 0 ||
+		len(kcp.Settings) > 0 ||
+		kcp.GetFileImmutableKdeglobals()
 }
 
 // legacyKConfigFields lists the deprecated [KDE Resource Restrictions]

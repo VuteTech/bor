@@ -13,8 +13,7 @@
  *
  * Field definitions (which keys a Firefox policy has, etc.) are NOT here: they
  * are generated from the protos (`generated/proto/*_ui.ts`). This file is the
- * hand-written "which types exist" list that `docs/proto-driven-ui-plan.md`
- * deliberately keeps manual.
+ * hand-written "which types exist" list, which is deliberately kept manual.
  */
 
 import type { ComponentType } from "react";
@@ -33,6 +32,7 @@ import { ThunderbirdMarkIcon } from "../icons/policyTypes/ThunderbirdMarkIcon";
 import { ChromeMarkIcon } from "../icons/policyTypes/ChromeMarkIcon";
 import { KdeMarkIcon } from "../icons/policyTypes/KdeMarkIcon";
 import { FlatpakMarkIcon } from "../icons/policyTypes/FlatpakMarkIcon";
+import { hasAnyKConfigContent, parseKConfigContent } from "../views/Policies/editors/kconfigModel";
 
 export type PolicyTypeId =
   | "Firefox"
@@ -235,9 +235,9 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
     label: "KDE Plasma",
     technicalName: "Kconfig",
     category: "desktop",
-    tagline: "Kiosk restrictions, System Settings lockdown, look and feel",
+    tagline: "Kiosk restrictions, System Settings lockdown, any KDE setting",
     description:
-      "KDE Plasma configuration and Kiosk restrictions written as immutable system-wide settings. Lock down actions and System Settings modules, restrict KIO URL schemes, and control appearance and screen locking.",
+      "KDE Plasma and KDE application configuration written as system-wide defaults or immutable settings. Pick from a catalogue of Kiosk restrictions, screen lock, session, power, appearance, privacy and application settings, hide System Settings modules, restrict KIO URL schemes, or write any KConfig key.",
     manages: [
       "System-wide KDE configuration under /etc/bor/xdg (immutable [$i] entries)",
       "/etc/xdg/plasma-workspace/env/00-bor.sh and /etc/profile.d/99-bor.sh, which put that directory first in XDG_CONFIG_DIRS",
@@ -250,13 +250,11 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
     ],
     Icon: KdeMarkIcon,
     defaultContent: () => "{}",
-    // Kconfig content is keyed by catalogue entries; "any key" is the structural
-    // minimum here, the editor performs the catalogue-aware check before saving.
     validateContent: (content) => {
       const parsed = parseObject(content);
       if (!parsed) return "KConfig policy content is not valid JSON";
-      if (Object.keys(parsed).length === 0) {
-        return "At least one KDE Kiosk policy setting must be selected and configured before saving";
+      if (!hasAnyKConfigContent(parseKConfigContent(content).content)) {
+        return "At least one KDE setting, System Settings module or URL rule must be configured before saving";
       }
       return null;
     },

@@ -11,7 +11,8 @@ import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
 import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
 import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
 import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
-import { KCM_MODULES, KCONFIG_ALL_POLICIES, KCONFIG_LEGACY_POLICIES, kconfigBoolDisplay } from "./editors/kconfigModel";
+import { KCM_MODULES, catalogueEntryForSetting, isExtraWrite, parseKConfigContent } from "./editors/kconfigModel";
+import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
 
 export interface SettingsRow {
   setting: string;
@@ -154,46 +155,41 @@ export function buildSettingsRows(policyType: string, content: string): Settings
   }
 
   if (policyType === "Kconfig") {
-    const parsed = raw as Record<string, unknown>;
-    const enforcedFields = Array.isArray(parsed.enforcedFields) ? (parsed.enforcedFields as string[]) : [];
+    // Older typed content is shown through the same upgrade the editor uses.
+    const kc = parseKConfigContent(content).content;
 
-    // URL restrictions
-    if (Array.isArray(parsed.urlRestrictions)) {
-      (parsed.urlRestrictions as Record<string, unknown>[]).forEach((r, i) => {
-        const proto = (r.protocol as string) || "*";
-        const host = (r.host as string) || "*";
-        const path = (r.path as string) ? `/${r.path}` : "";
-        const summary = `${r.action} ${proto}://${host}${path} → ${r.enabled ? "allow" : "deny"}`;
-        rows.push({ setting: `Security › URL Restrictions › rule_${i + 1}`, value: summary, locked: "Yes" });
-      });
-    }
-
-    // KCM restrictions
-    if (Array.isArray(parsed.kcmRestrictions)) {
-      for (const modId of parsed.kcmRestrictions as string[]) {
-        const mod = KCM_MODULES.find(m => m.id === modId);
-        rows.push({
-          setting: `System Settings Restrictions › ${mod ? mod.label : modId}`,
-          value: "Restricted",
-          locked: "Yes",
-        });
-      }
-    }
-
-    // All other typed fields, plus legacy ones still present in old content.
-    for (const def of [...KCONFIG_ALL_POLICIES, ...KCONFIG_LEGACY_POLICIES]) {
-      if (def.type === "url-restrictions" || def.type === "kcm-restrictions") continue;
-      if (!(def.key in parsed) || parsed[def.key] === null || parsed[def.key] === undefined) continue;
-      const rawVal = parsed[def.key];
+    for (const s of kc.settings) {
+      if (isExtraWrite(s)) continue; // written together with its main setting
+      const entry = catalogueEntryForSetting(s);
+      const setting = entry ? `${entry.category} › ${entry.label}` : `Custom › ${targetLabel(s.file, s.groupPath, s.key)}`;
       let value: string;
-      if (def.legacy) value = "No effect on Plasma 5/6 — remove";
-      else if (def.type === "boolean") value = kconfigBoolDisplay(def, String(rawVal));
-      else value = formatDisplayValue(rawVal);
+      if (s.delete) value = "Deleted ([$d])";
+      else if (entry?.type === "Bool") value = boolDisplay(entry, s.value ?? "");
+      else value = (s.value ?? "") === "" ? "(empty)" : (s.value as string);
+      if (s.locale) value += ` [${s.locale}]`;
+      if (s.expand) value += " [$e]";
+      rows.push({ setting, value, locked: s.immutable ? "Yes" : "No" });
+    }
+
+    const showOnly = kc.kcmMode === "KCM_SHOW_ONLY_LISTED";
+    for (const modId of kc.kcmRestrictions) {
+      const mod = KCM_MODULES.find((m) => m.id === modId);
       rows.push({
-        setting: `${def.group} › ${def.label}`,
-        value,
-        locked: enforcedFields.includes(def.key) ? "Yes" : "No",
+        setting: `System Settings Modules › ${mod ? mod.label : modId}`,
+        value: showOnly ? "Visible (every other module hidden)" : "Hidden",
+        locked: "Yes",
       });
+    }
+
+    kc.urlRestrictions.forEach((r, i) => {
+      const proto = r.protocol || "*";
+      const host = r.host || "*";
+      const path = r.path ? `/${r.path}` : "";
+      rows.push({ setting: `URL Restrictions › rule_${i + 1}`, value: `${r.action} ${proto}://${host}${path} -> ${r.enabled ? "allow" : "deny"}`, locked: "Yes" });
+    });
+
+    if (kc.fileImmutableKdeglobals) {
+      rows.push({ setting: `Advanced › kdeglobals ${groupPathLabel(["$i"])}`, value: "Whole file immutable", locked: "Yes" });
     }
 
     return rows;

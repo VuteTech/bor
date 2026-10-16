@@ -8,10 +8,23 @@
 
 export const protobufPackage = "bor.policy.v1";
 
+/** KcmRestrictionMode says how kcm_restrictions is interpreted. */
+export enum KcmRestrictionMode {
+  /** KCM_HIDE_LISTED - Hide the listed System Settings modules (default). */
+  KCM_HIDE_LISTED = 0,
+  /**
+   * KCM_SHOW_ONLY_LISTED - Show only the listed modules; the agent hides every other module
+   * installed on the node.
+   */
+  KCM_SHOW_ONLY_LISTED = 1,
+  UNRECOGNIZED = -1,
+}
+
 /**
  * KConfigEntry represents a resolved KDE Kiosk INI entry.
  * Used internally by the agent after expanding a KConfigPolicy; not stored
- * in the database directly.
+ * in the database directly. group holds nested groups joined with "]["
+ * ("Containments][1" renders as [Containments][1]).
  */
 export interface KConfigEntry {
   file: string;
@@ -19,7 +32,95 @@ export interface KConfigEntry {
   key: string;
   value: string;
   type: string;
+  /** [$i] */
   enforced: boolean;
+  /** [$e]: KConfig expands $VARIABLES on read */
+  expand: boolean;
+  /** [$d]: entry is marked deleted (value ignored) */
+  delete: boolean;
+  /** optional locale suffix: key[de]=... */
+  locale: string;
+}
+
+/**
+ * KConfigSetting is one generic KDE configuration entry to write. It covers
+ * every KConfig file and key, including those the catalogue does not know.
+ */
+export interface KConfigSetting {
+  /**
+   * Config file basename inside the managed directory, e.g. "kdeglobals",
+   * "dolphinrc", "kscreenlockerrc". Never a path.
+   */
+  file: string;
+  /** Nested group path: ["Containments", "1"] renders as [Containments][1]. */
+  group_path: string[];
+  key: string;
+  /** Value in KConfig text form ("true", "5", "breeze", "a,b,c", "0,0,0"). */
+  value: string;
+  /** immutable writes the KDE Kiosk [$i] marker so users cannot override it. */
+  immutable: boolean;
+  /** expand writes [$e] so KDE expands $VARIABLES in the value on read. */
+  expand: boolean;
+  /** delete writes key[$d], which removes a distribution default for users. */
+  delete: boolean;
+  /** locale writes a locale-specific value: key[de]=... */
+  locale: string;
+  /**
+   * catalogue_id is the catalogue entry this setting came from, if any.
+   * It is informational: the editor uses it for labels and grouping.
+   */
+  catalogue_id: string;
+}
+
+/**
+ * KConfigCatalogueEntry describes one known KDE setting: where it is
+ * written, its type and choices, and how the editor presents it. Entries
+ * come from the built-in catalogue shipped with the server and, later,
+ * from the KConfigXT schemas reported by nodes.
+ */
+export interface KConfigCatalogueEntry {
+  /** Stable identifier, e.g. "kiosk.shell_access", "dolphin.ShowFullPath". */
+  id: string;
+  file: string;
+  group_path: string[];
+  key: string;
+  /**
+   * KConfigXT type: Bool, Int, UInt, Double, String, StringList, Enum,
+   * Path, Url, Color, Font.
+   */
+  type: string;
+  label: string;
+  description: string;
+  default_value: string;
+  /** Allowed values for Enum entries. */
+  choices: string[];
+  range_min: string;
+  range_max: string;
+  /** Editor group, e.g. "Session & Shell", "Screen Lock", "Applications/Dolphin". */
+  category: string;
+  /**
+   * inverted marks KDE Kiosk restrictions: false restricts, true allows.
+   * The editor shows a Restricted / Allowed switch.
+   */
+  inverted: boolean;
+  /** immutable_default: new entries start as enforced ([$i]). */
+  immutable_default: boolean;
+  /** Plasma major versions the setting applies to; empty means any. */
+  plasma_major: string[];
+  /**
+   * What must reload for the setting to take effect: "kwin", "plasmashell",
+   * "screenlocker", "kded", "app" (restart the application) or "logout".
+   */
+  reload: string;
+  /** Closest Windows Group Policy setting, shown as a hint. */
+  windows_equivalent: string;
+  /** "builtin", "kcfg" (node-reported) or "custom". */
+  source: string;
+  /**
+   * Additional entries written together with this one (composite
+   * settings), e.g. the wallpaper plugin next to a wallpaper image.
+   */
+  extra_writes: KConfigSetting[];
 }
 
 /** KConfigUrlRestriction describes one KDE URL restriction rule. */
@@ -159,5 +260,20 @@ export interface KConfigPolicy {
    * plus [Greeter] WallpaperPlugin=org.kde.image. Unlike the desktop
    * wallpaper this cascades reliably from system configuration.
    */
-  lock_screen_image?: string | undefined;
+  lock_screen_image?:
+    | string
+    | undefined;
+  /**
+   * Generic entries. New policies express everything except URL and
+   * control-module restrictions this way; the typed fields above remain
+   * valid for existing content.
+   */
+  settings: KConfigSetting[];
+  /** How kcm_restrictions is interpreted (hide listed, or show only listed). */
+  kcm_mode: KcmRestrictionMode;
+  /**
+   * Write a file-level [$i] marker into kdeglobals, which makes every
+   * user's kdeglobals ignored. For kiosk desktops only.
+   */
+  file_immutable_kdeglobals: boolean;
 }

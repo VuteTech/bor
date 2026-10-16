@@ -1418,7 +1418,16 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		}
 	}
 
-	merged, err := policy.MergeKConfigPolicies(sources)
+	// Show-only module lists need the node's installed modules.
+	var installedKCMs []string
+	for _, s := range sources {
+		if s.Policy.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED {
+			installedKCMs = policy.InstalledKCMs()
+			break
+		}
+	}
+
+	merged, err := policy.MergeKConfigPolicies(sources, installedKCMs)
 	if err != nil {
 		log.Printf("Error merging KConfig policies: %v", err)
 		reportError("failed to merge policies: " + err.Error())

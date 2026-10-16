@@ -132,7 +132,7 @@ func TestMergeKConfigPolicies_PriorityWins(t *testing.T) {
 		}},
 	}
 
-	res, err := MergeKConfigPolicies(sources)
+	res, err := MergeKConfigPolicies(sources, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestMergeKConfigPolicies_TieBrokenByID(t *testing.T) {
 
 	// Run twice with different input order: the result must not change.
 	for _, order := range [][]KConfigPolicySource{sources, {sources[1], sources[0]}} {
-		res, err := MergeKConfigPolicies(order)
+		res, err := MergeKConfigPolicies(order, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,7 +185,7 @@ func TestMergeKConfigPolicies_SameValueNotOverridden(t *testing.T) {
 		{ID: "two", Name: "Two", Priority: 2, Policy: &pb.KConfigPolicy{RunCommand: kcBool(false), EnforcedFields: []string{"runCommand"}}},
 	}
 
-	res, err := MergeKConfigPolicies(sources)
+	res, err := MergeKConfigPolicies(sources, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestMergeKConfigPolicies_URLRulesAdditive(t *testing.T) {
 		}}},
 	}
 
-	res, err := MergeKConfigPolicies(sources)
+	res, err := MergeKConfigPolicies(sources, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestMergeKConfigPolicies_RejectsLineBreaks(t *testing.T) {
 		}},
 	}
 
-	res, err := MergeKConfigPolicies(sources)
+	res, err := MergeKConfigPolicies(sources, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestMergeKConfigPolicies_RejectsLineBreaks(t *testing.T) {
 }
 
 func TestMergeKConfigPolicies_Empty(t *testing.T) {
-	res, err := MergeKConfigPolicies(nil)
+	res, err := MergeKConfigPolicies(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestBackupOriginal_CreatesBackup(t *testing.T) {
 		t.Errorf("backup content mismatch: got %q", backup)
 	}
 
-	// Second call should be idempotent — overwrite original and verify
+	// Second call should be idempotent - overwrite original and verify
 	// backup still has old content.
 	writeFile(t, target, []byte("overwritten"))
 	if err := BackupOriginal(target); err != nil {
@@ -612,7 +612,7 @@ func TestSyncKConfigFiles_CleanupRestoresOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Second sync: empty map — should restore original.
+	// Second sync: empty map - should restore original.
 	if err := SyncKConfigFiles(dir, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -648,7 +648,7 @@ func TestSyncKConfigFiles_CleanupDeletesWhenNoOriginal(t *testing.T) {
 		t.Fatalf("managed file should exist: %v", err)
 	}
 
-	// Second sync: empty map — should delete (no original).
+	// Second sync: empty map - should delete (no original).
 	if err := SyncKConfigFiles(dir, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -677,7 +677,7 @@ func TestSyncKConfigFiles_PartialCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Second sync: only kdeglobals — kwinrc should be restored.
+	// Second sync: only kdeglobals - kwinrc should be restored.
 	files2 := map[string][]byte{
 		"kdeglobals": []byte("[G1]\nk1=v1-updated\n"),
 	}

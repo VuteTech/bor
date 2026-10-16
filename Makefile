@@ -97,6 +97,13 @@ update-polkit-actions:
 		--out ../server/assets/polkit_builtin_actions.json
 	@echo "Done. Commit server/assets/polkit_builtin_actions.json."
 
+# Regenerate the TypeScript copy of the built-in KDE settings catalogue
+# (server/assets/kconfig_builtin_catalogue.json) that the web UI bundles.
+kconfig-catalogue:
+	@echo "Generating KDE settings catalogue (TypeScript)..."
+	cd server/web/frontend && node scripts/gen-kconfig-catalogue.mjs
+	@echo "Done. Commit server/web/frontend/src/generated/kconfig_catalogue.ts."
+
 # Generate Protocol Buffers (Go + TypeScript)
 proto: proto-go proto-ts proto-ui
 
