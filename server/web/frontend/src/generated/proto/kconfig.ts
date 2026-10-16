@@ -132,6 +132,17 @@ export interface KcmModule {
 }
 
 /**
+ * LookAndFeelPackage is a global theme (Plasma look-and-feel package)
+ * installed on a node, as System Settings lists it.
+ */
+export interface LookAndFeelPackage {
+  /** e.g. "org.kde.breezedark.desktop" */
+  id: string;
+  /** display name from the package metadata */
+  name: string;
+}
+
+/**
  * ReportKConfigCatalogueRequest is sent by the agent on connect to publish
  * the KConfigXT schemas (/usr/share/config.kcfg) and the System Settings
  * modules installed on the node. The server stores the entries next to
@@ -143,6 +154,11 @@ export interface ReportKConfigCatalogueRequest {
   kcms: KcmModule[];
   /** Plasma version if detectable, e.g. "6.3.4". */
   plasma_version: string;
+  /**
+   * Global themes installed on the node (distribution and vendor
+   * packages; the ones Bor generates are not reported).
+   */
+  look_and_feel: LookAndFeelPackage[];
 }
 
 export interface ReportKConfigCatalogueResponse {

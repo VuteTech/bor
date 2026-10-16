@@ -43,3 +43,17 @@ export async function fetchKConfigKcms(nodeId?: string): Promise<KcmModuleInfo[]
     headers: authHeaders(),
   });
 }
+
+/** A global theme (Plasma look-and-feel package) reported by a node. */
+export interface LookAndFeelInfo {
+  id: string;
+  name: string;
+}
+
+/** Global themes installed on one node, or on any node. */
+export async function fetchKConfigThemes(nodeId?: string): Promise<LookAndFeelInfo[]> {
+  const qs = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : "";
+  return apiRequest<LookAndFeelInfo[]>(`/api/v1/kconfig/themes${qs}`, {
+    headers: authHeaders(),
+  });
+}

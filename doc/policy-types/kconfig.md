@@ -16,10 +16,10 @@ where one exists, the closest Windows Group Policy setting.
 
 | Category | Examples | Files written |
 |---|---|---|
-| Session & Shell | Restrict shell access, KRunner commands, logout and shutdown, screen locking, user switching, password reveal button, text completion, Get New... downloads, untrusted `.desktop` files | `kdeglobals` `[KDE Action Restrictions]` |
+| Session & Shell | Restrict shell access, disable KRunner, logout and shutdown, screen locking, user switching, password reveal button, text completion, Get New... downloads, untrusted `.desktop` files | `kdeglobals` `[KDE Action Restrictions]` |
 | Plasma Desktop | Lock desktop layout (panels, widgets, favourites), scripting console, activities | `kdeglobals` `[KDE Action Restrictions]` |
 | Application Menu Actions, File Dialog | The standard File, Edit, Settings and Help actions of every KDE application; file dialog actions | `kdeglobals` `[KDE Action Restrictions]` |
-| File Manager (Dolphin), Konsole, KRunner, Okular, Ark, KWallet | Application behaviour: full path in the location bar, Open Terminal entry, previews, delete confirmations, Konsole profile, search history, wallet idle timeout, recent documents | `dolphinrc`, `kiorc`, `konsolerc`, `krunnerrc`, `okularpartrc`, `arkrc`, `kwalletrc` |
+| File Manager (Dolphin), Konsole, KRunner, Okular, Ark, KWallet | Application behaviour: full path in the location bar, Open Terminal entry, previews, delete confirmations, Konsole profile, KRunner search history and individual runners (Command Line, Terminate Applications, Desktop Sessions, ...), wallet idle timeout, recent documents | `dolphinrc`, `kiorc`, `konsolerc`, `krunnerrc`, `okularpartrc`, `arkrc`, `kwalletrc` |
 | Screen Lock | Lock after inactivity, timeout, grace period, password required, lock on resume, lock at login, lock screen wallpaper | `kscreenlockerrc` |
 | Session | Session restore mode, logout confirmation, excluded applications | `ksmserverrc` |
 | Power (Plasma 6) | Display off and dimming timeouts, idle action, lid and power button actions, power profile, battery levels; plugged in and on battery | `powerdevilrc` |
@@ -76,7 +76,7 @@ them.
 |---|---|---|
 | `/etc/bor/xdg/<file>` (for example `kdeglobals`, `kwinrc`, `kscreenlockerrc`, `dolphinrc`) | System-wide KDE settings from all KDE Plasma policies, including System Settings module restrictions in `kdeglobals` | `kconfig.config_path` (default `/etc/bor/xdg`) |
 | `/etc/bor/xdg/groups/<group>/<file>` | Files of policies scoped to a Unix group, activated for members by the hook scripts. The whole `groups/` directory belongs to Bor; files no longer needed are removed | `kconfig.config_path` |
-| `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the apply-once update script of the Desktop Layout feature. The whole directory belongs to Bor; files no longer needed are removed | `kconfig.data_path` (default `/etc/bor/share`) |
+| `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the apply-once update script of the Desktop Layout feature. The whole directory belongs to Bor; files no longer needed are removed. The `late/` subdirectory is a data directory of its own, appended last to `XDG_DATA_DIRS`: Plasma collects update scripts from every data directory, but a `plasma/shells/` directory in front of `/usr/share` would shadow Plasma's own shell package | `kconfig.data_path` (default `/etc/bor/share`) |
 | `/etc/bor/share/konsole/<Name>.profile`, `/etc/bor/share/applications/<id>.desktop` | Konsole profile and the desktop entries of hidden applications (copies of the installed entries with `NoDisplay=true`). Group-scoped policies write theirs under `/etc/bor/share/groups/<group>/` | `kconfig.data_path` |
 | Flatpak system override (`flatpak override --system --show`) | Exposes `/etc/bor/xdg` to sandboxed applications and prepends it to their `XDG_CONFIG_DIRS` while KDE Plasma policies apply | `kconfig.flatpak_override` (default `true`) |
 | `/etc/xdg/plasma-workspace/env/00-bor.sh` | Puts the Bor directories first in `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` for every Plasma session (sourced by `startplasma`, independent of the display manager) | Follows `kconfig.config_path` and `kconfig.data_path` |
@@ -99,7 +99,7 @@ esac
 unset bor_group_dirs
 case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":/etc/bor/share:"*) ;;
-  *) export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+  *) export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late" ;;
 esac
 unset bor_group_data
 ```
@@ -182,12 +182,13 @@ written as enforced.
 
 ### Settings reported by nodes
 
-Every agent on a KDE node reports two things when it connects: the
+Every agent on a KDE node reports three things when it connects: the
 settings described by the KConfigXT schemas installed under
 `/usr/share/config.kcfg` (file, group, key, type, choices, default and
 label for roughly 1,400 keys on a stock Plasma 6 installation, including
-KDE applications such as Dolphin, Okular, Ark, KMail or KOrganizer) and
-the System Settings modules it has installed, with their display names.
+KDE applications such as Dolphin, Okular, Ark, KMail or KOrganizer), the
+System Settings modules it has installed, and the global themes
+(look-and-feel packages) it has installed, each with their display names.
 
 In the editor, **Settings reported by node** adds that node's settings to
 the tree under groups named after the configuration file (**Node:
@@ -196,6 +197,15 @@ replaces the module list of **System Settings modules** with the node's
 own modules. Keys the built-in catalogue already describes keep their
 curated label and explanation. Use a node that runs the Plasma version and
 applications you manage; what it reports is what those nodes read.
+
+**Appearance > Global theme** is a list, not a text field: it offers the
+themes every Plasma installation ships (Breeze, Breeze Dark, Breeze
+Twilight) plus every theme any node has reported, by name, with the
+package id shown next to it; **Custom package id** remains available for
+a theme no node has reported yet. The look Bor generates from **Desktop
+Layout** is never chosen here: it is selected and, with **Enforce as the
+global theme**, locked by the layout itself, so you never need its package
+id.
 
 Node-reported settings carry the label from the schema, which is often
 terse, and no Windows equivalent. Their defaults are the KDE defaults for
@@ -231,15 +241,24 @@ Three switches control everyone else:
 - **Apply the wallpaper to logged-in sessions now** runs
   `plasma-apply-wallpaperimage` for every active session right after the
   agent writes the package.
-- **Lock the global theme** writes the theme selection as enforced, so
-  users cannot pick another global theme in System Settings.
+- **Enforce as the global theme** writes the selection of the generated
+  package as enforced, so users cannot pick another global theme in
+  System Settings. Without it the generated look is the default and users
+  may switch to another theme; whatever they pick, settings the policy
+  enforces individually (colour scheme, icons, ...) stay in force.
 
-Colours, icons, fonts and the cursor theme are not part of the generated
-package; set them under **Appearance**. When several policies with a
-layout reach a node, the one with the highest binding priority provides the
-package and the others report it as inapplicable. A **Global theme**
-setting from the Appearance category in a higher-priority policy keeps its
-own theme selection; the package is still generated.
+The package appears in System Settings > Global Theme under the policy's
+name with the suffix "(managed)"; its package id is derived from the
+policy and never has to be typed anywhere. Colours, icons, fonts and the
+cursor theme are not part of the generated package; set them under
+**Appearance**. When several policies with a layout reach a node, the one
+with the highest binding priority provides the package and the others
+report it as inapplicable. An explicit **Appearance > Global theme** in a
+higher-priority policy, or in the same policy, keeps its own theme
+selection; the package is still generated but reported as not selected.
+Use one or the other per policy: the generated look for "this wallpaper
+and panel layout on top of Breeze", an explicit theme when a complete
+corporate or distribution theme exists.
 
 The **Branding defaults** preset sets up the theme defaults around the
 wallpaper; add the wallpaper image under Desktop Layout afterwards.
@@ -325,8 +344,9 @@ Configuration with security filtering"):
   the nodes, including fully qualified ones such as
   `teachers@ad.example.com` or `Domain Users`. A group the node does not
   know is reported as an **Error** item (`groups/<group> / unix group`);
-  its files are written but not activated until the next sync after the
-  group becomes resolvable.
+  its files are written but not activated. The agent retries the lookup
+  every ten minutes, so a group created later (or an identity service that
+  comes up after the agent) activates without a restart.
 - KDE reads the less specific files first, so a group directory overrides
   node-wide **defaults** but cannot relax a node-wide **enforced** entry.
   Put the settings that differ between groups into scoped policies only,
@@ -357,24 +377,33 @@ Flatpak applications.
 
 ## Examples
 
-### Disable terminal access and KRunner commands
+### Disable terminal access and KRunner
 
 | Setting | Value | Enforced |
 |---|---|---|
 | **Restrict shell access** | Restricted | Enforced [$i] |
-| **Restrict KRunner command execution** | Restricted | Enforced [$i] |
+| **Disable KRunner (Alt+Space / Alt+F2)** | Restricted | Enforced [$i] |
+
+KRunner does not start at all while `run_command` is restricted (Plasma
+logs "org.kde.krunner: startup job failed"); this is how KDE implements the
+restriction. To keep KRunner for searching but stop it from launching
+commands, leave this setting alone and disable the Command Line runner in
+KRunner's plugin settings instead.
 
 `/etc/bor/xdg/kdeglobals` then contains:
 
 ```text
-[KDE Action Restrictions][$i]
-action/run_command=false
-run_command=false
-shell_access=false
+[KDE Action Restrictions]
+action/run_command[$i]=false
+run_command[$i]=false
+shell_access[$i]=false
 ```
 
-When every entry in a group is enforced, the whole group is marked `[$i]`;
-otherwise only the enforced keys are marked (`shell_access[$i]=false`).
+Enforced keys carry the `[$i]` marker; keys set as defaults are written
+plain. Bor never marks a whole group immutable: KDE applies a group-level
+marker to every file it parses afterwards, so a locked group in the
+node-wide file would make it ignore the keys that group-scoped policies add
+to the same group.
 
 ### Lock the desktop layout
 
@@ -383,8 +412,8 @@ otherwise only the enforced keys are marked (`shell_access[$i]=false`).
 | **Lock desktop layout (panels, widgets, favourites)** | Restricted | Enforced [$i] |
 
 ```text
-[KDE Action Restrictions][$i]
-plasma/plasmashell/unlockedDesktop=false
+[KDE Action Restrictions]
+plasma/plasmashell/unlockedDesktop[$i]=false
 ```
 
 Users can no longer move or add panels and widgets or edit launcher
@@ -402,11 +431,11 @@ favourites.
 `/etc/bor/xdg/kscreenlockerrc`:
 
 ```text
-[Daemon][$i]
-Autolock=true
-LockGrace=0
-LockOnResume=true
-Timeout=10
+[Daemon]
+Autolock[$i]=true
+LockGrace[$i]=0
+LockOnResume[$i]=true
+Timeout[$i]=10
 ```
 
 ### Hide System Settings modules
@@ -418,10 +447,10 @@ and `kcm_krdpserver` (Remote Desktop).
 `/etc/bor/xdg/kdeglobals` then also contains:
 
 ```text
-[KDE Control Module Restrictions][$i]
-kcm_autostart=false
-kcm_kded=false
-kcm_krdpserver=false
+[KDE Control Module Restrictions]
+kcm_autostart[$i]=false
+kcm_kded[$i]=false
+kcm_krdpserver[$i]=false
 ```
 
 The modules disappear from System Settings and cannot be opened with
@@ -435,10 +464,10 @@ installed as `false`.
 **Action** `list`, **Protocol** `smb`, **Access** **Deny**). Bor writes:
 
 ```text
-[KDE URL Restrictions][$i]
-rule_1=list,,,,smb,,,false
-rule_2=open,,,,smb,,,false
-rule_count=2
+[KDE URL Restrictions]
+rule_1[$i]=list,,,,smb,,,false
+rule_2[$i]=open,,,,smb,,,false
+rule_count[$i]=2
 ```
 
 ### A custom entry with variable expansion

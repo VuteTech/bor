@@ -59,17 +59,22 @@ func TestMergeKConfigPolicies_GroupScopes(t *testing.T) {
 
 	// Node-wide files only hold the unscoped policy.
 	node := string(res.Files["kdeglobals"])
-	if !strings.Contains(node, "shell_access=false") || !strings.Contains(node, "Theme=breeze\n") {
+	if !strings.Contains(node, "shell_access[$i]=false") || !strings.Contains(node, "Theme=breeze\n") {
 		t.Errorf("node-wide kdeglobals wrong:\n%s", node)
 	}
 	if strings.Contains(node, "run_command") || strings.Contains(node, "oxygen") {
 		t.Errorf("scoped entries leaked into the node-wide file:\n%s", node)
 	}
+	// Node-wide files must never lock a whole group, or KDE would ignore the
+	// keys the group overlays add to it.
+	if strings.Contains(node, "][$i]\n") {
+		t.Errorf("group-level [$i] in the node-wide file:\n%s", node)
+	}
 
 	// Scoped files: students get both scoped policies with Teachers
 	// (priority 9) winning the icon theme; teachers get theirs.
 	students := string(res.GroupFiles["students"]["kdeglobals"])
-	if !strings.Contains(students, "run_command=false") || !strings.Contains(students, "Theme=oxygen") || strings.Contains(students, "shell_access") {
+	if !strings.Contains(students, "run_command[$i]=false") || !strings.Contains(students, "Theme=oxygen") || strings.Contains(students, "shell_access") {
 		t.Errorf("students overlay wrong:\n%s", students)
 	}
 	teachers := string(res.GroupFiles["teachers"]["kdeglobals"])
@@ -136,7 +141,7 @@ func TestEnvScriptContent_Groups(t *testing.T) {
 		`case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:" ;; esac`,
 		`case "$bor_gids" in *" 1003 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/students:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/students:" ;; esac`,
 		`export XDG_CONFIG_DIRS="${bor_group_dirs}/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`,
-		`export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"`,
+		`export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late"`,
 		"unset bor_group_dirs\n",
 		"unset bor_group_data\n",
 	} {
@@ -160,7 +165,7 @@ func TestEnvScriptContent_Groups(t *testing.T) {
 	if strings.Contains(plain, "id -G") || strings.Contains(plain, "bor_group_dirs") || strings.Contains(plain, "bor_group_data") {
 		t.Errorf("without groups the hook must not carry group logic:\n%s", plain)
 	}
-	if !strings.Contains(plain, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) || !strings.Contains(plain, `export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"`) {
+	if !strings.Contains(plain, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) || !strings.Contains(plain, `export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late"`) {
 		t.Errorf("plain hook wrong:\n%s", plain)
 	}
 }

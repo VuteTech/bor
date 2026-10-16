@@ -721,6 +721,7 @@ func Run(opts Options) {
 	// KDE settings catalogue (built-in and node-reported) - readable by anyone with policy:view
 	mux.Handle("/api/v1/kconfig/catalogue", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListCatalogue))))
 	mux.Handle("/api/v1/kconfig/kcms", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListKCMs))))
+	mux.Handle("/api/v1/kconfig/themes", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListThemes))))
 
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(gate.RequireScoped("compliance", "view")(http.HandlerFunc(complianceHandler.List))))

@@ -669,13 +669,14 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 					return
 				}
 				kcms := policy.InstalledKCMModules()
-				if len(entries) == 0 && len(kcms) == 0 {
+				themes := policy.InstalledLookAndFeelPackages()
+				if len(entries) == 0 && len(kcms) == 0 && len(themes) == 0 {
 					return
 				}
-				if err := client.ReportKConfigCatalogue(ctx, entries, kcms, sysinfo.PlasmaVersion()); err != nil {
+				if err := client.ReportKConfigCatalogue(ctx, entries, kcms, themes, sysinfo.PlasmaVersion()); err != nil {
 					log.Printf("kconfig: ReportKConfigCatalogue failed (non-fatal): %v", err)
 				} else {
-					log.Printf("kconfig: reported %d settings and %d System Settings modules to server", len(entries), len(kcms))
+					log.Printf("kconfig: reported %d settings, %d System Settings modules and %d global themes to server", len(entries), len(kcms), len(themes))
 					kconfigCatalogueReported = true
 				}
 			}()
@@ -1423,6 +1424,17 @@ func sessionAccessCompliance(rules []policy.SessionRule, warnings []string, pam 
 	}
 }
 
+// kconfigSyncMu serialises KConfig syncs; kconfigGroupRetryPending (guarded
+// by it) says whether a retry for unknown Unix groups is already scheduled.
+var (
+	kconfigSyncMu            sync.Mutex
+	kconfigGroupRetryPending bool
+)
+
+// kconfigGroupRetryInterval is how long the agent waits before looking up
+// Unix groups it could not resolve again.
+const kconfigGroupRetryInterval = 10 * time.Minute
+
 // syncAllKConfig re-merges all cached KDE Plasma policies by binding
 // priority and syncs the resulting files to the XDG overlay. Control
 // module restrictions live in kdeglobals like every other restriction and
@@ -1434,6 +1446,11 @@ func sessionAccessCompliance(rules []policy.SessionRule, warnings []string, pam 
 // Returns the set of written file basenames (nil when nothing was
 // written). The caller decides whether to schedule a notification.
 func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *config.Config) map[string]bool {
+	// Syncs come from the policy stream, the file watcher and the group
+	// retry timer; one at a time keeps the files and the watcher consistent.
+	kconfigSyncMu.Lock()
+	defer kconfigSyncMu.Unlock()
+
 	sources := make([]policy.KConfigPolicySource, 0, len(kconfigCache))
 	for _, e := range kconfigCache {
 		sources = append(sources, policy.KConfigPolicySource{ID: e.id, Name: e.name, Priority: e.priority, Policy: e.policy, Groups: e.policy.GetUnixGroups()})
@@ -1528,6 +1545,21 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 				Message:  fmt.Sprintf("Group %q is not known on this node; its settings are written but not activated", g.Name),
 			})
 		}
+	}
+	// Groups appear later (created by an admin, or an identity service that
+	// starts after the agent): look them up again without waiting for a
+	// policy change. One timer at a time; the lock above is held here.
+	if len(unresolved) > 0 && !kconfigGroupRetryPending {
+		kconfigGroupRetryPending = true
+		log.Printf("KConfig: %d Unix group(s) unknown on this node; retrying the lookup in %s", len(unresolved), kconfigGroupRetryInterval)
+		time.AfterFunc(kconfigGroupRetryInterval, func() {
+			kconfigSyncMu.Lock()
+			kconfigGroupRetryPending = false
+			kconfigSyncMu.Unlock()
+			if ctx.Err() == nil {
+				syncAllKConfig(ctx, client, cfg)
+			}
+		})
 	}
 
 	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath, groupDirs); err != nil {
@@ -1627,7 +1659,9 @@ func probeKConfigSession(cfg *config.Config, merged *policy.KConfigMergeResult) 
 		return
 	}
 	tool := policy.KConfigReadTool(exec.LookPath)
-	env := []string{"XDG_CONFIG_DIRS=" + cfg.KConfig.ConfigPath + ":/etc/xdg"}
+	// A UTF-8 locale keeps kreadconfig from warning about the C locale on
+	// every call; the values it prints are ASCII either way.
+	env := []string{"XDG_CONFIG_DIRS=" + cfg.KConfig.ConfigPath + ":/etc/xdg", "LANG=C.UTF-8", "LC_ALL=C.UTF-8"}
 	run := func(name string, args ...string) (string, error) {
 		return notify.RunAsSessionUser(uid, env, name, args...)
 	}

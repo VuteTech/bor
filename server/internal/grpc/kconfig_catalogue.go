@@ -20,6 +20,7 @@ type kconfigRepository interface {
 	UpsertEntry(ctx context.Context, e *pb.KConfigCatalogueEntry, source string) error
 	ReplaceNodeEntries(ctx context.Context, nodeID string, entryIDs []string) error
 	ReplaceNodeKCMs(ctx context.Context, nodeID string, modules []*pb.KcmModule) error
+	ReplaceNodeLookAndFeel(ctx context.Context, nodeID string, themes []*pb.LookAndFeelPackage) error
 }
 
 // WithKConfigRepository enables the KDE settings catalogue RPC.
@@ -32,6 +33,7 @@ func (s *PolicyServer) WithKConfigRepository(repo kconfigRepository) *PolicyServ
 const (
 	maxReportedKConfigEntries = 5000
 	maxReportedKCMs           = 1000
+	maxReportedLookAndFeel    = 500
 )
 
 var (
@@ -105,10 +107,31 @@ func (s *PolicyServer) ReportKConfigCatalogue(ctx context.Context, req *pb.Repor
 		log.Printf("WARNING: kconfig catalogue: failed to replace node modules for %s: %v", clientID, err)
 	}
 
+	// Global themes: same id rules as modules (package ids look like
+	// org.kde.breezedark.desktop).
+	reported := req.GetLookAndFeel()
+	if len(reported) > maxReportedLookAndFeel {
+		reported = reported[:maxReportedLookAndFeel]
+	}
+	themes := make([]*pb.LookAndFeelPackage, 0, len(reported))
+	for _, t := range reported {
+		if !kcmModuleIDPattern.MatchString(t.GetId()) {
+			continue
+		}
+		name := t.GetName()
+		if len(name) > 255 {
+			name = name[:255]
+		}
+		themes = append(themes, &pb.LookAndFeelPackage{Id: t.GetId(), Name: name})
+	}
+	if err := s.kconfigRepo.ReplaceNodeLookAndFeel(ctx, node.ID, themes); err != nil {
+		log.Printf("WARNING: kconfig catalogue: failed to replace node themes for %s: %v", clientID, err)
+	}
+
 	if v := req.GetPlasmaVersion(); v != "" {
-		log.Printf("kconfig catalogue: node %s reported %d settings (%d skipped) and %d modules (Plasma %s)", clientID, len(entryIDs), skipped, len(valid), v)
+		log.Printf("kconfig catalogue: node %s reported %d settings (%d skipped), %d modules and %d global themes (Plasma %s)", clientID, len(entryIDs), skipped, len(valid), len(themes), v)
 	} else {
-		log.Printf("kconfig catalogue: node %s reported %d settings (%d skipped) and %d modules", clientID, len(entryIDs), skipped, len(valid))
+		log.Printf("kconfig catalogue: node %s reported %d settings (%d skipped), %d modules and %d global themes", clientID, len(entryIDs), skipped, len(valid), len(themes))
 	}
 	return &pb.ReportKConfigCatalogueResponse{}, nil
 }

@@ -18,6 +18,61 @@ type stubKConfigStore struct {
 	all    []*pb.KConfigCatalogueEntry
 	byNode map[string][]*pb.KConfigCatalogueEntry
 	kcms   map[string][]*pb.KcmModule
+	themes map[string][]*pb.LookAndFeelPackage
+}
+
+func (s *stubKConfigStore) ListLookAndFeel(context.Context) ([]*pb.LookAndFeelPackage, error) {
+	var out []*pb.LookAndFeelPackage
+	for _, t := range s.themes {
+		out = append(out, t...)
+	}
+	return out, nil
+}
+
+func (s *stubKConfigStore) ListLookAndFeelByNode(_ context.Context, nodeID string) ([]*pb.LookAndFeelPackage, error) {
+	return s.themes[nodeID], nil
+}
+
+func TestKConfigHandler_ListThemes(t *testing.T) {
+	h := NewKConfigHandler(&stubKConfigStore{themes: map[string][]*pb.LookAndFeelPackage{
+		"n1": {{Id: "org.kde.breezedark.desktop", Name: "Breeze Dark"}},
+		"n2": {{Id: "org.fedoraproject.fedora.desktop", Name: "Fedora"}},
+	}})
+
+	rec := httptest.NewRecorder()
+	h.ListThemes(rec, httptest.NewRequest(http.MethodGet, "/api/v1/kconfig/themes", http.NoBody))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var all []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected both nodes' themes, got %+v", all)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ListThemes(rec, httptest.NewRequest(http.MethodGet, "/api/v1/kconfig/themes?node_id=n2", http.NoBody))
+	var one []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &one); err != nil {
+		t.Fatal(err)
+	}
+	if len(one) != 1 || one[0].ID != "org.fedoraproject.fedora.desktop" || one[0].Name != "Fedora" {
+		t.Errorf("node filter wrong: %+v", one)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ListThemes(rec, httptest.NewRequest(http.MethodPost, "/api/v1/kconfig/themes", http.NoBody))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST should be rejected, got %d", rec.Code)
+	}
 }
 
 func (s *stubKConfigStore) ListEntries(context.Context) ([]*pb.KConfigCatalogueEntry, error) {

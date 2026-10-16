@@ -765,26 +765,14 @@ func MergeKConfigEntries(entries []*pb.KConfigEntry) (map[string][]byte, error) 
 	return result, nil
 }
 
-// renderINIGroup writes a single INI group to the builder.
-// If all entries in the group are enforced, the group header uses [$i].
-// If only some entries are enforced, key-level [$i] suffixes are used.
+// renderINIGroup writes a single INI group to the builder. Immutability is
+// always marked on the keys, never on the group: KConfig applies a
+// group-level [$i] to every file parsed afterwards, so a locked group in
+// the node-wide file would make KDE ignore the keys that group-scoped
+// overlays add to the same group (a student policy's shell_access next to
+// the baseline's run_command, for example).
 func renderINIGroup(buf *strings.Builder, g *kconfigGroup) {
-	allEnforced := true
-	anyEnforced := false
-	for _, e := range g.entries {
-		if e.Enforced {
-			anyEnforced = true
-		} else {
-			allEnforced = false
-		}
-	}
-
-	// Write group header.
-	if allEnforced && anyEnforced {
-		fmt.Fprintf(buf, "[%s][$i]\n", g.name)
-	} else {
-		fmt.Fprintf(buf, "[%s]\n", g.name)
-	}
+	fmt.Fprintf(buf, "[%s]\n", g.name)
 
 	// Sort entries by key (then locale) for deterministic output.
 	sorted := make([]*pb.KConfigEntry, len(g.entries))
@@ -797,7 +785,7 @@ func renderINIGroup(buf *strings.Builder, g *kconfigGroup) {
 	})
 
 	for _, e := range sorted {
-		buf.WriteString(renderINIKey(e, allEnforced))
+		buf.WriteString(renderINIKey(e, false))
 		if e.Delete {
 			// KConfig writes deleted entries as a bare key[$d] line.
 			buf.WriteString("\n")
@@ -1131,15 +1119,19 @@ func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
 		configPrefix, configCleanup = "${bor_group_dirs}", "unset bor_group_dirs\n"
 		dataPrefix, dataCleanup = "${bor_group_data}", "unset bor_group_data\n"
 	}
+	// The data directory goes first (it shadows desktop entries and holds
+	// the look-and-feel package); its "late" subdirectory goes last, so the
+	// Plasma update scripts in it are found without shadowing the shell
+	// package (see kconfig_layout.go).
 	fmt.Fprintf(&b, `case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":%[1]s:"*) ;;
   *) export XDG_CONFIG_DIRS="%[3]s%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
 %[4]scase ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":%[2]s:"*) ;;
-  *) export XDG_DATA_DIRS="%[5]s%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+  *) export XDG_DATA_DIRS="%[5]s%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:%[2]s/%[7]s" ;;
 esac
-%[6]s`, configPath, dataPath, configPrefix, configCleanup, dataPrefix, dataCleanup)
+%[6]s`, configPath, dataPath, configPrefix, configCleanup, dataPrefix, dataCleanup, LateDataDir)
 	return b.String()
 }
 

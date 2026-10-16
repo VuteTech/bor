@@ -100,6 +100,13 @@ message KcmModule {
   string name = 2;  // display name from the module's desktop entry
 }
 
+// LookAndFeelPackage is a global theme (Plasma look-and-feel package)
+// installed on a node, as System Settings lists it.
+message LookAndFeelPackage {
+  string id = 1;    // e.g. "org.kde.breezedark.desktop"
+  string name = 2;  // display name from the package metadata
+}
+
 // ReportKConfigCatalogueRequest is sent by the agent on connect to publish
 // the KConfigXT schemas (/usr/share/config.kcfg) and the System Settings
 // modules installed on the node. The server stores the entries next to
@@ -110,6 +117,9 @@ message ReportKConfigCatalogueRequest {
   repeated KcmModule kcms = 3;
   // Plasma version if detectable, e.g. "6.3.4".
   string plasma_version = 4;
+  // Global themes installed on the node (distribution and vendor
+  // packages; the ones Bor generates are not reported).
+  repeated LookAndFeelPackage look_and_feel = 5;
 }
 
 message ReportKConfigCatalogueResponse {}

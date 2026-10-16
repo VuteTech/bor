@@ -29,8 +29,8 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     ],
     "key": "run_command",
     "type": "Bool",
-    "label": "Restrict KRunner command execution",
-    "description": "Disables KRunner (Alt+F2 / Alt+Space). The desktop menu entry is hidden as well (action/run_command is written with the same value).",
+    "label": "Disable KRunner (Alt+Space / Alt+F2)",
+    "description": "KRunner refuses to start at all while this is restricted (its startup job fails), so search, calculator and every other runner go with it; the Run Command menu entry is hidden as well (action/run_command is written with the same value). To keep KRunner but stop it from launching commands, disable the Command Line runner under KRunner instead.",
     "category": "Session & Shell",
     "inverted": true,
     "immutableDefault": true,
@@ -7650,6 +7650,128 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     "description": "Plugin ids such as kerfuffle_cli7z or kerfuffle_libzip; disabling a plugin stops Ark from opening the formats it provides.",
     "category": "Ark",
     "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_shell",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_shellEnabled",
+    "type": "Bool",
+    "label": "Runner: Command Line",
+    "description": "Runs shell commands typed into KRunner. Disabling it keeps KRunner for search while removing command execution. Plugin id krunner_shell.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "windowsEquivalent": "Prevent access to the command prompt (search only)",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_kill",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_killEnabled",
+    "type": "Bool",
+    "label": "Runner: Terminate Applications",
+    "description": "Kills processes from KRunner (\"kill firefox\"). Plugin id krunner_kill.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_sessions",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_sessionsEnabled",
+    "type": "Bool",
+    "label": "Runner: Desktop Sessions",
+    "description": "Logout, lock, switch user and new session actions from KRunner. Plugin id krunner_sessions.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_recentdocuments",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_recentdocumentsEnabled",
+    "type": "Bool",
+    "label": "Runner: Recent Files",
+    "description": "Searches recently used documents. Plugin id krunner_recentdocuments.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "windowsEquivalent": "Do not keep history of recently opened documents (inverse)",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_webshortcuts",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_webshortcutsEnabled",
+    "type": "Bool",
+    "label": "Runner: Web Search Keywords",
+    "description": "Opens web searches for keyword prefixes (gg:, wp:). Plugin id krunner_webshortcuts.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_bookmarksrunner",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_bookmarksrunnerEnabled",
+    "type": "Bool",
+    "label": "Runner: Bookmarks",
+    "description": "Searches browser bookmarks. Plugin id krunner_bookmarksrunner.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_placesrunner",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_placesrunnerEnabled",
+    "type": "Bool",
+    "label": "Runner: Places",
+    "description": "Searches Dolphin's Places (devices, remote shares). Plugin id krunner_placesrunner.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "krunner.plugin.krunner_konsoleprofiles",
+    "file": "krunnerrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "krunner_konsoleprofilesEnabled",
+    "type": "Bool",
+    "label": "Runner: Konsole Profiles",
+    "description": "Opens Konsole with a chosen profile; hide it when a locked profile is deployed. Plugin id krunner_konsoleprofiles.",
+    "defaultValue": "true",
+    "category": "KRunner",
+    "reload": "logout",
     "source": "builtin"
   }
 ];

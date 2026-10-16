@@ -19,4 +19,11 @@ export interface PolicyContentEditorProps {
    * produce invalid content never call it.
    */
   onValidityChange?: (ok: boolean) => void;
+  /**
+   * The policy's name as the caller knows it (the saved name, or the name
+   * typed so far in the create wizard). Editors use it for labels that
+   * refer to the policy itself, such as the look-and-feel package a KDE
+   * policy generates.
+   */
+  policyName?: string;
 }

@@ -92,7 +92,7 @@ func TestRenderLayoutFiles(t *testing.T) {
 	var update string
 	var updateName string
 	for name, data := range files {
-		if strings.HasPrefix(name, "plasma/shells/org.kde.plasma.desktop/contents/updates/bor-") && strings.HasSuffix(name, ".js") {
+		if strings.HasPrefix(name, "late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-") && strings.HasSuffix(name, ".js") {
 			update = string(data)
 			updateName = name
 		}
@@ -211,7 +211,7 @@ func TestMergeKConfigPolicies_LayoutWinnerAndPackageSelection(t *testing.T) {
 		t.Fatalf("highest-priority layout should win, got %+v (%s)", res.Layout, res.LayoutPolicyID)
 	}
 	content := string(res.Files["kdeglobals"])
-	if !strings.Contains(content, "[KDE][$i]\nLookAndFeelPackage=org.bor.bbbb2222.desktop\n") {
+	if !strings.Contains(content, "[KDE]\nLookAndFeelPackage[$i]=org.bor.bbbb2222.desktop\n") {
 		t.Errorf("expected locked LookAndFeelPackage selection, got:\n%s", content)
 	}
 	var sawOverride bool
@@ -234,7 +234,7 @@ func TestMergeKConfigPolicies_LayoutWinnerAndPackageSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	content = string(res.Files["kdeglobals"])
-	if !strings.Contains(content, "LookAndFeelPackage=org.kde.breezedark.desktop") || strings.Contains(content, "org.bor.bbbb2222") {
+	if !strings.Contains(content, "LookAndFeelPackage[$i]=org.kde.breezedark.desktop") || strings.Contains(content, "org.bor.bbbb2222") {
 		t.Errorf("explicit theme setting must win, got:\n%s", content)
 	}
 	if res.Layout == nil {
@@ -255,7 +255,7 @@ func TestEnvScriptContent_DataDirs(t *testing.T) {
 	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
 	for _, want := range []string{
 		`export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`,
-		`export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"`,
+		`export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late"`,
 		`*":/etc/bor/share:"*) ;;`,
 	} {
 		if !strings.Contains(got, want) {

@@ -21,6 +21,8 @@ type kconfigCatalogueStore interface {
 	ListEntriesByNode(ctx context.Context, nodeID string) ([]*pb.KConfigCatalogueEntry, error)
 	ListKCMs(ctx context.Context) ([]*pb.KcmModule, error)
 	ListKCMsByNode(ctx context.Context, nodeID string) ([]*pb.KcmModule, error)
+	ListLookAndFeel(ctx context.Context) ([]*pb.LookAndFeelPackage, error)
+	ListLookAndFeelByNode(ctx context.Context, nodeID string) ([]*pb.LookAndFeelPackage, error)
 }
 
 // KConfigHandler serves the KDE settings catalogue to the web UI.

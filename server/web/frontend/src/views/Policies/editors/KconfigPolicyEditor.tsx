@@ -35,7 +35,7 @@ import {
   targetLabel,
   type KConfigCatalogueEntry,
 } from "./kconfigCatalogue";
-import { fetchKConfigCatalogue, fetchKConfigKcms, type KcmModuleInfo } from "../../../apiClient/kconfigApi";
+import { fetchKConfigCatalogue, fetchKConfigKcms, fetchKConfigThemes, type KcmModuleInfo, type LookAndFeelInfo } from "../../../apiClient/kconfigApi";
 import { fetchNodesPaged, type Node } from "../../../apiClient/nodesApi";
 import {
   DEFAULT_PANEL_SNIPPET,
@@ -48,6 +48,7 @@ import {
   KCONFIG_PRESETS,
   KDE_APPLICATION_IDS,
   KIO_PROTOCOLS,
+  KNOWN_GLOBAL_THEMES,
   URL_RULE_PRESETS,
   applyKConfigPreset,
   hasKonsoleProfileContent,
@@ -142,6 +143,18 @@ const GROUP_RESTRICTIONS = "System Settings & URL Rules";
 const GROUP_CUSTOM = "Custom Entries";
 const GROUP_ADVANCED = "Advanced";
 
+/** Catalogue entry rendered as a theme picker instead of a text field. */
+const GLOBAL_THEME_ENTRY = "kde.LookAndFeelPackage";
+const THEME_CUSTOM = "__custom";
+
+/** Built-in themes plus reported ones, by name; the current value stays selectable even when no node reports it. */
+function themeOptions(reported: LookAndFeelInfo[], current: string): LookAndFeelInfo[] {
+  const byId = new Map<string, LookAndFeelInfo>();
+  for (const t of [...KNOWN_GLOBAL_THEMES, ...reported]) if (t.id && !byId.has(t.id)) byId.set(t.id, t);
+  if (current && !byId.has(current)) byId.set(current, { id: current, name: current });
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 interface TreeItem {
   key: string;
   label: string;
@@ -192,6 +205,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
   contentRaw,
   onChange,
   isDisabled = false,
+  policyName,
 }) => {
   // Load once; older typed content is upgraded to generic settings and,
   // for editable policies, written back so the stored shape is current.
@@ -253,6 +267,17 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
   const [nodeId, setNodeId] = useState("");
   const [nodeKcms, setNodeKcms] = useState<KcmModuleInfo[] | null>(null);
   const [nodeSummary, setNodeSummary] = useState("");
+  // Global themes for the Appearance > Global theme picker: the ones every
+  // Plasma ships plus what nodes reported (all nodes, or the chosen node).
+  const [themes, setThemes] = useState<LookAndFeelInfo[]>([]);
+  const [themeCustom, setThemeCustom] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchKConfigThemes()
+      .then((t) => { if (!cancelled) setThemes(t); })
+      .catch(() => { /* the built-in list is still offered */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -285,15 +310,17 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (!id) {
       setNodeKcms(null);
       setNodeSummary("");
+      fetchKConfigThemes().then(setThemes).catch(() => { /* keep the current list */ });
       return;
     }
     const node = nodes.find((n) => n.id === id);
     const name = node?.name ?? "the node";
-    Promise.all([fetchKConfigCatalogue(id), fetchKConfigKcms(id)])
-      .then(([entries, kcms]) => {
+    Promise.all([fetchKConfigCatalogue(id), fetchKConfigKcms(id), fetchKConfigThemes(id)])
+      .then(([entries, kcms, nodeThemes]) => {
         if (registerCatalogueEntries(entries) > 0) setCatalogueVersion((v) => v + 1);
         setNodeKcms(kcms.length > 0 ? kcms : null);
-        setNodeSummary(`${name}${node?.desktop_env ? ` (${node.desktop_env})` : ""}: ${entries.length} settings from its KDE schemas, ${kcms.length} System Settings modules.`);
+        if (nodeThemes.length > 0) setThemes(nodeThemes);
+        setNodeSummary(`${name}${node?.desktop_env ? ` (${node.desktop_env})` : ""}: ${entries.length} settings from its KDE schemas, ${kcms.length} System Settings modules, ${nodeThemes.length} global themes.`);
       })
       .catch((err: unknown) => setNodeSummary(`Could not load the catalogue of ${name}: ${err instanceof Error ? err.message : String(err)}`));
   };
@@ -434,8 +461,10 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       if (configured) commit(value, immutable, exp);
     };
     const numeric = entry.type === "Int" || entry.type === "UInt" || entry.type === "Double";
-    const textual = entry.type === "String" || entry.type === "Path" || entry.type === "Url" || entry.type === "Font";
+    const isThemePicker = entry.id === GLOBAL_THEME_ENTRY;
+    const textual = !isThemePicker && (entry.type === "String" || entry.type === "Path" || entry.type === "Url" || entry.type === "Font");
     const boolChecked = entry.inverted ? value === "false" : value === "true";
+    const themeList = isThemePicker ? themeOptions(themes, value) : [];
 
     return (
       <div style={{ padding: "0.5rem 0" }}>
@@ -494,6 +523,40 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
           {textual && (
             <FormGroup label="Value" fieldId="kc-value-text">
               <TextInput id="kc-value-text" value={value} onChange={(_ev, v) => updateValue(v)} />
+            </FormGroup>
+          )}
+          {isThemePicker && (
+            <FormGroup label="Global theme" fieldId="kc-value-theme">
+              {themeCustom ? (
+                <TextInput id="kc-value-theme" value={value} onChange={(_ev, v) => updateValue(v)} placeholder="org.example.corporate.desktop" aria-label="Global theme package id" />
+              ) : (
+                <FormSelect
+                  id="kc-value-theme"
+                  value={value}
+                  onChange={(_ev, v) => {
+                    if (v === THEME_CUSTOM) setThemeCustom(true);
+                    else updateValue(v);
+                  }}
+                >
+                  {value === "" && <FormSelectOption value="" label="Select a theme..." isDisabled />}
+                  {themeList.map((t) => <FormSelectOption key={t.id} value={t.id} label={t.name === t.id ? t.id : `${t.name} (${t.id})`} />)}
+                  <FormSelectOption value={THEME_CUSTOM} label="Custom package id..." />
+                </FormSelect>
+              )}
+              <FieldHelp>
+                {themeCustom
+                  ? "Package id of a theme installed on the nodes (the directory name under /usr/share/plasma/look-and-feel)."
+                  : `Themes every Plasma installation ships plus the ones ${nodeId ? "the selected node" : "your nodes"} reported.`}
+                {themeCustom && !isDisabled && (
+                  <>
+                    {" "}
+                    <Button variant="link" isInline onClick={() => setThemeCustom(false)}>Back to the list</Button>
+                  </>
+                )}
+                {hasLayoutContent(content.layout) && (
+                  <> This policy also generates a look under Desktop Layout. An explicit theme here wins over it; to enforce the generated look instead, remove this setting and switch on &quot;Enforce as the global theme&quot; there.</>
+                )}
+              </FieldHelp>
             </FormGroup>
           )}
           {entry.type === "StringList" && (
@@ -859,7 +922,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Wallpaper and panel layout</Title>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
-          The agent generates a look-and-feel package named after this policy under the data directory and selects it as the global theme (<code>kdeglobals · [KDE] · LookAndFeelPackage</code>). Users who log in for the first time get the wallpaper and, if set, the panel layout. The rest of the theme (colours, icons, fonts) comes from the Appearance settings.
+          The agent generates a look-and-feel package named &quot;{policyName?.trim() || "this policy"} (managed)&quot; under the data directory and selects it as the global theme (<code>kdeglobals · [KDE] · LookAndFeelPackage</code>). Users who log in for the first time get the wallpaper and, if set, the panel layout. The rest of the theme (colours, icons, fonts) comes from the Appearance settings and falls back to Breeze. Do not combine this with an explicit Appearance &gt; Global theme in the same policy: the explicit theme would win.
         </p>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>Windows Group Policy equivalent: Desktop Wallpaper; Start Layout.</p>
         <Form>
@@ -912,8 +975,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
           <FormGroup label="Apply the wallpaper to logged-in sessions now" fieldId="kc-layout-live">
             <Switch id="kc-layout-live" isChecked={layout.applyLive} isDisabled={isDisabled} onChange={(_ev, c) => update({ applyLive: c })} label={layout.applyLive ? "Yes, through plasma-apply-wallpaperimage" : "No"} />
           </FormGroup>
-          <FormGroup label="Lock the global theme" fieldId="kc-layout-lock">
-            <Switch id="kc-layout-lock" isChecked={layout.lockPackage} isDisabled={isDisabled} onChange={(_ev, c) => update({ lockPackage: c })} label={layout.lockPackage ? "Enforced [$i]: users cannot pick another global theme" : "Default only: users may pick another global theme"} />
+          <FormGroup label="Enforce as the global theme" fieldId="kc-layout-lock">
+            <Switch id="kc-layout-lock" isChecked={layout.lockPackage} isDisabled={isDisabled} onChange={(_ev, c) => update({ lockPackage: c })} label={layout.lockPackage ? "Enforced [$i]: users cannot pick another global theme" : "Default only: users may pick another global theme (settings enforced individually still apply)"} />
+            <FieldHelp>No package id to type: the generated look is selected by the policy itself and appears in System Settings as &quot;{policyName?.trim() || "this policy"} (managed)&quot;.</FieldHelp>
           </FormGroup>
           {!isDisabled && configured && (
             <FormGroup fieldId="kc-layout-actions">

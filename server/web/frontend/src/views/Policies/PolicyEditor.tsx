@@ -392,6 +392,7 @@ export const PolicyEditor: React.FC<PolicyEditorProps> = ({
       onChange={setContentRaw}
       isDisabled={!isEditable}
       onValidityChange={setContentValid}
+      policyName={policy.name}
     />
   );
 

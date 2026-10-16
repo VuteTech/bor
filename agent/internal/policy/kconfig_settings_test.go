@@ -56,7 +56,7 @@ func TestMergeKConfigEntries_Markers(t *testing.T) {
 	}
 }
 
-func TestMergeKConfigEntries_GroupImmutableKeepsOtherMarkers(t *testing.T) {
+func TestMergeKConfigEntries_ImmutabilityStaysOnKeys(t *testing.T) {
 	entries := []*pb.KConfigEntry{
 		{File: "kdeglobals", Group: "General", Key: "A", Value: "1", Enforced: true},
 		{File: "kdeglobals", Group: "General", Key: "B", Value: "$X", Enforced: true, Expand: true},
@@ -66,7 +66,7 @@ func TestMergeKConfigEntries_GroupImmutableKeepsOtherMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "[General][$i]\nA=1\nB[$e]=$X\n"
+	want := "[General]\nA[$i]=1\nB[$ie]=$X\n"
 	if got := string(files["kdeglobals"]); got != want {
 		t.Errorf("rendered file mismatch:\n got: %q\nwant: %q", got, want)
 	}
@@ -84,7 +84,7 @@ func TestMergeKConfigPolicies_ShowOnlyKCMs(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(res.Files["kdeglobals"])
-	for _, line := range []string{"kcm_access=true", "kcm_users=true", "kcm_autostart=false", "kcm_bluetooth=false"} {
+	for _, line := range []string{"kcm_access[$i]=true", "kcm_users[$i]=true", "kcm_autostart[$i]=false", "kcm_bluetooth[$i]=false"} {
 		if !strings.Contains(content, "\n"+line+"\n") {
 			t.Errorf("missing %q in:\n%s", line, content)
 		}
@@ -122,10 +122,10 @@ func TestMergeKConfigPolicies_ShowOnlyWinsOverLowerHide(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(res.Files["kdeglobals"])
-	if strings.Count(content, "kcm_access=") != 1 || !strings.Contains(content, "kcm_access=true") {
+	if strings.Count(content, "kcm_access[$i]=") != 1 || !strings.Contains(content, "kcm_access[$i]=true") {
 		t.Errorf("higher-priority allow list should win, got:\n%s", content)
 	}
-	if !strings.Contains(content, "kcm_users=false") {
+	if !strings.Contains(content, "kcm_users[$i]=false") {
 		t.Errorf("unlisted module should be hidden, got:\n%s", content)
 	}
 }

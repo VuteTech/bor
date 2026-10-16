@@ -138,7 +138,7 @@ func TestMergeKConfigPolicies_PriorityWins(t *testing.T) {
 	}
 
 	content := string(res.Files["kdeglobals"])
-	if !strings.Contains(content, "shell_access=false") {
+	if !strings.Contains(content, "shell_access[$i]=false") {
 		t.Errorf("higher-priority value should win, got:\n%s", content)
 	}
 	if strings.Contains(content, "shell_access=true") || strings.Count(content, "shell_access") != 1 {
@@ -198,7 +198,7 @@ func TestMergeKConfigPolicies_SameValueNotOverridden(t *testing.T) {
 	}
 	content := string(res.Files["kdeglobals"])
 	// Both derived keys appear exactly once (not twice, once per policy).
-	if strings.Count(content, "\nrun_command=false\n") != 1 || strings.Count(content, "\naction/run_command=false\n") != 1 {
+	if strings.Count(content, "\nrun_command[$i]=false\n") != 1 || strings.Count(content, "\naction/run_command[$i]=false\n") != 1 {
 		t.Errorf("run_command and action/run_command should each appear once, got:\n%s", content)
 	}
 }
@@ -219,7 +219,7 @@ func TestMergeKConfigPolicies_URLRulesAdditive(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(res.Files["kdeglobals"])
-	if strings.Count(content, "rule_count=") != 1 || !strings.Contains(content, "rule_count=3") {
+	if strings.Count(content, "rule_count[$i]=") != 1 || !strings.Contains(content, "rule_count[$i]=3") {
 		t.Errorf("expected a single rule_count=3, got:\n%s", content)
 	}
 	for _, rule := range []string{"list,,,,smb,,,false", "open,,,,ftp,,,false", "open,,,,file,,$HOME,true"} {
@@ -293,14 +293,14 @@ func TestMergeKConfigEntries_SinglePolicy(t *testing.T) {
 	}
 
 	content := string(data)
-	// Both entries are enforced, so group header should have [$i]
-	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
-		t.Errorf("expected group-level [$i] enforcement, got:\n%s", content)
+	// Both entries are enforced: the markers sit on the keys, never on the group
+	if !strings.Contains(content, "[KDE Action Restrictions]\n") {
+		t.Errorf("expected the group header, got:\n%s", content)
 	}
-	if !strings.Contains(content, "run_command=false") {
+	if !strings.Contains(content, "run_command[$i]=false") {
 		t.Errorf("expected run_command=false, got:\n%s", content)
 	}
-	if !strings.Contains(content, "shell_access=false") {
+	if !strings.Contains(content, "shell_access[$i]=false") {
 		t.Errorf("expected shell_access=false, got:\n%s", content)
 	}
 }
@@ -404,10 +404,10 @@ func TestMergeKConfigEntries_MultipleGroups(t *testing.T) {
 
 	content := string(files["kdeglobals"])
 	// Should have both groups
-	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
+	if !strings.Contains(content, "[KDE Action Restrictions]\n") {
 		t.Errorf("expected Action Restrictions group, got:\n%s", content)
 	}
-	if !strings.Contains(content, "[Icons][$i]") {
+	if !strings.Contains(content, "[Icons]\n") {
 		t.Errorf("expected Icons group, got:\n%s", content)
 	}
 	// Groups should be separated by a blank line
@@ -426,7 +426,7 @@ func TestMergeKConfigEntries_NestedGroupHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(files["kscreenlockerrc"])
-	if !strings.Contains(content, "[Greeter][Wallpaper][org.kde.image][General][$i]\nImage=/srv/lock.png\n") {
+	if !strings.Contains(content, "[Greeter][Wallpaper][org.kde.image][General]\nImage[$i]=/srv/lock.png\n") {
 		t.Errorf("expected nested group header, got:\n%s", content)
 	}
 }
@@ -724,16 +724,16 @@ func TestMergeKConfigEntries_URLRestrictionsSinglePolicy(t *testing.T) {
 	}
 
 	content := string(files["kdeglobals"])
-	if !strings.Contains(content, "[KDE URL Restrictions][$i]") {
-		t.Errorf("expected group header with [$i], got:\n%s", content)
+	if !strings.Contains(content, "[KDE URL Restrictions]\n") {
+		t.Errorf("expected the group header, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_1=open,,,,http,example.com,,true") {
+	if !strings.Contains(content, "rule_1[$i]=open,,,,http,example.com,,true") {
 		t.Errorf("expected rule_1, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_2=list,,,,file,,,false") {
+	if !strings.Contains(content, "rule_2[$i]=list,,,,file,,,false") {
 		t.Errorf("expected rule_2, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_count=2") {
+	if !strings.Contains(content, "rule_count[$i]=2") {
 		t.Errorf("expected rule_count=2, got:\n%s", content)
 	}
 }
@@ -760,21 +760,21 @@ func TestMergeKConfigEntries_URLRestrictionsMultiplePolicies(t *testing.T) {
 	// Should have 3 rules renumbered sequentially.
 	// rule_1 entries from both policies sort by original index (1),
 	// stable sort preserves insertion order: a.com first, then b.com.
-	if !strings.Contains(content, "rule_1=open,,,,http,a.com,,true") {
+	if !strings.Contains(content, "rule_1[$i]=open,,,,http,a.com,,true") {
 		t.Errorf("expected rule_1=a.com, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_2=redirect,,,,file,b.com,,true") {
+	if !strings.Contains(content, "rule_2[$i]=redirect,,,,file,b.com,,true") {
 		t.Errorf("expected rule_2=b.com, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_3=list,,,,https,a.com,,false") {
+	if !strings.Contains(content, "rule_3[$i]=list,,,,https,a.com,,false") {
 		t.Errorf("expected rule_3 from policy A rule_2, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_count=3") {
+	if !strings.Contains(content, "rule_count[$i]=3") {
 		t.Errorf("expected rule_count=3, got:\n%s", content)
 	}
 
 	// Should NOT contain duplicate rule_count entries.
-	if strings.Count(content, "rule_count=") != 1 {
+	if strings.Count(content, "rule_count[$i]=") != 1 {
 		t.Errorf("expected exactly one rule_count, got:\n%s", content)
 	}
 }
@@ -796,18 +796,18 @@ func TestMergeKConfigEntries_URLRestrictionsWithOtherGroups(t *testing.T) {
 	content := string(files["kdeglobals"])
 
 	// URL restrictions should be present and correct.
-	if !strings.Contains(content, "rule_1=open,,,,http,example.com,,true") {
+	if !strings.Contains(content, "rule_1[$i]=open,,,,http,example.com,,true") {
 		t.Errorf("expected URL restriction rule, got:\n%s", content)
 	}
-	if !strings.Contains(content, "rule_count=1") {
+	if !strings.Contains(content, "rule_count[$i]=1") {
 		t.Errorf("expected rule_count=1, got:\n%s", content)
 	}
 
 	// Action restrictions should be unaffected.
-	if !strings.Contains(content, "[KDE Action Restrictions][$i]") {
+	if !strings.Contains(content, "[KDE Action Restrictions]\n") {
 		t.Errorf("expected Action Restrictions group, got:\n%s", content)
 	}
-	if !strings.Contains(content, "shell_access=false") {
+	if !strings.Contains(content, "shell_access[$i]=false") {
 		t.Errorf("expected shell_access=false, got:\n%s", content)
 	}
 }

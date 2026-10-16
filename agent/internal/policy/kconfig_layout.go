@@ -25,18 +25,29 @@ import (
 //	plasma/look-and-feel/org.bor.<policy>.desktop/metadata.json
 //	plasma/look-and-feel/org.bor.<policy>.desktop/contents/defaults
 //	plasma/look-and-feel/org.bor.<policy>.desktop/contents/layouts/org.kde.plasma.desktop-layout.js
-//	plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js
+//	late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js
 //
 // Plasma reads the wallpaper and the layout from the selected package when
 // a user logs in for the first time; the update script runs once per
 // existing user (plasmashell records it in plasmashellrc [Updates]).
+//
+// The update script lives under the "late" subdirectory, which the hook
+// appends to the END of XDG_DATA_DIRS as a data directory of its own.
+// plasmashell collects update scripts from every data directory, but
+// KPackage resolves the shell package itself to the first data directory
+// that has plasma/shells/org.kde.plasma.desktop/ at all: a skeleton in a
+// directory that comes before /usr/share shadows the real package and
+// leaves the desktop without views.
 const (
 	layoutPackagePrefix = "org.bor."
 	layoutPackageSuffix = ".desktop"
 	lookAndFeelDir      = "plasma/look-and-feel"
-	shellUpdatesDir     = "plasma/shells/org.kde.plasma.desktop/contents/updates"
-	layoutScriptPath    = "contents/layouts/org.kde.plasma.desktop-layout.js"
-	defaultFillMode     = "2"
+	// LateDataDir is the subdirectory of the data directory that the hook
+	// appends last to XDG_DATA_DIRS.
+	LateDataDir      = "late"
+	shellUpdatesDir  = LateDataDir + "/plasma/shells/org.kde.plasma.desktop/contents/updates"
+	layoutScriptPath = "contents/layouts/org.kde.plasma.desktop-layout.js"
+	defaultFillMode  = "2"
 )
 
 // LayoutHasContent reports whether a layout asks for anything at all.

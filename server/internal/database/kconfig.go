@@ -193,3 +193,69 @@ func scanKCMs(rows rowScanner) ([]*pb.KcmModule, error) {
 	}
 	return out, rows.Err()
 }
+
+// ReplaceNodeLookAndFeel replaces the global themes recorded for a node.
+func (r *KConfigRepository) ReplaceNodeLookAndFeel(ctx context.Context, nodeID string, themes []*pb.LookAndFeelPackage) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("kconfig: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is a no-op
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM node_lookandfeel_packages WHERE node_id = $1`, nodeID); err != nil {
+		return fmt.Errorf("kconfig: delete node themes: %w", err)
+	}
+	if len(themes) > 0 {
+		ids := make([]string, 0, len(themes))
+		names := make([]string, 0, len(themes))
+		for _, t := range themes {
+			if t.GetId() == "" {
+				continue
+			}
+			ids = append(ids, t.GetId())
+			names = append(names, t.GetName())
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO node_lookandfeel_packages (node_id, package_id, name)
+			SELECT $1, * FROM unnest($2::varchar[], $3::varchar[])
+			ON CONFLICT DO NOTHING`, nodeID, pq.Array(ids), pq.Array(names)); err != nil {
+			return fmt.Errorf("kconfig: insert node themes: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// ListLookAndFeel returns every global theme any node reported, with one
+// display name per package id.
+func (r *KConfigRepository) ListLookAndFeel(ctx context.Context) ([]*pb.LookAndFeelPackage, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT package_id, MAX(name) FROM node_lookandfeel_packages GROUP BY package_id ORDER BY package_id`)
+	if err != nil {
+		return nil, fmt.Errorf("kconfig: list themes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanLookAndFeel(rows)
+}
+
+// ListLookAndFeelByNode returns the global themes one node reported.
+func (r *KConfigRepository) ListLookAndFeelByNode(ctx context.Context, nodeID string) ([]*pb.LookAndFeelPackage, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT package_id, name FROM node_lookandfeel_packages WHERE node_id = $1 ORDER BY package_id`, nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("kconfig: list themes by node: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanLookAndFeel(rows)
+}
+
+func scanLookAndFeel(rows rowScanner) ([]*pb.LookAndFeelPackage, error) {
+	var out []*pb.LookAndFeelPackage
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("kconfig: scan theme: %w", err)
+		}
+		out = append(out, &pb.LookAndFeelPackage{Id: id, Name: name})
+	}
+	return out, rows.Err()
+}

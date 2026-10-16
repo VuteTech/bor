@@ -82,6 +82,17 @@ export const FILL_MODE_LABELS: Record<string, string> = {
   "6": "Centred, no scaling",
 };
 
+/**
+ * Global themes every Plasma installation ships, offered in the theme
+ * picker before any node has reported its own. Nodes add the rest
+ * (distribution themes, vendor themes) through the catalogue report.
+ */
+export const KNOWN_GLOBAL_THEMES: { id: string; name: string }[] = [
+  { id: "org.kde.breeze.desktop", name: "Breeze" },
+  { id: "org.kde.breezedark.desktop", name: "Breeze Dark" },
+  { id: "org.kde.breezetwilight.desktop", name: "Breeze Twilight" },
+];
+
 /** The layout Breeze ships: Plasma's default panel on every screen. */
 export const DEFAULT_PANEL_SNIPPET = `loadTemplate("org.kde.plasma.desktop.defaultPanel")
 
@@ -593,7 +604,7 @@ export const KCONFIG_PRESETS: KConfigPreset[] = [
   {
     id: "shared-lab",
     label: "Shared lab workstation",
-    description: "No shell or KRunner commands, locked desktop layout, clean session at every login, no history of searches, documents or clipboard, screen lock after 10 minutes, administrative System Settings pages hidden.",
+    description: "No shell access and KRunner disabled entirely, locked desktop layout, clean session at every login, no history of searches, documents or clipboard, screen lock after 10 minutes, administrative System Settings pages hidden.",
     settings: SHARED_LAB_SETTINGS,
     kcmRestrictions: ["kcm_autostart", "kcm_kded", "kcm_cron", "kcm_krdpserver", "kcm_kaccounts", "kcm_device_automounter"],
   },
@@ -775,11 +786,13 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
     const groupNames = Array.from(groups.keys()).sort();
     groupNames.forEach((group, gi) => {
       const entries = [...groups.get(group)!].sort((a, b) => (a.key === b.key ? a.locale.localeCompare(b.locale) : a.key < b.key ? -1 : 1));
-      const allImmutable = entries.length > 0 && entries.every((e) => e.immutable);
       if (gi > 0) lines.push("");
-      lines.push(`[${group}]${allImmutable ? "[$i]" : ""}`);
+      // Markers go on the keys, never on the group: a group-level [$i] in a
+      // node-wide file would make KDE ignore the keys that group-scoped
+      // files add to the same group.
+      lines.push(`[${group}]`);
       for (const e of entries) {
-        const k = renderKey(e, allImmutable);
+        const k = renderKey(e, false);
         lines.push(e.del ? k : `${k}=${e.value}`);
       }
     });
@@ -807,7 +820,7 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
         lines.push(`var borImage = ${JSON.stringify(image)};`, `var borFillMode = ${c.layout.wallpaperFillMode || "2"};`, "// ... sets the wallpaper on every desktop ...");
       }
       if (c.layout.layoutScript.trim()) lines.push("// ... removes the user's panels, then runs the layout script above ...");
-      out.push({ file: "plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js", content: lines.join("\n") + "\n", note: "The file name changes with the content, so a changed look is applied again." });
+      out.push({ file: "late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js", content: lines.join("\n") + "\n", note: "The file name changes with the content, so a changed look is applied again. The late/ directory is appended last to XDG_DATA_DIRS so that it never shadows Plasma's own shell package." });
     }
   }
 

@@ -380,8 +380,9 @@ func (c *Client) ReportSchemaCatalogue(ctx context.Context, schemas []*pb.GSetti
 }
 
 // ReportKConfigCatalogue sends the KDE settings catalogue (KConfigXT schema
-// entries and System Settings modules installed on this node) to the server.
-func (c *Client) ReportKConfigCatalogue(ctx context.Context, entries []*pb.KConfigCatalogueEntry, kcms []*pb.KcmModule, plasmaVersion string) error {
+// entries, System Settings modules and global themes installed on this
+// node) to the server.
+func (c *Client) ReportKConfigCatalogue(ctx context.Context, entries []*pb.KConfigCatalogueEntry, kcms []*pb.KcmModule, themes []*pb.LookAndFeelPackage, plasmaVersion string) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -389,6 +390,7 @@ func (c *Client) ReportKConfigCatalogue(ctx context.Context, entries []*pb.KConf
 		ClientId:      c.clientID,
 		Entries:       entries,
 		Kcms:          kcms,
+		LookAndFeel:   themes,
 		PlasmaVersion: plasmaVersion,
 	})
 	if err != nil {

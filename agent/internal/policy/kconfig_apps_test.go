@@ -156,7 +156,7 @@ func TestMergeKConfigPolicies_AppFiles(t *testing.T) {
 		t.Errorf("hidden applications = %v", res.Apps.HiddenApplications)
 	}
 	globals := string(res.Files["kdeglobals"])
-	if !strings.Contains(globals, "action/manage-profiles=false") || !strings.Contains(string(res.Files["konsolerc"]), "DefaultProfile=Managed.profile") {
+	if !strings.Contains(globals, "action/manage-profiles[$i]=false") || !strings.Contains(string(res.Files["konsolerc"]), "DefaultProfile[$i]=Managed.profile") {
 		t.Errorf("locked profile entries missing:\nkdeglobals:\n%s\nkonsolerc:\n%s", globals, res.Files["konsolerc"])
 	}
 
