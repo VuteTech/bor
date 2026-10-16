@@ -11,7 +11,7 @@ import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
 import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
 import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
 import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
-import { KCM_MODULES, KCONFIG_ALL_POLICIES } from "./editors/kconfigModel";
+import { KCM_MODULES, KCONFIG_ALL_POLICIES, KCONFIG_LEGACY_POLICIES, kconfigBoolDisplay } from "./editors/kconfigModel";
 
 export interface SettingsRow {
   setting: string;
@@ -180,13 +180,18 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       }
     }
 
-    // All other typed fields
-    for (const def of KCONFIG_ALL_POLICIES) {
+    // All other typed fields, plus legacy ones still present in old content.
+    for (const def of [...KCONFIG_ALL_POLICIES, ...KCONFIG_LEGACY_POLICIES]) {
       if (def.type === "url-restrictions" || def.type === "kcm-restrictions") continue;
       if (!(def.key in parsed) || parsed[def.key] === null || parsed[def.key] === undefined) continue;
+      const rawVal = parsed[def.key];
+      let value: string;
+      if (def.legacy) value = "No effect on Plasma 5/6 — remove";
+      else if (def.type === "boolean") value = kconfigBoolDisplay(def, String(rawVal));
+      else value = formatDisplayValue(rawVal);
       rows.push({
         setting: `${def.group} › ${def.label}`,
-        value: formatDisplayValue(parsed[def.key]),
+        value,
         locked: enforcedFields.includes(def.key) ? "Yes" : "No",
       });
     }

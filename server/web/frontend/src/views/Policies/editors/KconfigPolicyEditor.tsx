@@ -27,15 +27,17 @@ import type { PolicyContentEditorProps } from "./PolicyContentEditorProps";
 import {
   FILL_MODE_LABELS,
   KCM_MODULES,
-  KCONFIG_ALL_POLICIES,
   KIO_PROTOCOLS,
   buildKConfigContent,
   buildKConfigTree,
   buildKcmRestrictionContent,
   buildUrlRestrictionContent,
+  defaultKConfigValue,
   detectKConfigConfiguredKeys,
   extractKConfigEntry,
+  findKConfigDef,
   hexToRgb,
+  kconfigBoolDisplay,
   parseKcmRestrictions,
   parseUrlRestrictionRules,
   removeKConfigContentKey,
@@ -85,7 +87,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     const first = configuredKeys[0] ?? null;
     const groups = new Set<string>();
     for (const key of configuredKeys) {
-      const def = KCONFIG_ALL_POLICIES.find((p) => p.key === key);
+      const def = findKConfigDef(key);
       if (def) groups.add(def.group);
     }
     const entry = first ? extractKConfigEntry(contentRaw, first) : undefined;
@@ -110,8 +112,8 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
   const [kcmModules, setKcmModules] = useState<string[]>(initial.modules);
   const [kcmCustomInput, setKcmCustomInput] = useState("");
 
-  const tree = buildKConfigTree();
   const configuredKeys = detectKConfigConfiguredKeys(contentRaw);
+  const tree = buildKConfigTree(configuredKeys);
 
   const selectPolicy = (def: KConfigPolicyDef) => {
     setSelectedKey(def.key);
@@ -139,7 +141,8 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       setEnforced(existing.enforced);
     } else {
       // Preview only until the user edits the value or clicks "Add to policy".
-      setValue(def.type === "boolean" ? "true" : def.type === "int" ? "0" : "");
+      // Restriction switches start restricted: that is why one adds them.
+      setValue(defaultKConfigValue(def));
       setEnforced(true);
     }
   };
@@ -153,7 +156,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     }
   };
 
-  const currentDef = selectedKey ? KCONFIG_ALL_POLICIES.find((p) => p.key === selectedKey) : undefined;
+  const currentDef = selectedKey ? findKConfigDef(selectedKey) : undefined;
 
   const updateValue = (next: string) => {
     setValue(next);
@@ -197,7 +200,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>System Settings Module Restrictions</Title>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>
-          Files: <code>/etc/kde5rc</code>, <code>/etc/kde6rc</code> &nbsp; Group: <code>[KDE Control Module Restrictions]</code>
+          File: <code>kdeglobals</code> &nbsp; Group: <code>[KDE Control Module Restrictions]</code>
           <br />
           Selected modules will be <strong>restricted</strong> (users will not be able to access them in System Settings).
         </p>
@@ -413,18 +416,43 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (!currentDef) return null;
     const def = currentDef;
 
+    if (def.legacy) {
+      return (
+        <div style={{ padding: "0.5rem 0" }}>
+          <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{def.label}</Title>
+          <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>{def.group}</p>
+          <p style={{ marginBottom: "1rem" }}>{def.help}</p>
+          {!isDisabled && (
+            <Button variant="danger" size="sm" onClick={() => removePolicy(def.key)}>
+              Remove from policy
+            </Button>
+          )}
+        </div>
+      );
+    }
+
+    // Restriction switches (KDE: false restricts) are shown as "Restricted" when on.
+    const boolChecked = def.inverted ? value === "false" : value === "true";
+
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>{def.label}</Title>
-        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>{def.group}</p>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: def.help ? "0.25rem" : "1rem" }}>
+          {def.group}
+          {def.target && <> &nbsp;·&nbsp; <code>{def.target}</code></>}
+        </p>
+        {def.help && <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>{def.help}</p>}
         <Form>
           {def.type === "boolean" && (
             <FormGroup label="Value" fieldId="kc-prop-bool">
               <Switch
                 id="kc-prop-bool"
-                isChecked={value === "true"}
-                onChange={(_ev, checked) => updateValue(checked ? "true" : "false")}
-                label={value === "true" ? "true" : "false"}
+                isChecked={boolChecked}
+                onChange={(_ev, checked) => {
+                  const stored = def.inverted ? !checked : checked;
+                  updateValue(stored ? "true" : "false");
+                }}
+                label={kconfigBoolDisplay(def, value)}
               />
             </FormGroup>
           )}

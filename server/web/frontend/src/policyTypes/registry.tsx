@@ -240,7 +240,7 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
       "KDE Plasma configuration and Kiosk restrictions written as immutable system-wide settings. Lock down actions and System Settings modules, restrict KIO URL schemes, and control appearance and screen locking.",
     manages: [
       "System-wide KDE configuration under /etc/bor/xdg (immutable [$i] entries)",
-      "/etc/profile.d/99-bor.sh, which prepends that directory to XDG_CONFIG_DIRS",
+      "/etc/xdg/plasma-workspace/env/00-bor.sh and /etc/profile.d/99-bor.sh, which put that directory first in XDG_CONFIG_DIRS",
     ],
     appliesTo: ["KDE Plasma 5 and 6"],
     examples: [

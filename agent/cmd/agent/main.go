@@ -42,14 +42,22 @@ const defaultConfigPath = "/etc/bor/config.yaml"
 // Version is set at build time via -ldflags "-X main.Version=x.y.z".
 var Version = "dev"
 
-// kconfigCache maps policy ID → typed KConfig policy for all active Kconfig policies.
+// kconfigCacheEntry is one active KDE Plasma policy with its binding priority.
+type kconfigCacheEntry struct {
+	id       string
+	name     string
+	priority int32
+	policy   *pb.KConfigPolicy
+}
+
+// kconfigCache maps policy ID → KConfig policy + priority for all active Kconfig policies.
 // It is maintained across streaming events so that a full re-merge and
 // sync can be performed whenever any single policy changes or is deleted.
-var kconfigCache = make(map[string]*pb.KConfigPolicy)
+var kconfigCache = make(map[string]kconfigCacheEntry)
 
 // kconfigSnapshotStaging accumulates KConfig policies during a SNAPSHOT.
 // It is nil when not inside a snapshot sequence.
-var kconfigSnapshotStaging map[string]*pb.KConfigPolicy
+var kconfigSnapshotStaging map[string]kconfigCacheEntry
 
 // kdeNotifier handles desktop notifications and app reconfigure via D-Bus.
 var kdeNotifier = notify.New()
@@ -723,7 +731,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				hadKconfigPolicies := len(kconfigCache) > 0
 				chromeChanged := len(chromeCache) > 0
 				edgeChanged := len(edgeCache) > 0
-				kconfigCache = make(map[string]*pb.KConfigPolicy)
+				kconfigCache = make(map[string]kconfigCacheEntry)
 				kconfigSnapshotStaging = nil
 				firefoxCache = make(map[string]*pb.FirefoxPolicy)
 				firefoxSnapshotStaging = nil
@@ -807,9 +815,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			edgeSnapshotStaging[pi.ID] = pi.EdgePolicy
 		case "Kconfig":
 			if kconfigSnapshotStaging == nil {
-				kconfigSnapshotStaging = make(map[string]*pb.KConfigPolicy)
+				kconfigSnapshotStaging = make(map[string]kconfigCacheEntry)
 			}
-			kconfigSnapshotStaging[pi.ID] = pi.KConfigPolicy
+			kconfigSnapshotStaging[pi.ID] = kconfigCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.KConfigPolicy}
 		case "Dconf":
 			if dconfSnapshotStaging == nil {
 				dconfSnapshotStaging = make(map[string]dconfCacheEntry)
@@ -862,7 +870,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			if kconfigSnapshotStaging != nil {
 				kconfigCache = kconfigSnapshotStaging
 			} else {
-				kconfigCache = make(map[string]*pb.KConfigPolicy)
+				kconfigCache = make(map[string]kconfigCacheEntry)
 			}
 			kconfigSnapshotStaging = nil
 
@@ -1013,7 +1021,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				edgeNotifier.ScheduleNotification(edgeNotifyConfig, map[string]bool{"bor_managed.json": true})
 			}
 		case "Kconfig":
-			kconfigCache[pi.ID] = pi.KConfigPolicy
+			kconfigCache[pi.ID] = kconfigCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.KConfigPolicy}
 			if changed := syncAllKConfig(ctx, client, cfg); len(changed) > 0 {
 				kdeNotifier.ScheduleNotification(notifyConfig, changed)
 			}
@@ -1388,96 +1396,99 @@ func sessionAccessCompliance(rules []policy.SessionRule, warnings []string, pam 
 	}
 }
 
-// syncAllKConfig re-merges all cached KConfig policies and syncs the
-// resulting files to disk. KCM (Control Module) restriction entries are
-// split out and written directly to /etc/kde5rc and /etc/kde6rc; all
-// other entries go to the XDG overlay. When the cache is empty,
-// SyncKConfigFiles restores all previously managed files from backups.
+// syncAllKConfig re-merges all cached KDE Plasma policies by binding
+// priority and syncs the resulting files to the XDG overlay. Control
+// module restrictions live in kdeglobals like every other restriction and
+// are mirrored into /etc/kde5rc only when kconfig.write_kde5rc is set.
+// When the cache is empty, every managed file is restored from its backup.
+// Compliance is reported per policy with one item per setting; settings
+// overridden by a higher-priority policy are reported as inapplicable.
 //
 // Returns the set of written file basenames (nil when nothing was
 // written). The caller decides whether to schedule a notification.
 func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *config.Config) map[string]bool {
-	var allEntries []*pb.KConfigEntry
-	var ids []string
-	for id, pol := range kconfigCache {
-		allEntries = append(allEntries, policy.KConfigPolicyToEntries(pol)...)
-		ids = append(ids, id)
+	sources := make([]policy.KConfigPolicySource, 0, len(kconfigCache))
+	for _, e := range kconfigCache {
+		sources = append(sources, policy.KConfigPolicySource{ID: e.id, Name: e.name, Priority: e.priority, Policy: e.policy})
 	}
 
-	// Split KCM restriction entries from other KConfig entries.
-	// KCM restrictions go to /etc/kde5rc and /etc/kde6rc directly.
-	kcmEntries, otherEntries := policy.SplitKCMRestrictions(allEntries)
+	reportError := func(msg string) {
+		for _, s := range sources {
+			_ = client.ReportComplianceWithStatus(ctx, s.ID, pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, msg, nil)
+		}
+	}
 
-	files, err := policy.MergeKConfigEntries(otherEntries)
+	merged, err := policy.MergeKConfigPolicies(sources)
 	if err != nil {
 		log.Printf("Error merging KConfig policies: %v", err)
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to merge policies: "+err.Error())
-		}
+		reportError("failed to merge policies: " + err.Error())
 		return nil
 	}
 
-	if err := policy.EnsureProfileScript(cfg.KConfig.ConfigPath); err != nil {
-		log.Printf("Warning: failed to ensure profile.d script: %v", err)
+	// Optional mirror of the control-module restrictions for /etc/kde5rc.
+	var kde5rcContent []byte
+	if cfg.KConfig.WriteKde5rc {
+		if kcmEntries := policy.KCMRestrictionsForKde5rc(merged.Entries); len(kcmEntries) > 0 {
+			kcmFiles, err := policy.MergeKConfigEntries(kcmEntries)
+			if err != nil {
+				log.Printf("Error rendering %s: %v", policy.Kde5rcPath(), err)
+				reportError("failed to render " + policy.Kde5rcPath() + ": " + err.Error())
+				return nil
+			}
+			kde5rcContent = kcmFiles["kde5rc"]
+		}
 	}
 
-	// Suppress watcher events for all files about to be written (current and new).
-	var incomingPaths []string
-	for name := range files {
+	// Suppress watcher events for everything about to be written: overlay
+	// files, the /etc rc mirror (and its legacy sibling) and the hook scripts.
+	incomingPaths := make([]string, 0, len(merged.Files)+4)
+	for name := range merged.Files {
 		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.ConfigPath, name))
 	}
-	incomingPaths = append(incomingPaths, "/etc/kde5rc", "/etc/kde6rc")
+	incomingPaths = append(incomingPaths, policy.Kde5rcPath(), policy.LegacyKde6rcPath())
+	incomingPaths = append(incomingPaths, policy.EnvScriptPaths()...)
 	suppressManagedWrites(cfg, incomingPaths...)
 	defer updateWatcher(cfg)
 
-	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, files); err != nil {
+	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath); err != nil {
+		log.Printf("Warning: failed to ensure XDG_CONFIG_DIRS hook scripts: %v", err)
+	}
+
+	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, merged.Files); err != nil {
 		log.Printf("Error syncing KConfig files: %v", err)
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to sync KConfig files: "+err.Error())
-		}
+		reportError("failed to sync KConfig files: " + err.Error())
 		return nil
 	}
 
-	// Sync KCM restrictions to /etc/kde5rc and /etc/kde6rc.
-	var kcmContent []byte
-	if len(kcmEntries) > 0 {
-		kcmFiles, err := policy.MergeKConfigEntries(kcmEntries)
-		if err != nil {
-			log.Printf("Error merging KCM restriction entries: %v", err)
-			for _, id := range ids {
-				_ = client.ReportCompliance(ctx, id, false, "failed to merge KCM restrictions: "+err.Error())
-			}
-			return nil
-		}
-		kcmContent = kcmFiles["kde5rc"]
-	}
-
-	if err := policy.SyncKCMRestrictions(kcmContent); err != nil {
-		log.Printf("Error syncing KCM restrictions: %v", err)
-		for _, id := range ids {
-			_ = client.ReportCompliance(ctx, id, false, "failed to sync KCM restrictions: "+err.Error())
-		}
+	if err := policy.SyncKde5rc(kde5rcContent); err != nil {
+		log.Printf("Error syncing %s: %v", policy.Kde5rcPath(), err)
+		reportError("failed to sync " + policy.Kde5rcPath() + ": " + err.Error())
 		return nil
 	}
 
-	log.Printf("KConfig policies synced to %s (%d policies, %d files)", cfg.KConfig.ConfigPath, len(ids), len(files))
-	if len(kcmEntries) > 0 {
-		log.Printf("KCM restrictions synced to /etc/kde5rc and /etc/kde6rc")
-	}
-	for _, id := range ids {
-		_ = client.ReportCompliance(ctx, id, true, "Deployed")
+	log.Printf("KConfig policies synced to %s (%d policies, %d files)", cfg.KConfig.ConfigPath, len(sources), len(merged.Files))
+	if kde5rcContent != nil {
+		log.Printf("KCM restrictions mirrored to %s", policy.Kde5rcPath())
 	}
 
-	if len(files) == 0 && len(kcmEntries) == 0 {
+	for _, s := range sources {
+		items := merged.Items[s.ID]
+		if len(items) == 0 {
+			// Only legacy resource restrictions, which no supported Plasma reads.
+			_ = client.ReportComplianceWithStatus(ctx, s.ID, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+				"No effective settings: the policy only contains legacy resource restrictions, which KDE Plasma 5 and 6 ignore", nil)
+			continue
+		}
+		status, msg := rollupProtoItems(items, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed")
+		_ = client.ReportComplianceWithStatus(ctx, s.ID, status, msg, items)
+	}
+
+	if len(merged.Files) == 0 {
 		return nil
 	}
-	changedFiles := make(map[string]bool, len(files)+2)
-	for name := range files {
+	changedFiles := make(map[string]bool, len(merged.Files))
+	for name := range merged.Files {
 		changedFiles[name] = true
-	}
-	if len(kcmEntries) > 0 {
-		changedFiles["kde5rc"] = true
-		changedFiles["kde6rc"] = true
 	}
 	return changedFiles
 }
@@ -2359,11 +2370,16 @@ func getManagedPaths(cfg *config.Config) []string {
 			paths = append(paths, filepath.Join(cfg.KConfig.ConfigPath, name))
 		}
 	}
-	// KCM restriction files in /etc.
-	for _, pol := range kconfigCache {
-		if len(pol.GetKcmRestrictions()) > 0 {
-			paths = append(paths, "/etc/kde5rc", "/etc/kde6rc")
-			break
+	// Hook scripts and the optional /etc/kde5rc mirror, while policies apply.
+	if len(kconfigCache) > 0 {
+		paths = append(paths, policy.EnvScriptPaths()...)
+		if cfg.KConfig.WriteKde5rc {
+			for _, e := range kconfigCache {
+				if len(e.policy.GetKcmRestrictions()) > 0 {
+					paths = append(paths, policy.Kde5rcPath())
+					break
+				}
+			}
 		}
 	}
 
@@ -2457,7 +2473,7 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 
 	switch {
 	case strings.HasPrefix(path, cfg.KConfig.ConfigPath+string(filepath.Separator)) ||
-		path == "/etc/kde5rc" || path == "/etc/kde6rc":
+		path == policy.Kde5rcPath() || slices.Contains(policy.EnvScriptPaths(), path):
 		syncAllKConfig(ctx, client, cfg)
 	case path == cfg.Firefox.PoliciesPath || path == cfg.Firefox.FlatpakPoliciesPath:
 		syncAllFirefox(ctx, client, cfg)

@@ -5,6 +5,7 @@
 package policy
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,21 @@ const BackupSuffix = ".bor-backup"
 
 // ManagedFileHeader is prepended to every file written by SyncKConfigFiles.
 const ManagedFileHeader = "# This file is managed by Bor. Do not edit manually.\n# Changes will be overwritten by policy enforcement.\n\n"
+
+// KDE configuration files and groups the typed policy mapping writes to.
+// The three restriction groups are the only ones KAuthorized reads in KDE
+// Frameworks 5 and 6; it reads them from the application's own config
+// merged with kdeglobals, which is why everything lands in kdeglobals.
+const (
+	KConfigFileGlobals        = "kdeglobals"
+	KConfigFileKWin           = "kwinrc"
+	KConfigFileScreenLocker   = "kscreenlockerrc"
+	KConfigFileDesktopApplets = "plasma-org.kde.plasma.desktop-appletsrc"
+
+	KConfigGroupActionRestrictions = "KDE Action Restrictions"
+	KConfigGroupKCMRestrictions    = "KDE Control Module Restrictions"
+	KConfigGroupURLRestrictions    = "KDE URL Restrictions"
+)
 
 // kconfigGroup holds entries for a single INI [Group] within a file.
 type kconfigGroup struct {
@@ -45,8 +61,12 @@ func boolVal(v *bool) string {
 }
 
 // KConfigPolicyToEntries converts a typed KConfigPolicy to the flat
-// []*KConfigEntry slice expected by MergeKConfigEntries and SplitKCMRestrictions.
+// []*KConfigEntry slice consumed by MergeKConfigPolicies / MergeKConfigEntries.
 // Absent optional fields (nil pointers, empty repeated) are skipped.
+//
+// Key names follow the KDE Kiosk documentation and the KConfigXT schemas
+// of the components involved; KConfig keys are case-sensitive, so the
+// spelling matters (Autolock, not AutoLock).
 func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 	if pol == nil {
 		return nil
@@ -82,39 +102,60 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 		return &pb.KConfigEntry{File: file, Group: group, Key: key, Value: strconv.Itoa(int(*val)), Type: "int", Enforced: enforced[jsonKey]}
 	}
 
-	// Action Restrictions (kdeglobals, [KDE Action Restrictions])
-	add(boolE("kdeglobals", "KDE Action Restrictions", "shell_access", "shellAccess", pol.ShellAccess))
-	add(boolE("kdeglobals", "KDE Action Restrictions", "run_command", "runCommand", pol.RunCommand))
-	add(boolE("kdeglobals", "KDE Action Restrictions", "action/logout", "actionLogout", pol.ActionLogout))
-	add(boolE("kdeglobals", "KDE Action Restrictions", "action/file_new", "actionFileNew", pol.ActionFileNew))
-	add(boolE("kdeglobals", "KDE Action Restrictions", "action/file_open", "actionFileOpen", pol.ActionFileOpen))
-	add(boolE("kdeglobals", "KDE Action Restrictions", "action/file_save", "actionFileSave", pol.ActionFileSave))
+	// Kiosk action restrictions (kdeglobals, [KDE Action Restrictions]).
+	// false restricts, true allows.
+	action := func(key, jsonKey string, val *bool) {
+		add(boolE(KConfigFileGlobals, KConfigGroupActionRestrictions, key, jsonKey, val))
+	}
+	action("shell_access", "shellAccess", pol.ShellAccess)
+	// run_command disables KRunner's command execution; action/run_command
+	// additionally hides the entry from the desktop menu (KDE Kiosk keys).
+	action("run_command", "runCommand", pol.RunCommand)
+	action("action/run_command", "runCommand", pol.RunCommand)
+	// Plasma checks the generic "logout" restriction as well as the
+	// "action/logout" action for the leave, shutdown and restart entries.
+	action("logout", "actionLogout", pol.ActionLogout)
+	action("action/logout", "actionLogout", pol.ActionLogout)
+	action("action/file_new", "actionFileNew", pol.ActionFileNew)
+	action("action/file_open", "actionFileOpen", pol.ActionFileOpen)
+	action("action/file_save", "actionFileSave", pol.ActionFileSave)
 
-	// Resource Restrictions (kdeglobals, [KDE Resource Restrictions])
-	add(boolE("kdeglobals", "KDE Resource Restrictions", "wallpaper", "restrictWallpaper", pol.RestrictWallpaper))
-	add(boolE("kdeglobals", "KDE Resource Restrictions", "icons", "restrictIcons", pol.RestrictIcons))
-	add(boolE("kdeglobals", "KDE Resource Restrictions", "autostart", "restrictAutostart", pol.RestrictAutostart))
-	add(boolE("kdeglobals", "KDE Resource Restrictions", "colors", "restrictColors", pol.RestrictColors))
-	add(boolE("kdeglobals", "KDE Resource Restrictions", "cursors", "restrictCursors", pol.RestrictCursors))
+	// Plasma desktop lockdown. These are KAuthorized actions, not plasmarc
+	// keys: plasmashell checks plasma/plasmashell/unlockedDesktop before it
+	// lets the user edit panels, widgets or launcher favourites.
+	action("plasma/plasmashell/unlockedDesktop", "plasmoidUnlockedDesktop", pol.PlasmoidUnlockedDesktop)
+	action("plasma/allow_configure_when_locked", "allowConfigureWhenLocked", pol.AllowConfigureWhenLocked)
+
+	// Resource restrictions (restrict_wallpaper .. restrict_cursors) are not
+	// emitted: [KDE Resource Restrictions] was a KDE 4 KStandardDirs feature
+	// and no KF5/KF6 component reads it. The fields are kept in the proto so
+	// that old content still parses; the editor only offers to remove them.
 
 	// Window Manager (kwinrc, [Windows])
-	add(boolE("kwinrc", "Windows", "BorderlessMaximizedWindows", "borderlessMaximizedWindows", pol.BorderlessMaximizedWindows))
+	add(boolE(KConfigFileKWin, "Windows", "BorderlessMaximizedWindows", "borderlessMaximizedWindows", pol.BorderlessMaximizedWindows))
 
-	// Desktop (plasmarc, [General])
-	add(boolE("plasmarc", "General", "plasmoidUnlockedDesktop", "plasmoidUnlockedDesktop", pol.PlasmoidUnlockedDesktop))
-	add(boolE("plasmarc", "General", "allow_configure_when_locked", "allowConfigureWhenLocked", pol.AllowConfigureWhenLocked))
+	// Screen lock (kscreenlockerrc, [Daemon]) — key names from
+	// kscreenlockersettings.kcfg. Timeout is in minutes, LockGrace in seconds.
+	add(boolE(KConfigFileScreenLocker, "Daemon", "Autolock", "autoLock", pol.AutoLock))
+	add(boolE(KConfigFileScreenLocker, "Daemon", "LockOnResume", "lockOnResume", pol.LockOnResume))
+	add(boolE(KConfigFileScreenLocker, "Daemon", "LockOnStart", "lockOnStart", pol.LockOnStart))
+	add(intE(KConfigFileScreenLocker, "Daemon", "Timeout", "lockTimeout", pol.LockTimeout))
+	add(intE(KConfigFileScreenLocker, "Daemon", "LockGrace", "lockGrace", pol.LockGrace))
 
-	// Screen Lock (kscreenlockerrc, [Daemon])
-	add(boolE("kscreenlockerrc", "Daemon", "AutoLock", "autoLock", pol.AutoLock))
-	add(boolE("kscreenlockerrc", "Daemon", "LockOnResume", "lockOnResume", pol.LockOnResume))
-	add(intE("kscreenlockerrc", "Daemon", "Timeout", "lockTimeout", pol.LockTimeout))
+	// Lock-screen wallpaper (kscreenlockerrc, [Greeter]). Unlike the desktop
+	// wallpaper this cascades reliably from system configuration.
+	if pol.LockScreenImage != nil {
+		plugin := "org.kde.image"
+		add(strE(KConfigFileScreenLocker, "Greeter", "WallpaperPlugin", "lockScreenImage", &plugin))
+		add(strE(KConfigFileScreenLocker, "Greeter][Wallpaper][org.kde.image][General", "Image", "lockScreenImage", pol.LockScreenImage))
+	}
 
 	// Appearance
-	add(strE("kdeglobals", "Icons", "Theme", "iconTheme", pol.IconTheme))
-	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1", "wallpaperplugin", "wallpaperPlugin", pol.WallpaperPlugin))
-	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1][Wallpaper][org.kde.image][General", "Image", "wallpaperImage", pol.WallpaperImage))
-	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1][Wallpaper][org.kde.image][General", "FillMode", "wallpaperFillMode", pol.WallpaperFillMode))
-	add(strE("plasma-org.kde.plasma.desktop-appletsrc", "Containments][1][Wallpaper][org.kde.image][General", "Color", "wallpaperColor", pol.WallpaperColor))
+	add(strE(KConfigFileGlobals, "Icons", "Theme", "iconTheme", pol.IconTheme))
+	add(strE(KConfigFileDesktopApplets, "Containments][1", "wallpaperplugin", "wallpaperPlugin", pol.WallpaperPlugin))
+	add(strE(KConfigFileDesktopApplets, "Containments][1][Wallpaper][org.kde.image][General", "Image", "wallpaperImage", pol.WallpaperImage))
+	add(strE(KConfigFileDesktopApplets, "Containments][1][Wallpaper][org.kde.image][General", "FillMode", "wallpaperFillMode", pol.WallpaperFillMode))
+	add(strE(KConfigFileDesktopApplets, "Containments][1][Wallpaper][org.kde.image][General", "Color", "wallpaperColor", pol.WallpaperColor))
 
 	// URL Restrictions (kdeglobals, [KDE URL Restrictions]) — always enforced
 	for i, r := range pol.UrlRestrictions {
@@ -122,8 +163,8 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 			r.GetAction(), r.GetReferrerProtocol(), r.GetReferrerHost(), r.GetReferrerPath(),
 			r.GetProtocol(), r.GetHost(), r.GetPath(), r.GetEnabled())
 		entries = append(entries, &pb.KConfigEntry{
-			File:     "kdeglobals",
-			Group:    "KDE URL Restrictions",
+			File:     KConfigFileGlobals,
+			Group:    KConfigGroupURLRestrictions,
 			Key:      fmt.Sprintf("rule_%d", i+1),
 			Value:    val,
 			Type:     "string",
@@ -132,8 +173,8 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 	}
 	if len(pol.UrlRestrictions) > 0 {
 		entries = append(entries, &pb.KConfigEntry{
-			File:     "kdeglobals",
-			Group:    "KDE URL Restrictions",
+			File:     KConfigFileGlobals,
+			Group:    KConfigGroupURLRestrictions,
 			Key:      "rule_count",
 			Value:    strconv.Itoa(len(pol.UrlRestrictions)),
 			Type:     "string",
@@ -141,11 +182,11 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 		})
 	}
 
-	// KCM Restrictions (kde5rc, [KDE Control Module Restrictions]) — always enforced
+	// KCM Restrictions (kdeglobals, [KDE Control Module Restrictions]) — always enforced
 	for _, mod := range pol.KcmRestrictions {
 		entries = append(entries, &pb.KConfigEntry{
-			File:     "kde5rc",
-			Group:    "KDE Control Module Restrictions",
+			File:     KConfigFileGlobals,
+			Group:    KConfigGroupKCMRestrictions,
 			Key:      mod,
 			Value:    "false",
 			Type:     "bool",
@@ -154,6 +195,123 @@ func KConfigPolicyToEntries(pol *pb.KConfigPolicy) []*pb.KConfigEntry {
 	}
 
 	return entries
+}
+
+// KConfigPolicySource is one bound policy together with the binding
+// priority the server delivered for it (Policy.priority).
+type KConfigPolicySource struct {
+	ID       string
+	Name     string
+	Priority int32
+	Policy   *pb.KConfigPolicy
+}
+
+// KConfigMergeResult is the outcome of MergeKConfigPolicies.
+type KConfigMergeResult struct {
+	// Files maps a config file basename to its rendered INI content.
+	Files map[string][]byte
+	// Entries are the winning entries in merge order. They are what Files
+	// was rendered from and feed the optional /etc/kde5rc mirror.
+	Entries []*pb.KConfigEntry
+	// Items holds one compliance item per entry of every source policy,
+	// keyed by policy ID. Entries that lost against a higher-priority
+	// policy are reported as INAPPLICABLE with the applied value.
+	Items map[string][]*pb.ComplianceItemResult
+}
+
+// MergeKConfigPolicies combines all bound KDE Plasma policies into one set
+// of config files. Each (file, group, key) is written once: the policy
+// with the highest binding priority wins, ties are broken by policy ID so
+// the result never depends on event order. URL restriction rules are
+// additive across policies and renumbered. Entries that cannot be written
+// safely (line breaks, odd key characters) are skipped and reported.
+func MergeKConfigPolicies(sources []KConfigPolicySource) (*KConfigMergeResult, error) {
+	ordered := make([]KConfigPolicySource, len(sources))
+	copy(ordered, sources)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Priority != ordered[j].Priority {
+			return ordered[i].Priority > ordered[j].Priority
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
+
+	type winner struct {
+		value    string
+		enforced bool
+		src      KConfigPolicySource
+	}
+	winners := make(map[string]winner)
+	res := &KConfigMergeResult{Items: make(map[string][]*pb.ComplianceItemResult, len(ordered))}
+
+	item := func(e *pb.KConfigEntry, status pb.ComplianceStatus, msg string) *pb.ComplianceItemResult {
+		return &pb.ComplianceItemResult{
+			SchemaId: e.File,
+			Key:      fmt.Sprintf("[%s] %s", e.Group, e.Key),
+			Status:   status,
+			Message:  msg,
+		}
+	}
+
+	for _, src := range ordered {
+		items := []*pb.ComplianceItemResult{}
+		for _, e := range KConfigPolicyToEntries(src.Policy) {
+			if err := validateINIEntry(e); err != nil {
+				items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, err.Error()))
+				continue
+			}
+
+			if e.Group == KConfigGroupURLRestrictions {
+				// Rules from all policies are kept; rule_count is regenerated
+				// by renumberURLRestrictions after the merge.
+				if e.Key == "rule_count" {
+					continue
+				}
+				res.Entries = append(res.Entries, e)
+				items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
+				continue
+			}
+
+			id := e.File + "\x00" + e.Group + "\x00" + e.Key
+			if w, seen := winners[id]; seen {
+				if w.value == e.Value && w.enforced == e.Enforced {
+					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
+						fmt.Sprintf("Same value as higher-priority policy %q", w.src.Name)))
+				} else {
+					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+						fmt.Sprintf("Overridden by higher-priority policy %q (priority %d); applied value: %s", w.src.Name, w.src.Priority, w.value)))
+				}
+				continue
+			}
+
+			winners[id] = winner{value: e.Value, enforced: e.Enforced, src: src}
+			res.Entries = append(res.Entries, e)
+			items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
+		}
+		res.Items[src.ID] = items
+	}
+
+	files, err := MergeKConfigEntries(res.Entries)
+	if err != nil {
+		return nil, err
+	}
+	res.Files = files
+	return res, nil
+}
+
+// validateINIEntry rejects entries that would corrupt the rendered INI file
+// or escape the managed directory. Server-side validation performs the same
+// checks; the agent treats server data as untrusted.
+func validateINIEntry(e *pb.KConfigEntry) error {
+	if e.File == "" || strings.HasPrefix(e.File, ".") || strings.ContainsAny(e.File, "/\\\x00") {
+		return fmt.Errorf("invalid config file name %q", e.File)
+	}
+	if e.Key == "" || strings.ContainsAny(e.Key, "=[]\r\n") {
+		return fmt.Errorf("key %q contains characters that are not allowed in a KConfig key", e.Key)
+	}
+	if strings.ContainsAny(e.Value, "\r\n") {
+		return fmt.Errorf("value for %q contains a line break and was not written", e.Key)
+	}
+	return nil
 }
 
 // MergeKConfigEntries takes already-parsed proto entries (flattened from
@@ -195,7 +353,7 @@ func MergeKConfigEntries(entries []*pb.KConfigEntry) (map[string][]byte, error) 
 	// rule_N entries to the same [KDE URL Restrictions] group.
 	for _, fd := range files {
 		for _, g := range fd.groups {
-			if g.name == "KDE URL Restrictions" {
+			if g.name == KConfigGroupURLRestrictions {
 				renumberURLRestrictions(g)
 			}
 		}
@@ -453,84 +611,132 @@ func renumberURLRestrictions(g *kconfigGroup) {
 	g.entries = result
 }
 
-// kcmRestrictionPaths are the system-wide KDE config files where KCM
-// (Control Module) restrictions must be written. These live in /etc/
-// directly rather than in the XDG overlay because KDE reads them as
-// system-level immutable config.
-var kcmRestrictionPaths = []string{"/etc/kde5rc", "/etc/kde6rc"}
+// kde5rcPath is the global rc file that KConfig (KF5 and KF6) parses before
+// kdeglobals. Writing the control-module restrictions there is optional: the
+// copy in kdeglobals is what KAuthorized reads on every supported Plasma.
+var kde5rcPath = "/etc/kde5rc"
 
-// SplitKCMRestrictions separates KCM restriction entries from other
-// KConfig entries. Entries with file="kde5rc" and group="KDE Control
-// Module Restrictions" are returned in kcm; everything else in other.
-func SplitKCMRestrictions(entries []*pb.KConfigEntry) (kcm, other []*pb.KConfigEntry) {
+// legacyKde6rcPath was written by agent versions before 0.11. KDE never
+// reads it; the agent restores it (when a Bor backup exists) on every sync.
+var legacyKde6rcPath = "/etc/kde6rc"
+
+// KCMRestrictionsForKde5rc returns copies of the control-module restriction
+// entries among entries, re-targeted at kde5rc, so that they can be rendered
+// into /etc/kde5rc with MergeKConfigEntries.
+func KCMRestrictionsForKde5rc(entries []*pb.KConfigEntry) []*pb.KConfigEntry {
+	var out []*pb.KConfigEntry
 	for _, e := range entries {
-		if e.File == "kde5rc" && e.Group == "KDE Control Module Restrictions" {
-			kcm = append(kcm, e)
-		} else {
-			other = append(other, e)
-		}
-	}
-	return
-}
-
-// SyncKCMRestrictions writes KCM restriction INI content to the system-wide
-// /etc/kde5rc and /etc/kde6rc files with backup/restore support and a
-// managed-file header. Passing nil content restores all previously backed-up
-// originals.
-func SyncKCMRestrictions(content []byte) error {
-	for _, path := range kcmRestrictionPaths {
-		if content == nil {
-			if err := RestoreOriginal(path); err != nil {
-				return fmt.Errorf("failed to restore %s: %w", path, err)
-			}
+		if e.File != KConfigFileGlobals || e.Group != KConfigGroupKCMRestrictions {
 			continue
 		}
+		out = append(out, &pb.KConfigEntry{
+			File:     "kde5rc",
+			Group:    e.Group,
+			Key:      e.Key,
+			Value:    e.Value,
+			Type:     e.Type,
+			Enforced: e.Enforced,
+		})
+	}
+	return out
+}
 
-		if err := BackupOriginal(path); err != nil {
-			return fmt.Errorf("failed to backup %s: %w", path, err)
+// SyncKde5rc mirrors the rendered control-module restrictions into
+// /etc/kde5rc when content is non-nil and restores the original file
+// otherwise (no-op when Bor never wrote it). It always restores the legacy
+// /etc/kde6rc that older agents created.
+func SyncKde5rc(content []byte) error {
+	if err := RestoreOriginal(legacyKde6rcPath); err != nil {
+		return fmt.Errorf("failed to restore %s: %w", legacyKde6rcPath, err)
+	}
+
+	if content == nil {
+		if err := RestoreOriginal(kde5rcPath); err != nil {
+			return fmt.Errorf("failed to restore %s: %w", kde5rcPath, err)
 		}
+		return nil
+	}
 
-		withHeader := append([]byte(ManagedFileHeader), content...)
-		if err := WriteFileAtomically(path, withHeader); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+	if err := BackupOriginal(kde5rcPath); err != nil {
+		return fmt.Errorf("failed to backup %s: %w", kde5rcPath, err)
+	}
+	withHeader := append([]byte(ManagedFileHeader), content...)
+	if err := WriteFileAtomically(kde5rcPath, withHeader); err != nil {
+		return fmt.Errorf("failed to write %s: %w", kde5rcPath, err)
+	}
+	return nil
+}
+
+// Kde5rcPath returns the optional /etc/kde5rc mirror path.
+func Kde5rcPath() string { return kde5rcPath }
+
+// LegacyKde6rcPath returns the /etc/kde6rc path older agents wrote.
+func LegacyKde6rcPath() string { return legacyKde6rcPath }
+
+// Login hook scripts that put the Bor directory first in XDG_CONFIG_DIRS.
+//
+// plasma-workspace/env/*.sh is Plasma's own startup hook: startplasma
+// sources every such script found through the XDG config directories
+// before the session starts and imports the result into the systemd user
+// session, so it works regardless of the display manager. profile.d covers
+// login shells and display managers whose session wrappers source
+// /etc/profile (SDDM does, for X11 and Wayland).
+var (
+	profileScriptPath   = "/etc/profile.d/99-bor.sh"
+	plasmaEnvScriptPath = "/etc/xdg/plasma-workspace/env/00-bor.sh"
+)
+
+// EnvScriptPaths returns the login hook scripts the agent maintains.
+func EnvScriptPaths() []string {
+	return []string{profileScriptPath, plasmaEnvScriptPath}
+}
+
+// envScriptContent returns the POSIX shell snippet that prepends basePath
+// to XDG_CONFIG_DIRS exactly once, however many hooks run it.
+func envScriptContent(basePath string) string {
+	return fmt.Sprintf(`# Managed by Bor. Do not edit manually.
+# Puts the Bor policy directory first in XDG_CONFIG_DIRS so that KDE and
+# other XDG-aware applications read the managed configuration files.
+case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
+  *":%[1]s:"*) ;;
+  *) export XDG_CONFIG_DIRS="%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
+esac
+`, basePath)
+}
+
+// EnsureEnvScripts creates or updates the login hook scripts so that
+// basePath is prepended to XDG_CONFIG_DIRS for every Plasma session and
+// login shell.
+func EnsureEnvScripts(basePath string) error {
+	desired := []byte(envScriptContent(basePath))
+	for _, path := range EnvScriptPaths() {
+		if err := ensureScript(path, desired); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// profileScriptPath is the path to the login profile script that
-// prepends the Bor XDG config directory to XDG_CONFIG_DIRS.
-const profileScriptPath = "/etc/profile.d/99-bor.sh"
-
-// profileScriptContent returns the shell script that prepends basePath
-// to XDG_CONFIG_DIRS so that KDE (and other XDG-aware apps) pick up
-// the Bor-managed config files.
-func profileScriptContent(basePath string) string {
-	return fmt.Sprintf("export XDG_CONFIG_DIRS=%s:${XDG_CONFIG_DIRS:-/etc/xdg}\nreadonly XDG_CONFIG_DIRS\n", basePath)
-}
-
-// EnsureProfileScript creates or updates /etc/profile.d/99-bor.sh so
-// that the Bor XDG config directory is prepended to XDG_CONFIG_DIRS
-// for all login sessions.
-func EnsureProfileScript(basePath string) error {
-	desired := profileScriptContent(basePath)
-
-	existing, err := os.ReadFile(profileScriptPath)
-	if err == nil && string(existing) == desired {
+// ensureScript writes desired to path (mode 0755) unless it is already
+// identical.
+func ensureScript(path string, desired []byte) error {
+	existing, err := os.ReadFile(path) //nolint:gosec // G304: fixed hook script paths
+	if err == nil && bytes.Equal(existing, desired) {
 		return nil // already up to date
 	}
 
-	if err := os.MkdirAll(filepath.Dir(profileScriptPath), 0o755); err != nil { //nolint:gosec // G301: profile.d must be world-readable
-		return fmt.Errorf("failed to create profile.d directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: hook directories must be world-readable
+		return fmt.Errorf("failed to create directory for %s: %w", path, err)
 	}
 
-	if err := WriteFileAtomically(profileScriptPath, []byte(desired)); err != nil {
-		return fmt.Errorf("failed to write %s: %w", profileScriptPath, err)
+	if err := WriteFileAtomically(path, desired); err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 
-	// Ensure the script is executable.
-	if err := os.Chmod(profileScriptPath, 0o755); err != nil { //nolint:gosec // G302: profile script must be executable
-		return fmt.Errorf("failed to chmod %s: %w", profileScriptPath, err)
+	// Hook scripts are sourced, but keep them executable like the rest of
+	// profile.d.
+	if err := os.Chmod(path, 0o755); err != nil { //nolint:gosec // G302: hook script must be world-readable
+		return fmt.Errorf("failed to chmod %s: %w", path, err)
 	}
 
 	return nil

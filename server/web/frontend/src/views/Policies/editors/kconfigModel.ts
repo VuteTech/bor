@@ -8,6 +8,11 @@
  * helpers used by `KconfigPolicyEditor` and the settings summary.
  * (The Kconfig proto carries no UI annotations, so unlike the browser types
  * this catalogue is not generated.)
+ *
+ * Kiosk restriction booleans follow KDE's convention: `false` restricts.
+ * Defs with `inverted: true` present that as a "Restricted / Allowed" switch
+ * and store `false` when restricted, so the stored content stays what the
+ * agent and KDE expect.
  */
 
 export interface KConfigPolicyDef {
@@ -17,6 +22,17 @@ export interface KConfigPolicyDef {
   type: "boolean" | "string" | "select" | "int" | "color" | "url-restrictions" | "kcm-restrictions";
   selectOptions?: string[];
   defaultValue?: string;
+  /** KDE semantics: false restricts. Shown as a Restricted / Allowed switch. */
+  inverted?: boolean;
+  /** Switch labels for booleans. Defaults: inverted → Restricted / Allowed, else Enabled / Disabled. */
+  onLabel?: string;
+  offLabel?: string;
+  /** Where the agent writes the setting, as "file · [Group] · key". */
+  target?: string;
+  /** One or two sentences shown under the title. */
+  help?: string;
+  /** Setting with no effect on Plasma 5/6; the editor only offers to remove it. */
+  legacy?: boolean;
 }
 
 /* ── URL Restriction rule model (KDE Kiosk) ── */
@@ -32,40 +48,142 @@ export interface UrlRestrictionRule {
   enabled: boolean;
 }
 
+const ACTIONS = "kdeglobals · [KDE Action Restrictions]";
+const LOCKER = "kscreenlockerrc · [Daemon]";
+
 export const KCONFIG_ALL_POLICIES: KConfigPolicyDef[] = [
-  // Action Restrictions
-  { key: "shellAccess", label: "Shell Access", group: "Action Restrictions", type: "boolean" },
-  { key: "runCommand", label: "Run Command (KRunner)", group: "Action Restrictions", type: "boolean" },
-  { key: "actionLogout", label: "Logout Action", group: "Action Restrictions", type: "boolean" },
-  { key: "actionFileNew", label: "File New Action", group: "Action Restrictions", type: "boolean" },
-  { key: "actionFileOpen", label: "File Open Action", group: "Action Restrictions", type: "boolean" },
-  { key: "actionFileSave", label: "File Save Action", group: "Action Restrictions", type: "boolean" },
+  // Session & shell
+  {
+    key: "shellAccess", label: "Restrict shell access", group: "Session & Shell", type: "boolean", inverted: true,
+    target: `${ACTIONS} · shell_access`,
+    help: "Removes terminal access and arbitrary command execution (KRunner, Dolphin's Open Terminal) and disables the user's autostart folder.",
+  },
+  {
+    key: "runCommand", label: "Restrict KRunner command execution", group: "Session & Shell", type: "boolean", inverted: true,
+    target: `${ACTIONS} · run_command, action/run_command`,
+    help: "Disables KRunner (Alt+F2 / Alt+Space) and hides the Run Command entry from the desktop menu.",
+  },
+  {
+    key: "actionLogout", label: "Restrict logout, shutdown and restart", group: "Session & Shell", type: "boolean", inverted: true,
+    target: `${ACTIONS} · logout, action/logout`,
+    help: "Removes the leave actions from the launcher and the desktop menu. Combine with Lock desktop layout for kiosk desktops.",
+  },
+  {
+    key: "plasmoidUnlockedDesktop", label: "Lock desktop layout", group: "Session & Shell", type: "boolean", inverted: true,
+    onLabel: "Locked", offLabel: "Unlocked",
+    target: `${ACTIONS} · plasma/plasmashell/unlockedDesktop`,
+    help: "Users cannot move, add or remove panels and widgets or edit launcher favourites (Plasma 5 and 6).",
+  },
+  {
+    key: "allowConfigureWhenLocked", label: "Restrict configuring widgets while locked (Plasma 5)", group: "Session & Shell", type: "boolean", inverted: true,
+    target: `${ACTIONS} · plasma/allow_configure_when_locked`,
+    help: "Documented Kiosk key for Plasma 5. Plasma 6 does not read it; use Lock desktop layout there.",
+  },
+  // Application menu actions
+  {
+    key: "actionFileNew", label: "Restrict File › New", group: "Application Menu Actions", type: "boolean", inverted: true,
+    target: `${ACTIONS} · action/file_new`, help: "Applies to every KDE application that uses the standard action.",
+  },
+  {
+    key: "actionFileOpen", label: "Restrict File › Open", group: "Application Menu Actions", type: "boolean", inverted: true,
+    target: `${ACTIONS} · action/file_open`, help: "Applies to every KDE application that uses the standard action.",
+  },
+  {
+    key: "actionFileSave", label: "Restrict File › Save", group: "Application Menu Actions", type: "boolean", inverted: true,
+    target: `${ACTIONS} · action/file_save`, help: "Applies to every KDE application that uses the standard action.",
+  },
   // System Settings Restrictions
   { key: "kcmRestrictions", label: "System Settings Modules", group: "System Settings Restrictions", type: "kcm-restrictions" },
-  // Resource Restrictions
-  { key: "restrictWallpaper", label: "Wallpaper Changes", group: "Resource Restrictions", type: "boolean" },
-  { key: "restrictIcons", label: "Icon Changes", group: "Resource Restrictions", type: "boolean" },
-  { key: "restrictAutostart", label: "Autostart Changes", group: "Resource Restrictions", type: "boolean" },
-  { key: "restrictColors", label: "Color Scheme Changes", group: "Resource Restrictions", type: "boolean" },
-  { key: "restrictCursors", label: "Cursor Theme Changes", group: "Resource Restrictions", type: "boolean" },
   // Window Manager
-  { key: "borderlessMaximizedWindows", label: "Borderless Maximized Windows", group: "Window Manager", type: "boolean" },
-  // Desktop
-  { key: "plasmoidUnlockedDesktop", label: "Unlock Desktop Widgets", group: "Desktop", type: "boolean" },
-  { key: "allowConfigureWhenLocked", label: "Configure When Locked", group: "Desktop", type: "boolean" },
+  {
+    key: "borderlessMaximizedWindows", label: "Borderless maximized windows", group: "Window Manager", type: "boolean",
+    target: "kwinrc · [Windows] · BorderlessMaximizedWindows",
+  },
   // Screen Lock
-  { key: "autoLock", label: "Auto Lock", group: "Screen Lock", type: "boolean" },
-  { key: "lockOnResume", label: "Lock on Resume", group: "Screen Lock", type: "boolean" },
-  { key: "lockTimeout", label: "Lock Timeout (seconds)", group: "Screen Lock", type: "int" },
+  {
+    key: "autoLock", label: "Lock automatically after inactivity", group: "Screen Lock", type: "boolean",
+    target: `${LOCKER} · Autolock`,
+  },
+  {
+    key: "lockTimeout", label: "Inactivity timeout (minutes)", group: "Screen Lock", type: "int", defaultValue: "5",
+    target: `${LOCKER} · Timeout`, help: "Minutes of inactivity before the screen locks. KDE's default is 5.",
+  },
+  {
+    key: "lockGrace", label: "Grace period before a password is required (seconds)", group: "Screen Lock", type: "int", defaultValue: "5",
+    target: `${LOCKER} · LockGrace`, help: "Seconds after locking during which the screen unlocks without a password. 0 asks for the password immediately.",
+  },
+  {
+    key: "lockOnResume", label: "Lock on resume from sleep", group: "Screen Lock", type: "boolean",
+    target: `${LOCKER} · LockOnResume`,
+  },
+  {
+    key: "lockOnStart", label: "Lock the screen immediately at login", group: "Screen Lock", type: "boolean",
+    target: `${LOCKER} · LockOnStart`,
+  },
+  {
+    key: "lockScreenImage", label: "Lock screen wallpaper image path", group: "Screen Lock", type: "string",
+    target: "kscreenlockerrc · [Greeter][Wallpaper][org.kde.image][General] · Image",
+    help: "Absolute path readable by every user, for example /usr/share/backgrounds/corporate-lock.png. Cascades reliably from system configuration.",
+  },
   // Appearance
-  { key: "iconTheme", label: "Icon Theme", group: "Appearance", type: "string" },
-  { key: "wallpaperPlugin", label: "Wallpaper Plugin", group: "Appearance", type: "string", defaultValue: "org.kde.image" },
-  { key: "wallpaperImage", label: "Wallpaper Image Path", group: "Appearance", type: "string" },
-  { key: "wallpaperFillMode", label: "Wallpaper Fill Mode", group: "Appearance", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2" },
-  { key: "wallpaperColor", label: "Wallpaper Background Color", group: "Appearance", type: "color" },
+  { key: "iconTheme", label: "Icon theme", group: "Appearance", type: "string", target: "kdeglobals · [Icons] · Theme" },
+  {
+    key: "wallpaperPlugin", label: "Wallpaper plugin", group: "Appearance", type: "string", defaultValue: "org.kde.image",
+    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1] · wallpaperplugin",
+  },
+  {
+    key: "wallpaperImage", label: "Wallpaper image path", group: "Appearance", type: "string",
+    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1][Wallpaper][org.kde.image][General] · Image",
+    help: "Writes containment 1 of the desktop layout file, which does not match every desktop. Not reliable; prefer the lock screen wallpaper until the desktop layout feature ships.",
+  },
+  {
+    key: "wallpaperFillMode", label: "Wallpaper fill mode", group: "Appearance", type: "select", selectOptions: ["0", "1", "2", "3", "6"], defaultValue: "2",
+    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1][Wallpaper][org.kde.image][General] · FillMode",
+  },
+  {
+    key: "wallpaperColor", label: "Wallpaper background color", group: "Appearance", type: "color",
+    target: "plasma-org.kde.plasma.desktop-appletsrc · [Containments][1][Wallpaper][org.kde.image][General] · Color",
+  },
   // Security
   { key: "urlRestrictions", label: "URL Restrictions", group: "Security", type: "url-restrictions" },
 ];
+
+/**
+ * Settings older policies may still contain. KDE dropped
+ * [KDE Resource Restrictions] with Plasma 5 (it was a KDE 4 KStandardDirs
+ * feature), so the agent ignores them; the editor only offers removal.
+ */
+const LEGACY_GROUP = "Legacy (no effect)";
+const LEGACY_HELP =
+  "KDE Plasma 5 and 6 do not read [KDE Resource Restrictions]; the agent ignores this setting and it should be removed from the policy. To stop wallpaper or theme changes, enforce the Appearance settings or lock the desktop layout instead.";
+
+export const KCONFIG_LEGACY_POLICIES: KConfigPolicyDef[] = [
+  { key: "restrictWallpaper", label: "Wallpaper Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
+  { key: "restrictIcons", label: "Icon Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
+  { key: "restrictAutostart", label: "Autostart Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
+  { key: "restrictColors", label: "Color Scheme Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
+  { key: "restrictCursors", label: "Cursor Theme Changes", group: LEGACY_GROUP, type: "boolean", legacy: true, help: LEGACY_HELP },
+];
+
+/** Looks a def up by its content key, including legacy defs. */
+export function findKConfigDef(key: string): KConfigPolicyDef | undefined {
+  return KCONFIG_ALL_POLICIES.find((p) => p.key === key) ?? KCONFIG_LEGACY_POLICIES.find((p) => p.key === key);
+}
+
+/** Value a freshly selected setting previews with: restrictions start restricted. */
+export function defaultKConfigValue(def: KConfigPolicyDef): string {
+  if (def.type === "boolean") return def.inverted ? "false" : "true";
+  if (def.defaultValue !== undefined) return def.defaultValue;
+  return def.type === "int" ? "0" : "";
+}
+
+/** Human-readable state of a boolean setting's stored value. */
+export function kconfigBoolDisplay(def: KConfigPolicyDef, value: string): string {
+  if (def.inverted) {
+    return value === "false" ? (def.onLabel ?? "Restricted") : (def.offLabel ?? "Allowed");
+  }
+  return value === "true" ? (def.onLabel ?? "Enabled") : (def.offLabel ?? "Disabled");
+}
 
 // KIO protocols available for URL restriction rules.
 export const KIO_PROTOCOLS = [
@@ -182,8 +300,6 @@ export const KCM_MODULES: { id: string; label: string }[] = [
   { id: "kcm_audiocd", label: "Audiocd IO Worker" },
 ];
 
-// Set for quick lookup of known KCM module IDs.
-
 // Convert KDE "R,G,B" color string to hex "#rrggbb".
 export function rgbToHex(rgb: string): string {
   const parts = rgb.split(",").map(s => parseInt(s.trim(), 10));
@@ -210,13 +326,19 @@ export const FILL_MODE_LABELS: Record<string, string> = {
   "6": "6 — Pad",
 };
 
-export function buildKConfigTree(): Map<string, KConfigPolicyDef[]> {
+/**
+ * Tree groups for the editor: every current setting, plus the legacy group
+ * when the policy content still carries a legacy key (so it can be removed).
+ */
+export function buildKConfigTree(configuredKeys: string[] = []): Map<string, KConfigPolicyDef[]> {
   const groups = new Map<string, KConfigPolicyDef[]>();
   for (const p of KCONFIG_ALL_POLICIES) {
     const arr = groups.get(p.group) || [];
     arr.push(p);
     groups.set(p.group, arr);
   }
+  const legacy = KCONFIG_LEGACY_POLICIES.filter((p) => configuredKeys.includes(p.key));
+  if (legacy.length > 0) groups.set(LEGACY_GROUP, legacy);
   return groups;
 }
 
@@ -226,7 +348,7 @@ export function detectKConfigConfiguredKeys(content: string): string[] {
   try {
     const parsed = JSON.parse(content || "{}") as Record<string, unknown>;
     const result: string[] = [];
-    for (const def of KCONFIG_ALL_POLICIES) {
+    for (const def of [...KCONFIG_ALL_POLICIES, ...KCONFIG_LEGACY_POLICIES]) {
       if (def.type === "url-restrictions") {
         if (Array.isArray(parsed.urlRestrictions) && (parsed.urlRestrictions as unknown[]).length > 0) {
           result.push("urlRestrictions");
@@ -368,4 +490,3 @@ export function buildKcmRestrictionContent(modules: string[], existingContent: s
 
   return JSON.stringify(parsed, null, 2);
 }
-

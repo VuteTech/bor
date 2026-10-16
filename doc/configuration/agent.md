@@ -161,7 +161,8 @@ Set a path to `""` to stop writing to that location.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `kconfig.config_path` | `/etc/bor/xdg` | Base directory for KDE configuration files written by KConfig policies. |
+| `kconfig.config_path` | `/etc/bor/xdg` | Base directory for KDE configuration files written by KConfig policies. The agent puts it first in `XDG_CONFIG_DIRS` through `/etc/xdg/plasma-workspace/env/00-bor.sh` and `/etc/profile.d/99-bor.sh`. |
+| `kconfig.write_kde5rc` | `false` | Also mirror System Settings module restrictions into `/etc/kde5rc`. Plasma 5 and 6 read them from `kdeglobals`; enable only for very old KDE Frameworks releases. |
 
 ## firewalld
 

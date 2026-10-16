@@ -244,7 +244,7 @@ policies first, then uninstall it.
 
     ```bash
     sudo rm -rf /var/lib/bor/agent /etc/bor/config.yaml /etc/bor/flatpak /etc/bor/xdg
-    sudo rm -f /etc/profile.d/99-bor.sh
+    sudo rm -f /etc/profile.d/99-bor.sh /etc/xdg/plasma-workspace/env/00-bor.sh
     # repository definition, depending on the distribution:
     sudo rm -f /etc/apt/sources.list.d/bor.sources /etc/apt/keyrings/bor.asc   # Debian/Ubuntu
     sudo rm -f /etc/yum.repos.d/bor.repo                                      # RHEL/Fedora

@@ -81,6 +81,18 @@ chrome:
   # Flatpak Chromium (org.chromium.Chromium) — set empty to disable
   flatpak_chromium_policies_path: "/var/lib/flatpak/extension/org.chromium.Chromium.Extension.system-policies/x86_64/1/policies/managed"
 
+# KDE Plasma (KConfig) policy enforcement.
+# All values are optional; the defaults shown are used when the section is absent.
+#kconfig:
+#  # Directory for the managed KDE configuration files. The agent puts it
+#  # first in XDG_CONFIG_DIRS through /etc/xdg/plasma-workspace/env/00-bor.sh
+#  # (Plasma sessions) and /etc/profile.d/99-bor.sh (login shells).
+#  config_path: "/etc/bor/xdg"
+#  # Also mirror System Settings module restrictions into /etc/kde5rc.
+#  # Plasma 5 and 6 read them from kdeglobals, so leave this off unless a
+#  # very old KDE Frameworks release needs it.
+#  write_kde5rc: false
+
 # Flatpak policy enforcement (remotes and applications via the flatpak CLI).
 # All values are optional; the defaults shown are used when the section is absent.
 #flatpak:

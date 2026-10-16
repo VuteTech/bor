@@ -121,6 +121,10 @@ type ChromeConfig struct {
 // KConfigConfig holds KDE Kiosk (KConfig) policy settings.
 type KConfigConfig struct {
 	ConfigPath string `yaml:"config_path"` // base directory for KDE config files (default /etc/bor/xdg)
+	// WriteKde5rc also mirrors System Settings module restrictions into
+	// /etc/kde5rc. Plasma 5 and 6 read them from kdeglobals, so this is only
+	// for very old KDE Frameworks releases (default false).
+	WriteKde5rc bool `yaml:"write_kde5rc"`
 }
 
 // EnrollmentConfig holds enrollment and mTLS settings.
