@@ -197,8 +197,14 @@ func TestMergeKConfigPolicies_AppFiles(t *testing.T) {
 }
 
 func TestDataChangeClassification(t *testing.T) {
-	if !LayoutFilesChanged([]string{"/etc/bor/share/plasma/look-and-feel/org.bor.x.desktop/contents/defaults"}) || LayoutFilesChanged([]string{"/etc/bor/share/konsole/Managed.profile"}) {
-		t.Error("LayoutFilesChanged wrong")
+	node := []string{"/etc/bor/share/plasma/look-and-feel/org.bor.x.desktop/contents/defaults"}
+	group := []string{"/etc/bor/share/groups/students/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-1.js"}
+	if !LayoutFilesChanged("/etc/bor/share", "", node) || LayoutFilesChanged("/etc/bor/share", "", []string{"/etc/bor/share/konsole/Managed.profile"}) {
+		t.Error("LayoutFilesChanged wrong for the node-wide files")
+	}
+	// Each scope only sees its own files.
+	if LayoutFilesChanged("/etc/bor/share", "", group) || !LayoutFilesChanged("/etc/bor/share", GroupDataPrefix("students"), group) || LayoutFilesChanged("/etc/bor/share", GroupDataPrefix("students"), node) {
+		t.Error("LayoutFilesChanged wrong for group files")
 	}
 	if !AppFilesChanged([]string{"/etc/bor/share/groups/students/applications/org.kde.konsole.desktop"}) || AppFilesChanged([]string{"/etc/bor/share/plasma/shells/x/contents/updates/bor-1.js"}) {
 		t.Error("AppFilesChanged wrong")

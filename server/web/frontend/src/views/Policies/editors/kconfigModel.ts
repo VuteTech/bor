@@ -838,13 +838,16 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
     if (c.layout.layoutScript.trim()) {
       out.push({ file: `${pkg}/contents/layouts/org.kde.plasma.desktop-layout.js`, content: c.layout.layoutScript.trim() + "\n" });
     }
-    if (c.layout.applyOnce) {
-      const lines = ["// Managed by Bor. Applied once per user."];
+    if (c.layout.applyOnce || c.layout.lockPackage) {
+      const lines = ["// Managed by Bor. Applies the desktop look to an existing user."];
       if (image) {
         lines.push(`var borImage = ${JSON.stringify(image)};`, `var borFillMode = ${c.layout.wallpaperFillMode || "2"};`, "// ... sets the wallpaper on every desktop ...");
       }
       if (c.layout.layoutScript.trim()) lines.push("// ... removes the user's panels, then runs the layout script above ...");
-      out.push({ file: "late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js", content: lines.join("\n") + "\n", note: "The file name changes with the content, so a changed look is applied again. The late/ directory is appended last to XDG_DATA_DIRS so that it never shadows Plasma's own shell package." });
+      const when = c.layout.lockPackage
+        ? "Plasma runs it once per user; because the look is enforced, the login hook drops Plasma's record of it so that it runs again at every login."
+        : "Plasma runs it once per user. The file name changes with the content, so a changed look is applied again.";
+      out.push({ file: "late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js", content: lines.join("\n") + "\n", note: `${when} The late/ directory is appended last to XDG_DATA_DIRS so that it never shadows Plasma's own shell package.` });
     }
   }
 

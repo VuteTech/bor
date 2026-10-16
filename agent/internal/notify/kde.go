@@ -301,6 +301,13 @@ func runAsUser(s session, name string, args ...string) error {
 // tool's fill-mode name or "" for its default. Best-effort: failures are
 // logged, never returned.
 func ApplyWallpaperToSessions(imagePath, fillMode string) {
+	ApplyWallpaperToSessionsIf(imagePath, fillMode, nil)
+}
+
+// ApplyWallpaperToSessionsIf is ApplyWallpaperToSessions limited to the
+// sessions whose user passes allow (UID and user name); nil allows all.
+// Group-scoped layouts use it so that only members get their wallpaper.
+func ApplyWallpaperToSessionsIf(imagePath, fillMode string, allow func(uid uint32, user string) bool) {
 	sessions, err := activeGraphicalSessions()
 	if err != nil {
 		log.Printf("notify: failed to enumerate sessions for wallpaper: %v", err)
@@ -312,6 +319,9 @@ func ApplyWallpaperToSessions(imagePath, fillMode string) {
 			continue
 		}
 		seen[s.UID] = true
+		if allow != nil && !allow(s.UID, s.User) {
+			continue
+		}
 		args := []string{}
 		if fillMode != "" {
 			args = append(args, "--fill-mode", fillMode)

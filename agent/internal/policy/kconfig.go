@@ -254,9 +254,9 @@ type KConfigMergeResult struct {
 	// keyed by policy ID. Entries that lost against a higher-priority
 	// policy are reported as INAPPLICABLE with the applied value.
 	Items map[string][]*pb.ComplianceItemResult
-	// Layout is the desktop layout to deploy (from the highest-priority
-	// policy that has one), with the policy it came from. Nil when no
-	// bound policy configures a layout.
+	// Layout is the node-wide desktop layout to deploy (from the
+	// highest-priority unscoped policy that has one), with the policy it
+	// came from. Nil when no such policy configures a layout.
 	Layout           *pb.KConfigLayout
 	LayoutPolicyID   string
 	LayoutPolicyName string
@@ -264,6 +264,14 @@ type KConfigMergeResult struct {
 	// (Appearance > Global theme); the generated package copies its
 	// defaults and replaces the wallpaper. Empty = Breeze fallback only.
 	LayoutBaseTheme string
+	// LayoutEnforced reports whether the selection of the node-wide package
+	// is locked: the layout enforces it, or the base theme setting was
+	// enforced. An enforced look is applied again at every login.
+	LayoutEnforced bool
+	// GroupLayouts holds the desktop layout of every group scope that has
+	// one, keyed by group slug. Members of the group get that look instead
+	// of the node-wide one.
+	GroupLayouts map[string]*KConfigLayoutSelection
 	// GroupFiles holds the rendered files of group-scoped policies, keyed
 	// by group slug and then file basename. Groups lists the scopes,
 	// highest priority first, as the login hook orders them.
@@ -275,10 +283,41 @@ type KConfigMergeResult struct {
 	GroupApps map[string]KConfigAppFiles
 }
 
+// KConfigLayoutSelection is the desktop layout one scope deploys and the
+// policy it came from.
+type KConfigLayoutSelection struct {
+	Layout     *pb.KConfigLayout
+	PolicyID   string
+	PolicyName string
+	// BaseTheme is the global theme the layout policy set explicitly; the
+	// generated package copies its defaults and replaces the wallpaper.
+	// Empty = Breeze fallback only.
+	BaseTheme string
+	// Enforced locks the selection of the package (lock_package, or an
+	// enforced base theme setting). The look is then applied again at
+	// every login instead of once per user.
+	Enforced bool
+}
+
+// PackageID is the id of the look-and-feel package generated for the
+// selection.
+func (s *KConfigLayoutSelection) PackageID() string {
+	return LayoutPackageIDFor(s.PolicyID, s.BaseTheme)
+}
+
+// NodeLayout returns the node-wide layout as a selection, nil without one.
+func (r *KConfigMergeResult) NodeLayout() *KConfigLayoutSelection {
+	if r.Layout == nil {
+		return nil
+	}
+	return &KConfigLayoutSelection{Layout: r.Layout, PolicyID: r.LayoutPolicyID, PolicyName: r.LayoutPolicyName, BaseTheme: r.LayoutBaseTheme, Enforced: r.LayoutEnforced}
+}
+
 // kconfigScope collects the winning entries of one overlay: the node-wide
 // directory (prefix "") or a per-group directory ("groups/<slug>/").
 type kconfigScope struct {
 	prefix        string
+	group         string // Unix group name of a group scope, "" node-wide
 	winners       map[string]kconfigWinner
 	entries       []*pb.KConfigEntry
 	fileImmutable map[string]bool
@@ -286,10 +325,13 @@ type kconfigScope struct {
 	apps       KConfigAppFiles
 	konsoleSrc KConfigPolicySource
 	hiddenBy   map[string]string // desktop file id -> first policy hiding it
+	// Desktop layout of the scope: the first policy in priority order that
+	// has one.
+	layout *KConfigLayoutSelection
 }
 
-func newKConfigScope(prefix string) *kconfigScope {
-	return &kconfigScope{prefix: prefix, winners: make(map[string]kconfigWinner), fileImmutable: make(map[string]bool), hiddenBy: make(map[string]string)}
+func newKConfigScope(prefix, group string) *kconfigScope {
+	return &kconfigScope{prefix: prefix, group: group, winners: make(map[string]kconfigWinner), fileImmutable: make(map[string]bool), hiddenBy: make(map[string]string)}
 }
 
 // item builds the compliance item for an entry of this scope.
@@ -344,9 +386,10 @@ func sameKConfigEffect(a, b *pb.KConfigEntry) bool {
 //
 // Policies without Groups fill the node-wide scope; a policy with Groups
 // fills one scope per group (GroupFiles), which the login hook adds to
-// XDG_CONFIG_DIRS for members only. installedKCMs is the list of System
-// Settings modules present on the node (InstalledKCMs); it is only needed
-// by policies in show-only module mode.
+// XDG_CONFIG_DIRS for members only. Each scope deploys at most one desktop
+// layout, from its highest-priority policy that has one. installedKCMs is
+// the list of System Settings modules present on the node (InstalledKCMs);
+// it is only needed by policies in show-only module mode.
 func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string) (*KConfigMergeResult, error) {
 	ordered := make([]KConfigPolicySource, len(sources))
 	copy(ordered, sources)
@@ -358,7 +401,7 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 	})
 
 	res := &KConfigMergeResult{Items: make(map[string][]*pb.ComplianceItemResult, len(ordered))}
-	nodeScope := newKConfigScope("")
+	nodeScope := newKConfigScope("", "")
 	groupScopes := make(map[string]*kconfigScope)
 	groupMeta := make(map[string]*KConfigGroupScope)
 
@@ -373,7 +416,7 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 				slug := GroupSlug(g)
 				sc, ok := groupScopes[slug]
 				if !ok {
-					sc = newKConfigScope(GroupOverlayDir + "/" + slug + "/")
+					sc = newKConfigScope(GroupOverlayDir+"/"+slug+"/", g)
 					groupScopes[slug] = sc
 					groupMeta[slug] = &KConfigGroupScope{Name: g, Slug: slug, Priority: src.Priority}
 				}
@@ -386,63 +429,20 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 			}
 		}
 
-		// A node-wide policy whose layout is about to win treats its own
-		// explicit Global theme as the base of the generated package
-		// instead of writing it: the package copies that theme's defaults
-		// and replaces the wallpaper, so "Breeze Dark plus our wallpaper"
-		// is one policy.
-		var base *layoutBase
-		if len(groups) == 0 && res.Layout == nil && LayoutHasContent(src.Policy.GetLayout()) {
-			base = &layoutBase{}
-		}
-
+		hasLayout := LayoutHasContent(src.Policy.GetLayout())
 		for _, sc := range scopes {
+			// A policy whose layout is about to win in this scope treats
+			// its own explicit Global theme as the base of the generated
+			// package instead of writing it: the package copies that
+			// theme's defaults and replaces the wallpaper, so "Breeze Dark
+			// plus our wallpaper" is one policy.
+			var base *layoutBase
+			if hasLayout && sc.layout == nil {
+				base = &layoutBase{}
+			}
 			items = append(items, mergeSourceIntoScope(sc, src, installedKCMs, base)...)
-		}
-
-		// Desktop layout: one look-and-feel package per node, from the
-		// highest-priority policy that configures one. The package is
-		// selected through kdeglobals [KDE] LookAndFeelPackage, which a
-		// catalogue setting of a higher-priority policy may still override.
-		// A group-scoped policy cannot carry it: the package and its update
-		// script apply to every user.
-		if LayoutHasContent(src.Policy.GetLayout()) {
-			switch {
-			case len(groups) > 0:
-				items = append(items, &pb.ComplianceItemResult{
-					SchemaId: "layout",
-					Key:      "look-and-feel",
-					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
-					Message:  "The desktop layout applies to every user on a node; move it to a policy without a group scope",
-				})
-			case res.Layout == nil:
-				res.Layout = src.Policy.GetLayout()
-				res.LayoutPolicyID = src.ID
-				res.LayoutPolicyName = src.Name
-				lock := res.Layout.GetLockPackage()
-				if base != nil && base.theme != "" {
-					res.LayoutBaseTheme = base.theme
-					lock = lock || base.enforced
-				}
-				pkg := LayoutPackageIDFor(src.ID, res.LayoutBaseTheme)
-				msg := "Deployed look-and-feel package " + pkg
-				if res.LayoutBaseTheme != "" {
-					msg += " based on " + res.LayoutBaseTheme
-				}
-				e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: "KDE", Key: "LookAndFeelPackage", Value: pkg, Type: "string", Enforced: lock}
-				if w, ok := nodeScope.claim(e, src); ok {
-					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, msg))
-				} else {
-					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
-						fmt.Sprintf("Global theme is set to %q by policy %q; the layout package %s is generated but not selected", w.entry.Value, w.src.Name, pkg)))
-				}
-			default:
-				items = append(items, &pb.ComplianceItemResult{
-					SchemaId: "layout",
-					Key:      "look-and-feel",
-					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
-					Message:  fmt.Sprintf("Overridden by higher-priority policy %q, which provides the desktop layout", res.LayoutPolicyName),
-				})
+			if hasLayout {
+				items = append(items, sc.selectLayout(src, base)...)
 			}
 		}
 		res.Items[src.ID] = items
@@ -455,6 +455,10 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 	res.Files = files
 	res.Entries = nodeScope.entries
 	res.Apps = nodeScope.apps
+	if sel := nodeScope.layout; sel != nil {
+		res.Layout, res.LayoutPolicyID, res.LayoutPolicyName = sel.Layout, sel.PolicyID, sel.PolicyName
+		res.LayoutBaseTheme, res.LayoutEnforced = sel.BaseTheme, sel.Enforced
+	}
 
 	if len(groupScopes) > 0 {
 		res.GroupFiles = make(map[string]map[string][]byte, len(groupScopes))
@@ -469,6 +473,12 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 			}
 			res.GroupFiles[slug] = gf
 			res.GroupApps[slug] = sc.apps
+			if sc.layout != nil {
+				if res.GroupLayouts == nil {
+					res.GroupLayouts = make(map[string]*KConfigLayoutSelection)
+				}
+				res.GroupLayouts[slug] = sc.layout
+			}
 			res.Groups = append(res.Groups, *groupMeta[slug])
 		}
 		sort.SliceStable(res.Groups, func(i, j int) bool {
@@ -493,10 +503,52 @@ func isGlobalThemeEntry(e *pb.KConfigEntry) bool {
 	return e.File == KConfigFileGlobals && e.Group == "KDE" && e.Key == "LookAndFeelPackage" && e.Locale == "" && !e.Delete
 }
 
+// selectLayout makes src's desktop layout the one this scope deploys,
+// unless a higher-priority policy already provides one. The generated
+// package is selected through kdeglobals [KDE] LookAndFeelPackage of the
+// scope, which a catalogue setting of a higher-priority policy may still
+// override; in a group scope that file, the package and its update script
+// reach members of the group only. base carries the policy's explicit
+// Global theme when the layout wins (see mergeSourceIntoScope).
+func (sc *kconfigScope) selectLayout(src KConfigPolicySource, base *layoutBase) []*pb.ComplianceItemResult {
+	if sc.layout != nil {
+		return []*pb.ComplianceItemResult{{
+			SchemaId: sc.prefix + "layout",
+			Key:      "look-and-feel",
+			Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+			Message:  fmt.Sprintf("Overridden by higher-priority policy %q, which provides the desktop layout", sc.layout.PolicyName),
+		}}
+	}
+	sel := &KConfigLayoutSelection{Layout: src.Policy.GetLayout(), PolicyID: src.ID, PolicyName: src.Name, Enforced: src.Policy.GetLayout().GetLockPackage()}
+	if base != nil && base.theme != "" {
+		sel.BaseTheme = base.theme
+		sel.Enforced = sel.Enforced || base.enforced
+	}
+	sc.layout = sel
+
+	pkg := sel.PackageID()
+	msg := "Deployed look-and-feel package " + pkg
+	if sel.BaseTheme != "" {
+		msg += " based on " + sel.BaseTheme
+	}
+	if sc.group != "" {
+		msg += fmt.Sprintf(" for members of group %q", sc.group)
+	}
+	if sel.Enforced {
+		msg += "; applied again at every login"
+	}
+	e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: "KDE", Key: "LookAndFeelPackage", Value: pkg, Type: "string", Enforced: sel.Enforced}
+	if w, ok := sc.claim(e, src); !ok {
+		return []*pb.ComplianceItemResult{sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+			fmt.Sprintf("Global theme is set to %q by policy %q; the layout package %s is generated but not selected", w.entry.Value, w.src.Name, pkg))}
+	}
+	return []*pb.ComplianceItemResult{sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, msg)}
+}
+
 // mergeSourceIntoScope adds one policy's entries to a scope and returns the
-// compliance items for them. With base set (node-wide policy whose layout
-// wins), the policy's explicit Global theme is captured there instead of
-// being written.
+// compliance items for them. With base set (the policy's layout wins in
+// this scope), the policy's explicit Global theme is captured there
+// instead of being written.
 func mergeSourceIntoScope(sc *kconfigScope, src KConfigPolicySource, installedKCMs []string, base *layoutBase) []*pb.ComplianceItemResult {
 	items := []*pb.ComplianceItemResult{}
 	for _, e := range KConfigPolicyToEntries(src.Policy) {
@@ -1140,26 +1192,55 @@ func EnvScriptPaths() []string {
 	return []string{profileScriptPath, plasmaEnvScriptPath}
 }
 
+// EnvHook describes what the login hook scripts do on a node.
+type EnvHook struct {
+	// ConfigPath and DataPath are the managed directories to put first in
+	// XDG_CONFIG_DIRS and XDG_DATA_DIRS.
+	ConfigPath string
+	DataPath   string
+	// Reapply is the absolute path of the Plasma update script of an
+	// enforced node-wide desktop layout, "" when there is none. The Plasma
+	// hook drops it from the user's list of performed updates so that
+	// Plasma runs it again at every login.
+	Reapply string
+	// Groups are the per-group overlays, highest priority first.
+	Groups []GroupDir
+}
+
+// reapplies reports whether the hook has any update script to re-run.
+func (h EnvHook) reapplies() bool {
+	if h.Reapply != "" {
+		return true
+	}
+	for _, g := range h.Groups {
+		if g.Reapply != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // envScriptContent returns the Plasma hook: the POSIX shell snippet that
-// prepends configPath to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS
-// exactly once, however many hooks run it. groups are the per-group
-// overlay directories, highest priority first; each is added before the
-// node-wide directory for members of the group (matched on numeric GIDs
-// from `id -G`, so group names never reach the shell).
-func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
-	return envScriptBody(configPath, dataPath, groups, false)
+// prepends the config directory to XDG_CONFIG_DIRS and the data directory
+// to XDG_DATA_DIRS exactly once, however many hooks run it. Group overlays
+// are added before the node-wide directories for members of the group
+// (matched on numeric GIDs from `id -G`, so group names never reach the
+// shell). Enforced desktop layouts are re-applied at every login.
+func envScriptContent(h EnvHook) string {
+	return envScriptBody(h, false)
 }
 
 // profileScriptContent returns the profile.d hook: the same snippet, but
 // inside a Plasma session a variable is only extended when it is already
 // set, so that Plasma's own environment scripts that act on an empty
 // variable still add the distribution's defaults; the Plasma hook adds
-// the Bor directories after them.
-func profileScriptContent(configPath, dataPath string, groups []GroupDir) string {
-	return envScriptBody(configPath, dataPath, groups, true)
+// the Bor directories after them. It never touches Plasma's update
+// records: that is the Plasma hook's job.
+func profileScriptContent(h EnvHook) string {
+	return envScriptBody(h, true)
 }
 
-func envScriptBody(configPath, dataPath string, groups []GroupDir, plasmaGuard bool) string {
+func envScriptBody(h EnvHook, plasmaGuard bool) string {
 	var b strings.Builder
 	b.WriteString(`# Managed by Bor. Do not edit manually.
 # Puts the Bor policy directories first in XDG_CONFIG_DIRS and XDG_DATA_DIRS
@@ -1182,47 +1263,96 @@ esac
 		dataOpen, dataClose = "if [ \"$bor_data\" = 1 ]; then\n", "fi\n"
 		guardCleanup = "unset bor_cfg bor_data\n"
 	}
+	reapply := !plasmaGuard && h.reapplies()
 	// Nodes without group-scoped policies get the plain snippet; the group
-	// logic (and its helper variables) only appears when needed.
+	// logic (and its helper variables) only appears when needed. Each
+	// group adds its config and data directories in front and its "late"
+	// data directory at the end (see below). Plasma runs update scripts in
+	// data-directory order, so the late directories are added lowest
+	// priority first: the highest-priority group's scripts run last and
+	// win. A group with a layout of its own replaces the node-wide late
+	// directory for its members, so the node-wide look never reaches them.
 	configPrefix, configCleanup, dataPrefix, dataCleanup := "", "", "", ""
-	if len(groups) > 0 {
+	lateSuffix := ":" + h.DataPath + "/" + LateDataDir
+	if len(h.Groups) > 0 {
 		b.WriteString("# Group-scoped policy directories, highest priority first.\n")
 		b.WriteString("bor_group_dirs=\"\"\n")
 		b.WriteString("bor_group_data=\"\"\n")
+		b.WriteString("bor_group_late=\"\"\n")
+		fmt.Fprintf(&b, "bor_node_late=\"%s\"\n", lateSuffix)
 		b.WriteString("bor_gids=\" $(id -G 2>/dev/null) \"\n")
-		for _, g := range groups {
-			fmt.Fprintf(&b, "case \"$bor_gids\" in *\" %d \"*) bor_group_dirs=\"${bor_group_dirs}%s:\"; bor_group_data=\"${bor_group_data}%s:\" ;; esac\n", g.GID, g.Dir, g.DataDir)
+		for _, g := range h.Groups {
+			ownLook := ""
+			if g.Layout || g.Reapply != "" {
+				ownLook = "; bor_node_late=\"\""
+			}
+			fmt.Fprintf(&b, "case \"$bor_gids\" in *\" %d \"*) bor_group_dirs=\"${bor_group_dirs}%s:\"; bor_group_data=\"${bor_group_data}%s:\"; bor_group_late=\":%s/%s${bor_group_late}\"%s ;; esac\n",
+				g.GID, g.Dir, g.DataDir, g.DataDir, LateDataDir, ownLook)
 		}
-		b.WriteString("unset bor_gids\n")
 		configPrefix, configCleanup = "${bor_group_dirs}", "unset bor_group_dirs\n"
-		dataPrefix, dataCleanup = "${bor_group_data}", "unset bor_group_data\n"
+		dataPrefix, lateSuffix, dataCleanup = "${bor_group_data}", "${bor_node_late}${bor_group_late}", "unset bor_group_data bor_group_late bor_node_late\n"
+	}
+	if reapply {
+		// Plasma runs each update script once per user and records it in
+		// plasmashellrc [Updates] performed (a comma-separated list; the
+		// paths never contain commas). Removing the record before Plasma
+		// starts makes it run the script again.
+		b.WriteString(`# Enforced desktop look: Plasma runs an update script once per user and
+# records it in plasmashellrc [Updates]. Dropping that record makes Plasma
+# run the script again at this login, so the wallpaper (and the panels,
+# with a layout script) return to what the policy says.
+bor_rc=""
+for bor_t in kreadconfig6 kreadconfig5; do command -v "$bor_t" >/dev/null 2>&1 && { bor_rc=$bor_t; break; }; done
+bor_done=""
+[ -z "$bor_rc" ] || bor_done=$("$bor_rc" --file plasmashellrc --group Updates --key performed 2>/dev/null)
+bor_keep=",${bor_done},"
+bor_again() { case "$bor_keep" in *",$1,"*) bor_keep=${bor_keep%%,"$1",*},${bor_keep#*,"$1",} ;; esac; }
+`)
+		if h.Reapply != "" {
+			fmt.Fprintf(&b, "bor_again \"%s\"\n", h.Reapply)
+		}
+		for _, g := range h.Groups {
+			if g.Reapply != "" {
+				fmt.Fprintf(&b, "case \"$bor_gids\" in *\" %d \"*) bor_again \"%s\" ;; esac\n", g.GID, g.Reapply)
+			}
+		}
+		b.WriteString(`bor_keep=${bor_keep#,}; bor_keep=${bor_keep%,}
+[ -z "$bor_rc" ] || [ "$bor_keep" = "$bor_done" ] || "kwriteconfig${bor_rc#kreadconfig}" --file plasmashellrc --group Updates --key performed "$bor_keep"
+unset -f bor_again
+unset bor_rc bor_t bor_done bor_keep
+`)
+	}
+	if len(h.Groups) > 0 {
+		b.WriteString("unset bor_gids\n")
 	}
 	// The data directory goes first (it shadows desktop entries and holds
 	// the look-and-feel package); its "late" subdirectory goes last, so the
 	// Plasma update scripts in it are found without shadowing the shell
-	// package (see kconfig_layout.go).
+	// package (see kconfig_layout.go). Group data directories follow the
+	// same pattern.
 	fmt.Fprintf(&b, `%[8]scase ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":%[1]s:"*) ;;
   *) export XDG_CONFIG_DIRS="%[3]s%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
 %[9]s%[4]s%[10]scase ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":%[2]s:"*) ;;
-  *) export XDG_DATA_DIRS="%[5]s%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:%[2]s/%[7]s" ;;
+  *) export XDG_DATA_DIRS="%[5]s%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}%[6]s" ;;
 esac
-%[11]s%[6]s%[12]s`, configPath, dataPath, configPrefix, configCleanup, dataPrefix, dataCleanup, LateDataDir,
+%[11]s%[7]s%[12]s`, h.ConfigPath, h.DataPath, configPrefix, configCleanup, dataPrefix, lateSuffix, dataCleanup,
 		cfgOpen, cfgClose, dataOpen, dataClose, guardCleanup)
 	return b.String()
 }
 
-// EnsureEnvScripts creates or updates the login hook scripts so that
-// configPath (and the group directories for members) is prepended to
-// XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS for every Plasma session
-// and login shell. The Plasma hook name of earlier releases is removed.
-func EnsureEnvScripts(configPath, dataPath string, groups []GroupDir) error {
-	if err := ensureScript(profileScriptPath, []byte(profileScriptContent(configPath, dataPath, groups))); err != nil {
+// EnsureEnvScripts creates or updates the login hook scripts so that the
+// config directory (and the group directories for members) is prepended to
+// XDG_CONFIG_DIRS and the data directory to XDG_DATA_DIRS for every Plasma
+// session and login shell, and enforced desktop layouts are re-applied at
+// login. The Plasma hook name of earlier releases is removed.
+func EnsureEnvScripts(h EnvHook) error {
+	if err := ensureScript(profileScriptPath, []byte(profileScriptContent(h))); err != nil {
 		return err
 	}
-	if err := ensureScript(plasmaEnvScriptPath, []byte(envScriptContent(configPath, dataPath, groups))); err != nil {
+	if err := ensureScript(plasmaEnvScriptPath, []byte(envScriptContent(h))); err != nil {
 		return err
 	}
 	if err := os.Remove(legacyPlasmaEnvScriptPath); err != nil && !os.IsNotExist(err) {

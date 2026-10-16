@@ -233,7 +233,8 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       const base = layoutBaseTheme(kc);
       rows.push({ setting: "Desktop Layout › Base theme", value: base ? `${base.value} (defaults copied, wallpaper replaced)` : "Breeze fallback", locked: base ? (base.immutable ? "Yes" : "No") : null });
       const how: string[] = ["new users"];
-      if (l.applyOnce) how.push("existing users once");
+      if (l.lockPackage) how.push("existing users at every login");
+      else if (l.applyOnce) how.push("existing users once");
       if (l.applyLive) how.push("logged-in sessions now");
       rows.push({ setting: "Desktop Layout › Applied to", value: how.join(", "), locked: null });
     }

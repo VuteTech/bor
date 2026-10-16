@@ -300,11 +300,18 @@ func AppFilesChanged(changed []string) bool {
 	return false
 }
 
-// LayoutFilesChanged reports whether any of the changed data paths belongs
-// to the look-and-feel package or the Plasma update scripts.
-func LayoutFilesChanged(changed []string) bool {
+// LayoutFilesChanged reports whether any of the changed data paths (absolute,
+// under dataPath) belongs to the look-and-feel package or the Plasma update
+// scripts of one scope: prefix is "" for the node-wide files and
+// GroupDataPrefix(slug) for a group's.
+func LayoutFilesChanged(dataPath, prefix string, changed []string) bool {
+	root := filepath.ToSlash(filepath.Clean(dataPath)) + "/"
 	for _, p := range changed {
-		if strings.Contains(p, "/"+lookAndFeelDir+"/") || strings.Contains(p, "/"+shellUpdatesDir+"/") {
+		rel, ok := strings.CutPrefix(filepath.ToSlash(p), root)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(rel, prefix+lookAndFeelDir+"/") || strings.HasPrefix(rel, prefix+shellUpdatesDir+"/") {
 			return true
 		}
 	}

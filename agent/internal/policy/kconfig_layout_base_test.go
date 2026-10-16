@@ -83,16 +83,29 @@ func TestMergeKConfigPolicies_LayoutUsesOwnGlobalThemeAsBase(t *testing.T) {
 		t.Errorf("explicit theme must be written when there is no layout:\n%s", res.Files["kdeglobals"])
 	}
 
-	// A group-scoped policy cannot carry a layout, so its theme is written
-	// into the group overlay as usual.
+	// A group-scoped policy carries its layout into the group scope: the
+	// explicit theme becomes the base there and the group overlay selects
+	// the generated package, locked because the theme setting was enforced.
+	// Nothing reaches the node-wide files.
 	sources[0].Policy.Layout = &pb.KConfigLayout{WallpaperImage: "/srv/corp.png"}
 	sources[0].Groups = []string{"students"}
 	res, err = MergeKConfigPolicies(sources, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.LayoutBaseTheme != "" || res.Layout != nil || !strings.Contains(string(res.GroupFiles["students"]["kdeglobals"]), "LookAndFeelPackage[$i]=org.kde.breezedark.desktop") {
-		t.Errorf("scoped policy wrong: base=%q layout=%v\n%s", res.LayoutBaseTheme, res.Layout, res.GroupFiles["students"]["kdeglobals"])
+	sel := res.GroupLayouts["students"]
+	if res.Layout != nil || res.LayoutBaseTheme != "" || sel == nil || sel.BaseTheme != "org.kde.breezedark.desktop" || !sel.Enforced || sel.PolicyID != "bbbb2222" {
+		t.Fatalf("scoped policy wrong: node layout=%v base=%q group selection=%+v", res.Layout, res.LayoutBaseTheme, sel)
+	}
+	if sel.PackageID() != pkgID {
+		t.Errorf("group package id = %q, want %q", sel.PackageID(), pkgID)
+	}
+	overlay := string(res.GroupFiles["students"]["kdeglobals"])
+	if strings.Contains(overlay, "org.kde.breezedark.desktop") || !strings.Contains(overlay, "LookAndFeelPackage[$i]="+pkgID) {
+		t.Errorf("group overlay wrong:\n%s", overlay)
+	}
+	if strings.Contains(string(res.Files["kdeglobals"]), "LookAndFeelPackage") {
+		t.Errorf("scoped layout leaked into the node-wide file:\n%s", res.Files["kdeglobals"])
 	}
 }
 

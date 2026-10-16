@@ -1496,25 +1496,42 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 	// and update script of the desktop layout, plus the application files
 	// (Konsole profile, hidden desktop entries) node-wide and per group.
 	dataFiles := make(map[string][]byte)
-	if merged.Layout != nil {
+	renderLayout := func(sel *policy.KConfigLayoutSelection, prefix string) {
 		// A base theme set in the layout policy must exist on this node;
 		// otherwise the package falls back to Breeze and the policy says so.
 		var base *policy.LookAndFeelBase
-		if merged.LayoutBaseTheme != "" {
-			if b, ok := policy.LoadLookAndFeelBase(merged.LayoutBaseTheme); ok {
+		if sel.BaseTheme != "" {
+			if b, ok := policy.LoadLookAndFeelBase(sel.BaseTheme); ok {
 				base = b
 			} else {
-				merged.Items[merged.LayoutPolicyID] = append(merged.Items[merged.LayoutPolicyID], &pb.ComplianceItemResult{
-					SchemaId: "layout",
+				merged.Items[sel.PolicyID] = append(merged.Items[sel.PolicyID], &pb.ComplianceItemResult{
+					SchemaId: prefix + "layout",
 					Key:      "base theme",
 					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
-					Message:  fmt.Sprintf("Base theme %q is not installed on this node; the generated look uses KDE's Breeze defaults", merged.LayoutBaseTheme),
+					Message:  fmt.Sprintf("Base theme %q is not installed on this node; the generated look uses KDE's Breeze defaults", sel.BaseTheme),
 				})
 			}
 		}
-		for rel, data := range policy.RenderLayoutFilesWithBase(merged.Layout, merged.LayoutPolicyID, merged.LayoutPolicyName, merged.LayoutBaseTheme, base) {
-			dataFiles[rel] = data
+		// The wallpaper has to be a file every user can read; a missing or
+		// private file leaves the desktop unchanged without any message
+		// from Plasma, so the policy says so.
+		if err := policy.CheckWallpaperFile(policy.WallpaperPath(sel.Layout.GetWallpaperImage())); err != nil {
+			merged.Items[sel.PolicyID] = append(merged.Items[sel.PolicyID], &pb.ComplianceItemResult{
+				SchemaId: prefix + "layout",
+				Key:      "wallpaper",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				Message:  err.Error(),
+			})
 		}
+		for rel, data := range policy.RenderLayoutFilesFor(sel, base) {
+			dataFiles[prefix+rel] = data
+		}
+	}
+	if sel := merged.NodeLayout(); sel != nil {
+		renderLayout(sel, "")
+	}
+	for slug, sel := range merged.GroupLayouts {
+		renderLayout(sel, policy.GroupDataPrefix(slug))
 	}
 	for rel, data := range policy.RenderAppFiles(merged.Apps, policy.InstalledDesktopFile) {
 		dataFiles[rel] = data
@@ -1577,7 +1594,26 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		})
 	}
 
-	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath, groupDirs); err != nil {
+	// Enforced desktop layouts are applied again at every login: the hook
+	// gets the update script of each one (node-wide and per group).
+	hook := policy.EnvHook{ConfigPath: cfg.KConfig.ConfigPath, DataPath: cfg.KConfig.DataPath, Groups: groupDirs}
+	if sel := merged.NodeLayout(); sel != nil && sel.Enforced {
+		if rel := sel.UpdateScriptPath(); rel != "" {
+			hook.Reapply = filepath.Join(cfg.KConfig.DataPath, rel)
+		}
+	}
+	gidBySlug := make(map[string]uint32, len(groupDirs))
+	for i, g := range hook.Groups {
+		gidBySlug[g.Slug] = g.GID
+		sel := merged.GroupLayouts[g.Slug]
+		hook.Groups[i].Layout = sel != nil
+		if sel != nil && sel.Enforced {
+			if rel := sel.UpdateScriptPath(); rel != "" {
+				hook.Groups[i].Reapply = filepath.Join(cfg.KConfig.DataPath, policy.GroupDataPrefix(g.Slug), rel)
+			}
+		}
+	}
+	if err := policy.EnsureEnvScripts(hook); err != nil {
 		log.Printf("Warning: failed to ensure XDG hook scripts: %v", err)
 	}
 
@@ -1617,8 +1653,29 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		reportError("failed to sync KDE data files: " + dataErr.Error())
 		return nil
 	}
-	if merged.Layout != nil && merged.Layout.GetApplyLive() && policy.LayoutFilesChanged(changedData) && merged.Layout.GetWallpaperImage() != "" {
-		notify.ApplyWallpaperToSessions(policy.WallpaperPath(merged.Layout.GetWallpaperImage()), policy.WallpaperFillModeName(merged.Layout.GetWallpaperFillMode()))
+	// Live wallpaper: the node-wide look goes to every logged-in user who
+	// is not covered by a group layout; a group's look to its members. An
+	// unresolved group has no members on this node yet.
+	liveWallpaper := func(sel *policy.KConfigLayoutSelection, prefix string, allow func(uid uint32, user string) bool) {
+		if sel == nil || !sel.Layout.GetApplyLive() || sel.Layout.GetWallpaperImage() == "" || !policy.LayoutFilesChanged(cfg.KConfig.DataPath, prefix, changedData) {
+			return
+		}
+		notify.ApplyWallpaperToSessionsIf(policy.WallpaperPath(sel.Layout.GetWallpaperImage()), policy.WallpaperFillModeName(sel.Layout.GetWallpaperFillMode()), allow)
+	}
+	liveWallpaper(merged.NodeLayout(), "", func(_ uint32, user string) bool {
+		for slug := range merged.GroupLayouts {
+			if gid, ok := gidBySlug[slug]; ok && policy.UserInGroup(user, gid) {
+				return false
+			}
+		}
+		return true
+	})
+	for slug, sel := range merged.GroupLayouts {
+		gid, ok := gidBySlug[slug]
+		if !ok {
+			continue
+		}
+		liveWallpaper(sel, policy.GroupDataPrefix(slug), func(_ uint32, user string) bool { return policy.UserInGroup(user, gid) })
 	}
 	if policy.AppFilesChanged(changedData) {
 		// Logged-in sessions see hidden or restored desktop entries once

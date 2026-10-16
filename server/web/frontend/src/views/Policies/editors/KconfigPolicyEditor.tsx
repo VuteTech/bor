@@ -925,6 +925,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Wallpaper and panel layout</Title>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
           The agent generates a look-and-feel package named &quot;{policyName?.trim() || "this policy"} (managed)&quot; under the data directory and selects it as the global theme (<code>kdeglobals · [KDE] · LookAndFeelPackage</code>). Users who log in for the first time get the wallpaper and, if set, the panel layout.
+          {content.unixGroups.length > 0 && (
+            <> Scoped to {content.unixGroups.join(", ")}: the package, its update script and the theme selection go to the group directories, so only members get this look; other users keep the node-wide one.</>
+          )}
         </p>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
           {base ? (
@@ -975,18 +978,32 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
           <FormGroup label="Apply once to existing users" fieldId="kc-layout-once">
             <Switch
               id="kc-layout-once"
-              isChecked={layout.applyOnce}
-              isDisabled={isDisabled}
+              isChecked={layout.applyOnce || layout.lockPackage}
+              isDisabled={isDisabled || layout.lockPackage}
               onChange={(_ev, c) => update({ applyOnce: c })}
-              label={layout.applyOnce ? "At their next login: wallpaper set on every desktop; with a layout script, their panels are replaced" : "Only users logging in for the first time"}
+              label={
+                layout.lockPackage
+                  ? "At every login (enforced look): wallpaper set on every desktop; with a layout script, the panels are replaced"
+                  : layout.applyOnce
+                    ? "At their next login: wallpaper set on every desktop; with a layout script, their panels are replaced"
+                    : "Only users logging in for the first time"
+              }
             />
           </FormGroup>
           <FormGroup label="Apply the wallpaper to logged-in sessions now" fieldId="kc-layout-live">
             <Switch id="kc-layout-live" isChecked={layout.applyLive} isDisabled={isDisabled} onChange={(_ev, c) => update({ applyLive: c })} label={layout.applyLive ? "Yes, through plasma-apply-wallpaperimage" : "No"} />
           </FormGroup>
           <FormGroup label="Enforce as the global theme" fieldId="kc-layout-lock">
-            <Switch id="kc-layout-lock" isChecked={layout.lockPackage} isDisabled={isDisabled} onChange={(_ev, c) => update({ lockPackage: c })} label={layout.lockPackage ? "Enforced [$i]: users cannot pick another global theme" : "Default only: users may pick another global theme (settings enforced individually still apply)"} />
-            <FieldHelp>No package id to type: the generated look is selected by the policy itself and appears in System Settings as &quot;{policyName?.trim() || "this policy"} (managed)&quot;.</FieldHelp>
+            <Switch
+              id="kc-layout-lock"
+              isChecked={layout.lockPackage}
+              isDisabled={isDisabled}
+              onChange={(_ev, c) => update({ lockPackage: c })}
+              label={layout.lockPackage ? "Enforced [$i]: users cannot pick another global theme, and the wallpaper and panels return to the policy at every login" : "Default only: a starting point users may change (settings enforced individually still apply)"}
+            />
+            <FieldHelp>
+              No package id to type: the generated look is selected by the policy itself and appears in System Settings as &quot;{policyName?.trim() || "this policy"} (managed)&quot;. Without enforcement the look is applied once per user, and whatever theme, wallpaper or panels a user picks afterwards stays.
+            </FieldHelp>
           </FormGroup>
           {!isDisabled && configured && (
             <FormGroup fieldId="kc-layout-actions">

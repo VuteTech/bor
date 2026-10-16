@@ -251,8 +251,75 @@ func TestMergeKConfigPolicies_LayoutWinnerAndPackageSelection(t *testing.T) {
 	}
 }
 
+func TestRenderLayoutFilesFor_Enforced(t *testing.T) {
+	// An enforced look always carries the update script, apply-once or
+	// not: the hook re-runs it at every login.
+	sel := &KConfigLayoutSelection{Layout: &pb.KConfigLayout{WallpaperImage: "/w.png"}, PolicyID: "x", PolicyName: "Lab", Enforced: true}
+	files := RenderLayoutFilesFor(sel, nil)
+	rel := sel.UpdateScriptPath()
+	if !strings.HasPrefix(rel, "late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-") || files[rel] == nil {
+		t.Fatalf("enforced layout needs an update script, path %q, files %v", rel, keys(files))
+	}
+	if !strings.Contains(string(files[rel]), `d.writeConfig("Image", borImage);`) {
+		t.Errorf("update script wrong:\n%s", files[rel])
+	}
+
+	// Neither enforced nor applied once: no script and no path.
+	sel.Enforced = false
+	if sel.UpdateScriptPath() != "" {
+		t.Errorf("no update script expected, got %q", sel.UpdateScriptPath())
+	}
+	for name := range RenderLayoutFilesFor(sel, nil) {
+		if strings.Contains(name, "/updates/") {
+			t.Errorf("unexpected update script %s", name)
+		}
+	}
+
+	// Apply-once yields the same script (and name) as enforcing does.
+	sel.Layout.ApplyOnce = true
+	if sel.UpdateScriptPath() != rel {
+		t.Errorf("apply-once path %q differs from enforced path %q", sel.UpdateScriptPath(), rel)
+	}
+	if sel.PackageID() != LayoutPackageID("x") {
+		t.Errorf("package id without base = %q", sel.PackageID())
+	}
+}
+
+func TestCheckWallpaperFile(t *testing.T) {
+	dir := t.TempDir()
+	okFile := filepath.Join(dir, "ok.png")
+	writeFile(t, okFile, []byte("png"))
+	private := filepath.Join(dir, "private.png")
+	writeFile(t, private, []byte("png"))
+	if err := os.Chmod(private, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CheckWallpaperFile(okFile); err != nil {
+		t.Errorf("readable file: %v", err)
+	}
+	if err := CheckWallpaperFile("Next"); err != nil {
+		t.Errorf("wallpaper package names are not checked: %v", err)
+	}
+	if err := CheckWallpaperFile(private); err == nil || !strings.Contains(err.Error(), "not readable by every user") {
+		t.Errorf("private file: %v", err)
+	}
+	if err := CheckWallpaperFile(filepath.Join(dir, "missing.png")); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("missing file: %v", err)
+	}
+	if err := CheckWallpaperFile("/usr/share/bor-test-missing-wallpaper-0000/x.jpg"); err == nil || strings.Contains(err.Error(), "emptied at boot") {
+		t.Errorf("missing file outside the temporary directories: %v", err)
+	}
+	if err := CheckWallpaperFile("/tmp/bor-test-missing-wallpaper-0000/x.jpg"); err == nil || !strings.Contains(err.Error(), "emptied at boot") {
+		t.Errorf("missing file under /tmp should mention the reboot: %v", err)
+	}
+	if err := CheckWallpaperFile(dir); err == nil || !strings.Contains(err.Error(), "regular file") {
+		t.Errorf("directory: %v", err)
+	}
+}
+
 func TestEnvScriptContent_DataDirs(t *testing.T) {
-	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
+	got := envScriptContent(EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share"})
 	for _, want := range []string{
 		`export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`,
 		`export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late"`,

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -35,11 +36,17 @@ type KConfigGroupScope struct {
 
 // GroupDir is a resolved per-group overlay for the login hook: the config
 // directory (XDG_CONFIG_DIRS) and the data directory (XDG_DATA_DIRS) of
-// the group.
+// the group, and the update script of its enforced desktop layout, if any
+// (see EnvHook.Reapply).
 type GroupDir struct {
 	GID     uint32
+	Slug    string
 	Dir     string
 	DataDir string
+	// Layout reports that the group deploys a desktop layout of its own:
+	// members get its update scripts instead of the node-wide ones.
+	Layout  bool
+	Reapply string
 }
 
 // GroupSlug derives a directory name from a group name: lowercase, with
@@ -113,11 +120,33 @@ func ResolveGroupDirs(configPath, dataPath string, scopes []KConfigGroupScope, l
 		}
 		dirs = append(dirs, GroupDir{
 			GID:     gid,
+			Slug:    s.Slug,
 			Dir:     filepath.Join(configPath, GroupOverlayDir, s.Slug),
 			DataDir: filepath.Join(dataPath, GroupOverlayDir, s.Slug),
 		})
 	}
 	return dirs, unresolved
+}
+
+// UserInGroup reports whether username belongs to the group with the given
+// numeric id, primary or supplementary. It asks `id -G`, which goes through
+// the node's name service like the login hook does, so local, LDAP and
+// SSSD groups are all seen; an unknown user is in no group.
+func UserInGroup(username string, gid uint32) bool {
+	if username == "" || strings.ContainsAny(username, " \t\n/") {
+		return false
+	}
+	out, err := exec.Command("id", "-G", "--", username).Output() //nolint:gosec // G204: fixed binary; the name comes from systemd's session files
+	if err != nil {
+		return false
+	}
+	want := strconv.FormatUint(uint64(gid), 10)
+	for _, f := range strings.Fields(string(out)) {
+		if f == want {
+			return true
+		}
+	}
+	return false
 }
 
 // GroupDataPrefix is the path, relative to the data directory, under which

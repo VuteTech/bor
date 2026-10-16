@@ -7,6 +7,7 @@ package policy
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,6 +46,7 @@ func TestMergeKConfigPolicies_GroupScopes(t *testing.T) {
 		{ID: "stud", Name: "Students", Priority: 5, Groups: []string{"students"}, Policy: &pb.KConfigPolicy{
 			RunCommand: kcBool(false), EnforcedFields: []string{"runCommand"},
 			IconTheme: kcStr("breeze-dark"),
+			Layout:    &pb.KConfigLayout{WallpaperImage: "/s.png", LockPackage: true},
 		}},
 		{ID: "teach", Name: "Teachers", Priority: 9, Groups: []string{"Teachers", "students"}, Policy: &pb.KConfigPolicy{
 			IconTheme: kcStr("oxygen"),
@@ -109,15 +111,36 @@ func TestMergeKConfigPolicies_GroupScopes(t *testing.T) {
 		t.Errorf("students items wrong: %+v", res.Items["stud"])
 	}
 
-	// A layout on a scoped policy is refused with an explanation.
-	var layoutRefused bool
-	for _, it := range res.Items["teach"] {
-		if it.SchemaId == "layout" && it.Status == pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE && strings.Contains(it.Message, "group scope") {
-			layoutRefused = true
+	// A layout on a scoped policy is deployed to its groups: each group
+	// overlay selects the generated package and the merge records the
+	// selection per group; the node-wide files know nothing about it. In
+	// the students scope the Teachers layout (priority 9) wins over the
+	// Students one, which is reported as overridden within that scope.
+	if res.Layout != nil || strings.Contains(node, "LookAndFeelPackage") {
+		t.Errorf("scoped layout must not become the node-wide one: %v\n%s", res.Layout, node)
+	}
+	for _, slug := range []string{"students", "teachers"} {
+		sel := res.GroupLayouts[slug]
+		if sel == nil || sel.PolicyID != "teach" || sel.Layout.GetWallpaperImage() != "/w.png" || sel.Enforced {
+			t.Fatalf("group %s layout selection wrong: %+v", slug, sel)
+		}
+		if !strings.Contains(string(res.GroupFiles[slug]["kdeglobals"]), "LookAndFeelPackage="+sel.PackageID()+"\n") {
+			t.Errorf("group %s overlay should select %s:\n%s", slug, sel.PackageID(), res.GroupFiles[slug]["kdeglobals"])
 		}
 	}
-	if !layoutRefused || res.Layout != nil {
-		t.Errorf("scoped layout should be refused, got layout=%v items=%+v", res.Layout, res.Items["teach"])
+	var deployed, overridden bool
+	for _, it := range res.Items["teach"] {
+		if it.SchemaId == "groups/students/kdeglobals" && it.Key == "[KDE] LookAndFeelPackage" && it.Status == pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT && strings.Contains(it.Message, `for members of group "students"`) {
+			deployed = true
+		}
+	}
+	for _, it := range res.Items["stud"] {
+		if it.SchemaId == "groups/students/layout" && it.Status == pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE && strings.Contains(it.Message, "Teachers") {
+			overridden = true
+		}
+	}
+	if !deployed || !overridden {
+		t.Errorf("layout items wrong (deployed=%v overridden=%v):\nteach: %+v\nstud: %+v", deployed, overridden, res.Items["teach"], res.Items["stud"])
 	}
 }
 
@@ -132,18 +155,22 @@ func TestMergeKConfigPolicies_NoGroupsNoGroupFiles(t *testing.T) {
 }
 
 func TestEnvScriptContent_Groups(t *testing.T) {
-	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share", []GroupDir{
-		{GID: 1002, Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers"},
-		{GID: 1003, Dir: "/etc/bor/xdg/groups/students", DataDir: "/etc/bor/share/groups/students"},
-	})
+	got := envScriptContent(EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share", Groups: []GroupDir{
+		{GID: 1002, Slug: "teachers", Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers", Layout: true},
+		{GID: 1003, Slug: "students", Dir: "/etc/bor/xdg/groups/students", DataDir: "/etc/bor/share/groups/students"},
+	}})
 	for _, want := range []string{
 		`bor_gids=" $(id -G 2>/dev/null) "`,
-		`case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:" ;; esac`,
-		`case "$bor_gids" in *" 1003 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/students:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/students:" ;; esac`,
+		`bor_node_late=":/etc/bor/share/late"`,
+		// A group with a layout of its own drops the node-wide late directory
+		// for its members; late directories are prepended so that the
+		// highest-priority group's update scripts run last.
+		`case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:"; bor_group_late=":/etc/bor/share/groups/teachers/late${bor_group_late}"; bor_node_late="" ;; esac`,
+		`case "$bor_gids" in *" 1003 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/students:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/students:"; bor_group_late=":/etc/bor/share/groups/students/late${bor_group_late}" ;; esac`,
 		`export XDG_CONFIG_DIRS="${bor_group_dirs}/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`,
-		`export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late"`,
+		`export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}${bor_node_late}${bor_group_late}"`,
 		"unset bor_group_dirs\n",
-		"unset bor_group_data\n",
+		"unset bor_group_data bor_group_late bor_node_late\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("hook lacks %q:\n%s", want, got)
@@ -161,7 +188,7 @@ func TestEnvScriptContent_Groups(t *testing.T) {
 
 	// The profile.d variant wraps both exports in the Plasma-session guard
 	// and keeps the group logic; the Plasma hook has no guard.
-	profile := profileScriptContent("/etc/bor/xdg", "/etc/bor/share", []GroupDir{{GID: 1002, Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers"}})
+	profile := profileScriptContent(EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share", Groups: []GroupDir{{GID: 1002, Slug: "teachers", Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers"}}})
 	for _, want := range []string{
 		"bor_cfg=1; bor_data=1\n",
 		`case ":${XDG_CURRENT_DESKTOP}:${XDG_SESSION_DESKTOP}:" in`,
@@ -180,12 +207,115 @@ func TestEnvScriptContent_Groups(t *testing.T) {
 
 	// Without groups the hook is the plain version: no id call, no helper
 	// variables, so nodes without scoped policies see no change at all.
-	plain := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
-	if strings.Contains(plain, "id -G") || strings.Contains(plain, "bor_group_dirs") || strings.Contains(plain, "bor_group_data") {
-		t.Errorf("without groups the hook must not carry group logic:\n%s", plain)
+	plain := envScriptContent(EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share"})
+	if strings.Contains(plain, "id -G") || strings.Contains(plain, "bor_group_dirs") || strings.Contains(plain, "bor_group_data") || strings.Contains(plain, "plasmashellrc") {
+		t.Errorf("without groups or enforced layouts the hook must not carry group or re-apply logic:\n%s", plain)
 	}
 	if !strings.Contains(plain, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) || !strings.Contains(plain, `export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late"`) {
 		t.Errorf("plain hook wrong:\n%s", plain)
+	}
+}
+
+func TestEnvScriptContent_Reapply(t *testing.T) {
+	const nodeScript = "/etc/bor/share/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-aaaa.js"
+	const groupScript = "/etc/bor/share/groups/students/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-bbbb.js"
+	hook := EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share", Reapply: nodeScript, Groups: []GroupDir{
+		{GID: 1002, Slug: "teachers", Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers"},
+		{GID: 1003, Slug: "students", Dir: "/etc/bor/xdg/groups/students", DataDir: "/etc/bor/share/groups/students", Reapply: groupScript},
+	}}
+	got := envScriptContent(hook)
+	for _, want := range []string{
+		`bor_done=$("$bor_rc" --file plasmashellrc --group Updates --key performed 2>/dev/null)`,
+		`bor_again "` + nodeScript + `"`,
+		`case "$bor_gids" in *" 1003 "*) bor_again "` + groupScript + `" ;; esac`,
+		`"kwriteconfig${bor_rc#kreadconfig}" --file plasmashellrc --group Updates --key performed "$bor_keep"`,
+		"unset -f bor_again\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hook lacks %q:\n%s", want, got)
+		}
+	}
+	// Only the group with an enforced layout gets a line; the record is
+	// dropped while bor_gids is still set; the profile.d hook never touches
+	// Plasma's records.
+	if strings.Contains(got, `*" 1002 "*) bor_again`) {
+		t.Error("group without an enforced layout must not re-apply anything")
+	}
+	if strings.Index(got, "bor_again") > strings.Index(got, "unset bor_gids") {
+		t.Error("re-apply block must come before bor_gids is unset")
+	}
+	if profile := profileScriptContent(hook); strings.Contains(profile, "plasmashellrc") {
+		t.Errorf("profile.d hook must not touch plasmashellrc:\n%s", profile)
+	}
+}
+
+// The re-apply snippet is run by a real shell against fake kreadconfig6 and
+// kwriteconfig6 tools: our scripts disappear from the performed list, the
+// rest of it is kept in order, and nothing is written when there is
+// nothing to drop.
+func TestEnvScript_ReapplyDropsRecord(t *testing.T) {
+	shells := []string{}
+	for _, sh := range []string{"sh", "dash", "bash"} {
+		if _, err := exec.LookPath(sh); err == nil {
+			shells = append(shells, sh)
+		}
+	}
+	if len(shells) == 0 {
+		t.Skip("no POSIX shell available")
+	}
+	gid := uint32(os.Getgid()) //nolint:gosec // G115: test helper, real gid fits
+	const nodeScript = "/etc/bor/share/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-aaaa.js"
+	const groupScript = "/etc/bor/share/groups/students/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-bbbb.js"
+	hook := EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share", Reapply: nodeScript, Groups: []GroupDir{
+		{GID: gid, Slug: "students", Dir: "/etc/bor/xdg/groups/students", DataDir: "/etc/bor/share/groups/students", Layout: true, Reapply: groupScript},
+		{GID: 4000000000, Slug: "others", Dir: "/etc/bor/xdg/groups/others", DataDir: "/etc/bor/share/groups/others", Layout: true, Reapply: "/etc/bor/share/groups/others/late/x/bor-cccc.js"},
+	}}
+
+	for _, sh := range shells {
+		for _, tc := range []struct {
+			name, performed, want string
+		}{
+			{"drops ours", "/usr/share/a.js," + nodeScript + ",/usr/share/b.js," + groupScript, "/usr/share/a.js,/usr/share/b.js"},
+			{"keeps foreign groups", "/usr/share/a.js,/etc/bor/share/groups/others/late/x/bor-cccc.js", ""},
+			{"nothing to drop", "/usr/share/a.js,/usr/share/b.js", ""},
+			{"empty list", "", ""},
+		} {
+			t.Run(sh+"/"+tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				writeFile(t, filepath.Join(dir, "hook.sh"), []byte(envScriptContent(hook)))
+				writeFile(t, filepath.Join(dir, "kreadconfig6"), []byte("#!/bin/sh\nprintf '%s' \""+tc.performed+"\"\n"))
+				writeFile(t, filepath.Join(dir, "kwriteconfig6"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \""+filepath.Join(dir, "written")+"\"\n"))
+				for _, f := range []string{"kreadconfig6", "kwriteconfig6"} {
+					if err := os.Chmod(filepath.Join(dir, f), 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cmd := exec.Command(sh, "-c", ". ./hook.sh && printf '%s' \"$XDG_DATA_DIRS\"") //nolint:gosec // G204: test shell
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "XDG_DATA_DIRS=/usr/share")
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("%s failed: %v\n%s", sh, err, out)
+				}
+				// A member of a group with its own layout gets the group's
+				// late directory instead of the node-wide one.
+				if got := string(out); got != "/etc/bor/share/groups/students:/etc/bor/share:/usr/share:/etc/bor/share/groups/students/late" {
+					t.Errorf("XDG_DATA_DIRS = %q", got)
+				}
+				written, err := os.ReadFile(filepath.Join(dir, "written"))
+				switch {
+				case tc.want == "" && err == nil:
+					t.Errorf("kwriteconfig6 must not be called, got args:\n%s", written)
+				case tc.want != "" && err != nil:
+					t.Errorf("kwriteconfig6 should have been called: %v", err)
+				case tc.want != "":
+					args := strings.Split(strings.TrimRight(string(written), "\n"), "\n")
+					if len(args) != 7 || args[len(args)-1] != tc.want || args[5] != "performed" {
+						t.Errorf("kwriteconfig6 args = %q, want last %q", args, tc.want)
+					}
+				}
+			})
+		}
 	}
 }
 

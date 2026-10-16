@@ -76,7 +76,7 @@ them.
 |---|---|---|
 | `/etc/bor/xdg/<file>` (for example `kdeglobals`, `kwinrc`, `kscreenlockerrc`, `dolphinrc`) | System-wide KDE settings from all KDE Plasma policies, including System Settings module restrictions in `kdeglobals` | `kconfig.config_path` (default `/etc/bor/xdg`) |
 | `/etc/bor/xdg/groups/<group>/<file>` | Files of policies scoped to a Unix group, activated for members by the hook scripts. The whole `groups/` directory belongs to Bor; files no longer needed are removed | `kconfig.config_path` |
-| `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the apply-once update script of the Desktop Layout feature. The whole directory belongs to Bor; files no longer needed are removed. The `late/` subdirectory is a data directory of its own, appended last to `XDG_DATA_DIRS`: Plasma collects update scripts from every data directory, but a `plasma/shells/` directory in front of `/usr/share` would shadow Plasma's own shell package | `kconfig.data_path` (default `/etc/bor/share`) |
+| `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the update script of the Desktop Layout feature, which applies the look to existing users. Group-scoped policies write theirs under `/etc/bor/share/groups/<group>/` (with their own `late/`). The whole directory belongs to Bor; files no longer needed are removed. The `late/` subdirectory is a data directory of its own, appended last to `XDG_DATA_DIRS`: Plasma collects update scripts from every data directory, but a `plasma/shells/` directory in front of `/usr/share` would shadow Plasma's own shell package | `kconfig.data_path` (default `/etc/bor/share`) |
 | `/etc/bor/share/konsole/<Name>.profile`, `/etc/bor/share/applications/<id>.desktop` | Konsole profile and the desktop entries of hidden applications (copies of the installed entries with `NoDisplay=true`). Group-scoped policies write theirs under `/etc/bor/share/groups/<group>/` | `kconfig.data_path` |
 | Flatpak system override (`flatpak override --system --show`) | Exposes `/etc/bor/xdg` to sandboxed applications and prepends it to their `XDG_CONFIG_DIRS` while KDE Plasma policies apply | `kconfig.flatpak_override` (default `true`) |
 | `/etc/xdg/plasma-workspace/env/zz-bor.sh` | Puts the Bor directories first in `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` for every Plasma session (sourced by `startplasma`, independent of the display manager). Named so that it runs after the distribution's own environment scripts and keeps their defaults; the `00-bor.sh` of earlier releases is removed | Follows `kconfig.config_path` and `kconfig.data_path` |
@@ -89,9 +89,11 @@ the two `case` blocks in the Plasma-session guard described above):
 ```bash
 # Group-scoped policy directories, highest priority first.
 bor_group_dirs=""
-bor_gids=" $(id -G 2>/dev/null) "
 bor_group_data=""
-case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:" ;; esac
+bor_group_late=""
+bor_node_late=":/etc/bor/share/late"
+bor_gids=" $(id -G 2>/dev/null) "
+case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:"; bor_group_late=":/etc/bor/share/groups/teachers/late${bor_group_late}" ;; esac
 unset bor_gids
 case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":/etc/bor/xdg:"*) ;;
@@ -100,15 +102,25 @@ esac
 unset bor_group_dirs
 case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":/etc/bor/share:"*) ;;
-  *) export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:/etc/bor/share/late" ;;
+  *) export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}${bor_node_late}${bor_group_late}" ;;
 esac
-unset bor_group_data
+unset bor_group_data bor_group_late bor_node_late
 ```
 
-The group lines (everything that mentions `bor_group_dirs` or
-`bor_group_data`) only appear while a policy scoped to a Unix group applies
-(see *Scoping a policy to user groups*); on other nodes the snippet is the
-two `case` blocks alone.
+The group lines (everything that mentions `bor_group_dirs`,
+`bor_group_data`, `bor_group_late` or `bor_node_late`) only appear while a
+policy scoped to a Unix group applies (see *Scoping a policy to user
+groups*); on other nodes the snippet is the two `case` blocks alone. The
+`late/` directories are added lowest priority first, because Plasma runs
+update scripts in data-directory order and the highest-priority group's
+look has to win; a group that deploys a Desktop Layout of its own also
+sets `bor_node_late=""` in its line, so the node-wide update scripts never
+reach its members. While a Desktop Layout is **enforced**, the Plasma hook
+also carries a short block that reads `plasmashellrc` with `kreadconfig6`
+(or `kreadconfig5`) and drops the record of the layout's update script
+from `[Updates] performed`, so that Plasma runs the script again at this
+login (see *Desktop layout and wallpaper*); a group's script is only
+dropped for members of the group.
 
 KDE searches `XDG_CONFIG_DIRS` for system-wide configuration, so the files
 in `/etc/bor/xdg` take precedence over distribution defaults in `/etc/xdg`;
@@ -239,19 +251,33 @@ Three switches control everyone else:
   the wallpaper on every desktop and, when a layout script is set,
   **replaces the user's panels** with the scripted layout. The script's
   file name changes with its content, so a changed wallpaper or layout is
-  applied again.
+  applied again. Afterwards the look is the user's to change.
 - **Apply the wallpaper to logged-in sessions now** runs
   `plasma-apply-wallpaperimage` for every active session right after the
-  agent writes the package.
-- **Enforce as the global theme** writes the selection of the generated
-  package as enforced, so users cannot pick another global theme in
-  System Settings. Without it the generated look is the default and users
-  may switch to another theme; whatever they pick, settings the policy
-  enforces individually (colour scheme, icons, ...) stay in force.
+  agent writes the package. Plasma refuses that call in a session whose
+  desktop is locked (**Lock desktop layout**); such users get the
+  wallpaper at their next login instead.
+- **Enforce as the global theme** makes the look stick. The selection of
+  the generated package is written as enforced, so users cannot pick
+  another global theme in System Settings, and the update script above
+  (always written for an enforced look) runs at **every login**: the login
+  hook drops Plasma's record of it beforehand, so a wallpaper or panel a
+  user changed during a session returns to the policy at the next login.
+  Without enforcement the generated look is a starting point: users may
+  switch to another theme, pick another wallpaper or rearrange panels, and
+  that stays; whatever they pick, settings the policy enforces
+  individually (colour scheme, icons, ...) remain in force.
 
 The package appears in System Settings > Global Theme under the policy's
 name with the suffix "(managed)"; its package id is derived from the
 policy and never has to be typed anywhere.
+
+The wallpaper has to be a file every user can read. The agent checks it on
+each node and reports an **Error** item (`layout / wallpaper`) when the
+file is missing, not a regular file or not world-readable; a missing file
+under `/tmp` or `/var/tmp` adds a reminder that those directories are
+emptied at boot. Plasma itself shows nothing in that case: the desktop
+simply keeps its previous wallpaper.
 
 **Base theme.** On its own, the generated package carries only the
 wallpaper and the panel layout; KDE fills in everything else from Breeze.
@@ -279,6 +305,14 @@ with the highest binding priority provides the package and the others
 report it as inapplicable. An explicit **Appearance > Global theme** in a
 *different*, higher-priority policy keeps its own selection; the package is
 still generated but reported as not selected.
+
+A layout in a policy **scoped to Unix groups** (see *Scoping a policy to
+user groups*) gives the members of those groups a look of their own: the
+package, its update script and the theme selection are written into the
+group directories, which only members get, and the live wallpaper goes to
+their sessions only. Members of a group with a layout do not receive the
+node-wide one; every other user keeps it. Within a group, the
+highest-priority scoped policy with a layout wins, as node-wide.
 
 The **Branding defaults** preset sets up the theme defaults around the
 wallpaper; add the wallpaper image under Desktop Layout afterwards.
@@ -371,13 +405,12 @@ Configuration with security filtering"):
   node-wide **defaults** but cannot relax a node-wide **enforced** entry.
   Put the settings that differ between groups into scoped policies only,
   and keep the node-wide policies for what applies to everyone.
-- The desktop layout (look-and-feel package) and System Settings module
-  restrictions written in show-only mode apply to every user; a scoped
-  policy that carries a layout reports it as inapplicable. Konsole
-  profiles and hidden applications *can* be scoped: their files go to
-  `groups/<group>/` under the data directory, which the hook adds to
-  `XDG_DATA_DIRS` for members. Flatpak applications see only the
-  node-wide settings (see below).
+- Desktop layouts, Konsole profiles and hidden applications can be scoped
+  as well: their files go to `groups/<group>/` under the data directory,
+  which the hook adds to `XDG_DATA_DIRS` for members (with the group's
+  `late/` subdirectory appended last, like the node-wide one). System
+  Settings module restrictions written in show-only mode apply to every
+  user. Flatpak applications see only the node-wide settings (see below).
 
 ### Flatpak applications
 
@@ -544,9 +577,13 @@ Every setting is reported as its own item on the compliance page:
 **Compliant** once it is written to the managed file, **Inapplicable** when
 a higher-priority policy overrides it, and **Error** when a value could not
 be written (for example a value containing a line break, or a show-only
-module list on a node whose installed modules could not be listed). A
-policy that only contains legacy settings is reported as **Inapplicable**
-with an explanation.
+module list on a node whose installed modules could not be listed), when a
+Desktop Layout's wallpaper file is missing or not readable by every user,
+or when its base theme is not installed on the node. A policy that only
+contains legacy settings is reported as **Inapplicable** with an
+explanation. Inapplicable and error items do not change the policy's
+overall status by themselves, so open the item list when a policy that
+reads "compliant" does not show on the desktop.
 
 With `kconfig.probe_effective: true` in the agent configuration, the agent
 additionally reads every written setting back with `kreadconfig6` (or
@@ -597,6 +634,18 @@ On Plasma 5 use `kreadconfig5` and `kcmshell5`.
 
 **A setting is shown but users can still change it.** Turn on **Enforced
 (Immutable)** for that setting. Non-enforced values are defaults only.
+
+**The wallpaper or global theme does not change for existing users.** A
+Desktop Layout without **Enforce as the global theme** is applied once per
+user (at the first login after the policy arrived, and again when its
+content changes) and is theirs to change afterwards: a theme picked in
+System Settings or a wallpaper picked on the desktop stays. Turn on
+**Enforce as the global theme** to lock the theme and have the wallpaper
+and panels return to the policy at every login. Check the policy's
+compliance items as well: a layout in a group-scoped policy only reaches
+members of the group, and a wallpaper file that is missing or not
+world-readable on the node is reported there as an error while Plasma
+shows nothing.
 
 **System Settings still shows a restricted module.** Check that the module
 ID is correct (it must match the module's ID, for example `kcm_autostart`;

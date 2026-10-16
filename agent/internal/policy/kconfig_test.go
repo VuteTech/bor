@@ -927,7 +927,7 @@ func TestSyncKde5rc_RestoresLegacyKde6rc(t *testing.T) {
 }
 
 func TestEnvScriptContent(t *testing.T) {
-	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
+	got := envScriptContent(EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share"})
 	if !strings.Contains(got, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) {
 		t.Errorf("expected export line, got:\n%s", got)
 	}
@@ -956,7 +956,8 @@ func TestEnsureEnvScripts(t *testing.T) {
 	}
 	writeFile(t, legacyPlasmaEnvScriptPath, []byte("# old hook\n"))
 
-	if err := EnsureEnvScripts("/etc/bor/xdg", "/etc/bor/share", nil); err != nil {
+	hook := EnvHook{ConfigPath: "/etc/bor/xdg", DataPath: "/etc/bor/share"}
+	if err := EnsureEnvScripts(hook); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(legacyPlasmaEnvScriptPath); !os.IsNotExist(err) {
@@ -964,8 +965,8 @@ func TestEnsureEnvScripts(t *testing.T) {
 	}
 
 	want := map[string]string{
-		profileScriptPath:   profileScriptContent("/etc/bor/xdg", "/etc/bor/share", nil),
-		plasmaEnvScriptPath: envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil),
+		profileScriptPath:   profileScriptContent(hook),
+		plasmaEnvScriptPath: envScriptContent(hook),
 	}
 	for _, path := range EnvScriptPaths() {
 		data, err := os.ReadFile(path)
@@ -982,10 +983,10 @@ func TestEnsureEnvScripts(t *testing.T) {
 	}
 
 	// A second run with the same path is a no-op; a changed path rewrites.
-	if err := EnsureEnvScripts("/etc/bor/xdg", "/etc/bor/share", nil); err != nil {
+	if err := EnsureEnvScripts(hook); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureEnvScripts("/opt/bor/xdg", "/opt/bor/share", nil); err != nil {
+	if err := EnsureEnvScripts(EnvHook{ConfigPath: "/opt/bor/xdg", DataPath: "/opt/bor/share"}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(profileScriptPath)

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +30,9 @@ import (
 //
 // Plasma reads the wallpaper and the layout from the selected package when
 // a user logs in for the first time; the update script runs once per
-// existing user (plasmashell records it in plasmashellrc [Updates]).
+// existing user (plasmashell records it in plasmashellrc [Updates]). For an
+// enforced layout the login hook drops that record again, so the script
+// runs at every login (see EnvHook).
 //
 // The update script lives under the "late" subdirectory, which the hook
 // appends to the END of XDG_DATA_DIRS as a data directory of its own.
@@ -38,6 +41,9 @@ import (
 // that has plasma/shells/org.kde.plasma.desktop/ at all: a skeleton in a
 // directory that comes before /usr/share shadows the real package and
 // leaves the desktop without views.
+//
+// A group-scoped policy renders the same files under groups/<slug>/ in the
+// data directory, which the hook adds for members only.
 const (
 	layoutPackagePrefix = "org.bor."
 	layoutPackageSuffix = ".desktop"
@@ -195,24 +201,65 @@ func RenderLayoutFiles(layout *pb.KConfigLayout, policyID, policyName string) ma
 // is the configured base (it takes part in the package id, see
 // LayoutPackageIDFor); base is its content, nil when the node lacks it.
 func RenderLayoutFilesWithBase(layout *pb.KConfigLayout, policyID, policyName, baseTheme string, base *LookAndFeelBase) map[string][]byte {
+	return renderLayoutFiles(layout, policyID, policyName, baseTheme, base, layout.GetLockPackage())
+}
+
+// RenderLayoutFilesFor renders the files of a merged layout selection;
+// base is the content of its base theme, nil when the node lacks it or
+// the selection has none.
+func RenderLayoutFilesFor(sel *KConfigLayoutSelection, base *LookAndFeelBase) map[string][]byte {
+	return renderLayoutFiles(sel.Layout, sel.PolicyID, sel.PolicyName, sel.BaseTheme, base, sel.Enforced)
+}
+
+// UpdateScriptPath returns the path, relative to the data directory, of
+// the Plasma update script that applies the look to existing users, or ""
+// when the selection writes none (not applied once and not enforced).
+func (s *KConfigLayoutSelection) UpdateScriptPath() string {
+	if !LayoutHasContent(s.Layout) || (!s.Layout.GetApplyOnce() && !s.Enforced) {
+		return ""
+	}
+	rel, _ := layoutUpdateScript(s.Layout, layoutDisplayName(s.PolicyName))
+	return rel
+}
+
+// layoutDisplayName is the policy name as the package shows it.
+func layoutDisplayName(policyName string) string {
+	name := strings.TrimSpace(policyName)
+	if name == "" {
+		return "Managed desktop"
+	}
+	return name
+}
+
+// layoutUpdateScript renders the update script of a layout and the path,
+// relative to the data directory, it is written to. The name carries a
+// hash of the content so that a changed look runs again for users who
+// already received the previous one.
+func layoutUpdateScript(layout *pb.KConfigLayout, name string) (rel string, content []byte) {
+	fill := strings.TrimSpace(layout.GetWallpaperFillMode())
+	if fill == "" {
+		fill = defaultFillMode
+	}
+	content = renderLayoutUpdateScript(WallpaperURL(layout.GetWallpaperImage()), fill, strings.TrimSpace(layout.GetLayoutScript()), name)
+	sum := sha256.Sum256(content)
+	return shellUpdatesDir + "/bor-" + hex.EncodeToString(sum[:6]) + ".js", content
+}
+
+// renderLayoutFiles does the work of RenderLayoutFilesWithBase. enforced
+// adds the update script even when the layout is not marked apply-once:
+// an enforced look is applied to existing users (at every login).
+func renderLayoutFiles(layout *pb.KConfigLayout, policyID, policyName, baseTheme string, base *LookAndFeelBase, enforced bool) map[string][]byte {
 	if !LayoutHasContent(layout) {
 		return nil
 	}
 	pkg := LayoutPackageIDFor(policyID, baseTheme)
 	root := lookAndFeelDir + "/" + pkg
 	wallpaper := WallpaperURL(layout.GetWallpaperImage())
-	fill := strings.TrimSpace(layout.GetWallpaperFillMode())
-	if fill == "" {
-		fill = defaultFillMode
-	}
 	script := strings.TrimSpace(layout.GetLayoutScript())
 
 	files := make(map[string][]byte, 5)
 
-	name := strings.TrimSpace(policyName)
-	if name == "" {
-		name = "Managed desktop"
-	}
+	name := layoutDisplayName(policyName)
 	description := "Desktop look deployed by Bor policy " + name
 	if base != nil {
 		description += " (based on " + base.ID + ")"
@@ -247,12 +294,37 @@ func RenderLayoutFilesWithBase(layout *pb.KConfigLayout, policyID, policyName, b
 		files[root+"/contents/previews/preview.png"] = base.Preview
 	}
 
-	if layout.GetApplyOnce() {
-		update := renderLayoutUpdateScript(wallpaper, fill, script, name)
-		sum := sha256.Sum256(update)
-		files[shellUpdatesDir+"/bor-"+hex.EncodeToString(sum[:6])+".js"] = update
+	if layout.GetApplyOnce() || enforced {
+		rel, update := layoutUpdateScript(layout, name)
+		files[rel] = update
 	}
 	return files
+}
+
+// CheckWallpaperFile reports why a wallpaper image at path would not work
+// for every user on this node: it is missing, not a regular file, or not
+// readable by others. Nil when it looks usable. Only absolute paths are
+// checked; wallpaper package names are left to Plasma.
+func CheckWallpaperFile(path string) error {
+	if !strings.HasPrefix(path, "/") {
+		return nil
+	}
+	st, err := os.Stat(path)
+	switch {
+	case os.IsNotExist(err):
+		msg := fmt.Sprintf("Wallpaper image %s does not exist on this node", path)
+		if strings.HasPrefix(path, "/tmp/") || strings.HasPrefix(path, "/var/tmp/") {
+			msg += " (temporary directories are emptied at boot; deploy the image under /usr/share or /opt)"
+		}
+		return errors.New(msg)
+	case err != nil:
+		return fmt.Errorf("Wallpaper image %s cannot be read: %v", path, err) //nolint:staticcheck // ST1005: shown as a compliance message
+	case !st.Mode().IsRegular():
+		return fmt.Errorf("Wallpaper image %s is not a regular file", path) //nolint:staticcheck // ST1005: shown as a compliance message
+	case st.Mode().Perm()&0o004 == 0:
+		return fmt.Errorf("Wallpaper image %s is not readable by every user (mode %04o)", path, st.Mode().Perm()) //nolint:staticcheck // ST1005: shown as a compliance message
+	}
+	return nil
 }
 
 // renderLookAndFeelDefaults builds the package's defaults file: the base
@@ -291,11 +363,13 @@ func renderLookAndFeelDefaults(baseDefaults []byte, wallpaper string, base *Look
 }
 
 // renderLayoutUpdateScript builds the Plasma script that applies the
-// deployed look once to an existing user: wallpaper on every desktop and,
-// when a layout script is present, the panels replaced by that layout.
+// deployed look to an existing user: wallpaper on every desktop and, when
+// a layout script is present, the panels replaced by that layout. Plasma
+// runs it once per user; the login hook makes it run at every login when
+// the look is enforced.
 func renderLayoutUpdateScript(wallpaper, fill, script, name string) []byte {
 	var b strings.Builder
-	b.WriteString("// Managed by Bor. Applied once per user: desktop look of policy " + name + ".\n")
+	b.WriteString("// Managed by Bor. Applies the desktop look of policy " + name + " to an existing user.\n")
 	if wallpaper != "" {
 		fmt.Fprintf(&b, "var borImage = %s;\nvar borFillMode = %s;\n", jsString(wallpaper), fill)
 		b.WriteString(`var borDesktops = desktops();
