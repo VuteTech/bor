@@ -252,7 +252,7 @@ func TestMergeKConfigPolicies_LayoutWinnerAndPackageSelection(t *testing.T) {
 }
 
 func TestEnvScriptContent_DataDirs(t *testing.T) {
-	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share")
+	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
 	for _, want := range []string{
 		`export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`,
 		`export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"`,

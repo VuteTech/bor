@@ -31,6 +31,7 @@ where one exists, the closest Windows Group Policy setting.
 | Network (KIO) | Proxy configuration for KDE applications | `kioslaverc` |
 | System Settings & URL Rules | Hide System Settings modules, or show only the listed ones; KIO URL restrictions | `kdeglobals` `[KDE Control Module Restrictions]`, `[KDE URL Restrictions]` |
 | Custom Entries | Any other KDE configuration key: file, group, key, value and markers | the file you name |
+| Scope | Limit the whole policy to members of Unix groups (local, LDAP or Active Directory) | the same files, under `groups/<group>/` |
 | Advanced | Lock the whole `kdeglobals` file, import an INI file, preview the rendered files | |
 
 Restriction settings follow KDE's convention: the key is written as `false`
@@ -69,7 +70,9 @@ them.
 | Path | Content | Config key |
 |---|---|---|
 | `/etc/bor/xdg/<file>` (for example `kdeglobals`, `kwinrc`, `kscreenlockerrc`, `dolphinrc`) | System-wide KDE settings from all KDE Plasma policies, including System Settings module restrictions in `kdeglobals` | `kconfig.config_path` (default `/etc/bor/xdg`) |
+| `/etc/bor/xdg/groups/<group>/<file>` | Files of policies scoped to a Unix group, activated for members by the hook scripts. The whole `groups/` directory belongs to Bor; files no longer needed are removed | `kconfig.config_path` |
 | `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the apply-once update script of the Desktop Layout feature. The whole directory belongs to Bor; files no longer needed are removed | `kconfig.data_path` (default `/etc/bor/share`) |
+| Flatpak system override (`flatpak override --system --show`) | Exposes `/etc/bor/xdg` to sandboxed applications and prepends it to their `XDG_CONFIG_DIRS` while KDE Plasma policies apply | `kconfig.flatpak_override` (default `true`) |
 | `/etc/xdg/plasma-workspace/env/00-bor.sh` | Puts the Bor directories first in `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` for every Plasma session (sourced by `startplasma`, independent of the display manager) | Follows `kconfig.config_path` and `kconfig.data_path` |
 | `/etc/profile.d/99-bor.sh` | Same, for login shells and display managers whose session scripts source `/etc/profile` | Follows `kconfig.config_path` and `kconfig.data_path` |
 | `/etc/kde5rc` | Optional mirror of the System Settings module restrictions for very old KDE Frameworks releases; Plasma 5 and 6 read them from `kdeglobals` | `kconfig.write_kde5rc` (default `false`) |
@@ -77,15 +80,25 @@ them.
 Both hook scripts contain the same POSIX shell snippet:
 
 ```bash
+# Group-scoped policy directories, highest priority first.
+bor_group_dirs=""
+bor_gids=" $(id -G 2>/dev/null) "
+case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:" ;; esac
+unset bor_gids
 case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":/etc/bor/xdg:"*) ;;
-  *) export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
+  *) export XDG_CONFIG_DIRS="${bor_group_dirs}/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
+unset bor_group_dirs
 case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":/etc/bor/share:"*) ;;
   *) export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
 esac
 ```
+
+The group lines (everything that mentions `bor_group_dirs`) only appear
+while a policy scoped to a Unix group applies (see *Scoping a policy to
+user groups*); on other nodes the snippet is the two `case` blocks alone.
 
 KDE searches `XDG_CONFIG_DIRS` for system-wide configuration, so the files
 in `/etc/bor/xdg` take precedence over distribution defaults in `/etc/xdg`;
@@ -221,6 +234,54 @@ own theme selection; the package is still generated.
 
 The **Branding defaults** preset sets up the theme defaults around the
 wallpaper; add the wallpaper image under Desktop Layout afterwards.
+
+### Scoping a policy to user groups
+
+Policies normally apply to every user of a node (the Windows "Computer
+Configuration"). **Scope > Apply only to Unix groups** limits every
+setting of the policy to members of the listed groups, which is how a lab
+machine gives teachers and students different settings (the Windows "User
+Configuration with security filtering"):
+
+- The agent writes the policy's files into `groups/<group>/` under the
+  managed directory (`/etc/bor/xdg/groups/students/kdeglobals`, ...)
+  instead of the node-wide files. Several scoped policies for the same
+  group merge by binding priority like node-wide ones.
+- The login hook resolves each group to its numeric id on the node and,
+  for members, adds the group directories to `XDG_CONFIG_DIRS` **before**
+  the node-wide directory, highest priority first. Group names never reach
+  the shell; `id -G` is matched on numbers.
+- Names are resolved through the node's name service, so local groups,
+  LDAP, SSSD and winbind groups all work. Use the names `id -Gn` prints on
+  the nodes, including fully qualified ones such as
+  `teachers@ad.example.com` or `Domain Users`. A group the node does not
+  know is reported as an **Error** item (`groups/<group> / unix group`);
+  its files are written but not activated until the next sync after the
+  group becomes resolvable.
+- KDE reads the less specific files first, so a group directory overrides
+  node-wide **defaults** but cannot relax a node-wide **enforced** entry.
+  Put the settings that differ between groups into scoped policies only,
+  and keep the node-wide policies for what applies to everyone.
+- The desktop layout (look-and-feel package) and System Settings module
+  restrictions written in show-only mode apply to every user; a scoped
+  policy that carries a layout reports it as inapplicable. Flatpak
+  applications see only the node-wide settings (see below).
+
+### Flatpak applications
+
+KDE applications installed as Flatpaks (Okular, Kate, Dolphin from
+Flathub) run with their own `/etc` and would never see the managed
+directory. While at least one KDE Plasma policy applies and `flatpak` is
+installed, the agent therefore adds a system-wide Flatpak override that
+exposes the managed directory read-only and puts it first in the sandbox's
+`XDG_CONFIG_DIRS` (`flatpak override --system --show` lists it). When the
+last policy is unbound the agent removes the environment entry and
+revokes the directory; Flatpak records the revocation as a negative
+`filesystems=!/etc/bor/xdg` entry, which is harmless and disappears the
+next time the override is granted. Running Flatpak applications pick the
+change up after a restart. Disable this with `kconfig.flatpak_override:
+false` in the agent configuration. Group-scoped settings do not reach
+Flatpak applications.
 
 ## Examples
 

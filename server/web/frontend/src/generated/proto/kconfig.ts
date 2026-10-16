@@ -307,7 +307,18 @@ export interface KConfigPolicy {
    * users and live to logged-in sessions. One package per node: the
    * highest-priority policy with a layout wins.
    */
-  layout: KConfigLayout | undefined;
+  layout:
+    | KConfigLayout
+    | undefined;
+  /**
+   * Unix group names (local, LDAP or Active Directory as resolved on the
+   * node) the policy is limited to. Empty = every user on the node. The
+   * agent writes the policy's files into a per-group directory that the
+   * login hook adds to XDG_CONFIG_DIRS for members only. Enforced
+   * node-wide entries cannot be relaxed per group (KDE semantics), so put
+   * group differences into scoped policies only.
+   */
+  unix_groups: string[];
 }
 
 /**

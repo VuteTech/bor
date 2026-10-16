@@ -245,6 +245,8 @@ policies first, then uninstall it.
     ```bash
     sudo rm -rf /var/lib/bor/agent /etc/bor/config.yaml /etc/bor/flatpak /etc/bor/xdg /etc/bor/share
     sudo rm -f /etc/profile.d/99-bor.sh /etc/xdg/plasma-workspace/env/00-bor.sh
+    # only if KDE Plasma policies were applied on a node with Flatpak:
+    sudo flatpak override --system --nofilesystem=/etc/bor/xdg --unset-env=XDG_CONFIG_DIRS
     # repository definition, depending on the distribution:
     sudo rm -f /etc/apt/sources.list.d/bor.sources /etc/apt/keyrings/bor.asc   # Debian/Ubuntu
     sudo rm -f /etc/yum.repos.d/bor.repo                                      # RHEL/Fedora

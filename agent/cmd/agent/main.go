@@ -1436,7 +1436,7 @@ func sessionAccessCompliance(rules []policy.SessionRule, warnings []string, pam 
 func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *config.Config) map[string]bool {
 	sources := make([]policy.KConfigPolicySource, 0, len(kconfigCache))
 	for _, e := range kconfigCache {
-		sources = append(sources, policy.KConfigPolicySource{ID: e.id, Name: e.name, Priority: e.priority, Policy: e.policy})
+		sources = append(sources, policy.KConfigPolicySource{ID: e.id, Name: e.name, Priority: e.priority, Policy: e.policy, Groups: e.policy.GetUnixGroups()})
 	}
 
 	reportError := func(msg string) {
@@ -1492,13 +1492,34 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 	for rel := range layoutFiles {
 		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.DataPath, rel))
 	}
+	for slug, files := range merged.GroupFiles {
+		for name := range files {
+			incomingPaths = append(incomingPaths, filepath.Join(policy.GroupOverlayRoot(cfg.KConfig.ConfigPath), slug, name))
+		}
+	}
 	incomingPaths = append(incomingPaths, policy.ListDataFiles(cfg.KConfig.DataPath)...)
+	incomingPaths = append(incomingPaths, policy.ListGroupOverlayFiles(cfg.KConfig.ConfigPath)...)
 	incomingPaths = append(incomingPaths, policy.Kde5rcPath(), policy.LegacyKde6rcPath())
 	incomingPaths = append(incomingPaths, policy.EnvScriptPaths()...)
 	suppressManagedWrites(cfg, incomingPaths...)
 	defer updateWatcher(cfg)
 
-	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath); err != nil {
+	// Group scopes: resolve the group names on this node so the hook can
+	// match members by numeric GID. Unknown groups get their files written
+	// but not activated, and say so.
+	groupDirs, unresolved := policy.ResolveGroupDirs(cfg.KConfig.ConfigPath, merged.Groups, policy.LookupGroupGID)
+	for _, g := range unresolved {
+		for _, pid := range g.PolicyIDs {
+			merged.Items[pid] = append(merged.Items[pid], &pb.ComplianceItemResult{
+				SchemaId: policy.GroupOverlayDir + "/" + g.Slug,
+				Key:      "unix group",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+				Message:  fmt.Sprintf("Group %q is not known on this node; its settings are written but not activated", g.Name),
+			})
+		}
+	}
+
+	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath, groupDirs); err != nil {
 		log.Printf("Warning: failed to ensure XDG hook scripts: %v", err)
 	}
 
@@ -1506,6 +1527,30 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		log.Printf("Error syncing KConfig files: %v", err)
 		reportError("failed to sync KConfig files: " + err.Error())
 		return nil
+	}
+
+	if _, err := policy.SyncGroupOverlays(cfg.KConfig.ConfigPath, merged.GroupFiles); err != nil {
+		log.Printf("Error syncing KConfig group overlays: %v", err)
+		reportError("failed to sync KConfig group overlays: " + err.Error())
+		return nil
+	}
+
+	// Flatpak: expose the config directory to sandboxed KDE applications
+	// while policies apply; remove the override when none remain.
+	if policy.FlatpakAvailable(cfg.Flatpak.Binary) {
+		run := func(args ...string) (string, error) {
+			fctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			out, err := exec.CommandContext(fctx, cfg.Flatpak.Binary, args...).CombinedOutput() //nolint:gosec // G204: binary from agent config, fixed arguments
+			return string(out), err
+		}
+		changed, err := policy.EnsureFlatpakOverride(run, cfg.KConfig.ConfigPath, cfg.KConfig.FlatpakOverride && len(sources) > 0)
+		switch {
+		case err != nil:
+			log.Printf("Warning: Flatpak override for KDE settings: %v", err)
+		case changed:
+			log.Printf("Flatpak override for %s updated", cfg.KConfig.ConfigPath)
+		}
 	}
 
 	changedData, dataErr := policy.SyncDataFiles(cfg.KConfig.DataPath, layoutFiles)
@@ -2486,6 +2531,7 @@ func getManagedPaths(cfg *config.Config) []string {
 	if len(kconfigCache) > 0 {
 		paths = append(paths, policy.EnvScriptPaths()...)
 		paths = append(paths, policy.ListDataFiles(cfg.KConfig.DataPath)...)
+		paths = append(paths, policy.ListGroupOverlayFiles(cfg.KConfig.ConfigPath)...)
 		if cfg.KConfig.WriteKde5rc {
 			for _, e := range kconfigCache {
 				if len(e.policy.GetKcmRestrictions()) > 0 {

@@ -98,6 +98,8 @@ export interface KConfigContent {
   urlRestrictions: UrlRestrictionRule[];
   fileImmutableKdeglobals: boolean;
   layout: KConfigLayoutJson;
+  /** Unix groups the policy is limited to; empty = every user on the node. */
+  unixGroups: string[];
 }
 
 export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
@@ -107,6 +109,7 @@ export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
   urlRestrictions: [],
   fileImmutableKdeglobals: false,
   layout: EMPTY_LAYOUT,
+  unixGroups: [],
 };
 
 /** Result of loading content: the normalised model plus what the upgrade did. */
@@ -262,6 +265,7 @@ export function parseKConfigContent(raw: string): KConfigLoadResult {
     urlRestrictions: parseUrlRestrictionRules(raw),
     fileImmutableKdeglobals: parsed.fileImmutableKdeglobals === true,
     layout,
+    unixGroups: Array.isArray(parsed.unixGroups) ? (parsed.unixGroups as unknown[]).map(asString).map((g) => g.trim()).filter(Boolean) : [],
   };
 
   const changed = convertedFields.length > 0 || droppedFields.length > 0 || "enforcedFields" in parsed;
@@ -308,6 +312,7 @@ export function serializeKConfigContent(c: KConfigContent): string {
     if (c.layout.lockPackage) l.lockPackage = true;
     out.layout = l;
   }
+  if (c.unixGroups.length > 0) out.unixGroups = c.unixGroups;
   return JSON.stringify(out, null, 2);
 }
 

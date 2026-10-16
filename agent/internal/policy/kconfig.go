@@ -232,6 +232,9 @@ type KConfigPolicySource struct {
 	Name     string
 	Priority int32
 	Policy   *pb.KConfigPolicy
+	// Groups limits the policy to members of these Unix groups; empty
+	// means every user on the node.
+	Groups []string
 }
 
 // kconfigWinner records which policy's entry owns a key during a merge.
@@ -257,17 +260,81 @@ type KConfigMergeResult struct {
 	Layout           *pb.KConfigLayout
 	LayoutPolicyID   string
 	LayoutPolicyName string
+	// GroupFiles holds the rendered files of group-scoped policies, keyed
+	// by group slug and then file basename. Groups lists the scopes,
+	// highest priority first, as the login hook orders them.
+	GroupFiles map[string]map[string][]byte
+	Groups     []KConfigGroupScope
+}
+
+// kconfigScope collects the winning entries of one overlay: the node-wide
+// directory (prefix "") or a per-group directory ("groups/<slug>/").
+type kconfigScope struct {
+	prefix        string
+	winners       map[string]kconfigWinner
+	entries       []*pb.KConfigEntry
+	fileImmutable map[string]bool
+}
+
+func newKConfigScope(prefix string) *kconfigScope {
+	return &kconfigScope{prefix: prefix, winners: make(map[string]kconfigWinner), fileImmutable: make(map[string]bool)}
+}
+
+// item builds the compliance item for an entry of this scope.
+func (sc *kconfigScope) item(e *pb.KConfigEntry, status pb.ComplianceStatus, msg string) *pb.ComplianceItemResult {
+	key := fmt.Sprintf("[%s] %s", e.Group, e.Key)
+	if e.Locale != "" {
+		key += "[" + e.Locale + "]"
+	}
+	return &pb.ComplianceItemResult{SchemaId: sc.prefix + e.File, Key: key, Status: status, Message: msg}
+}
+
+// claim records e as the winner for its key in this scope and returns
+// false when another policy already owns it.
+func (sc *kconfigScope) claim(e *pb.KConfigEntry, src KConfigPolicySource) (kconfigWinner, bool) {
+	id := e.File + "\x00" + e.Group + "\x00" + e.Key + "\x00" + e.Locale
+	if w, seen := sc.winners[id]; seen {
+		return w, false
+	}
+	sc.winners[id] = kconfigWinner{entry: e, src: src}
+	sc.entries = append(sc.entries, e)
+	return kconfigWinner{}, true
+}
+
+// render turns the scope's entries into files.
+func (sc *kconfigScope) render() (map[string][]byte, error) {
+	files, err := MergeKConfigEntries(sc.entries)
+	if err != nil {
+		return nil, err
+	}
+	for name := range sc.fileImmutable {
+		if files == nil {
+			files = make(map[string][]byte)
+		}
+		// A bare [$i] line before the first group makes the whole file, and
+		// therefore every user's copy of it, immutable.
+		files[name] = append([]byte("[$i]\n\n"), files[name]...)
+	}
+	return files, nil
+}
+
+func sameKConfigEffect(a, b *pb.KConfigEntry) bool {
+	return a.Value == b.Value && a.Enforced == b.Enforced && a.Expand == b.Expand && a.Delete == b.Delete
 }
 
 // MergeKConfigPolicies combines all bound KDE Plasma policies into one set
-// of config files. Each (file, group, key, locale) is written once: the
-// policy with the highest binding priority wins, ties are broken by policy
-// ID so the result never depends on event order. URL restriction rules are
-// additive across policies and renumbered. Entries that cannot be written
-// safely (line breaks, odd key characters) are skipped and reported.
+// of config files per scope. Within a scope each (file, group, key, locale)
+// is written once: the policy with the highest binding priority wins, ties
+// are broken by policy ID so the result never depends on event order. URL
+// restriction rules are additive across policies and renumbered. Entries
+// that cannot be written safely (line breaks, odd key characters) are
+// skipped and reported.
 //
-// installedKCMs is the list of System Settings modules present on the node
-// (InstalledKCMs); it is only needed by policies in show-only module mode.
+// Policies without Groups fill the node-wide scope; a policy with Groups
+// fills one scope per group (GroupFiles), which the login hook adds to
+// XDG_CONFIG_DIRS for members only. installedKCMs is the list of System
+// Settings modules present on the node (InstalledKCMs); it is only needed
+// by policies in show-only module mode.
 func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string) (*KConfigMergeResult, error) {
 	ordered := make([]KConfigPolicySource, len(sources))
 	copy(ordered, sources)
@@ -278,92 +345,67 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 		return ordered[i].ID < ordered[j].ID
 	})
 
-	winners := make(map[string]kconfigWinner)
 	res := &KConfigMergeResult{Items: make(map[string][]*pb.ComplianceItemResult, len(ordered))}
-	fileImmutable := make(map[string]bool)
-
-	item := func(e *pb.KConfigEntry, status pb.ComplianceStatus, msg string) *pb.ComplianceItemResult {
-		key := fmt.Sprintf("[%s] %s", e.Group, e.Key)
-		if e.Locale != "" {
-			key += "[" + e.Locale + "]"
-		}
-		return &pb.ComplianceItemResult{SchemaId: e.File, Key: key, Status: status, Message: msg}
-	}
-	entryID := func(e *pb.KConfigEntry) string {
-		return e.File + "\x00" + e.Group + "\x00" + e.Key + "\x00" + e.Locale
-	}
-	sameEffect := func(a, b *pb.KConfigEntry) bool {
-		return a.Value == b.Value && a.Enforced == b.Enforced && a.Expand == b.Expand && a.Delete == b.Delete
-	}
-	// claim records e as the winner for its id and returns false when another
-	// policy already owns the key.
-	claim := func(e *pb.KConfigEntry, src KConfigPolicySource) (kconfigWinner, bool) {
-		id := entryID(e)
-		if w, seen := winners[id]; seen {
-			return w, false
-		}
-		winners[id] = kconfigWinner{entry: e, src: src}
-		res.Entries = append(res.Entries, e)
-		return kconfigWinner{}, true
-	}
+	nodeScope := newKConfigScope("")
+	groupScopes := make(map[string]*kconfigScope)
+	groupMeta := make(map[string]*KConfigGroupScope)
 
 	for _, src := range ordered {
 		items := []*pb.ComplianceItemResult{}
-		for _, e := range KConfigPolicyToEntries(src.Policy) {
-			if err := validateINIEntry(e); err != nil {
-				items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, err.Error()))
-				continue
-			}
 
-			if e.Group == KConfigGroupURLRestrictions {
-				// Rules from all policies are kept; rule_count is regenerated
-				// by renumberURLRestrictions after the merge.
-				if e.Key == "rule_count" {
-					continue
+		scopes := []*kconfigScope{nodeScope}
+		groups := uniqueGroupNames(src.Groups)
+		if len(groups) > 0 {
+			scopes = scopes[:0]
+			for _, g := range groups {
+				slug := GroupSlug(g)
+				sc, ok := groupScopes[slug]
+				if !ok {
+					sc = newKConfigScope(GroupOverlayDir + "/" + slug + "/")
+					groupScopes[slug] = sc
+					groupMeta[slug] = &KConfigGroupScope{Name: g, Slug: slug, Priority: src.Priority}
 				}
-				res.Entries = append(res.Entries, e)
-				items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
-				continue
-			}
-
-			if w, ok := claim(e, src); !ok {
-				if sameEffect(w.entry, e) {
-					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
-						fmt.Sprintf("Same value as higher-priority policy %q", w.src.Name)))
-				} else {
-					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
-						fmt.Sprintf("Overridden by higher-priority policy %q (priority %d); applied value: %s", w.src.Name, w.src.Priority, w.entry.Value)))
+				meta := groupMeta[slug]
+				if src.Priority > meta.Priority {
+					meta.Priority = src.Priority
 				}
-				continue
+				meta.PolicyIDs = append(meta.PolicyIDs, src.ID)
+				scopes = append(scopes, sc)
 			}
-			items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
 		}
 
-		// Show-only module mode: the listed modules stay allowed (written as
-		// true so that they win over a lower-priority hide), every other
-		// installed module is hidden.
-		if src.Policy.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED && len(src.Policy.GetKcmRestrictions()) > 0 {
-			items = append(items, mergeShowOnlyKCMs(src, installedKCMs, claim))
+		for _, sc := range scopes {
+			items = append(items, mergeSourceIntoScope(sc, src, installedKCMs)...)
 		}
 
 		// Desktop layout: one look-and-feel package per node, from the
 		// highest-priority policy that configures one. The package is
 		// selected through kdeglobals [KDE] LookAndFeelPackage, which a
 		// catalogue setting of a higher-priority policy may still override.
+		// A group-scoped policy cannot carry it: the package and its update
+		// script apply to every user.
 		if LayoutHasContent(src.Policy.GetLayout()) {
-			if res.Layout == nil {
+			switch {
+			case len(groups) > 0:
+				items = append(items, &pb.ComplianceItemResult{
+					SchemaId: "layout",
+					Key:      "look-and-feel",
+					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+					Message:  "The desktop layout applies to every user on a node; move it to a policy without a group scope",
+				})
+			case res.Layout == nil:
 				res.Layout = src.Policy.GetLayout()
 				res.LayoutPolicyID = src.ID
 				res.LayoutPolicyName = src.Name
 				pkg := LayoutPackageID(src.ID)
 				e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: "KDE", Key: "LookAndFeelPackage", Value: pkg, Type: "string", Enforced: res.Layout.GetLockPackage()}
-				if w, ok := claim(e, src); ok {
-					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed look-and-feel package "+pkg))
+				if w, ok := nodeScope.claim(e, src); ok {
+					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed look-and-feel package "+pkg))
 				} else {
-					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
 						fmt.Sprintf("Global theme is set to %q by policy %q; the layout package %s is generated but not selected", w.entry.Value, w.src.Name, pkg)))
 				}
-			} else {
+			default:
 				items = append(items, &pb.ComplianceItemResult{
 					SchemaId: "layout",
 					Key:      "look-and-feel",
@@ -372,40 +414,97 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 				})
 			}
 		}
-
-		if src.Policy.GetFileImmutableKdeglobals() {
-			fileImmutable[KConfigFileGlobals] = true
-			items = append(items, &pb.ComplianceItemResult{
-				SchemaId: KConfigFileGlobals,
-				Key:      "[$i]",
-				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
-				Message:  "Whole file marked immutable",
-			})
-		}
 		res.Items[src.ID] = items
 	}
 
-	files, err := MergeKConfigEntries(res.Entries)
+	files, err := nodeScope.render()
 	if err != nil {
 		return nil, err
 	}
-	for name := range fileImmutable {
-		if files == nil {
-			files = make(map[string][]byte)
-		}
-		// A bare [$i] line before the first group makes the whole file, and
-		// therefore every user's copy of it, immutable.
-		files[name] = append([]byte("[$i]\n\n"), files[name]...)
-	}
 	res.Files = files
+	res.Entries = nodeScope.entries
+
+	if len(groupScopes) > 0 {
+		res.GroupFiles = make(map[string]map[string][]byte, len(groupScopes))
+		for slug, sc := range groupScopes {
+			gf, err := sc.render()
+			if err != nil {
+				return nil, err
+			}
+			if gf == nil {
+				gf = map[string][]byte{}
+			}
+			res.GroupFiles[slug] = gf
+			res.Groups = append(res.Groups, *groupMeta[slug])
+		}
+		sort.SliceStable(res.Groups, func(i, j int) bool {
+			if res.Groups[i].Priority != res.Groups[j].Priority {
+				return res.Groups[i].Priority > res.Groups[j].Priority
+			}
+			return res.Groups[i].Slug < res.Groups[j].Slug
+		})
+	}
 	return res, nil
+}
+
+// mergeSourceIntoScope adds one policy's entries to a scope and returns the
+// compliance items for them.
+func mergeSourceIntoScope(sc *kconfigScope, src KConfigPolicySource, installedKCMs []string) []*pb.ComplianceItemResult {
+	items := []*pb.ComplianceItemResult{}
+	for _, e := range KConfigPolicyToEntries(src.Policy) {
+		if err := validateINIEntry(e); err != nil {
+			items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, err.Error()))
+			continue
+		}
+
+		if e.Group == KConfigGroupURLRestrictions {
+			// Rules from all policies are kept; rule_count is regenerated
+			// by renumberURLRestrictions after the merge.
+			if e.Key == "rule_count" {
+				continue
+			}
+			sc.entries = append(sc.entries, e)
+			items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
+			continue
+		}
+
+		if w, ok := sc.claim(e, src); !ok {
+			if sameKConfigEffect(w.entry, e) {
+				items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
+					fmt.Sprintf("Same value as higher-priority policy %q", w.src.Name)))
+			} else {
+				items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+					fmt.Sprintf("Overridden by higher-priority policy %q (priority %d); applied value: %s", w.src.Name, w.src.Priority, w.entry.Value)))
+			}
+			continue
+		}
+		items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
+	}
+
+	// Show-only module mode: the listed modules stay allowed (written as
+	// true so that they win over a lower-priority hide), every other
+	// installed module is hidden.
+	if src.Policy.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED && len(src.Policy.GetKcmRestrictions()) > 0 {
+		items = append(items, mergeShowOnlyKCMs(sc, src, installedKCMs))
+	}
+
+	if src.Policy.GetFileImmutableKdeglobals() {
+		sc.fileImmutable[KConfigFileGlobals] = true
+		items = append(items, &pb.ComplianceItemResult{
+			SchemaId: sc.prefix + KConfigFileGlobals,
+			Key:      "[$i]",
+			Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
+			Message:  "Whole file marked immutable",
+		})
+	}
+	return items
 }
 
 // mergeShowOnlyKCMs expands a show-only module list against the installed
 // modules and returns the summary compliance item for it.
-func mergeShowOnlyKCMs(src KConfigPolicySource, installedKCMs []string, claim func(*pb.KConfigEntry, KConfigPolicySource) (kconfigWinner, bool)) *pb.ComplianceItemResult {
+func mergeShowOnlyKCMs(sc *kconfigScope, src KConfigPolicySource, installedKCMs []string) *pb.ComplianceItemResult {
 	summary := &pb.ComplianceItemResult{
-		SchemaId: KConfigFileGlobals,
+		SchemaId: sc.prefix + KConfigFileGlobals,
 		Key:      "[" + KConfigGroupKCMRestrictions + "] show only listed modules",
 	}
 	if len(installedKCMs) == 0 {
@@ -428,7 +527,7 @@ func mergeShowOnlyKCMs(src KConfigPolicySource, installedKCMs []string, claim fu
 		if validateINIEntry(e) != nil {
 			continue
 		}
-		if _, ok := claim(e, src); ok && value == "false" {
+		if _, ok := sc.claim(e, src); ok && value == "false" {
 			hidden++
 		}
 	}
@@ -925,28 +1024,49 @@ func EnvScriptPaths() []string {
 
 // envScriptContent returns the POSIX shell snippet that prepends configPath
 // to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS exactly once, however
-// many hooks run it.
-func envScriptContent(configPath, dataPath string) string {
-	return fmt.Sprintf(`# Managed by Bor. Do not edit manually.
+// many hooks run it. groups are the per-group overlay directories, highest
+// priority first; each is added before configPath for members of the group
+// (matched on numeric GIDs from `id -G`, so group names never reach the
+// shell).
+func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
+	var b strings.Builder
+	b.WriteString(`# Managed by Bor. Do not edit manually.
 # Puts the Bor policy directories first in XDG_CONFIG_DIRS and XDG_DATA_DIRS
 # so that KDE and other XDG-aware applications read the managed
 # configuration files, look-and-feel packages and Plasma scripts.
-case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
+`)
+	// Nodes without group-scoped policies get the plain snippet; the group
+	// logic (and its helper variables) only appears when needed.
+	groupPrefix, groupCleanup := "", ""
+	if len(groups) > 0 {
+		b.WriteString("# Group-scoped policy directories, highest priority first.\n")
+		b.WriteString("bor_group_dirs=\"\"\n")
+		b.WriteString("bor_gids=\" $(id -G 2>/dev/null) \"\n")
+		for _, g := range groups {
+			fmt.Fprintf(&b, "case \"$bor_gids\" in *\" %d \"*) bor_group_dirs=\"${bor_group_dirs}%s:\" ;; esac\n", g.GID, g.Dir)
+		}
+		b.WriteString("unset bor_gids\n")
+		groupPrefix = "${bor_group_dirs}"
+		groupCleanup = "unset bor_group_dirs\n"
+	}
+	fmt.Fprintf(&b, `case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":%[1]s:"*) ;;
-  *) export XDG_CONFIG_DIRS="%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
+  *) export XDG_CONFIG_DIRS="%[3]s%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
-case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
+%[4]scase ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":%[2]s:"*) ;;
   *) export XDG_DATA_DIRS="%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
 esac
-`, configPath, dataPath)
+`, configPath, dataPath, groupPrefix, groupCleanup)
+	return b.String()
 }
 
 // EnsureEnvScripts creates or updates the login hook scripts so that
-// configPath is prepended to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS
-// for every Plasma session and login shell.
-func EnsureEnvScripts(configPath, dataPath string) error {
-	desired := []byte(envScriptContent(configPath, dataPath))
+// configPath (and the group directories for members) is prepended to
+// XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS for every Plasma session
+// and login shell.
+func EnsureEnvScripts(configPath, dataPath string, groups []GroupDir) error {
+	desired := []byte(envScriptContent(configPath, dataPath, groups))
 	for _, path := range EnvScriptPaths() {
 		if err := ensureScript(path, desired); err != nil {
 			return err

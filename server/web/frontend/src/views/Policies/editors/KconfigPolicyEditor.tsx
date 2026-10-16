@@ -81,9 +81,33 @@ const KEY_PREVIEW = "__preview";
 const KEY_IMPORT = "__import";
 const KEY_CUSTOM_NEW = "__custom_new";
 const KEY_LAYOUT = "__layout";
+const KEY_SCOPE = "__scope";
 const CUSTOM_PREFIX = "custom:";
 
 const GROUP_LAYOUT = "Desktop Layout";
+const GROUP_SCOPE = "Scope";
+
+/** Splits the Unix group textarea into valid names (de-duplicated, order
+ *  kept) and the entries the server would reject. Same rules as the
+ *  server: no path separators, colons or tabs, at most 128 characters. */
+function parseGroupText(text: string): { groups: string[]; invalid: string[] } {
+  const seen = new Set<string>();
+  const groups: string[] = [];
+  const invalid: string[] = [];
+  for (const raw of text.split(/[\n,]+/)) {
+    const g = raw.trim();
+    if (!g) continue;
+    if (/[/:\t]/.test(g) || g.length > 128) {
+      invalid.push(g);
+      continue;
+    }
+    const key = g.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    groups.push(g);
+  }
+  return { groups, invalid };
+}
 const GROUP_RESTRICTIONS = "System Settings & URL Rules";
 const GROUP_CUSTOM = "Custom Entries";
 const GROUP_ADVANCED = "Advanced";
@@ -167,6 +191,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (content.urlRestrictions.length > 0) keys.push(KEY_URL);
     if (content.fileImmutableKdeglobals) keys.push(KEY_FILE_LOCK);
     if (hasLayoutContent(content.layout)) keys.push(KEY_LAYOUT);
+    if (content.unixGroups.length > 0) keys.push(KEY_SCOPE);
     return keys;
   }, [configuredEntryIds, custom, content]);
 
@@ -184,6 +209,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (custom.length > 0) groups.add(GROUP_CUSTOM);
     if (content.fileImmutableKdeglobals) groups.add(GROUP_ADVANCED);
     if (hasLayoutContent(content.layout)) groups.add(GROUP_LAYOUT);
+    if (content.unixGroups.length > 0) groups.add(GROUP_SCOPE);
     return groups;
   });
   const [filter, setFilter] = useState("");
@@ -278,6 +304,10 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       { key: KEY_CUSTOM_NEW, label: "Add a custom entry" },
     ].filter((i) => !f || i.label.toLowerCase().includes(f.toLowerCase()));
     if (customItems.length > 0) t.set(GROUP_CUSTOM, customItems);
+    const scopeItems: TreeItem[] = [{ key: KEY_SCOPE, label: "Apply only to Unix groups" }].filter(
+      (i) => !f || i.label.toLowerCase().includes(f.toLowerCase()) || "scope group user".includes(f.toLowerCase()),
+    );
+    if (scopeItems.length > 0) t.set(GROUP_SCOPE, scopeItems);
     const advanced: TreeItem[] = [
       { key: KEY_FILE_LOCK, label: "Lock the whole kdeglobals file" },
       { key: KEY_IMPORT, label: "Import INI" },
@@ -325,6 +355,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     else if (key === KEY_URL) write({ ...content, urlRestrictions: [] });
     else if (key === KEY_FILE_LOCK) write({ ...content, fileImmutableKdeglobals: false });
     else if (key === KEY_LAYOUT) write({ ...content, layout: EMPTY_LAYOUT });
+    else if (key === KEY_SCOPE) write({ ...content, unixGroups: [] });
     if (selectedKey === key && key.startsWith(CUSTOM_PREFIX)) setSelectedKey(null);
   };
 
@@ -854,6 +885,55 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     );
   };
 
+  /* ── Scope: Unix groups ── */
+  // The textarea keeps its own text so that line breaks survive typing;
+  // the content only holds the valid, de-duplicated names. When the scope
+  // changes elsewhere (removed from the tree, policy reloaded) the text
+  // follows.
+  const [scopeText, setScopeText] = useState(() => content.unixGroups.join("\n"));
+  useEffect(() => {
+    if (parseGroupText(scopeText).groups.join("\n") !== content.unixGroups.join("\n")) {
+      setScopeText(content.unixGroups.join("\n"));
+    }
+  }, [content.unixGroups, scopeText]);
+  const renderScopeEditor = () => {
+    const { invalid } = parseGroupText(scopeText);
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Apply only to Unix groups</Title>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+          Limits every setting of this policy to members of the listed groups. The agent writes the policy's files into <code>groups/&lt;group&gt;/</code> inside the managed directory and the login hook adds that directory for members only, matched by numeric group id. Group names are resolved on each node (local, LDAP, SSSD or winbind), so use the names <code>id -Gn</code> prints there, for example <code>students</code>, <code>Domain Users</code> or <code>teachers@ad.example.com</code>.
+        </p>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>
+          Windows Group Policy equivalent: User Configuration with security filtering. KDE applies group directories on top of the node-wide ones, so a group policy can override node-wide defaults but cannot relax a node-wide enforced setting; keep group differences in group-scoped policies. The desktop layout cannot be scoped.
+        </p>
+        <Form>
+          <FormGroup label="Unix groups (one per line)" fieldId="kc-scope-groups">
+            <TextArea
+              id="kc-scope-groups"
+              value={scopeText}
+              isDisabled={isDisabled}
+              rows={5}
+              validated={invalid.length > 0 ? "error" : "default"}
+              aria-invalid={invalid.length > 0 || undefined}
+              onChange={(_ev, v) => {
+                setScopeText(v);
+                write({ ...content, unixGroups: parseGroupText(v).groups });
+              }}
+              placeholder={"students\nDomain Users"}
+            />
+            <FieldHelp>{invalid.length > 0 ? `Not allowed: ${invalid.join(", ")} (no /, : or tabs; at most 128 characters)` : "Empty list: the policy applies to every user on the node."}</FieldHelp>
+          </FormGroup>
+          {!isDisabled && content.unixGroups.length > 0 && (
+            <FormGroup fieldId="kc-scope-actions">
+              <Button variant="danger" size="sm" onClick={() => { setScopeText(""); write({ ...content, unixGroups: [] }); }}>Apply to every user</Button>
+            </FormGroup>
+          )}
+        </Form>
+      </div>
+    );
+  };
+
   /* ── Whole-file lock ── */
   const renderFileLock = () => (
     <div style={{ padding: "0.5rem 0" }}>
@@ -877,6 +957,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Preview rendered files</Title>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>
           What the agent writes under <code>/etc/bor/xdg</code> for this policy on its own (other bound policies are merged by priority on the node; the managed-file header is omitted).
+          {content.unixGroups.length > 0 && (
+            <> This policy is limited to {content.unixGroups.join(", ")}, so its files go to <code>groups/&lt;group&gt;/</code> under that directory.</>
+          )}
         </p>
         {files.length === 0 && <p style={{ ...subtle, fontStyle: "italic" }}>Nothing configured yet.</p>}
         {files.map((f) => (
@@ -945,6 +1028,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (selectedKey === KEY_URL) return renderUrlEditor();
     if (selectedKey === KEY_FILE_LOCK) return renderFileLock();
     if (selectedKey === KEY_LAYOUT) return renderLayoutEditor();
+    if (selectedKey === KEY_SCOPE) return renderScopeEditor();
     if (selectedKey === KEY_PREVIEW) return renderPreview();
     if (selectedKey === KEY_IMPORT) return renderImport();
     if (selectedKey === KEY_CUSTOM_NEW || selectedKey.startsWith(CUSTOM_PREFIX)) return renderCustomEditor();

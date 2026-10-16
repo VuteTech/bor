@@ -101,6 +101,11 @@ chrome:
 #  # possible for non-enforced defaults) as non-compliant. Also checks that
 #  # the running Plasma session has the managed directory in XDG_CONFIG_DIRS.
 #  probe_effective: false
+#  # Expose the config directory to Flatpak applications through a
+#  # system-wide "flatpak override" while KDE policies apply, so sandboxed
+#  # KDE applications (Okular, Kate, ... from Flathub) read the managed
+#  # settings. Node-wide settings only; ignored when flatpak is not installed.
+#  flatpak_override: true
 
 # Flatpak policy enforcement (remotes and applications via the flatpak CLI).
 # All values are optional; the defaults shown are used when the section is absent.

@@ -133,6 +133,11 @@ type KConfigConfig struct {
 	// packages, Plasma update scripts), put first in XDG_DATA_DIRS by the
 	// hook scripts (default /etc/bor/share).
 	DataPath string `yaml:"data_path"`
+	// FlatpakOverride exposes the config directory to Flatpak applications
+	// through a system-wide `flatpak override` while KDE policies apply,
+	// so sandboxed KDE applications read the managed settings (default true;
+	// only when flatpak is installed).
+	FlatpakOverride bool `yaml:"flatpak_override"`
 }
 
 // EnrollmentConfig holds enrollment and mTLS settings.
@@ -212,8 +217,9 @@ func DefaultConfig() *Config {
 			StateFile: "/var/lib/bor/agent/flatpak-state.json",
 		},
 		KConfig: KConfigConfig{
-			ConfigPath: "/etc/bor/xdg",
-			DataPath:   "/etc/bor/share",
+			ConfigPath:      "/etc/bor/xdg",
+			DataPath:        "/etc/bor/share",
+			FlatpakOverride: true,
 		},
 		Enrollment: EnrollmentConfig{
 			DataDir: "/var/lib/bor/agent",

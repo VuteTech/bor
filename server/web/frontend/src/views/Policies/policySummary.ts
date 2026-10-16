@@ -192,6 +192,10 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       rows.push({ setting: `Advanced › kdeglobals ${groupPathLabel(["$i"])}`, value: "Whole file immutable", locked: "Yes" });
     }
 
+    if (kc.unixGroups.length > 0) {
+      rows.push({ setting: "Scope › Unix groups", value: kc.unixGroups.join(", "), locked: null });
+    }
+
     if (hasLayoutContent(kc.layout)) {
       const l = kc.layout;
       if (l.wallpaperImage.trim()) {

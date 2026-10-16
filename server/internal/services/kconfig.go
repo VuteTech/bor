@@ -184,6 +184,42 @@ func ValidateKConfigPolicy(content string) error {
 		return err
 	}
 
+	if err := validateKConfigUnixGroups(kcp.GetUnixGroups()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Limits for the group scope of a policy.
+const (
+	maxKConfigUnixGroups   = 32
+	maxKConfigGroupNameLen = 128
+)
+
+// validateKConfigUnixGroups checks the Unix group names a policy is limited
+// to. Names are resolved on the nodes (local, LDAP, SSSD, winbind), so
+// spaces and domain separators are allowed; path and control characters
+// are not.
+func validateKConfigUnixGroups(groups []string) error {
+	if len(groups) > maxKConfigUnixGroups {
+		return fmt.Errorf("too many unix_groups (%d, max %d)", len(groups), maxKConfigUnixGroups)
+	}
+	seen := make(map[string]bool, len(groups))
+	for i, g := range groups {
+		name := strings.TrimSpace(g)
+		if name == "" {
+			return fmt.Errorf("unix_groups[%d]: empty group name", i)
+		}
+		if len(name) > maxKConfigGroupNameLen || strings.ContainsAny(name, "/\x00\r\n\t:") {
+			return fmt.Errorf("unix_groups[%d]: invalid group name %q", i, name)
+		}
+		lower := strings.ToLower(name)
+		if seen[lower] {
+			return fmt.Errorf("unix_groups[%d]: duplicate group %q", i, name)
+		}
+		seen[lower] = true
+	}
 	return nil
 }
 
