@@ -75,7 +75,6 @@ server/web/frontend/.cache/
 
 # Source maps in static folder
 server/web/static/*.map
-server/web/static/*.LICENSE.txt
 
 # Test coverage
 *.coverprofile
