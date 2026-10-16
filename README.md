@@ -1,410 +1,89 @@
-# Bor — Enterprise Linux Desktop Policy Management
+# Bor
 
-🌐 [getbor.dev](https://getbor.dev) ·
-📦 [GitHub](https://github.com/VuteTech/Bor) ·
-📖 [Contributing](docs/CONTRIBUTING.md) ·
-🔒 [Security](doc/security/compliance.md)
+**Policy management for Linux desktops.**
 
----
+[Website](https://getbor.dev) ·
+[Documentation](https://docs.getbor.dev) ·
+[Download](https://getbor.dev/download/) ·
+[Contributing](doc/development/contributing.md)
 
-## Overview
+Bor manages the configuration of Linux desktops and laptops from one place.
+You define policies in a web interface, assign them to groups of machines,
+and the Bor agent on each desktop applies them within seconds, keeps them in
+place and reports back whether each machine is compliant.
 
-Bor is an open-source policy management system for Linux desktops. A central
-server distributes configuration policies to enrolled Linux endpoints in
-real-time. A lightweight Go agent daemon on each machine receives policies over
-an encrypted gRPC stream and enforces them locally.
+![The Bor dashboard](doc/images/screenshots/dashboard.webp)
 
-**Currently enforced policies:**
+## What Bor manages
 
-- Firefox ESR — system-wide `policies.json` (RPM/DEB and Flatpak)
-- Google Chrome / Chromium — managed JSON in `/etc/opt/chrome/` and `/etc/chromium/` (including Flatpak)
-- KDE Plasma — KDE Kiosk (`kconfig` files under `/etc/xdg/`, KCM module restrictions)
-- Flatpak — remotes, application install/update/removal, with a server-side Flathub catalog
-
----
-
-## Architecture
-
-```text
-┌─────────────────────┐    gRPC stream / mTLS     ┌──────────────────────┐
-│     Bor Agent       │ ◄────── port 8444 ────────► │     Bor Server       │
-│  (Go daemon, root)  │                             │  Go + PatternFly UI  │
-└─────────────────────┘    gRPC enrollment / TLS   └──────────┬───────────┘
-  • One-time token enrollment ◄── port 8443 ──►               │ SQL
-  • mTLS client certificate auth                               ▼
-  • Applies Firefox / Chrome /               ┌──────────────────────────────┐
-    KDE Kiosk policies                       │        PostgreSQL            │
-  • Reports compliance                       │  policies · nodes · users    │
-  • Desktop notifications                   │  bindings · RBAC · audit log │
-                                             └──────────────────────────────┘
-```
-
-The server runs two HTTPS listeners with different security postures:
-
-| Port | Purpose | TLS | Client cert |
-|---|---|---|---|
-| **8443** | Admin UI (REST) + enrollment gRPC | TLS 1.2+ | Optional |
-| **8444** | Agent policy stream + cert renewal | TLS 1.3, mTLS | Mandatory |
-
-REST and enrollment gRPC share port 8443, routed by Content-Type:
-`application/grpc*` → gRPC handler, everything else → REST API + embedded
-PatternFly web UI.
-
----
-
-## Features
-
-- **Centralised web UI** — PatternFly 5 dashboard for policies, nodes, and bindings
-- **Real-time distribution** — gRPC server-side streaming; agents receive changes instantly
-- **Secure by design** — mTLS certificate authentication for every agent; internal CA auto-generated on first run; FIPS 140-3 validated crypto module
-- **Easy enrollment** — one-time token generated in the UI; agent bootstraps its own certificate
-- **Automatic renewal** — agent certificates (90-day) are renewed automatically before expiry; no operator action required
-- **Delta sync** — monotonic revision counter with ring buffer; reconnecting agents receive only what changed
-- **Node Groups** — many-to-many assignment of nodes to policy groups
-- **RBAC** — built-in roles (Super Admin, Org Admin, Policy Editor, …) with granular per-resource permissions
-- **Audit log** — every API action recorded with user, IP, and timestamp
-- **Tamper protection** — file watcher detects and restores managed files that are modified outside Bor
-- **LDAP/AD integration** — optional, enabled via environment variables
-- **HSM support** — optional PKCS#11 integration stores the CA private key in a hardware security module
-- **Linux-native packaging** — deb, rpm, apk, Arch Linux packages via nfpm
-
----
-
-## Quick Start
-
-### Prerequisites
-
-| Component | Requirement |
+| Area | Policy types |
 |---|---|
-| Server host | Podman / Docker + podman-compose / docker-compose |
-| Agent host | Linux x86\_64 or arm64 |
-| Building from source | Go 1.24+, Node.js 18+, Make |
+| Browsers and mail | Firefox, Chrome and Chromium, Microsoft Edge, Thunderbird |
+| Desktop environments | KDE Plasma (KConfig and Kiosk), GNOME (dconf) |
+| System | Polkit rules, firewalld zones, session access times, disk encryption (LUKS2 with TPM 2.0, Tang and escrowed recovery keys) |
+| Software | Packages and repositories (APT, DNF, Zypper), Flatpak remotes and applications |
 
-### Run the server with Podman Compose
+See [Policy types](https://docs.getbor.dev/policy-types/) for what each one
+can do.
 
-```bash
-git clone https://github.com/VuteTech/Bor.git
-cd Bor
-cp .env.example .env
-$EDITOR .env   # set DB_PASSWORD, JWT_SECRET, BOR_ADMIN_PASSWORD at minimum
-podman-compose up -d
-```
+## Highlights
 
-The server starts on `https://localhost:8443` (UI + enrollment) and
-`https://localhost:8444` (agent mTLS). On first boot it auto-generates an
-internal CA (ECDSA P-384) and a server TLS certificate (ECDSA P-256) under
-`/var/lib/bor/pki/`.
+- **Real time.** Agents keep a persistent, mutually authenticated TLS
+  connection to the server, so policy changes reach desktops immediately.
+- **Tamper protection.** The agent watches every file it manages and
+  restores it when someone changes it locally, and reports the event.
+- **Compliance reporting.** Every machine reports, per policy, whether it is
+  compliant, and the web interface shows the state of the whole fleet.
+- **Simple rollout.** Each server hosts signed agent package repositories
+  and a deploy wizard, so agents install and enroll with one script and
+  managed desktops need no internet access.
+- **Built for regulated environments.** FIPS 140-3 validated cryptography,
+  role-based access control, multi-factor authentication (TOTP and
+  WebAuthn), LDAP and Active Directory, Kerberos enrollment, optional HSM
+  storage for the CA key and a complete audit log.
+- **Native packages.** deb, rpm, apk and Arch Linux packages for amd64,
+  arm64 and ppc64le.
 
-Log in at `https://localhost:8443` with the admin credentials set in `.env`.
+## Getting started
 
-### Deploy agents — from your own server
+- [Concepts](https://docs.getbor.dev/getting-started/concepts/): how
+  servers, agents, policies and node groups fit together.
+- [Quick start](https://docs.getbor.dev/getting-started/quickstart/): a
+  server and a first managed desktop in about 20 minutes.
+- [Installation](https://docs.getbor.dev/installation/requirements/):
+  requirements and production setup.
 
-Every Bor instance ships the agent packages for all supported platforms and
-serves them itself: download links, apt/dnf/zypper repositories and a
-**Deploy agent** wizard in the web UI (the download icon in the masthead, or
-the button on the Nodes page). The wizard produces a single copy-paste
-script that trusts the server CA, sets up the signed repository, installs
-the agent, enrolls it with a one-time token and starts the service — managed
-nodes never need internet access. A static version of the instructions is
-served by the instance itself at `https://your-hostname:8443/agent/`.
-
-See [Installing the agent](doc/installation/agent.md) for the per-platform
-details, repository signing and key rotation, and air-gap notes. Packages
-can also be downloaded manually from
-[getbor.dev/download](https://getbor.dev/download/).
-
----
-
-## Building from Source
-
-All build targets are in the `Makefile`. Run `make help` to list them.
-
-### Install build dependencies
+## Building from source
 
 ```bash
-make install-deps
+make frontend server agent
 ```
 
-This installs `protoc-gen-go`, `protoc-gen-go-grpc`, `golangci-lint`, `nfpm`,
-and the TypeScript proto plugin via `npm`. You must have `protoc` and `Node.js`
-available separately.
-
-### Build
-
-All Go builds use `GOFIPS140=v1.0.0`, which embeds the FIPS 140-3 validated
-crypto module snapshot (CAVP certificate A6650) regardless of the host
-toolchain.
-
-```bash
-make server      # → server/server       (FIPS 140-3)
-make agent       # → agent/bor-agent     (FIPS 140-3)
-make frontend    # → embedded into the server binary (run before make server)
-make proto       # regenerate Go + TypeScript from proto/ definitions
-```
-
-Build everything in the correct order:
-
-```bash
-make frontend && make server && make agent
-```
-
-### PKCS#11 HSM build
-
-To store the CA private key in a hardware security module, build with the
-`pkcs11` tag. This requires CGO (and a C compiler); the `crypto11` dependency
-is already part of the module:
-
-```bash
-make server-pkcs11   # -> server/server  (FIPS 140-3 + PKCS#11)
-```
-
-See [TLS and certificates](doc/configuration/tls.md#store-the-ca-key-in-an-hsm-pkcs11)
-for the full configuration guide and a SoftHSMv2 example.
-
-### FIPS 140-3 runtime enforcement
-
-The build flag embeds the validated module. To additionally restrict the
-running process to FIPS-approved algorithms only (removes X25519, enforces
-P-256/P-384):
-
-```bash
-GODEBUG=fips140=on ./server/server
-```
-
-Add `Environment=GODEBUG=fips140=on` to the systemd unit override for
-production deployments.
-
-### Run locally
-
-```bash
-# Start PostgreSQL
-make dev
-
-# Run the server (reads .env automatically via go run)
-make run-server
-
-# In a separate terminal — run the agent against the local server
-sudo ./agent/bor-agent --config agent/config.yaml.example
-```
-
-### Packaging
-
-Build distribution packages for all formats:
-
-```bash
-make packages                          # deb + rpm + apk + archlinux, version 0.1.0
-make packages VERSION=1.2.3            # specify version
-make packages VERSION=1.2.3 ARCH=arm64 # cross-arch
-make packages-agent VERSION=1.2.3      # agent packages only
-make packages-server VERSION=1.2.3     # server packages only
-```
-
-Packages are written to `builds/`. Requires `nfpm` (`make install-deps`).
-
-### Container image
-
-```bash
-make docker   # builds bor-server:latest with podman
-```
-
----
-
-## Testing
-
-```bash
-make test            # all tests (server + agent)
-make test-server     # server tests only
-make test-agent      # agent tests only
-make coverage        # HTML coverage reports → server/coverage.html, agent/coverage.html
-```
-
-Run a single test by name:
-
-```bash
-cd server && go test -v -run TestPolicyService ./internal/services/...
-cd agent  && go test -v -run TestMergeKConfig  ./internal/policy/...
-```
-
----
-
-## Configuration
-
-### Server
-
-The server reads configuration from a YAML file (default `/etc/bor/server.yaml`,
-override with `BOR_CONFIG`) and environment variables. Environment variables
-always take precedence. Copy `.env.example` to `.env` for local development,
-or use `/etc/bor/server.env` for production (loaded by the systemd unit).
-
-A full annotated YAML reference is in `server/server.yaml.example`.
-
-#### Required
-
-| Variable | Description |
-|---|---|
-| `DB_PASSWORD` | PostgreSQL password |
-| `JWT_SECRET` | JWT signing secret — use at least 32 random bytes |
-| `BOR_ADMIN_PASSWORD` | Initial admin password (applied only when no users exist) |
-
-#### Server
-
-| Variable | Default | Description |
-|---|---|---|
-| `BOR_ADDRESS` | *(all interfaces)* | Server hostname or IP (no port) |
-| `BOR_ENROLLMENT_PORT` | `8443` | UI + enrollment gRPC listen port |
-| `BOR_POLICY_PORT` | `8444` | Agent mTLS policy stream listen port |
-| `BOR_HOSTNAMES` | — | Comma-separated extra SANs for the auto-generated TLS cert |
-
-#### Database
-
-| Variable | Default | Description |
-|---|---|---|
-| `DB_HOST` | `localhost` | PostgreSQL host |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_USER` | `bor` | PostgreSQL user |
-| `DB_NAME` | `bor` | PostgreSQL database name |
-| `DB_SSLMODE` | `disable` | PostgreSQL SSL mode (`disable`, `require`, `verify-full`) |
-
-#### PKI
-
-If the CA and TLS variables are not set, the server auto-generates an internal
-CA (ECDSA P-384, 10 years) and a server TLS certificate (ECDSA P-256, 365 days)
-under `/var/lib/bor/pki/` and reuses them on subsequent starts.
-
-| Variable | Default | Description |
-|---|---|---|
-| `BOR_CA_CERT_FILE` | auto | Path to CA certificate PEM |
-| `BOR_CA_KEY_FILE` | auto | Path to CA private key PEM (unused when PKCS#11 is set) |
-| `BOR_CA_AUTOGEN_DIR` | `/var/lib/bor/pki/ca` | Directory for auto-generated CA files |
-| `BOR_TLS_CERT_FILE` | auto | Path to server TLS certificate PEM |
-| `BOR_TLS_KEY_FILE` | auto | Path to server TLS private key PEM |
-| `BOR_TLS_AUTOGEN_DIR` | `/var/lib/bor/pki/ui` | Directory for auto-generated TLS cert |
-
-#### PKCS#11 HSM (optional)
-
-Requires the `server-pkcs11` binary. The PIN must come from an environment
-variable — never store it in a YAML file.
-
-| Variable | Description |
-|---|---|
-| `BOR_CA_PKCS11_LIB` | Path to PKCS#11 shared library (`.so`) |
-| `BOR_CA_PKCS11_TOKEN_LABEL` | HSM token label |
-| `BOR_CA_PKCS11_KEY_LABEL` | CA private key label on the token |
-| `BOR_CA_PKCS11_PIN` | Token PIN |
-
-#### Security
-
-| Variable | Default | Description |
-|---|---|---|
-| `BOR_ADMIN_TOKEN` | — | Static token for gRPC enrollment calls (optional) |
-| `BOR_FLATPAK_CATALOG_REFRESH` | `true` | Download AppStream catalogs for the Flatpak app catalog (Settings → Flatpak repositories). `false` for air-gapped servers; uploads still work. |
-| `BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB` | `64` | Maximum compressed catalog size accepted per download/upload. |
-| `BOR_FLATPAK_CATALOG_ALLOW_PRIVATE_NETWORKS` | `false` | Allow catalog fetches from repositories on private networks (internal mirrors). Loopback, link-local and multicast addresses are always refused. |
-| `LDAP_ENABLED` | `false` | Enable LDAP authentication |
-| `LDAP_HOST` | `localhost` | LDAP server hostname |
-| `LDAP_PORT` | `389` | LDAP server port |
-| `LDAP_USE_TLS` | `false` | Use TLS for the LDAP connection |
-| `LDAP_BIND_DN` | — | LDAP bind distinguished name |
-| `LDAP_BIND_PASSWORD` | — | LDAP bind password |
-| `LDAP_BASE_DN` | — | LDAP search base DN |
-
-### Agent
-
-The agent reads `/etc/bor/config.yaml` by default. Pass `--config <path>` to
-override. A full annotated reference is in `agent/config.yaml.example`.
-
-```yaml
-server:
-  address: "bor-server.example.com"
-  enrollment_port: 8443   # UI + enrollment gRPC
-  policy_port: 8444       # mTLS policy stream
-  insecure_skip_verify: false   # true only for self-signed certs during setup
-
-agent:
-  client_id: ""   # defaults to system hostname
-
-enrollment:
-  data_dir: "/var/lib/bor/agent"   # cert, key, and CA cert stored here
-
-firefox:
-  policies_path: "/etc/firefox/policies/policies.json"
-  flatpak_policies_path: "/var/lib/flatpak/extension/org.mozilla.firefox.systemconfig/x86_64/stable/policies/policies.json"
-
-chrome:
-  chrome_policies_path: "/etc/opt/chrome/policies/managed"
-  chromium_policies_path: "/etc/chromium/policies/managed"
-  chromium_browser_policies_path: "/etc/chromium-browser/policies/managed"
-  flatpak_chromium_policies_path: ""   # set to enable Flatpak Chromium
-
-kconfig:
-  config_path: "/etc/xdg"   # KDE Kiosk overlay directory
-```
-
----
-
-## Documentation
-
-- [User documentation](doc/index.md) - installation, configuration, web UI and policy types (MkDocs site, `mkdocs serve`)
-- [Security and compliance](doc/security/compliance.md) - cryptographic algorithms, FIPS 140-3, EU standards; see also the [Hardening guide](doc/security/hardening.md)
-- [Architecture](docs/ARCHITECTURE.md) — detailed design and data flows
-- [Contributing](docs/CONTRIBUTING.md) — setup, coding standards, PR process
-
----
+The [development guide](https://docs.getbor.dev/development/) covers the
+development environment, the architecture, tests and packaging.
 
 ## Contributing
 
-Contributions are welcome via
-[GitHub pull requests](https://github.com/VuteTech/Bor/pulls) or by emailing
-patches to <bor@vute.tech>.
-
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full guide.
-
----
-
-## Roadmap
-
-### Implemented
-
-- [x] Core policy management API and web UI
-- [x] Dual-port architecture (8443 UI/enrollment, 8444 agent mTLS)
-- [x] gRPC streaming with mTLS (TLS 1.3, mandatory client cert)
-- [x] Token-based agent enrollment (one-time, 5-minute TTL)
-- [x] Automatic certificate renewal (ECDSA P-256, 90-day lifetime)
-- [x] FIPS 140-3 validated builds (`GOFIPS140=v1.0.0`, CAVP A6650)
-- [x] PKCS#11 HSM support for CA private key (`-tags pkcs11`)
-- [x] Kerberos-based agent enrollment (AD / FreeIPA, token-free)
-- [x] Firefox ESR policy enforcement (RPM/DEB + Flatpak)
-- [x] Thunderbird policy enforcement
-- [x] Chrome / Chromium policy enforcement (including Flatpak)
-- [x] Microsoft Edge policy enforcement
-- [x] KDE Plasma KConfig (Kiosk) enforcement + KCM module restrictions
-- [x] dconf (GNOME) policy enforcement
-- [x] polkit rule enforcement
-- [x] firewalld policy enforcement
-- [x] Flatpak remotes and application management (Flathub catalog on the server)
-- [x] Package management policies (packages + repositories)
-- [x] Tamper protection (file watcher restores managed files)
-- [x] RBAC with roles and permissions
-- [x] Web UI MFA (TOTP + WebAuthn)
-- [x] LDAP / Active Directory authentication
-- [x] Audit log
-- [x] Persistent compliance reporting (database storage)
-- [x] Prometheus metrics endpoint
-- [x] Desktop notifications on policy change
-- [x] Many-to-many node group membership
-- [x] deb / rpm / apk / Arch Linux packaging
-
-### Planned
-
-- [ ] systemd unit policies
-- [ ] Agent auto-update mechanism
-- [ ] Multi-tenancy
-
----
+Bug reports, ideas and pull requests are welcome. Read the
+[contributing guide](doc/development/contributing.md) before you start.
+Report security vulnerabilities privately to <bor@vute.tech>, not in a
+public issue.
 
 ## License
 
 Copyright (C) 2026 Vute Tech LTD
 Copyright (C) 2026 Bor contributors
 
-Licensed under the [GNU Lesser General Public License v3.0](LICENSE.md).
+Bor is free software: you can redistribute it and/or modify it under the
+terms of the [GNU Affero General Public License, version 3](LICENSE)
+(`AGPL-3.0-only`). If you run a modified version of the Bor server for others
+over a network, the AGPL requires you to offer them the source code of your
+version.
+
+Bor Enterprise, the commercial edition from Vute Tech LTD, is distributed
+under a separate proprietary license. For commercial licensing, contact
+<bor@vute.tech>.
+
+Contributions are accepted under the
+[Contributor License Agreement](CLA.md); see
+[Contributing](doc/development/contributing.md).
