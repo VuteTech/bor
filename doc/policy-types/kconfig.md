@@ -463,14 +463,20 @@ to the same group.
 | Setting | Value | Enforced |
 |---|---|---|
 | **Lock desktop layout (panels, widgets, favourites)** | Restricted | Enforced [$i] |
+| **Hide desktop and widget configuration while the desktop is locked** | Restricted | Enforced [$i] |
 
 ```text
 [KDE Action Restrictions]
+plasma/allow_configure_when_locked[$i]=false
 plasma/plasmashell/unlockedDesktop[$i]=false
 ```
 
 Users can no longer move or add panels and widgets or edit launcher
-favourites.
+favourites. The second key hides the desktop's **Configure Desktop and
+Wallpaper** dialog and the widgets' settings, which Plasma otherwise keeps
+reachable on a locked desktop; restrict the **Wallpaper** module
+(`kcm_wallpaper`, Plasma 6.3 and later) under System Settings modules to
+close the remaining route.
 
 ### Lock the screen after ten minutes
 

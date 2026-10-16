@@ -346,15 +346,13 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     ],
     "key": "plasma/allow_configure_when_locked",
     "type": "Bool",
-    "label": "Restrict configuring widgets while locked (Plasma 5)",
-    "description": "Documented Kiosk key for Plasma 5. Plasma 6 does not read it; use Lock desktop layout there.",
+    "label": "Hide desktop and widget configuration while the desktop is locked",
+    "description": "Companion of Lock desktop layout: on a locked desktop the Configure Desktop and Wallpaper dialog and the widgets' settings stay reachable until this is restricted too. Has no effect while the desktop is unlocked. Plasma 5 and 6.",
     "category": "Plasma Desktop",
     "inverted": true,
     "immutableDefault": true,
-    "plasmaMajor": [
-      "5"
-    ],
     "reload": "logout",
+    "windowsEquivalent": "Prevent changing desktop background; Lock the taskbar",
     "source": "builtin"
   },
   {
