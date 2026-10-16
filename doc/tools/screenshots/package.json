@@ -2,10 +2,14 @@
   "name": "bor-doc-screenshots",
   "private": true,
   "description": "Capture the web UI screenshots used by the Bor documentation",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "shoot": "node doc-shoot.js"
   },
   "dependencies": {
-    "puppeteer-core": "^24.0.0"
+    "puppeteer-core": "^25.14.0"
   }
 }

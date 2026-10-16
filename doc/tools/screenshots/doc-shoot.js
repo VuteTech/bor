@@ -1,8 +1,13 @@
 /* Capture the screenshots used by the user documentation (doc/).
  *
- * Usage: [BOR_API=https://localhost:8443] [BOR_UI_HOST=bor.example.com] \
+ * Usage: BOR_CA_CERT=/path/to/ca.crt \
+ *        [BOR_API=https://localhost:8443] [BOR_UI_HOST=bor.example.com] \
  *        [CHROME_BIN=/usr/bin/google-chrome-stable] [SHOTS=name,name] \
  *        node doc-shoot.js [outDir] <admin-user> <admin-password>
+ *
+ * BOR_CA_CERT is the server's internal CA certificate (ca.crt in the CA
+ * autogen directory). API calls verify the server against it; certificate
+ * validation stays on for every other connection.
  *
  * outDir defaults to doc/images/screenshots (resolved from this file).
  *
@@ -21,28 +26,33 @@
  * - The browser resolves BOR_UI_HOST to 127.0.0.1 so URLs in the wizard
  *   show a presentable host name.
  */
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const puppeteer = require("puppeteer-core");
+import fs from "node:fs";
+import https from "node:https";
+import path from "node:path";
+import crypto from "node:crypto";
+import puppeteer from "puppeteer-core";
 
 const API = process.env.BOR_API || "https://localhost:8443";
 const UI_HOST = process.env.BOR_UI_HOST || "bor.example.com";
 const UI = `https://${UI_HOST}:${new URL(API).port || 443}`;
 const CHROME = process.env.CHROME_BIN || "/usr/bin/google-chrome-stable";
-const DEFAULT_OUT = path.resolve(__dirname, "../../images/screenshots");
+const DEFAULT_OUT = path.resolve(import.meta.dirname, "../../images/screenshots");
 const args = process.argv.slice(2);
 const [OUT, USER, PASS] = args.length >= 3 ? args : [DEFAULT_OUT, ...args];
 if (!USER || !PASS) {
   console.error("usage: node doc-shoot.js [outDir] <admin-user> <admin-password>");
   process.exit(1);
 }
+if (!process.env.BOR_CA_CERT) {
+  console.error("BOR_CA_CERT must point to the server's CA certificate (ca.crt)");
+  process.exit(1);
+}
+const apiAgent = new https.Agent({ ca: fs.readFileSync(process.env.BOR_CA_CERT) });
 
 /* tiny API client (cookie session + CSRF double-submit) */
 const jar = new Map();
 function storeCookies(res) {
-  for (const c of res.headers.getSetCookie?.() ?? []) {
+  for (const c of res.headers["set-cookie"] ?? []) {
     const [pair] = c.split(";");
     const eq = pair.indexOf("=");
     if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1));
@@ -52,10 +62,20 @@ async function api(method, p, body) {
   const headers = { "Content-Type": "application/json" };
   if (jar.size) headers.Cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
   if (jar.has("bor_csrf")) headers["X-CSRF-Token"] = jar.get("bor_csrf");
-  const res = await fetch(`${API}${p}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const { res, text } = await new Promise((resolve, reject) => {
+    const req = https.request(`${API}${p}`, { method, headers, agent: apiAgent }, (r) => {
+      let data = "";
+      r.setEncoding("utf8");
+      r.on("data", (chunk) => { data += chunk; });
+      r.on("end", () => resolve({ res: r, text: data }));
+    });
+    req.on("error", reject);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
   storeCookies(res);
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${method} ${p} -> ${res.status}: ${text.slice(0, 200)}`);
+  if (res.statusCode < 200 || res.statusCode > 299) {
+    throw new Error(`${method} ${p} -> ${res.statusCode}: ${text.slice(0, 200)}`);
+  }
   return text ? JSON.parse(text) : null;
 }
 
@@ -210,7 +230,7 @@ async function go(page, route, waitFor = "h1") {
 
   const browser = await puppeteer.launch({
     executablePath: CHROME,
-    headless: "new",
+    headless: true,
     args: ["--no-sandbox", "--ignore-certificate-errors", "--window-size=1280,800",
       `--host-resolver-rules=MAP ${UI_HOST} 127.0.0.1`],
     defaultViewport: { width: 1280, height: 800, deviceScaleFactor: 2 },

@@ -12,8 +12,8 @@ This directory is excluded from the published site (`exclude_docs` in
 
 - Google Chrome or Chromium on the host (`CHROME_BIN=/path/to/chrome` to
   override the default `/usr/bin/google-chrome-stable`).
-- Node.js, then once in this directory: `npm install` (installs
-  `puppeteer-core`).
+- Node.js 22.12 or newer, then once in this directory: `npm install`
+  (installs `puppeteer-core`).
 - A **throwaway** Bor server with demo data. Never point the script at a
   real installation: screenshots are published.
 
@@ -38,12 +38,16 @@ This directory is excluded from the published site (`exclude_docs` in
 ## Capture
 
 ```bash
+export BOR_CA_CERT=/path/to/pki/ca/ca.crt            # the server's internal CA
 node doc-shoot.js admin '<admin-password>'          # all shots
 SHOTS=dashboard,nodes node doc-shoot.js admin '...'  # only some
 node doc-shoot.js /tmp/out admin '...'               # other output dir
 ```
 
-Environment: `BOR_API` (default `https://localhost:8443`), `BOR_UI_HOST`
+Environment: `BOR_CA_CERT` (required: the CA certificate that signed the
+server's TLS certificate, `ca.crt` in the CA autogen directory; API calls
+verify the server against it), `BOR_API` (default `https://localhost:8443`,
+the host name must be in the server certificate), `BOR_UI_HOST`
 (host name shown in the browser, default `bor.example.com`, resolved to
 127.0.0.1), `CHROME_BIN`, `SHOTS`.
 
