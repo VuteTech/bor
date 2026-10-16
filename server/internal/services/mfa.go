@@ -11,8 +11,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -21,14 +25,18 @@ import (
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
-	qrcode "github.com/yeqown/go-qrcode/v2"
-	qrwriter "github.com/yeqown/go-qrcode/writer/standard"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
 	totpIssuer    = "Bor"
 	backupCodeNum = 8
+
+	// qrImageSize is the edge length in pixels of the rendered QR code and
+	// qrQuietZone the white margin around it. The UI shows it at 200px, so
+	// this renders sharp on high-DPI screens.
+	qrImageSize = 400
+	qrQuietZone = 32
 )
 
 // MFAService handles TOTP setup, verification, and settings.
@@ -130,31 +138,51 @@ func (s *MFAService) GenerateSetupQR(ctx context.Context, userID, username strin
 		algStr = "SHA256"
 	}
 
+	return renderTOTPQR(username, algStr, secret)
+}
+
+// renderTOTPQR renders the otpauth:// URI for a base32 TOTP secret as a PNG
+// QR code with a white quiet zone.
+func renderTOTPQR(username, algStr, secret string) ([]byte, error) {
 	// Build the otpauth:// URI directly. The secret from the DB is already
 	// base32-encoded, so we embed it as-is (totp.Generate would double-encode).
-	otpauthURL := fmt.Sprintf(
-		"otpauth://totp/%s:%s?algorithm=%s&digits=6&issuer=%s&period=30&secret=%s",
-		totpIssuer, username, algStr, totpIssuer, secret,
-	)
+	params := url.Values{}
+	params.Set("algorithm", algStr)
+	params.Set("digits", "6")
+	params.Set("issuer", totpIssuer)
+	params.Set("period", "30")
+	params.Set("secret", secret)
+	otpauthURL := url.URL{
+		Scheme:   "otpauth",
+		Host:     "totp",
+		Path:     "/" + totpIssuer + ":" + username,
+		RawQuery: params.Encode(),
+	}
 
-	qrc, err := qrcode.New(otpauthURL)
+	key, err := otp.NewKeyFromURL(otpauthURL.String())
+	if err != nil {
+		return nil, fmt.Errorf("parse otpauth uri: %w", err)
+	}
+
+	code, err := key.Image(qrImageSize, qrImageSize)
 	if err != nil {
 		return nil, fmt.Errorf("create qr code: %w", err)
 	}
 
+	// key.Image draws the code edge to edge. Add a white quiet zone so
+	// scanners find the code on any page background, including dark themes.
+	full := qrImageSize + 2*qrQuietZone
+	img := image.NewGray(image.Rect(0, 0, full, full))
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	draw.Draw(img, code.Bounds().Add(image.Pt(qrQuietZone, qrQuietZone)), code, code.Bounds().Min, draw.Src)
+
 	var buf bytes.Buffer
-	w := qrwriter.NewWithWriter(nopWriteCloser{&buf})
-	if err := qrc.Save(w); err != nil {
+	if err := png.Encode(&buf, img); err != nil {
 		return nil, fmt.Errorf("render qr code: %w", err)
 	}
 
 	return buf.Bytes(), nil
 }
-
-// nopWriteCloser wraps an io.Writer to satisfy io.WriteCloser.
-type nopWriteCloser struct{ io.Writer }
-
-func (nopWriteCloser) Close() error { return nil }
 
 // FinishSetup verifies the first TOTP code and enables MFA.
 func (s *MFAService) FinishSetup(ctx context.Context, userID, code string) (*models.MFASetupFinishResponse, error) {
