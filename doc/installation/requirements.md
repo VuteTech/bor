@@ -84,7 +84,7 @@ agent log explains which tool was not found.
 | Thunderbird | Thunderbird (reads `/etc/thunderbird/policies/policies.json`), or Flatpak Thunderbird. |
 | Chrome | Google Chrome or Chromium (deb, upstream or Flatpak build). |
 | Microsoft Edge | Microsoft Edge. |
-| KDE Plasma (KConfig) | KDE Plasma. Settings are written under `/etc/bor/xdg` and activated through `/etc/xdg/plasma-workspace/env/00-bor.sh` and `/etc/profile.d/99-bor.sh`, so users must log in again. |
+| KDE Plasma (KConfig) | KDE Plasma. Settings are written under `/etc/bor/xdg` and activated through `/etc/xdg/plasma-workspace/env/zz-bor.sh` and `/etc/profile.d/99-bor.sh`, so users must log in again. |
 | Dconf | GNOME / dconf with the `dconf` command (runs `dconf update`). |
 | Polkit | polkit (`polkitd`); `pkaction` is used to discover available actions. |
 | Firewall | firewalld installed and running (`firewall-cmd`). Without it the policy is Inapplicable. |

@@ -6,9 +6,9 @@
  * The single frontend registry of policy types.
  *
  * `Policy.type` is a free string on the wire; the server accepts unknown types
- * for forward compatibility. Everything the UI knows *about* a type — label,
+ * for forward compatibility. Everything the UI knows *about* a type - label,
  * category, copy for the create wizard, icon, default content and the
- * "has at least one setting" rule — lives here so the wizard, the policies
+ * "has at least one setting" rule - lives here so the wizard, the policies
  * list, the filters, the editor and the dashboard cannot drift apart.
  *
  * Field definitions (which keys a Firefox policy has, etc.) are NOT here: they
@@ -240,7 +240,7 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
       "KDE Plasma and KDE application configuration written as system-wide defaults or immutable settings. Pick from a catalogue of Kiosk restrictions, screen lock, session, power, appearance, privacy and application settings, hide System Settings modules, restrict KIO URL schemes, or write any KConfig key.",
     manages: [
       "System-wide KDE configuration under /etc/bor/xdg (immutable [$i] entries)",
-      "/etc/xdg/plasma-workspace/env/00-bor.sh and /etc/profile.d/99-bor.sh, which put that directory first in XDG_CONFIG_DIRS",
+      "/etc/xdg/plasma-workspace/env/zz-bor.sh and /etc/profile.d/99-bor.sh, which put that directory first in XDG_CONFIG_DIRS",
     ],
     appliesTo: ["KDE Plasma 5 and 6"],
     examples: [

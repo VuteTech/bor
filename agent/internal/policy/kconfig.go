@@ -260,6 +260,10 @@ type KConfigMergeResult struct {
 	Layout           *pb.KConfigLayout
 	LayoutPolicyID   string
 	LayoutPolicyName string
+	// LayoutBaseTheme is the global theme the layout policy set explicitly
+	// (Appearance > Global theme); the generated package copies its
+	// defaults and replaces the wallpaper. Empty = Breeze fallback only.
+	LayoutBaseTheme string
 	// GroupFiles holds the rendered files of group-scoped policies, keyed
 	// by group slug and then file basename. Groups lists the scopes,
 	// highest priority first, as the login hook orders them.
@@ -382,8 +386,18 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 			}
 		}
 
+		// A node-wide policy whose layout is about to win treats its own
+		// explicit Global theme as the base of the generated package
+		// instead of writing it: the package copies that theme's defaults
+		// and replaces the wallpaper, so "Breeze Dark plus our wallpaper"
+		// is one policy.
+		var base *layoutBase
+		if len(groups) == 0 && res.Layout == nil && LayoutHasContent(src.Policy.GetLayout()) {
+			base = &layoutBase{}
+		}
+
 		for _, sc := range scopes {
-			items = append(items, mergeSourceIntoScope(sc, src, installedKCMs)...)
+			items = append(items, mergeSourceIntoScope(sc, src, installedKCMs, base)...)
 		}
 
 		// Desktop layout: one look-and-feel package per node, from the
@@ -405,10 +419,19 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 				res.Layout = src.Policy.GetLayout()
 				res.LayoutPolicyID = src.ID
 				res.LayoutPolicyName = src.Name
-				pkg := LayoutPackageID(src.ID)
-				e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: "KDE", Key: "LookAndFeelPackage", Value: pkg, Type: "string", Enforced: res.Layout.GetLockPackage()}
+				lock := res.Layout.GetLockPackage()
+				if base != nil && base.theme != "" {
+					res.LayoutBaseTheme = base.theme
+					lock = lock || base.enforced
+				}
+				pkg := LayoutPackageIDFor(src.ID, res.LayoutBaseTheme)
+				msg := "Deployed look-and-feel package " + pkg
+				if res.LayoutBaseTheme != "" {
+					msg += " based on " + res.LayoutBaseTheme
+				}
+				e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: "KDE", Key: "LookAndFeelPackage", Value: pkg, Type: "string", Enforced: lock}
 				if w, ok := nodeScope.claim(e, src); ok {
-					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed look-and-feel package "+pkg))
+					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, msg))
 				} else {
 					items = append(items, nodeScope.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
 						fmt.Sprintf("Global theme is set to %q by policy %q; the layout package %s is generated but not selected", w.entry.Value, w.src.Name, pkg)))
@@ -458,13 +481,35 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 	return res, nil
 }
 
+// layoutBase collects the explicit Global theme of a policy whose layout
+// wins, so the generated package can be based on it.
+type layoutBase struct {
+	theme    string // explicit theme, "" when the policy has none
+	enforced bool   // the explicit setting was enforced: lock the selection
+}
+
+// isGlobalThemeEntry reports whether e is kdeglobals [KDE] LookAndFeelPackage.
+func isGlobalThemeEntry(e *pb.KConfigEntry) bool {
+	return e.File == KConfigFileGlobals && e.Group == "KDE" && e.Key == "LookAndFeelPackage" && e.Locale == "" && !e.Delete
+}
+
 // mergeSourceIntoScope adds one policy's entries to a scope and returns the
-// compliance items for them.
-func mergeSourceIntoScope(sc *kconfigScope, src KConfigPolicySource, installedKCMs []string) []*pb.ComplianceItemResult {
+// compliance items for them. With base set (node-wide policy whose layout
+// wins), the policy's explicit Global theme is captured there instead of
+// being written.
+func mergeSourceIntoScope(sc *kconfigScope, src KConfigPolicySource, installedKCMs []string, base *layoutBase) []*pb.ComplianceItemResult {
 	items := []*pb.ComplianceItemResult{}
 	for _, e := range KConfigPolicyToEntries(src.Policy) {
 		if err := validateINIEntry(e); err != nil {
 			items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, err.Error()))
+			continue
+		}
+
+		if base != nil && isGlobalThemeEntry(e) && strings.TrimSpace(e.Value) != "" {
+			base.theme = strings.TrimSpace(e.Value)
+			base.enforced = e.Enforced
+			items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
+				"Base of the generated look-and-feel package: its defaults are copied, the wallpaper comes from the desktop layout"))
 			continue
 		}
 
@@ -1078,12 +1123,16 @@ func LegacyKde6rcPath() string { return legacyKde6rcPath }
 // plasma-workspace/env/*.sh is Plasma's own startup hook: startplasma
 // sources every such script found through the XDG config directories
 // before the session starts and imports the result into the systemd user
-// session, so it works regardless of the display manager. profile.d covers
-// login shells and display managers whose session wrappers source
-// /etc/profile (SDDM does, for X11 and Wayland).
+// session, so it works regardless of the display manager. Scripts in one
+// directory run in name order; "zz-" puts ours after the distribution's,
+// some of which (Fedora's env.sh) only add their defaults directories when
+// the variable is still empty. profile.d covers login shells, text
+// sessions and other desktops; in a Plasma session it only extends
+// variables that are already set, for the same reason.
 var (
-	profileScriptPath   = "/etc/profile.d/99-bor.sh"
-	plasmaEnvScriptPath = "/etc/xdg/plasma-workspace/env/00-bor.sh"
+	profileScriptPath         = "/etc/profile.d/99-bor.sh"
+	plasmaEnvScriptPath       = "/etc/xdg/plasma-workspace/env/zz-bor.sh"
+	legacyPlasmaEnvScriptPath = "/etc/xdg/plasma-workspace/env/00-bor.sh"
 )
 
 // EnvScriptPaths returns the login hook scripts the agent maintains.
@@ -1091,19 +1140,48 @@ func EnvScriptPaths() []string {
 	return []string{profileScriptPath, plasmaEnvScriptPath}
 }
 
-// envScriptContent returns the POSIX shell snippet that prepends configPath
-// to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS exactly once, however
-// many hooks run it. groups are the per-group overlay directories, highest
-// priority first; each is added before the node-wide directory for members
-// of the group (matched on numeric GIDs from `id -G`, so group names never
-// reach the shell).
+// envScriptContent returns the Plasma hook: the POSIX shell snippet that
+// prepends configPath to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS
+// exactly once, however many hooks run it. groups are the per-group
+// overlay directories, highest priority first; each is added before the
+// node-wide directory for members of the group (matched on numeric GIDs
+// from `id -G`, so group names never reach the shell).
 func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
+	return envScriptBody(configPath, dataPath, groups, false)
+}
+
+// profileScriptContent returns the profile.d hook: the same snippet, but
+// inside a Plasma session a variable is only extended when it is already
+// set, so that Plasma's own environment scripts that act on an empty
+// variable still add the distribution's defaults; the Plasma hook adds
+// the Bor directories after them.
+func profileScriptContent(configPath, dataPath string, groups []GroupDir) string {
+	return envScriptBody(configPath, dataPath, groups, true)
+}
+
+func envScriptBody(configPath, dataPath string, groups []GroupDir, plasmaGuard bool) string {
 	var b strings.Builder
 	b.WriteString(`# Managed by Bor. Do not edit manually.
 # Puts the Bor policy directories first in XDG_CONFIG_DIRS and XDG_DATA_DIRS
 # so that KDE and other XDG-aware applications read the managed
 # configuration files, look-and-feel packages and Plasma scripts.
 `)
+	cfgOpen, cfgClose, dataOpen, dataClose, guardCleanup := "", "", "", "", ""
+	if plasmaGuard {
+		b.WriteString(`# In a Plasma session this script runs before Plasma's own environment
+# scripts, some of which only add the distribution defaults when a variable
+# is still empty. An empty variable is therefore left alone here; the Plasma
+# hook (zz-bor.sh) adds the Bor directories after those scripts. Text
+# logins and other desktops get them here.
+bor_cfg=1; bor_data=1
+case ":${XDG_CURRENT_DESKTOP}:${XDG_SESSION_DESKTOP}:" in
+  *KDE*|*plasma*) [ -n "${XDG_CONFIG_DIRS}" ] || bor_cfg=0; [ -n "${XDG_DATA_DIRS}" ] || bor_data=0 ;;
+esac
+`)
+		cfgOpen, cfgClose = "if [ \"$bor_cfg\" = 1 ]; then\n", "fi\n"
+		dataOpen, dataClose = "if [ \"$bor_data\" = 1 ]; then\n", "fi\n"
+		guardCleanup = "unset bor_cfg bor_data\n"
+	}
 	// Nodes without group-scoped policies get the plain snippet; the group
 	// logic (and its helper variables) only appears when needed.
 	configPrefix, configCleanup, dataPrefix, dataCleanup := "", "", "", ""
@@ -1123,28 +1201,32 @@ func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
 	// the look-and-feel package); its "late" subdirectory goes last, so the
 	// Plasma update scripts in it are found without shadowing the shell
 	// package (see kconfig_layout.go).
-	fmt.Fprintf(&b, `case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
+	fmt.Fprintf(&b, `%[8]scase ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":%[1]s:"*) ;;
   *) export XDG_CONFIG_DIRS="%[3]s%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
-%[4]scase ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
+%[9]s%[4]s%[10]scase ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":%[2]s:"*) ;;
   *) export XDG_DATA_DIRS="%[5]s%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:%[2]s/%[7]s" ;;
 esac
-%[6]s`, configPath, dataPath, configPrefix, configCleanup, dataPrefix, dataCleanup, LateDataDir)
+%[11]s%[6]s%[12]s`, configPath, dataPath, configPrefix, configCleanup, dataPrefix, dataCleanup, LateDataDir,
+		cfgOpen, cfgClose, dataOpen, dataClose, guardCleanup)
 	return b.String()
 }
 
 // EnsureEnvScripts creates or updates the login hook scripts so that
 // configPath (and the group directories for members) is prepended to
 // XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS for every Plasma session
-// and login shell.
+// and login shell. The Plasma hook name of earlier releases is removed.
 func EnsureEnvScripts(configPath, dataPath string, groups []GroupDir) error {
-	desired := []byte(envScriptContent(configPath, dataPath, groups))
-	for _, path := range EnvScriptPaths() {
-		if err := ensureScript(path, desired); err != nil {
-			return err
-		}
+	if err := ensureScript(profileScriptPath, []byte(profileScriptContent(configPath, dataPath, groups))); err != nil {
+		return err
+	}
+	if err := ensureScript(plasmaEnvScriptPath, []byte(envScriptContent(configPath, dataPath, groups))); err != nil {
+		return err
+	}
+	if err := os.Remove(legacyPlasmaEnvScriptPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove %s: %w", legacyPlasmaEnvScriptPath, err)
 	}
 	return nil
 }

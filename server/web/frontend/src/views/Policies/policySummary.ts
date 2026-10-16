@@ -20,6 +20,7 @@ import {
   hasLayoutContent,
   isExtraWrite,
   konsoleProfileFileName,
+  layoutBaseTheme,
   parseKConfigContent,
 } from "./editors/kconfigModel";
 import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
@@ -229,6 +230,8 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       if (l.layoutScript.trim()) {
         rows.push({ setting: "Desktop Layout › Panel layout script", value: `${l.layoutScript.trim().split("\n").length} line(s)`, locked: l.lockPackage ? "Yes" : "No" });
       }
+      const base = layoutBaseTheme(kc);
+      rows.push({ setting: "Desktop Layout › Base theme", value: base ? `${base.value} (defaults copied, wallpaper replaced)` : "Breeze fallback", locked: base ? (base.immutable ? "Yes" : "No") : null });
       const how: string[] = ["new users"];
       if (l.applyOnce) how.push("existing users once");
       if (l.applyLive) how.push("logged-in sessions now");

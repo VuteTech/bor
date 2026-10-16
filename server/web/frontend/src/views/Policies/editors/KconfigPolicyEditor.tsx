@@ -55,6 +55,7 @@ import {
   hasLayoutContent,
   isDesktopFileId,
   konsoleProfileFileName,
+  layoutBaseTheme,
   catalogueEntryForSetting,
   customSettings,
   findEntrySetting,
@@ -554,7 +555,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
                   </>
                 )}
                 {hasLayoutContent(content.layout) && (
-                  <> This policy also generates a look under Desktop Layout. An explicit theme here wins over it; to enforce the generated look instead, remove this setting and switch on &quot;Enforce as the global theme&quot; there.</>
+                  <> This policy also generates a look under Desktop Layout: the theme chosen here becomes its base. Its colours, icons, decorations and splash are copied into the generated look; the wallpaper and, if set, the panel layout come from Desktop Layout. &quot;Enforced&quot; here locks the generated look as the global theme.</>
                 )}
               </FieldHelp>
             </FormGroup>
@@ -916,13 +917,21 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     const layout = content.layout;
     const update = (partial: Partial<typeof layout>) => write({ ...content, layout: { ...layout, ...partial } });
     const configured = hasLayoutContent(layout);
+    const base = layoutBaseTheme(content);
     const imageOk = layout.wallpaperImage.trim() === "" || layout.wallpaperImage.trim().startsWith("/") || layout.wallpaperImage.trim().startsWith("file:///");
 
     return (
       <div style={{ padding: "0.5rem 0" }}>
         <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Wallpaper and panel layout</Title>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
-          The agent generates a look-and-feel package named &quot;{policyName?.trim() || "this policy"} (managed)&quot; under the data directory and selects it as the global theme (<code>kdeglobals · [KDE] · LookAndFeelPackage</code>). Users who log in for the first time get the wallpaper and, if set, the panel layout. The rest of the theme (colours, icons, fonts) comes from the Appearance settings and falls back to Breeze. Do not combine this with an explicit Appearance &gt; Global theme in the same policy: the explicit theme would win.
+          The agent generates a look-and-feel package named &quot;{policyName?.trim() || "this policy"} (managed)&quot; under the data directory and selects it as the global theme (<code>kdeglobals · [KDE] · LookAndFeelPackage</code>). Users who log in for the first time get the wallpaper and, if set, the panel layout.
+        </p>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+          {base ? (
+            <>Base theme: <strong>{base.value}</strong> (Appearance &gt; Global theme in this policy). Its colours, icons, decorations, splash and panel layout are copied into the generated look on each node; only the wallpaper{layout.layoutScript.trim() ? " and the panel layout script" : ""} come from here.{base.immutable ? " Because that setting is enforced, the generated look is locked as the global theme." : ""}</>
+          ) : (
+            <>Base: KDE&apos;s Breeze fallback for everything the package does not set. To build on another theme (Breeze Dark, a vendor or distribution theme), add Appearance &gt; Global theme to this policy; it then becomes the base of the generated look instead of competing with it.</>
+          )}
         </p>
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>Windows Group Policy equivalent: Desktop Wallpaper; Start Layout.</p>
         <Form>

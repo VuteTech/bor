@@ -1497,7 +1497,22 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 	// (Konsole profile, hidden desktop entries) node-wide and per group.
 	dataFiles := make(map[string][]byte)
 	if merged.Layout != nil {
-		for rel, data := range policy.RenderLayoutFiles(merged.Layout, merged.LayoutPolicyID, merged.LayoutPolicyName) {
+		// A base theme set in the layout policy must exist on this node;
+		// otherwise the package falls back to Breeze and the policy says so.
+		var base *policy.LookAndFeelBase
+		if merged.LayoutBaseTheme != "" {
+			if b, ok := policy.LoadLookAndFeelBase(merged.LayoutBaseTheme); ok {
+				base = b
+			} else {
+				merged.Items[merged.LayoutPolicyID] = append(merged.Items[merged.LayoutPolicyID], &pb.ComplianceItemResult{
+					SchemaId: "layout",
+					Key:      "base theme",
+					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
+					Message:  fmt.Sprintf("Base theme %q is not installed on this node; the generated look uses KDE's Breeze defaults", merged.LayoutBaseTheme),
+				})
+			}
+		}
+		for rel, data := range policy.RenderLayoutFilesWithBase(merged.Layout, merged.LayoutPolicyID, merged.LayoutPolicyName, merged.LayoutBaseTheme, base) {
 			dataFiles[rel] = data
 		}
 	}

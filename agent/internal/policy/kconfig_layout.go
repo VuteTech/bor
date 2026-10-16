@@ -58,6 +58,25 @@ func LayoutHasContent(l *pb.KConfigLayout) bool {
 // LayoutPackageID returns the look-and-feel package id generated for a
 // policy: org.bor.<policy id letters and digits, up to 12>.desktop.
 func LayoutPackageID(policyID string) string {
+	return layoutPackagePrefix + layoutPackageStem(policyID) + layoutPackageSuffix
+}
+
+// LayoutPackageIDFor is LayoutPackageID for a package built on a base
+// theme: org.bor.<policy stem>-<6 hex of the base id>.desktop. Plasma only
+// re-applies a package's defaults to existing users when the selected
+// package id changes, so switching the base theme must change the id.
+func LayoutPackageIDFor(policyID, baseTheme string) string {
+	baseTheme = strings.TrimSpace(baseTheme)
+	if baseTheme == "" {
+		return LayoutPackageID(policyID)
+	}
+	sum := sha256.Sum256([]byte(baseTheme))
+	return layoutPackagePrefix + layoutPackageStem(policyID) + "-" + hex.EncodeToString(sum[:3]) + layoutPackageSuffix
+}
+
+// layoutPackageStem is the policy id reduced to up to 12 lowercase letters
+// and digits, or "policy".
+func layoutPackageStem(policyID string) string {
 	var b strings.Builder
 	for _, r := range policyID {
 		if r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
@@ -67,11 +86,10 @@ func LayoutPackageID(policyID string) string {
 			}
 		}
 	}
-	id := b.String()
-	if id == "" {
-		id = "policy"
+	if b.Len() == 0 {
+		return "policy"
 	}
-	return layoutPackagePrefix + id + layoutPackageSuffix
+	return b.String()
 }
 
 // WallpaperURL normalises an image reference to the file:// form KDE's
@@ -127,14 +145,61 @@ type lnfAuthor struct {
 	Name string `json:"Name"`
 }
 
-// RenderLayoutFiles renders the data-directory files for a layout, keyed by
-// path relative to the data directory. Nil when the layout has no content.
+// LookAndFeelBase is the content of an installed global theme that a
+// generated package builds on: its defaults (colours, icons, decorations,
+// splash, ...), its panel layout script and its preview image.
+type LookAndFeelBase struct {
+	ID           string
+	Defaults     []byte
+	LayoutScript []byte
+	Preview      []byte
+}
+
+// LoadLookAndFeelBase reads an installed global theme from the theme
+// directories. ok is false when no directory for id exists.
+func LoadLookAndFeelBase(id string) (base *LookAndFeelBase, ok bool) {
+	return loadLookAndFeelBaseFrom(lookAndFeelDirs, id)
+}
+
+func loadLookAndFeelBaseFrom(dirs []string, id string) (*LookAndFeelBase, bool) {
+	if id == "" || strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
+		return nil, false
+	}
+	for _, dir := range dirs {
+		root := filepath.Join(dir, id)
+		if st, err := os.Stat(root); err != nil || !st.IsDir() {
+			continue
+		}
+		b := &LookAndFeelBase{ID: id}
+		b.Defaults, _ = os.ReadFile(filepath.Join(root, "contents", "defaults"))                                                    //nolint:gosec // G304: theme directory
+		b.LayoutScript, _ = os.ReadFile(filepath.Join(root, "contents", "layouts", "org.kde.plasma.desktop-layout.js"))             //nolint:gosec // G304: theme directory
+		if data, err := os.ReadFile(filepath.Join(root, "contents", "previews", "preview.png")); err == nil && len(data) <= 4<<20 { //nolint:gosec // G304: theme directory
+			b.Preview = data
+		}
+		return b, true
+	}
+	return nil, false
+}
+
+// RenderLayoutFiles renders the data-directory files for a layout on top of
+// KDE's Breeze fallback, keyed by path relative to the data directory. Nil
+// when the layout has no content.
 func RenderLayoutFiles(layout *pb.KConfigLayout, policyID, policyName string) map[string][]byte {
+	return RenderLayoutFilesWithBase(layout, policyID, policyName, "", nil)
+}
+
+// RenderLayoutFilesWithBase is RenderLayoutFiles on top of an installed
+// global theme: the base theme's defaults are copied with the wallpaper
+// replaced, its panel layout is kept when the policy has none, and its
+// preview image is reused so System Settings shows a thumbnail. baseTheme
+// is the configured base (it takes part in the package id, see
+// LayoutPackageIDFor); base is its content, nil when the node lacks it.
+func RenderLayoutFilesWithBase(layout *pb.KConfigLayout, policyID, policyName, baseTheme string, base *LookAndFeelBase) map[string][]byte {
 	if !LayoutHasContent(layout) {
 		return nil
 	}
-	pkg := LayoutPackageID(policyID)
-	base := lookAndFeelDir + "/" + pkg
+	pkg := LayoutPackageIDFor(policyID, baseTheme)
+	root := lookAndFeelDir + "/" + pkg
 	wallpaper := WallpaperURL(layout.GetWallpaperImage())
 	fill := strings.TrimSpace(layout.GetWallpaperFillMode())
 	if fill == "" {
@@ -142,17 +207,21 @@ func RenderLayoutFiles(layout *pb.KConfigLayout, policyID, policyName string) ma
 	}
 	script := strings.TrimSpace(layout.GetLayoutScript())
 
-	files := make(map[string][]byte, 4)
+	files := make(map[string][]byte, 5)
 
 	name := strings.TrimSpace(policyName)
 	if name == "" {
 		name = "Managed desktop"
 	}
+	description := "Desktop look deployed by Bor policy " + name
+	if base != nil {
+		description += " (based on " + base.ID + ")"
+	}
 	meta, _ := json.MarshalIndent(lnfMetadata{ //nolint:errcheck // plain struct, cannot fail
 		KPackageStructure: "Plasma/LookAndFeel",
 		KPlugin: lnfPlugin{
 			Authors:     []lnfAuthor{{Name: "Bor"}},
-			Description: "Desktop look deployed by Bor policy " + name,
+			Description: description,
 			ID:          pkg,
 			License:     "Proprietary",
 			Name:        name + " (managed)",
@@ -160,17 +229,22 @@ func RenderLayoutFiles(layout *pb.KConfigLayout, policyID, policyName string) ma
 		},
 		APIVersion: "2",
 	}, "", "    ")
-	files[base+"/metadata.json"] = append(meta, '\n')
+	files[root+"/metadata.json"] = append(meta, '\n')
 
-	var defaults strings.Builder
-	defaults.WriteString("# Managed by Bor. Defaults of the deployed look-and-feel package.\n")
-	if wallpaper != "" {
-		fmt.Fprintf(&defaults, "[Wallpaper]\nImage=%s\n", wallpaper)
+	var baseDefaults []byte
+	if base != nil {
+		baseDefaults = base.Defaults
 	}
-	files[base+"/contents/defaults"] = []byte(defaults.String())
+	files[root+"/contents/defaults"] = renderLookAndFeelDefaults(baseDefaults, wallpaper, base)
 
-	if script != "" {
-		files[base+"/"+layoutScriptPath] = []byte("// Managed by Bor. Desktop layout of policy " + name + ".\n" + script + "\n")
+	switch {
+	case script != "":
+		files[root+"/"+layoutScriptPath] = []byte("// Managed by Bor. Desktop layout of policy " + name + ".\n" + script + "\n")
+	case base != nil && len(bytes.TrimSpace(base.LayoutScript)) > 0:
+		files[root+"/"+layoutScriptPath] = append([]byte("// Managed by Bor. Panel layout inherited from "+base.ID+".\n"), base.LayoutScript...)
+	}
+	if base != nil && len(base.Preview) > 0 {
+		files[root+"/contents/previews/preview.png"] = base.Preview
 	}
 
 	if layout.GetApplyOnce() {
@@ -179,6 +253,41 @@ func RenderLayoutFiles(layout *pb.KConfigLayout, policyID, policyName string) ma
 		files[shellUpdatesDir+"/bor-"+hex.EncodeToString(sum[:6])+".js"] = update
 	}
 	return files
+}
+
+// renderLookAndFeelDefaults builds the package's defaults file: the base
+// theme's defaults with its [Wallpaper] group replaced by ours (when a
+// wallpaper is set), or just our wallpaper on top of KDE's Breeze fallback.
+func renderLookAndFeelDefaults(baseDefaults []byte, wallpaper string, base *LookAndFeelBase) []byte {
+	var out strings.Builder
+	out.WriteString("# Managed by Bor. Defaults of the deployed look-and-feel package.\n")
+	if base != nil {
+		fmt.Fprintf(&out, "# Copied from %s on this node; the wallpaper comes from the policy.\n", base.ID)
+	}
+	if len(bytes.TrimSpace(baseDefaults)) > 0 {
+		skipping := false
+		for _, line := range strings.Split(strings.ReplaceAll(string(baseDefaults), "\r\n", "\n"), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "[") {
+				skipping = wallpaper != "" && trimmed == "[Wallpaper]"
+			}
+			if skipping {
+				continue
+			}
+			out.WriteString(line)
+			out.WriteByte('\n')
+		}
+	}
+	if wallpaper != "" {
+		text := strings.TrimRight(out.String(), "\n") + "\n"
+		if len(bytes.TrimSpace(baseDefaults)) > 0 {
+			text += "\n"
+		}
+		out.Reset()
+		out.WriteString(text)
+		fmt.Fprintf(&out, "[Wallpaper]\nImage=%s\n", wallpaper)
+	}
+	return []byte(out.String())
 }
 
 // renderLayoutUpdateScript builds the Plasma script that applies the

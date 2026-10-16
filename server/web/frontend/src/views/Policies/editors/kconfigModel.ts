@@ -73,6 +73,15 @@ export function hasLayoutContent(l: KConfigLayoutJson | undefined | null): boole
   return !!l && (l.wallpaperImage.trim() !== "" || l.layoutScript.trim() !== "");
 }
 
+/**
+ * The policy's explicit Global theme (kdeglobals [KDE] LookAndFeelPackage).
+ * When the policy also has a Desktop Layout, the agent uses it as the base
+ * of the generated look instead of writing it.
+ */
+export function layoutBaseTheme(c: Pick<KConfigContent, "settings">): KConfigSettingJson | undefined {
+  return c.settings.find((s) => s.file === "kdeglobals" && s.groupPath.length === 1 && s.groupPath[0] === "KDE" && s.key === "LookAndFeelPackage" && !s.delete && (s.value ?? "").trim() !== "");
+}
+
 /** KDE image wallpaper FillMode values and their labels. */
 export const FILL_MODE_LABELS: Record<string, string> = {
   "0": "Stretch",
@@ -749,7 +758,12 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
     groups.set(group, arr);
   };
 
+  // With a Desktop Layout, the explicit Global theme becomes the base of
+  // the generated package and the package itself is selected.
+  const withLayout = hasLayoutContent(c.layout);
+  const base = withLayout ? layoutBaseTheme(c) : undefined;
   for (const s of c.settings) {
+    if (base && s === base) continue;
     add(s.file, s.groupPath.join("]["), {
       key: s.key,
       value: s.value ?? "",
@@ -758,6 +772,9 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
       del: s.delete === true,
       locale: s.locale ?? "",
     });
+  }
+  if (withLayout) {
+    add("kdeglobals", "KDE", { key: "LookAndFeelPackage", value: "org.bor.<policy>.desktop", immutable: c.layout.lockPackage || base?.immutable === true, expand: false, del: false, locale: "" });
   }
   c.urlRestrictions.forEach((r, i) => {
     const value = [r.action, r.referrerProtocol, r.referrerHost, r.referrerPath, r.protocol, r.host, r.path, r.enabled ? "true" : "false"].join(",");
@@ -805,12 +822,19 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
 
   // Generated look-and-feel package (data directory). The package name
   // comes from the policy id, which the editor does not know.
-  if (hasLayoutContent(c.layout)) {
+  if (withLayout) {
     const pkg = "plasma/look-and-feel/org.bor.<policy>.desktop";
     const image = c.layout.wallpaperImage.trim().startsWith("/") ? `file://${c.layout.wallpaperImage.trim()}` : c.layout.wallpaperImage.trim();
     const defaults = ["# Managed by Bor. Defaults of the deployed look-and-feel package."];
+    if (base) defaults.push(`# Copied from ${base.value} on this node; the wallpaper comes from the policy.`, `# ... ${base.value}'s colours, icons, decorations and splash ...`);
     if (image) defaults.push("[Wallpaper]", `Image=${image}`);
-    out.push({ file: `${pkg}/contents/defaults`, content: defaults.join("\n") + "\n", note: "Data directory (/etc/bor/share by default); metadata.json is generated next to it." });
+    out.push({
+      file: `${pkg}/contents/defaults`,
+      content: defaults.join("\n") + "\n",
+      note: base
+        ? `Data directory (/etc/bor/share by default). The agent copies the defaults, panel layout and preview of ${base.value} from the node and replaces the wallpaper; metadata.json is generated next to it.`
+        : "Data directory (/etc/bor/share by default); metadata.json is generated next to it. Everything the package does not set falls back to Breeze.",
+    });
     if (c.layout.layoutScript.trim()) {
       out.push({ file: `${pkg}/contents/layouts/org.kde.plasma.desktop-layout.js`, content: c.layout.layoutScript.trim() + "\n" });
     }

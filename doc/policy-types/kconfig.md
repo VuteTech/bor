@@ -79,11 +79,12 @@ them.
 | `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/late/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the apply-once update script of the Desktop Layout feature. The whole directory belongs to Bor; files no longer needed are removed. The `late/` subdirectory is a data directory of its own, appended last to `XDG_DATA_DIRS`: Plasma collects update scripts from every data directory, but a `plasma/shells/` directory in front of `/usr/share` would shadow Plasma's own shell package | `kconfig.data_path` (default `/etc/bor/share`) |
 | `/etc/bor/share/konsole/<Name>.profile`, `/etc/bor/share/applications/<id>.desktop` | Konsole profile and the desktop entries of hidden applications (copies of the installed entries with `NoDisplay=true`). Group-scoped policies write theirs under `/etc/bor/share/groups/<group>/` | `kconfig.data_path` |
 | Flatpak system override (`flatpak override --system --show`) | Exposes `/etc/bor/xdg` to sandboxed applications and prepends it to their `XDG_CONFIG_DIRS` while KDE Plasma policies apply | `kconfig.flatpak_override` (default `true`) |
-| `/etc/xdg/plasma-workspace/env/00-bor.sh` | Puts the Bor directories first in `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` for every Plasma session (sourced by `startplasma`, independent of the display manager) | Follows `kconfig.config_path` and `kconfig.data_path` |
-| `/etc/profile.d/99-bor.sh` | Same, for login shells and display managers whose session scripts source `/etc/profile` | Follows `kconfig.config_path` and `kconfig.data_path` |
+| `/etc/xdg/plasma-workspace/env/zz-bor.sh` | Puts the Bor directories first in `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` for every Plasma session (sourced by `startplasma`, independent of the display manager). Named so that it runs after the distribution's own environment scripts and keeps their defaults; the `00-bor.sh` of earlier releases is removed | Follows `kconfig.config_path` and `kconfig.data_path` |
+| `/etc/profile.d/99-bor.sh` | Same, for login shells, text sessions and other desktops. Inside a Plasma session it only extends variables that are already set, so distribution scripts that act on an empty variable (Fedora's `env.sh`) still add their defaults before the Plasma hook adds ours | Follows `kconfig.config_path` and `kconfig.data_path` |
 | `/etc/kde5rc` | Optional mirror of the System Settings module restrictions for very old KDE Frameworks releases; Plasma 5 and 6 read them from `kdeglobals` | `kconfig.write_kde5rc` (default `false`) |
 
-Both hook scripts contain the same POSIX shell snippet:
+The Plasma hook contains this POSIX shell snippet (the profile.d hook wraps
+the two `case` blocks in the Plasma-session guard described above):
 
 ```bash
 # Group-scoped policy directories, highest priority first.
@@ -205,7 +206,8 @@ package id shown next to it; **Custom package id** remains available for
 a theme no node has reported yet. The look Bor generates from **Desktop
 Layout** is never chosen here: it is selected and, with **Enforce as the
 global theme**, locked by the layout itself, so you never need its package
-id.
+id. When the same policy has a Desktop Layout, the theme chosen here is
+the *base* of the generated look (see *Desktop layout and wallpaper*).
 
 Node-reported settings carry the label from the schema, which is often
 terse, and no Windows equivalent. Their defaults are the KDE defaults for
@@ -249,16 +251,34 @@ Three switches control everyone else:
 
 The package appears in System Settings > Global Theme under the policy's
 name with the suffix "(managed)"; its package id is derived from the
-policy and never has to be typed anywhere. Colours, icons, fonts and the
-cursor theme are not part of the generated package; set them under
-**Appearance**. When several policies with a layout reach a node, the one
+policy and never has to be typed anywhere.
+
+**Base theme.** On its own, the generated package carries only the
+wallpaper and the panel layout; KDE fills in everything else from Breeze.
+To build on another theme, add **Appearance > Global theme** to the *same*
+policy: that theme becomes the base of the generated look. On each node
+the agent copies the base theme's `defaults` (colour scheme, icons, widget
+style, cursor, window decoration, Plasma style, splash), replaces the
+wallpaper with yours, keeps the base theme's panel layout unless the
+policy has its own script, and reuses its preview image, so System Settings
+shows "Breeze Dark plus the corporate wallpaper" as one theme. The theme
+setting is then reported as "Base of the generated look-and-feel package"
+rather than written to `kdeglobals`, and marking it **Enforced** locks the
+generated look as the global theme (the same as **Enforce as the global
+theme**). The package id carries a short hash of the base theme, so
+switching the base later changes the id and Plasma re-applies the defaults
+to existing users at their next login (it only does that when the selected
+package changes). A base theme that is not installed on a node is reported
+as an error for that node and the package falls back to Breeze there. KDE
+does not inherit a theme's lock-screen, splash or logout QML this way;
+those come from Breeze unless the package ships them.
+
+Colours, icons and fonts set individually under **Appearance** still
+apply on top. When several policies with a layout reach a node, the one
 with the highest binding priority provides the package and the others
 report it as inapplicable. An explicit **Appearance > Global theme** in a
-higher-priority policy, or in the same policy, keeps its own theme
-selection; the package is still generated but reported as not selected.
-Use one or the other per policy: the generated look for "this wallpaper
-and panel layout on top of Breeze", an explicit theme when a complete
-corporate or distribution theme exists.
+*different*, higher-priority policy keeps its own selection; the package is
+still generated but reported as not selected.
 
 The **Branding defaults** preset sets up the theme defaults around the
 wallpaper; add the wallpaper image under Desktop Layout afterwards.
@@ -546,7 +566,7 @@ without a graphical session.
 # Files written by the agent and their backups
 ls -la /etc/bor/xdg/
 sudo cat /etc/bor/xdg/kdeglobals
-cat /etc/xdg/plasma-workspace/env/00-bor.sh
+cat /etc/xdg/plasma-workspace/env/zz-bor.sh
 
 # The search path a Plasma session gets (run inside the session)
 echo $XDG_CONFIG_DIRS

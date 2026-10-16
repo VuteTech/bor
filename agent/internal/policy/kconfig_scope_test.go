@@ -159,6 +159,25 @@ func TestEnvScriptContent_Groups(t *testing.T) {
 		t.Error("group names must not be embedded in the hook")
 	}
 
+	// The profile.d variant wraps both exports in the Plasma-session guard
+	// and keeps the group logic; the Plasma hook has no guard.
+	profile := profileScriptContent("/etc/bor/xdg", "/etc/bor/share", []GroupDir{{GID: 1002, Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers"}})
+	for _, want := range []string{
+		"bor_cfg=1; bor_data=1\n",
+		`case ":${XDG_CURRENT_DESKTOP}:${XDG_SESSION_DESKTOP}:" in`,
+		"if [ \"$bor_cfg\" = 1 ]; then\ncase \":${XDG_CONFIG_DIRS:-/etc/xdg}:\" in",
+		"if [ \"$bor_data\" = 1 ]; then\ncase \":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:\" in",
+		"unset bor_cfg bor_data\n",
+		`*" 1002 "*`,
+	} {
+		if !strings.Contains(profile, want) {
+			t.Errorf("profile hook lacks %q:\n%s", want, profile)
+		}
+	}
+	if strings.Contains(got, "bor_cfg") {
+		t.Error("the Plasma hook must not carry the session guard")
+	}
+
 	// Without groups the hook is the plain version: no id call, no helper
 	// variables, so nodes without scoped policies see no change at all.
 	plain := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)

@@ -942,22 +942,37 @@ func TestEnvScriptContent(t *testing.T) {
 
 func TestEnsureEnvScripts(t *testing.T) {
 	dir := t.TempDir()
-	origProfile, origPlasma := profileScriptPath, plasmaEnvScriptPath
+	origProfile, origPlasma, origLegacy := profileScriptPath, plasmaEnvScriptPath, legacyPlasmaEnvScriptPath
 	profileScriptPath = filepath.Join(dir, "profile.d", "99-bor.sh")
-	plasmaEnvScriptPath = filepath.Join(dir, "xdg", "plasma-workspace", "env", "00-bor.sh")
-	t.Cleanup(func() { profileScriptPath, plasmaEnvScriptPath = origProfile, origPlasma })
+	plasmaEnvScriptPath = filepath.Join(dir, "xdg", "plasma-workspace", "env", "zz-bor.sh")
+	legacyPlasmaEnvScriptPath = filepath.Join(dir, "xdg", "plasma-workspace", "env", "00-bor.sh")
+	t.Cleanup(func() {
+		profileScriptPath, plasmaEnvScriptPath, legacyPlasmaEnvScriptPath = origProfile, origPlasma, origLegacy
+	})
+
+	// The hook name of earlier releases goes away on the first sync.
+	if err := os.MkdirAll(filepath.Dir(legacyPlasmaEnvScriptPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, legacyPlasmaEnvScriptPath, []byte("# old hook\n"))
 
 	if err := EnsureEnvScripts("/etc/bor/xdg", "/etc/bor/share", nil); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(legacyPlasmaEnvScriptPath); !os.IsNotExist(err) {
+		t.Errorf("legacy hook should be removed, stat err = %v", err)
+	}
 
-	want := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
+	want := map[string]string{
+		profileScriptPath:   profileScriptContent("/etc/bor/xdg", "/etc/bor/share", nil),
+		plasmaEnvScriptPath: envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil),
+	}
 	for _, path := range EnvScriptPaths() {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("%s should exist: %v", path, err)
 		}
-		if string(data) != want {
+		if string(data) != want[path] {
 			t.Errorf("%s content mismatch:\n%s", path, data)
 		}
 		fi, _ := os.Stat(path)
