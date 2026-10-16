@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-3.0-or-later AND CC0-1.0
+// SPDX-License-Identifier: AGPL-3.0-only AND CC0-1.0
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 //
@@ -7,7 +7,7 @@
 //   Licence: CC0 1.0 Universal — see LICENSE.CC0-1.0.md in this directory
 //   Trademark: the Flatpak mark belongs to the Flatpak project. It is used here only to
 //   identify the technology a policy applies to (nominative use); see README.md.
-// The createIcon wrapper below is Bor code (LGPL-3.0-or-later).
+// The createIcon wrapper below is Bor code (AGPL-3.0-only).
 
 import { createIcon } from "@patternfly/react-icons/dist/esm/createIcon";
 

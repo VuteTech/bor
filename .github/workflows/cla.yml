@@ -1,0 +1,48 @@
+name: CLA
+
+# Checks that every pull request author has signed the Contributor License
+# Agreement (CLA.md). Authors sign by commenting the agreement sentence on
+# the pull request; signatures are stored in signatures/cla.json on the
+# unprotected cla-signatures branch.
+#
+# pull_request_target runs with a write token for pull requests from forks,
+# so this workflow must never check out or run code from the pull request.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  cla:
+    name: CLA signature
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+        (github.event.comment.body == 'recheck' ||
+         github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    steps:
+      - name: Check CLA signatures
+        # contributor-assistant/github-action v2.6.1
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: 'https://github.com/VuteTech/Bor/blob/master/CLA.md'
+          path-to-signatures: 'signatures/cla.json'
+          branch: 'cla-signatures'
+          # Bots and Vute Tech staff, whose work is covered by their
+          # employment agreements.
+          allowlist: 'dependabot[bot],github-actions[bot],eniac111'

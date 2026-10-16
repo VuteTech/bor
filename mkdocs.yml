@@ -4,7 +4,7 @@ site_description: User and administrator documentation for Bor, the Linux deskto
 repo_url: https://github.com/VuteTech/Bor
 repo_name: VuteTech/Bor
 edit_uri: edit/master/doc/
-copyright: Copyright &copy; 2026 Vute Tech LTD and Bor contributors - LGPL-3.0-or-later
+copyright: Copyright &copy; 2026 Vute Tech LTD and Bor contributors - AGPL-3.0-only
 
 docs_dir: doc
 exclude_docs: |

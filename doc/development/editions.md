@@ -7,6 +7,17 @@ which optional features are on (`server/pkg/edition`) and which extra
 modules run inside the server (`server/pkg/ext`). This page describes those
 extension points as they exist in this repository.
 
+!!! note "Licensing of distributions"
+    The server is licensed under AGPL-3.0-only. Extension modules and
+    editions are compiled into the same binary as the server, so a
+    distribution built on these packages is a combined work covered by the
+    AGPL: its source code, including the modules, must be available under
+    AGPL-compatible terms to everyone who receives the binary or uses the
+    server over a network. Bor Enterprise is built on the same extension
+    points and is distributed by Vute Tech LTD under a commercial license.
+    For a commercial license for your own distribution, contact
+    <bor@vute.tech>.
+
 ```mermaid
 --8<-- "diagrams/dev-extension-host.mmd"
 ```

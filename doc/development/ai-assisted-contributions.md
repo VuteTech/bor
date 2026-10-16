@@ -63,11 +63,13 @@ matter how it was produced. Before you submit, you must:
   apply in full. Generated code often reaches for weak defaults (SHA-1,
   disabled certificate verification, string-built SQL, logging of secrets);
   none of these are accepted.
-- **Check the license.** Everything in Bor is licensed under
-  LGPL-3.0-or-later. You must have the right to contribute the content under
-  that license. Do not submit output that reproduces code from projects with
-  incompatible licenses, and never give a tool proprietary or confidential
-  code from elsewhere to work from.
+- **Check the license.** Bor is licensed under AGPL-3.0-only, and every
+  contribution is made under the
+  [Contributor License Agreement](contributing.md#contributor-license-agreement).
+  You must have the right to contribute the content under those terms. Do
+  not submit output that reproduces code from projects with incompatible
+  licenses, and never give a tool proprietary or confidential code from
+  elsewhere to work from.
 
 An AI tool cannot take responsibility for a contribution, so it is never
 listed as an author or co-author. Do not add `Co-authored-by:` (or similar)

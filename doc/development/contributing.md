@@ -20,6 +20,10 @@ and compliance rules every change has to follow.
 Security problems are reported privately; see
 [Reporting security vulnerabilities](#reporting-security-vulnerabilities).
 
+Every code or documentation contribution requires a signed
+[Contributor License Agreement](#contributor-license-agreement). Signing
+takes one comment on your first pull request.
+
 Contributions made with the help of AI coding assistants are welcome under
 the rules in [AI-assisted contributions](ai-assisted-contributions.md): you
 must understand and test everything you submit, and disclose tool use in
@@ -76,9 +80,12 @@ git format-patch -1 HEAD                          # single commit
 git format-patch --cover-letter upstream/master   # series
 ```
 
-Use the same commit message conventions, and add a sign-off line
-(`git commit --signoff`) to confirm that you have the right to submit the
-change under the project license.
+Use the same commit message conventions. Before your first patch can be
+applied, sign the [Contributor License Agreement](#contributor-license-agreement):
+include the sentence `I have read the CLA Document and I hereby sign the CLA`
+together with your full name and GitHub user name, if you have one, in the
+cover letter or in the email of a single patch. A maintainer records the
+signature.
 
 ## Commit messages
 
@@ -221,17 +228,56 @@ The project acknowledges reports within 48 hours and aims to ship a fix
 within 90 days of the initial report, coordinating disclosure with the
 reporter.
 
+## Contributor License Agreement
+
+Bor is developed by Vute Tech LTD and is available under two licenses: the
+community edition under the GNU Affero General Public License, version 3,
+and Bor Enterprise under a commercial license. To be able to include
+contributions in both, Vute Tech asks every contributor to sign the
+[Contributor License Agreement](https://github.com/VuteTech/Bor/blob/master/CLA.md)
+(CLA) once.
+
+The CLA is a license grant, not a copyright assignment:
+
+- You keep the copyright in your contribution.
+- You grant Vute Tech LTD a license to use, modify and distribute your
+  contribution, including the right to release it under other license
+  terms, such as the commercial license of Bor Enterprise.
+- You grant a patent license for your contribution.
+- Vute Tech commits to keep every contribution it includes in Bor
+  available under an open source license as well.
+- You confirm that you have the right to make the contribution, including
+  your employer's permission where your employer has rights in your work.
+
+**How to sign.** When you open your first pull request, a bot posts a
+comment with a link to the CLA. Read it, then reply to the pull request
+with this exact comment:
+
+```text
+I have read the CLA Document and I hereby sign the CLA
+```
+
+The signature is recorded once and covers all your future contributions.
+The CLA check on the pull request turns green, and the pull request can be
+merged after review. If the check does not update, comment `recheck`.
+
+If you contribute on behalf of your employer, make sure that you are
+authorized to do so before you sign. For a corporate agreement covering
+several employees, contact <bor@vute.tech>.
+
 ## License
 
-Bor is licensed under the GNU Lesser General Public License v3.0 or later
-(`LGPL-3.0-or-later`, see `LICENSE.md`). By contributing, you agree that your
-contribution is licensed under the same terms.
+Bor is licensed under the GNU Affero General Public License, version 3
+(`AGPL-3.0-only`, see `LICENSE`). Contributions are made under the
+[Contributor License Agreement](#contributor-license-agreement). Bor
+Enterprise is distributed by Vute Tech LTD under a separate proprietary
+license.
 
 Go, TypeScript and JavaScript source files start with an SPDX license
 header:
 
 ```go
-// SPDX-License-Identifier: LGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Vute Tech LTD
 // Copyright (C) 2026 Bor contributors
 ```

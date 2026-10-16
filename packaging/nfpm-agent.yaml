@@ -8,7 +8,7 @@ description: |
   Connects to the Bor server and enforces desktop policies
   on Linux endpoints (Firefox, Chrome/Chromium, KDE Kiosk).
 homepage: "https://getbor.dev"
-license: "LGPL-3.0-or-later"
+license: "AGPL-3.0-only"
 
 contents:
   # Binary
@@ -16,6 +16,12 @@ contents:
     dst: /usr/bin/bor-agent
     file_info:
       mode: 0755
+
+  # License text (AGPL-3.0-only requires a copy with every binary)
+  - src: LICENSE
+    dst: /usr/share/licenses/bor-agent/LICENSE
+    file_info:
+      mode: 0644
 
   # Default config (preserved on upgrade)
   - src: agent/config.yaml.example
