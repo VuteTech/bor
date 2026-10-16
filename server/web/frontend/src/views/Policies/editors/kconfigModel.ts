@@ -50,12 +50,54 @@ export interface UrlRestrictionRule {
   enabled: boolean;
 }
 
+/** Desktop look deployed as a look-and-feel package (camelCase of KConfigLayout). */
+export interface KConfigLayoutJson {
+  wallpaperImage: string;
+  wallpaperFillMode: string;
+  layoutScript: string;
+  applyOnce: boolean;
+  applyLive: boolean;
+  lockPackage: boolean;
+}
+
+export const EMPTY_LAYOUT: KConfigLayoutJson = {
+  wallpaperImage: "",
+  wallpaperFillMode: "",
+  layoutScript: "",
+  applyOnce: false,
+  applyLive: false,
+  lockPackage: false,
+};
+
+export function hasLayoutContent(l: KConfigLayoutJson | undefined | null): boolean {
+  return !!l && (l.wallpaperImage.trim() !== "" || l.layoutScript.trim() !== "");
+}
+
+/** KDE image wallpaper FillMode values and their labels. */
+export const FILL_MODE_LABELS: Record<string, string> = {
+  "0": "Stretch",
+  "1": "Scale to fit, keep aspect ratio",
+  "2": "Scale and crop, keep aspect ratio",
+  "3": "Tile",
+  "6": "Centred, no scaling",
+};
+
+/** The layout Breeze ships: Plasma's default panel on every screen. */
+export const DEFAULT_PANEL_SNIPPET = `loadTemplate("org.kde.plasma.desktop.defaultPanel")
+
+var desktopsArray = desktopsForActivity(currentActivity());
+for (var j = 0; j < desktopsArray.length; j++) {
+    desktopsArray[j].wallpaperPlugin = "org.kde.image";
+}
+`;
+
 export interface KConfigContent {
   settings: KConfigSettingJson[];
   kcmRestrictions: string[];
   kcmMode: KcmMode;
   urlRestrictions: UrlRestrictionRule[];
   fileImmutableKdeglobals: boolean;
+  layout: KConfigLayoutJson;
 }
 
 export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
@@ -64,6 +106,7 @@ export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
   kcmMode: "KCM_HIDE_LISTED",
   urlRestrictions: [],
   fileImmutableKdeglobals: false,
+  layout: EMPTY_LAYOUT,
 };
 
 /** Result of loading content: the normalised model plus what the upgrade did. */
@@ -199,12 +242,26 @@ export function parseKConfigContent(raw: string): KConfigLoadResult {
     if (field in parsed && parsed[field] !== null && parsed[field] !== undefined) droppedFields.push(field);
   }
 
+  let layout: KConfigLayoutJson = EMPTY_LAYOUT;
+  if (parsed.layout && typeof parsed.layout === "object") {
+    const l = parsed.layout as Record<string, unknown>;
+    layout = {
+      wallpaperImage: asString(l.wallpaperImage),
+      wallpaperFillMode: asString(l.wallpaperFillMode),
+      layoutScript: asString(l.layoutScript),
+      applyOnce: l.applyOnce === true,
+      applyLive: l.applyLive === true,
+      lockPackage: l.lockPackage === true,
+    };
+  }
+
   const content: KConfigContent = {
     settings: dedupeSettings(settings),
     kcmRestrictions: Array.isArray(parsed.kcmRestrictions) ? (parsed.kcmRestrictions as unknown[]).map(asString).filter(Boolean) : [],
     kcmMode: parsed.kcmMode === "KCM_SHOW_ONLY_LISTED" || parsed.kcmMode === 1 ? "KCM_SHOW_ONLY_LISTED" : "KCM_HIDE_LISTED",
     urlRestrictions: parseUrlRestrictionRules(raw),
     fileImmutableKdeglobals: parsed.fileImmutableKdeglobals === true,
+    layout,
   };
 
   const changed = convertedFields.length > 0 || droppedFields.length > 0 || "enforcedFields" in parsed;
@@ -241,11 +298,21 @@ export function serializeKConfigContent(c: KConfigContent): string {
     }));
   }
   if (c.fileImmutableKdeglobals) out.fileImmutableKdeglobals = true;
+  if (hasLayoutContent(c.layout)) {
+    const l: Record<string, unknown> = {};
+    if (c.layout.wallpaperImage.trim()) l.wallpaperImage = c.layout.wallpaperImage.trim();
+    if (c.layout.wallpaperFillMode) l.wallpaperFillMode = c.layout.wallpaperFillMode;
+    if (c.layout.layoutScript.trim()) l.layoutScript = c.layout.layoutScript;
+    if (c.layout.applyOnce) l.applyOnce = true;
+    if (c.layout.applyLive) l.applyLive = true;
+    if (c.layout.lockPackage) l.lockPackage = true;
+    out.layout = l;
+  }
   return JSON.stringify(out, null, 2);
 }
 
 export function hasAnyKConfigContent(c: KConfigContent): boolean {
-  return c.settings.length > 0 || c.kcmRestrictions.length > 0 || c.urlRestrictions.length > 0 || c.fileImmutableKdeglobals;
+  return c.settings.length > 0 || c.kcmRestrictions.length > 0 || c.urlRestrictions.length > 0 || c.fileImmutableKdeglobals || hasLayoutContent(c.layout);
 }
 
 /* ── Catalogue-backed settings ── */
@@ -527,6 +594,27 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
         ? "Show-only mode: every other module installed on a node is written as hidden there; only the listed modules are shown here."
         : undefined;
     out.push({ file, content: lines.join("\n") + "\n", note });
+  }
+
+  // Generated look-and-feel package (data directory). The package name
+  // comes from the policy id, which the editor does not know.
+  if (hasLayoutContent(c.layout)) {
+    const pkg = "plasma/look-and-feel/org.bor.<policy>.desktop";
+    const image = c.layout.wallpaperImage.trim().startsWith("/") ? `file://${c.layout.wallpaperImage.trim()}` : c.layout.wallpaperImage.trim();
+    const defaults = ["# Managed by Bor. Defaults of the deployed look-and-feel package."];
+    if (image) defaults.push("[Wallpaper]", `Image=${image}`);
+    out.push({ file: `${pkg}/contents/defaults`, content: defaults.join("\n") + "\n", note: "Data directory (/etc/bor/share by default); metadata.json is generated next to it." });
+    if (c.layout.layoutScript.trim()) {
+      out.push({ file: `${pkg}/contents/layouts/org.kde.plasma.desktop-layout.js`, content: c.layout.layoutScript.trim() + "\n" });
+    }
+    if (c.layout.applyOnce) {
+      const lines = ["// Managed by Bor. Applied once per user."];
+      if (image) {
+        lines.push(`var borImage = ${JSON.stringify(image)};`, `var borFillMode = ${c.layout.wallpaperFillMode || "2"};`, "// ... sets the wallpaper on every desktop ...");
+      }
+      if (c.layout.layoutScript.trim()) lines.push("// ... removes the user's panels, then runs the layout script above ...");
+      out.push({ file: "plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js", content: lines.join("\n") + "\n", note: "The file name changes with the content, so a changed look is applied again." });
+    }
   }
   return out;
 }

@@ -1475,25 +1475,47 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		}
 	}
 
+	// Desktop layout: look-and-feel package and update script in the data
+	// directory (first in XDG_DATA_DIRS).
+	var layoutFiles map[string][]byte
+	if merged.Layout != nil {
+		layoutFiles = policy.RenderLayoutFiles(merged.Layout, merged.LayoutPolicyID, merged.LayoutPolicyName)
+	}
+
 	// Suppress watcher events for everything about to be written: overlay
-	// files, the /etc rc mirror (and its legacy sibling) and the hook scripts.
-	incomingPaths := make([]string, 0, len(merged.Files)+4)
+	// files, data files (current and new), the /etc rc mirror (and its
+	// legacy sibling) and the hook scripts.
+	incomingPaths := make([]string, 0, len(merged.Files)+len(layoutFiles)+4)
 	for name := range merged.Files {
 		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.ConfigPath, name))
 	}
+	for rel := range layoutFiles {
+		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.DataPath, rel))
+	}
+	incomingPaths = append(incomingPaths, policy.ListDataFiles(cfg.KConfig.DataPath)...)
 	incomingPaths = append(incomingPaths, policy.Kde5rcPath(), policy.LegacyKde6rcPath())
 	incomingPaths = append(incomingPaths, policy.EnvScriptPaths()...)
 	suppressManagedWrites(cfg, incomingPaths...)
 	defer updateWatcher(cfg)
 
-	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath); err != nil {
-		log.Printf("Warning: failed to ensure XDG_CONFIG_DIRS hook scripts: %v", err)
+	if err := policy.EnsureEnvScripts(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath); err != nil {
+		log.Printf("Warning: failed to ensure XDG hook scripts: %v", err)
 	}
 
 	if err := policy.SyncKConfigFiles(cfg.KConfig.ConfigPath, merged.Files); err != nil {
 		log.Printf("Error syncing KConfig files: %v", err)
 		reportError("failed to sync KConfig files: " + err.Error())
 		return nil
+	}
+
+	changedData, dataErr := policy.SyncDataFiles(cfg.KConfig.DataPath, layoutFiles)
+	if dataErr != nil {
+		log.Printf("Error syncing KDE data files: %v", dataErr)
+		reportError("failed to sync KDE data files: " + dataErr.Error())
+		return nil
+	}
+	if merged.Layout != nil && merged.Layout.GetApplyLive() && len(changedData) > 0 && merged.Layout.GetWallpaperImage() != "" {
+		notify.ApplyWallpaperToSessions(policy.WallpaperPath(merged.Layout.GetWallpaperImage()), policy.WallpaperFillModeName(merged.Layout.GetWallpaperFillMode()))
 	}
 
 	if err := policy.SyncKde5rc(kde5rcContent); err != nil {
@@ -2459,9 +2481,11 @@ func getManagedPaths(cfg *config.Config) []string {
 			paths = append(paths, filepath.Join(cfg.KConfig.ConfigPath, name))
 		}
 	}
-	// Hook scripts and the optional /etc/kde5rc mirror, while policies apply.
+	// Hook scripts, generated data files and the optional /etc/kde5rc
+	// mirror, while policies apply.
 	if len(kconfigCache) > 0 {
 		paths = append(paths, policy.EnvScriptPaths()...)
+		paths = append(paths, policy.ListDataFiles(cfg.KConfig.DataPath)...)
 		if cfg.KConfig.WriteKde5rc {
 			for _, e := range kconfigCache {
 				if len(e.policy.GetKcmRestrictions()) > 0 {
@@ -2562,6 +2586,7 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 
 	switch {
 	case strings.HasPrefix(path, cfg.KConfig.ConfigPath+string(filepath.Separator)) ||
+		strings.HasPrefix(path, cfg.KConfig.DataPath+string(filepath.Separator)) ||
 		path == policy.Kde5rcPath() || slices.Contains(policy.EnvScriptPaths(), path):
 		syncAllKConfig(ctx, client, cfg)
 	case path == cfg.Firefox.PoliciesPath || path == cfg.Firefox.FlatpakPoliciesPath:

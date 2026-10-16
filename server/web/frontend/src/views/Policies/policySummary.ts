@@ -11,7 +11,7 @@ import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
 import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
 import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
 import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
-import { KCM_MODULES, catalogueEntryForSetting, isExtraWrite, parseKConfigContent } from "./editors/kconfigModel";
+import { FILL_MODE_LABELS, KCM_MODULES, catalogueEntryForSetting, hasLayoutContent, isExtraWrite, parseKConfigContent } from "./editors/kconfigModel";
 import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
 
 export interface SettingsRow {
@@ -190,6 +190,20 @@ export function buildSettingsRows(policyType: string, content: string): Settings
 
     if (kc.fileImmutableKdeglobals) {
       rows.push({ setting: `Advanced › kdeglobals ${groupPathLabel(["$i"])}`, value: "Whole file immutable", locked: "Yes" });
+    }
+
+    if (hasLayoutContent(kc.layout)) {
+      const l = kc.layout;
+      if (l.wallpaperImage.trim()) {
+        rows.push({ setting: "Desktop Layout › Wallpaper image", value: `${l.wallpaperImage.trim()} (${FILL_MODE_LABELS[l.wallpaperFillMode || "2"] ?? l.wallpaperFillMode})`, locked: l.lockPackage ? "Yes" : "No" });
+      }
+      if (l.layoutScript.trim()) {
+        rows.push({ setting: "Desktop Layout › Panel layout script", value: `${l.layoutScript.trim().split("\n").length} line(s)`, locked: l.lockPackage ? "Yes" : "No" });
+      }
+      const how: string[] = ["new users"];
+      if (l.applyOnce) how.push("existing users once");
+      if (l.applyLive) how.push("logged-in sessions now");
+      rows.push({ setting: "Desktop Layout › Applied to", value: how.join(", "), locked: null });
     }
 
     return rows;

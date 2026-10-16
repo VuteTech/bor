@@ -38,12 +38,16 @@ import {
 import { fetchKConfigCatalogue, fetchKConfigKcms, type KcmModuleInfo } from "../../../apiClient/kconfigApi";
 import { fetchNodesPaged, type Node } from "../../../apiClient/nodesApi";
 import {
+  DEFAULT_PANEL_SNIPPET,
   DEFAULT_URL_RULE,
+  EMPTY_LAYOUT,
+  FILL_MODE_LABELS,
   KCM_MODULES,
   KCONFIG_PRESETS,
   KIO_PROTOCOLS,
   URL_RULE_PRESETS,
   applyKConfigPreset,
+  hasLayoutContent,
   catalogueEntryForSetting,
   customSettings,
   findEntrySetting,
@@ -76,8 +80,10 @@ const KEY_FILE_LOCK = "__file_lock";
 const KEY_PREVIEW = "__preview";
 const KEY_IMPORT = "__import";
 const KEY_CUSTOM_NEW = "__custom_new";
+const KEY_LAYOUT = "__layout";
 const CUSTOM_PREFIX = "custom:";
 
+const GROUP_LAYOUT = "Desktop Layout";
 const GROUP_RESTRICTIONS = "System Settings & URL Rules";
 const GROUP_CUSTOM = "Custom Entries";
 const GROUP_ADVANCED = "Advanced";
@@ -160,6 +166,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (content.kcmRestrictions.length > 0) keys.push(KEY_KCM);
     if (content.urlRestrictions.length > 0) keys.push(KEY_URL);
     if (content.fileImmutableKdeglobals) keys.push(KEY_FILE_LOCK);
+    if (hasLayoutContent(content.layout)) keys.push(KEY_LAYOUT);
     return keys;
   }, [configuredEntryIds, custom, content]);
 
@@ -176,6 +183,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (content.kcmRestrictions.length > 0 || content.urlRestrictions.length > 0) groups.add(GROUP_RESTRICTIONS);
     if (custom.length > 0) groups.add(GROUP_CUSTOM);
     if (content.fileImmutableKdeglobals) groups.add(GROUP_ADVANCED);
+    if (hasLayoutContent(content.layout)) groups.add(GROUP_LAYOUT);
     return groups;
   });
   const [filter, setFilter] = useState("");
@@ -256,6 +264,10 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       const items = entries.filter((e) => e.category === category && (!f || matchesFilter(e, f))).map((e) => ({ key: e.id, label: e.label }));
       if (items.length > 0) t.set(category, items);
     }
+    const layoutItems: TreeItem[] = [{ key: KEY_LAYOUT, label: "Wallpaper and panel layout" }].filter(
+      (i) => !f || i.label.toLowerCase().includes(f.toLowerCase()) || "look and feel theme branding".includes(f.toLowerCase()),
+    );
+    if (layoutItems.length > 0) t.set(GROUP_LAYOUT, layoutItems);
     const special: TreeItem[] = [
       { key: KEY_KCM, label: "System Settings modules" },
       { key: KEY_URL, label: "URL restrictions" },
@@ -312,6 +324,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     else if (key === KEY_KCM) write({ ...content, kcmRestrictions: [], kcmMode: "KCM_HIDE_LISTED" });
     else if (key === KEY_URL) write({ ...content, urlRestrictions: [] });
     else if (key === KEY_FILE_LOCK) write({ ...content, fileImmutableKdeglobals: false });
+    else if (key === KEY_LAYOUT) write({ ...content, layout: EMPTY_LAYOUT });
     if (selectedKey === key && key.startsWith(CUSTOM_PREFIX)) setSelectedKey(null);
   };
 
@@ -763,6 +776,84 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     );
   };
 
+  /* ── Desktop layout (look-and-feel package) ── */
+  const renderLayoutEditor = () => {
+    const layout = content.layout;
+    const update = (partial: Partial<typeof layout>) => write({ ...content, layout: { ...layout, ...partial } });
+    const configured = hasLayoutContent(layout);
+    const imageOk = layout.wallpaperImage.trim() === "" || layout.wallpaperImage.trim().startsWith("/") || layout.wallpaperImage.trim().startsWith("file:///");
+
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Wallpaper and panel layout</Title>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+          The agent generates a look-and-feel package named after this policy under the data directory and selects it as the global theme (<code>kdeglobals · [KDE] · LookAndFeelPackage</code>). Users who log in for the first time get the wallpaper and, if set, the panel layout. The rest of the theme (colours, icons, fonts) comes from the Appearance settings.
+        </p>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>Windows Group Policy equivalent: Desktop Wallpaper; Start Layout.</p>
+        <Form>
+          <FormGroup label="Wallpaper image" fieldId="kc-layout-image">
+            <TextInput
+              id="kc-layout-image"
+              value={layout.wallpaperImage}
+              isDisabled={isDisabled}
+              validated={imageOk ? "default" : "error"}
+              aria-invalid={!imageOk || undefined}
+              onChange={(_ev, v) => update({ wallpaperImage: v })}
+              placeholder="/usr/share/backgrounds/corporate.png"
+            />
+            <FieldHelp>Absolute path readable by every user on the nodes (deploy the file with a package or the Files policy). Empty keeps the theme's wallpaper.</FieldHelp>
+          </FormGroup>
+          <FormGroup label="Wallpaper fill mode" fieldId="kc-layout-fill">
+            <FormSelect id="kc-layout-fill" value={layout.wallpaperFillMode || "2"} isDisabled={isDisabled} onChange={(_ev, v) => update({ wallpaperFillMode: v })}>
+              {Object.entries(FILL_MODE_LABELS).map(([v, label]) => <FormSelectOption key={v} value={v} label={label} />)}
+            </FormSelect>
+          </FormGroup>
+          <FormGroup label="Panel layout script (optional)" fieldId="kc-layout-script">
+            <TextArea
+              id="kc-layout-script"
+              value={layout.layoutScript}
+              isDisabled={isDisabled}
+              onChange={(_ev, v) => update({ layoutScript: v })}
+              rows={10}
+              style={mono}
+              placeholder={DEFAULT_PANEL_SNIPPET}
+            />
+            <FieldHelp>
+              Plasma desktop scripting (JavaScript) that creates panels and widgets: new Panel, addWidget, loadTemplate, desktops(). Runs for users at their first login.
+              {!isDisabled && (
+                <>
+                  {" "}
+                  <Button variant="link" isInline onClick={() => update({ layoutScript: DEFAULT_PANEL_SNIPPET })}>Insert Plasma's default panel</Button>
+                </>
+              )}
+            </FieldHelp>
+          </FormGroup>
+          <FormGroup label="Apply once to existing users" fieldId="kc-layout-once">
+            <Switch
+              id="kc-layout-once"
+              isChecked={layout.applyOnce}
+              isDisabled={isDisabled}
+              onChange={(_ev, c) => update({ applyOnce: c })}
+              label={layout.applyOnce ? "At their next login: wallpaper set on every desktop; with a layout script, their panels are replaced" : "Only users logging in for the first time"}
+            />
+          </FormGroup>
+          <FormGroup label="Apply the wallpaper to logged-in sessions now" fieldId="kc-layout-live">
+            <Switch id="kc-layout-live" isChecked={layout.applyLive} isDisabled={isDisabled} onChange={(_ev, c) => update({ applyLive: c })} label={layout.applyLive ? "Yes, through plasma-apply-wallpaperimage" : "No"} />
+          </FormGroup>
+          <FormGroup label="Lock the global theme" fieldId="kc-layout-lock">
+            <Switch id="kc-layout-lock" isChecked={layout.lockPackage} isDisabled={isDisabled} onChange={(_ev, c) => update({ lockPackage: c })} label={layout.lockPackage ? "Enforced [$i]: users cannot pick another global theme" : "Default only: users may pick another global theme"} />
+          </FormGroup>
+          {!isDisabled && configured && (
+            <FormGroup fieldId="kc-layout-actions">
+              <Button variant="danger" size="sm" onClick={() => write({ ...content, layout: EMPTY_LAYOUT })}>Remove from policy</Button>
+            </FormGroup>
+          )}
+          {!configured && <p aria-live="polite" style={{ ...subtle, fontSize: "0.85rem" }}>Enter a wallpaper image or a layout script to add the desktop layout to the policy.</p>}
+        </Form>
+      </div>
+    );
+  };
+
   /* ── Whole-file lock ── */
   const renderFileLock = () => (
     <div style={{ padding: "0.5rem 0" }}>
@@ -853,6 +944,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (selectedKey === KEY_KCM) return renderKcmEditor();
     if (selectedKey === KEY_URL) return renderUrlEditor();
     if (selectedKey === KEY_FILE_LOCK) return renderFileLock();
+    if (selectedKey === KEY_LAYOUT) return renderLayoutEditor();
     if (selectedKey === KEY_PREVIEW) return renderPreview();
     if (selectedKey === KEY_IMPORT) return renderImport();
     if (selectedKey === KEY_CUSTOM_NEW || selectedKey.startsWith(CUSTOM_PREFIX)) return renderCustomEditor();

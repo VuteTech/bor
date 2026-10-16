@@ -162,6 +162,7 @@ Set a path to `""` to stop writing to that location.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kconfig.config_path` | `/etc/bor/xdg` | Base directory for KDE configuration files written by KConfig policies. The agent puts it first in `XDG_CONFIG_DIRS` through `/etc/xdg/plasma-workspace/env/00-bor.sh` and `/etc/profile.d/99-bor.sh`. |
+| `kconfig.data_path` | `/etc/bor/share` | Directory for generated data files: the look-and-feel package (wallpaper, panel layout) and Plasma update scripts of the Desktop Layout feature. Put first in `XDG_DATA_DIRS` by the same hook scripts. The whole directory is managed by the agent. |
 | `kconfig.write_kde5rc` | `false` | Also mirror System Settings module restrictions into `/etc/kde5rc`. Plasma 5 and 6 read them from `kdeglobals`; enable only for very old KDE Frameworks releases. |
 | `kconfig.probe_effective` | `false` | After each sync, read the written settings back with `kreadconfig6`/`kreadconfig5` in a logged-in user's session and report user overrides of non-enforced defaults as non-compliant; also checks that the Plasma session has the managed directory in `XDG_CONFIG_DIRS`. Read-only; skipped without a graphical session. |
 

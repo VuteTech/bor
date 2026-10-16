@@ -927,7 +927,7 @@ func TestSyncKde5rc_RestoresLegacyKde6rc(t *testing.T) {
 }
 
 func TestEnvScriptContent(t *testing.T) {
-	got := envScriptContent("/etc/bor/xdg")
+	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share")
 	if !strings.Contains(got, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) {
 		t.Errorf("expected export line, got:\n%s", got)
 	}
@@ -947,11 +947,11 @@ func TestEnsureEnvScripts(t *testing.T) {
 	plasmaEnvScriptPath = filepath.Join(dir, "xdg", "plasma-workspace", "env", "00-bor.sh")
 	t.Cleanup(func() { profileScriptPath, plasmaEnvScriptPath = origProfile, origPlasma })
 
-	if err := EnsureEnvScripts("/etc/bor/xdg"); err != nil {
+	if err := EnsureEnvScripts("/etc/bor/xdg", "/etc/bor/share"); err != nil {
 		t.Fatal(err)
 	}
 
-	want := envScriptContent("/etc/bor/xdg")
+	want := envScriptContent("/etc/bor/xdg", "/etc/bor/share")
 	for _, path := range EnvScriptPaths() {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -967,10 +967,10 @@ func TestEnsureEnvScripts(t *testing.T) {
 	}
 
 	// A second run with the same path is a no-op; a changed path rewrites.
-	if err := EnsureEnvScripts("/etc/bor/xdg"); err != nil {
+	if err := EnsureEnvScripts("/etc/bor/xdg", "/etc/bor/share"); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureEnvScripts("/opt/bor/xdg"); err != nil {
+	if err := EnsureEnvScripts("/opt/bor/xdg", "/opt/bor/share"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(profileScriptPath)

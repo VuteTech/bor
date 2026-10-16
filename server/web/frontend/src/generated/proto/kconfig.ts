@@ -301,4 +301,48 @@ export interface KConfigPolicy {
    * user's kdeglobals ignored. For kiosk desktops only.
    */
   file_immutable_kdeglobals: boolean;
+  /**
+   * Desktop look for new users (wallpaper, optional panel layout) through
+   * a generated look-and-feel package; optionally applied once to existing
+   * users and live to logged-in sessions. One package per node: the
+   * highest-priority policy with a layout wins.
+   */
+  layout: KConfigLayout | undefined;
+}
+
+/**
+ * KConfigLayout describes the desktop look the agent deploys as a
+ * look-and-feel package named after the policy.
+ */
+export interface KConfigLayout {
+  /**
+   * Absolute path or file:// URL of the wallpaper image, readable by every
+   * user, e.g. /usr/share/backgrounds/corporate.png. Empty = keep the
+   * theme's wallpaper.
+   */
+  wallpaper_image: string;
+  /**
+   * KDE image wallpaper FillMode: 0 stretch, 1 preserve aspect fit,
+   * 2 preserve aspect crop (default), 3 tile, 6 pad. Empty = 2.
+   */
+  wallpaper_fill_mode: string;
+  /**
+   * Optional Plasma desktop scripting (JavaScript) that builds panels and
+   * widgets, installed as the package's desktop layout. Runs for users who
+   * log in for the first time. Empty = Plasma's default layout.
+   */
+  layout_script: string;
+  /**
+   * Also run once for every existing user at their next login: sets the
+   * wallpaper on all desktops and, when layout_script is set, replaces the
+   * user's panels with the scripted layout.
+   */
+  apply_once: boolean;
+  /** Apply the wallpaper to currently logged-in sessions right away. */
+  apply_live: boolean;
+  /**
+   * Write the LookAndFeelPackage selection as immutable, so users cannot
+   * choose another global theme.
+   */
+  lock_package: boolean;
 }

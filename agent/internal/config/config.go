@@ -129,6 +129,10 @@ type KConfigConfig struct {
 	// logged-in user's session after each sync and reports user overrides
 	// of non-enforced defaults as non-compliant (default false).
 	ProbeEffective bool `yaml:"probe_effective"`
+	// DataPath is the directory for generated data files (look-and-feel
+	// packages, Plasma update scripts), put first in XDG_DATA_DIRS by the
+	// hook scripts (default /etc/bor/share).
+	DataPath string `yaml:"data_path"`
 }
 
 // EnrollmentConfig holds enrollment and mTLS settings.
@@ -209,6 +213,7 @@ func DefaultConfig() *Config {
 		},
 		KConfig: KConfigConfig{
 			ConfigPath: "/etc/bor/xdg",
+			DataPath:   "/etc/bor/share",
 		},
 		Enrollment: EnrollmentConfig{
 			DataDir: "/var/lib/bor/agent",

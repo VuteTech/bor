@@ -251,6 +251,12 @@ type KConfigMergeResult struct {
 	// keyed by policy ID. Entries that lost against a higher-priority
 	// policy are reported as INAPPLICABLE with the applied value.
 	Items map[string][]*pb.ComplianceItemResult
+	// Layout is the desktop layout to deploy (from the highest-priority
+	// policy that has one), with the policy it came from. Nil when no
+	// bound policy configures a layout.
+	Layout           *pb.KConfigLayout
+	LayoutPolicyID   string
+	LayoutPolicyName string
 }
 
 // MergeKConfigPolicies combines all bound KDE Plasma policies into one set
@@ -338,6 +344,33 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 		// installed module is hidden.
 		if src.Policy.GetKcmMode() == pb.KcmRestrictionMode_KCM_SHOW_ONLY_LISTED && len(src.Policy.GetKcmRestrictions()) > 0 {
 			items = append(items, mergeShowOnlyKCMs(src, installedKCMs, claim))
+		}
+
+		// Desktop layout: one look-and-feel package per node, from the
+		// highest-priority policy that configures one. The package is
+		// selected through kdeglobals [KDE] LookAndFeelPackage, which a
+		// catalogue setting of a higher-priority policy may still override.
+		if LayoutHasContent(src.Policy.GetLayout()) {
+			if res.Layout == nil {
+				res.Layout = src.Policy.GetLayout()
+				res.LayoutPolicyID = src.ID
+				res.LayoutPolicyName = src.Name
+				pkg := LayoutPackageID(src.ID)
+				e := &pb.KConfigEntry{File: KConfigFileGlobals, Group: "KDE", Key: "LookAndFeelPackage", Value: pkg, Type: "string", Enforced: res.Layout.GetLockPackage()}
+				if w, ok := claim(e, src); ok {
+					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed look-and-feel package "+pkg))
+				} else {
+					items = append(items, item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+						fmt.Sprintf("Global theme is set to %q by policy %q; the layout package %s is generated but not selected", w.entry.Value, w.src.Name, pkg)))
+				}
+			} else {
+				items = append(items, &pb.ComplianceItemResult{
+					SchemaId: "layout",
+					Key:      "look-and-feel",
+					Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+					Message:  fmt.Sprintf("Overridden by higher-priority policy %q, which provides the desktop layout", res.LayoutPolicyName),
+				})
+			}
 		}
 
 		if src.Policy.GetFileImmutableKdeglobals() {
@@ -890,24 +923,30 @@ func EnvScriptPaths() []string {
 	return []string{profileScriptPath, plasmaEnvScriptPath}
 }
 
-// envScriptContent returns the POSIX shell snippet that prepends basePath
-// to XDG_CONFIG_DIRS exactly once, however many hooks run it.
-func envScriptContent(basePath string) string {
+// envScriptContent returns the POSIX shell snippet that prepends configPath
+// to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS exactly once, however
+// many hooks run it.
+func envScriptContent(configPath, dataPath string) string {
 	return fmt.Sprintf(`# Managed by Bor. Do not edit manually.
-# Puts the Bor policy directory first in XDG_CONFIG_DIRS so that KDE and
-# other XDG-aware applications read the managed configuration files.
+# Puts the Bor policy directories first in XDG_CONFIG_DIRS and XDG_DATA_DIRS
+# so that KDE and other XDG-aware applications read the managed
+# configuration files, look-and-feel packages and Plasma scripts.
 case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":%[1]s:"*) ;;
   *) export XDG_CONFIG_DIRS="%[1]s:${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
-`, basePath)
+case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
+  *":%[2]s:"*) ;;
+  *) export XDG_DATA_DIRS="%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+esac
+`, configPath, dataPath)
 }
 
 // EnsureEnvScripts creates or updates the login hook scripts so that
-// basePath is prepended to XDG_CONFIG_DIRS for every Plasma session and
-// login shell.
-func EnsureEnvScripts(basePath string) error {
-	desired := []byte(envScriptContent(basePath))
+// configPath is prepended to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS
+// for every Plasma session and login shell.
+func EnsureEnvScripts(configPath, dataPath string) error {
+	desired := []byte(envScriptContent(configPath, dataPath))
 	for _, path := range EnvScriptPaths() {
 		if err := ensureScript(path, desired); err != nil {
 			return err

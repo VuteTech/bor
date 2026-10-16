@@ -180,6 +180,45 @@ func ValidateKConfigPolicy(content string) error {
 		return err
 	}
 
+	if err := validateKConfigLayout(kcp.GetLayout()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// maxKConfigLayoutScript bounds the Plasma layout script.
+const maxKConfigLayoutScript = 64 * 1024
+
+// kconfigLayoutHasContent mirrors the agent's LayoutHasContent.
+func kconfigLayoutHasContent(l *pb.KConfigLayout) bool {
+	return l != nil && (strings.TrimSpace(l.GetWallpaperImage()) != "" || strings.TrimSpace(l.GetLayoutScript()) != "")
+}
+
+// validateKConfigLayout checks the desktop layout block.
+func validateKConfigLayout(l *pb.KConfigLayout) error {
+	if l == nil {
+		return nil
+	}
+	if img := strings.TrimSpace(l.GetWallpaperImage()); img != "" {
+		if strings.ContainsAny(img, "\r\n\"\\") || len(img) > maxKConfigStringLen {
+			return fmt.Errorf("layout.wallpaperImage contains characters that are not allowed or is too long")
+		}
+		if !strings.HasPrefix(img, "/") && !strings.HasPrefix(img, "file:///") {
+			return fmt.Errorf("layout.wallpaperImage must be an absolute path or a file:// URL readable by every user")
+		}
+	}
+	switch strings.TrimSpace(l.GetWallpaperFillMode()) {
+	case "", "0", "1", "2", "3", "6":
+	default:
+		return fmt.Errorf("layout.wallpaperFillMode must be one of 0, 1, 2, 3 or 6")
+	}
+	if len(l.GetLayoutScript()) > maxKConfigLayoutScript {
+		return fmt.Errorf("layout.layoutScript is too long (max %d bytes)", maxKConfigLayoutScript)
+	}
+	if !kconfigLayoutHasContent(l) && (l.GetApplyOnce() || l.GetApplyLive() || l.GetLockPackage()) {
+		return fmt.Errorf("layout needs a wallpaper image or a layout script")
+	}
 	return nil
 }
 
@@ -224,7 +263,8 @@ func kconfigPolicyHasSettings(kcp *pb.KConfigPolicy) bool {
 		len(kcp.UrlRestrictions) > 0 ||
 		len(kcp.KcmRestrictions) > 0 ||
 		len(kcp.Settings) > 0 ||
-		kcp.GetFileImmutableKdeglobals()
+		kcp.GetFileImmutableKdeglobals() ||
+		kconfigLayoutHasContent(kcp.GetLayout())
 }
 
 // legacyKConfigFields lists the deprecated [KDE Resource Restrictions]

@@ -296,6 +296,35 @@ func runAsUser(s session, name string, args ...string) error {
 	return nil
 }
 
+// ApplyWallpaperToSessions sets the wallpaper of every active graphical
+// session right away with plasma-apply-wallpaperimage. fillMode is the
+// tool's fill-mode name or "" for its default. Best-effort: failures are
+// logged, never returned.
+func ApplyWallpaperToSessions(imagePath, fillMode string) {
+	sessions, err := activeGraphicalSessions()
+	if err != nil {
+		log.Printf("notify: failed to enumerate sessions for wallpaper: %v", err)
+		return
+	}
+	seen := make(map[uint32]bool)
+	for _, s := range sessions {
+		if seen[s.UID] {
+			continue
+		}
+		seen[s.UID] = true
+		args := []string{}
+		if fillMode != "" {
+			args = append(args, "--fill-mode", fillMode)
+		}
+		args = append(args, imagePath)
+		if err := runAsUser(s, "plasma-apply-wallpaperimage", args...); err != nil {
+			log.Printf("notify: wallpaper apply failed for UID %d: %v", s.UID, err)
+		} else {
+			log.Printf("notify: wallpaper applied for user %s (UID %d)", s.User, s.UID)
+		}
+	}
+}
+
 // FirstGraphicalSessionUID returns the UID of the first active graphical
 // login session, if there is one.
 func FirstGraphicalSessionUID() (uint32, bool) {

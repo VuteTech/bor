@@ -243,7 +243,7 @@ policies first, then uninstall it.
    repository configuration added during installation:
 
     ```bash
-    sudo rm -rf /var/lib/bor/agent /etc/bor/config.yaml /etc/bor/flatpak /etc/bor/xdg
+    sudo rm -rf /var/lib/bor/agent /etc/bor/config.yaml /etc/bor/flatpak /etc/bor/xdg /etc/bor/share
     sudo rm -f /etc/profile.d/99-bor.sh /etc/xdg/plasma-workspace/env/00-bor.sh
     # repository definition, depending on the distribution:
     sudo rm -f /etc/apt/sources.list.d/bor.sources /etc/apt/keyrings/bor.asc   # Debian/Ubuntu

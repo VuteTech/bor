@@ -88,6 +88,10 @@ chrome:
 #  # first in XDG_CONFIG_DIRS through /etc/xdg/plasma-workspace/env/00-bor.sh
 #  # (Plasma sessions) and /etc/profile.d/99-bor.sh (login shells).
 #  config_path: "/etc/bor/xdg"
+#  # Directory for generated data files (look-and-feel packages with the
+#  # deployed wallpaper and panel layout, Plasma update scripts). The hook
+#  # scripts put it first in XDG_DATA_DIRS.
+#  data_path: "/etc/bor/share"
 #  # Also mirror System Settings module restrictions into /etc/kde5rc.
 #  # Plasma 5 and 6 read them from kdeglobals, so leave this off unless a
 #  # very old KDE Frameworks release needs it.
