@@ -13,7 +13,7 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     "key": "shell_access",
     "type": "Bool",
     "label": "Restrict shell access",
-    "description": "Removes terminal access and arbitrary command execution (KRunner, Dolphin's Open Terminal) and disables the user's autostart folder.",
+    "description": "On Plasma 6 this key is read by Dolphin and the file manager context menu only: it hides the terminal panel and the Open Terminal actions. Konsole starts regardless, KIO does not use it for executables and the KRunner command runner follows Disable KRunner. To take the terminal away, hide org.kde.konsole.desktop under Applications and lock the Konsole profile.",
     "category": "Session & Shell",
     "inverted": true,
     "immutableDefault": true,
@@ -103,13 +103,16 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     "key": "action/switch_user",
     "type": "Bool",
     "label": "Restrict user switching",
-    "description": "Removes the Switch User action.",
+    "description": "Plasma 6 does not read this key: Switch User follows Restrict starting a new session. Kept for Plasma 5.",
     "category": "Session & Shell",
     "inverted": true,
     "immutableDefault": true,
     "reload": "logout",
     "windowsEquivalent": "Hide entry points for Fast User Switching",
-    "source": "builtin"
+    "source": "builtin",
+    "plasmaMajor": [
+      "5"
+    ]
   },
   {
     "id": "kiosk.start_new_session",
@@ -142,6 +145,23 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     "immutableDefault": true,
     "reload": "app",
     "windowsEquivalent": "Do not display the password reveal button",
+    "source": "builtin"
+  },
+  {
+    "id": "kiosk.warn_unwritable_config",
+    "file": "kdeglobals",
+    "groupPath": [
+      "KDE Action Restrictions"
+    ],
+    "key": "warn_unwritable_config",
+    "type": "Bool",
+    "label": "Warn when a configuration file cannot be written",
+    "description": "KConfig shows a warning when an application cannot write its configuration file (read-only home, file owned by root). Restrict it on kiosk machines where that is the intended state so that users do not see the warning at every application start. KDE Frameworks 5 and 6.",
+    "category": "Session & Shell",
+    "inverted": true,
+    "immutableDefault": true,
+    "reload": "app",
+    "windowsEquivalent": "",
     "source": "builtin"
   },
   {
@@ -218,7 +238,7 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     "key": "custom_config",
     "type": "Bool",
     "label": "Restrict the --config command line option",
-    "description": "Applications ignore a user-supplied configuration file on the command line.",
+    "description": "KDE 4 only: the --config option went away with KCmdLineArgs and no Frameworks component reads this key. Kept for completeness; it has no effect on Plasma 5 or 6.",
     "category": "Session & Shell",
     "inverted": true,
     "immutableDefault": true,

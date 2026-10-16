@@ -436,12 +436,22 @@ Flatpak applications.
 |---|---|---|
 | **Restrict shell access** | Restricted | Enforced [$i] |
 | **Disable KRunner (Alt+Space / Alt+F2)** | Restricted | Enforced [$i] |
+| **Applications > Hidden applications** | `org.kde.konsole.desktop` | |
 
 KRunner does not start at all while `run_command` is restricted (Plasma
 logs "org.kde.krunner: startup job failed"); this is how KDE implements the
 restriction. To keep KRunner for searching but stop it from launching
 commands, leave this setting alone and disable the Command Line runner in
 KRunner's plugin settings instead.
+
+**Restrict shell access** does less than its KDE 3 name suggests. On
+Plasma 6 the key is read by Dolphin and the file manager context menu
+only: it hides the terminal panel and the Open Terminal actions. Konsole
+starts regardless, and KIO does not consult it when launching executables.
+Hiding Konsole's desktop entry (and, where needed, locking its profile
+under **Applications**) is what removes the terminal from menus and
+launchers; a user who can reach a file manager or a browser download can
+still start executables.
 
 `/etc/bor/xdg/kdeglobals` then contains:
 
