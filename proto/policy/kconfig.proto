@@ -231,6 +231,46 @@ message KConfigPolicy {
   // node-wide entries cannot be relaxed per group (KDE semantics), so put
   // group differences into scoped policies only.
   repeated string unix_groups = 34;
+
+  // Konsole terminal profile deployed as konsole/<Name>.profile in the
+  // data directory. One per scope: the highest-priority policy wins.
+  KonsoleProfile konsole_profile = 35;
+
+  // Desktop file ids (org.kde.konsole.desktop) hidden from the application
+  // menu, KRunner and other launchers through a NoDisplay override in the
+  // data directory. Lists from all policies are combined. Hiding removes
+  // the entry from menus; it does not prevent running the program.
+  repeated string hidden_applications = 36;
+}
+
+// KonsoleProfile is a Konsole terminal profile. The agent writes it as
+// konsole/<Name>.profile into the data directory (first in XDG_DATA_DIRS)
+// and, with set_default or lock, selects it in konsolerc.
+message KonsoleProfile {
+  // Profile and file name (Managed -> Managed.profile). Letters, digits,
+  // space, dot, underscore and dash; empty = "Managed".
+  string name = 1;
+  // [General] Command: the program the profile starts, e.g. /bin/bash.
+  string command = 2;
+  // [Scrolling] HistoryMode: "0" no scrollback, "1" fixed size,
+  // "2" unlimited; "" keeps Konsole's default.
+  string history_mode = 3;
+  // [Scrolling] HistorySize in lines, used with history_mode "1".
+  int32 history_size = 4;
+  // [Appearance] ColorScheme, e.g. Breeze, BlackOnWhite, WhiteOnBlack.
+  string color_scheme = 5;
+  // [Appearance] Font in Qt's text form, e.g. "Hack,10,-1,5,50,0,0,0,0,0".
+  string font = 6;
+  // Further profile entries as INI text, e.g.
+  // "[Terminal Features]\nBlinkingCursorEnabled=false".
+  string extra_ini = 7;
+  // Write konsolerc [Desktop Entry] DefaultProfile so new windows and
+  // tabs use this profile.
+  bool set_default = 8;
+  // Enforce the default profile and restrict Konsole's profile actions
+  // (manage-profiles, edit-current-profile, switch-profile) so users
+  // cannot switch to or create another profile.
+  bool lock = 9;
 }
 
 // KConfigLayout describes the desktop look the agent deploys as a

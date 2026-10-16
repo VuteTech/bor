@@ -91,6 +91,84 @@ for (var j = 0; j < desktopsArray.length; j++) {
 }
 `;
 
+/** Konsole profile deployed to the data directory (camelCase of KonsoleProfile). */
+export interface KonsoleProfileJson {
+  name: string;
+  command: string;
+  /** "" Konsole default, "0" none, "1" fixed, "2" unlimited. */
+  historyMode: string;
+  historySize: number;
+  colorScheme: string;
+  font: string;
+  extraIni: string;
+  setDefault: boolean;
+  lock: boolean;
+}
+
+export const EMPTY_KONSOLE_PROFILE: KonsoleProfileJson = {
+  name: "",
+  command: "",
+  historyMode: "",
+  historySize: 0,
+  colorScheme: "",
+  font: "",
+  extraIni: "",
+  setDefault: false,
+  lock: false,
+};
+
+export function hasKonsoleProfileContent(p: KonsoleProfileJson | undefined | null): boolean {
+  return !!p && (p.command.trim() !== "" || p.historyMode !== "" || p.colorScheme.trim() !== "" || p.font.trim() !== "" || p.extraIni.trim() !== "" || p.setDefault || p.lock);
+}
+
+/** Konsole HistoryMode values and their labels. */
+export const HISTORY_MODE_LABELS: Record<string, string> = {
+  "": "Konsole default",
+  "0": "No scrollback",
+  "1": "Fixed number of lines",
+  "2": "Unlimited",
+};
+
+/** The profile file name the agent writes (same sanitising as the agent). */
+export function konsoleProfileFileName(p: Pick<KonsoleProfileJson, "name">): string {
+  const name = p.name.replace(/[^A-Za-z0-9 ._-]/g, "").replace(/^[ .]+|[ .]+$/g, "");
+  return `${name || "Managed"}.profile`;
+}
+
+/** Desktop file ids administrators commonly hide, for the quick-add list. */
+export const KDE_APPLICATION_IDS: { id: string; label: string }[] = [
+  { id: "systemsettings.desktop", label: "System Settings" },
+  { id: "org.kde.kinfocenter.desktop", label: "Info Center" },
+  { id: "org.kde.konsole.desktop", label: "Konsole" },
+  { id: "org.kde.yakuake.desktop", label: "Yakuake" },
+  { id: "org.kde.kmenuedit.desktop", label: "Menu Editor" },
+  { id: "org.kde.discover.desktop", label: "Discover (software centre)" },
+  { id: "org.kde.plasma-systemmonitor.desktop", label: "System Monitor" },
+  { id: "org.kde.ksystemlog.desktop", label: "KSystemLog" },
+  { id: "org.kde.partitionmanager.desktop", label: "Partition Manager" },
+  { id: "org.kde.kwalletmanager.desktop", label: "KWallet Manager" },
+  { id: "org.kde.kdeconnect.app.desktop", label: "KDE Connect" },
+  { id: "org.kde.krdc.desktop", label: "KRDC (remote desktop client)" },
+  { id: "org.kde.krfb.desktop", label: "Krfb (desktop sharing)" },
+  { id: "org.kde.akonadiconsole.desktop", label: "Akonadi Console" },
+  { id: "org.kde.kate.desktop", label: "Kate" },
+  { id: "org.kde.kwrite.desktop", label: "KWrite" },
+  { id: "org.kde.dolphin.desktop", label: "Dolphin" },
+  { id: "org.kde.spectacle.desktop", label: "Spectacle" },
+  { id: "org.kde.ktorrent.desktop", label: "KTorrent" },
+  { id: "org.kde.kgpg.desktop", label: "KGpg" },
+  { id: "org.kde.kleopatra.desktop", label: "Kleopatra" },
+  { id: "org.kde.khelpcenter.desktop", label: "Help Center" },
+  { id: "xterm.desktop", label: "XTerm" },
+  { id: "steam.desktop", label: "Steam" },
+  { id: "virt-manager.desktop", label: "Virtual Machine Manager" },
+  { id: "gparted.desktop", label: "GParted" },
+];
+
+export function isDesktopFileId(id: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._+-]*\.desktop$/.test(id) && !id.includes("..") && id.length <= 255;
+}
+
 export interface KConfigContent {
   settings: KConfigSettingJson[];
   kcmRestrictions: string[];
@@ -100,6 +178,9 @@ export interface KConfigContent {
   layout: KConfigLayoutJson;
   /** Unix groups the policy is limited to; empty = every user on the node. */
   unixGroups: string[];
+  konsoleProfile: KonsoleProfileJson;
+  /** Desktop file ids hidden from menus and launchers. */
+  hiddenApplications: string[];
 }
 
 export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
@@ -110,6 +191,8 @@ export const EMPTY_KCONFIG_CONTENT: KConfigContent = {
   fileImmutableKdeglobals: false,
   layout: EMPTY_LAYOUT,
   unixGroups: [],
+  konsoleProfile: EMPTY_KONSOLE_PROFILE,
+  hiddenApplications: [],
 };
 
 /** Result of loading content: the normalised model plus what the upgrade did. */
@@ -258,6 +341,22 @@ export function parseKConfigContent(raw: string): KConfigLoadResult {
     };
   }
 
+  let konsoleProfile: KonsoleProfileJson = EMPTY_KONSOLE_PROFILE;
+  if (parsed.konsoleProfile && typeof parsed.konsoleProfile === "object") {
+    const k = parsed.konsoleProfile as Record<string, unknown>;
+    konsoleProfile = {
+      name: asString(k.name),
+      command: asString(k.command),
+      historyMode: asString(k.historyMode),
+      historySize: Number(k.historySize) || 0,
+      colorScheme: asString(k.colorScheme),
+      font: asString(k.font),
+      extraIni: asString(k.extraIni),
+      setDefault: k.setDefault === true,
+      lock: k.lock === true,
+    };
+  }
+
   const content: KConfigContent = {
     settings: dedupeSettings(settings),
     kcmRestrictions: Array.isArray(parsed.kcmRestrictions) ? (parsed.kcmRestrictions as unknown[]).map(asString).filter(Boolean) : [],
@@ -266,6 +365,8 @@ export function parseKConfigContent(raw: string): KConfigLoadResult {
     fileImmutableKdeglobals: parsed.fileImmutableKdeglobals === true,
     layout,
     unixGroups: Array.isArray(parsed.unixGroups) ? (parsed.unixGroups as unknown[]).map(asString).map((g) => g.trim()).filter(Boolean) : [],
+    konsoleProfile,
+    hiddenApplications: Array.isArray(parsed.hiddenApplications) ? (parsed.hiddenApplications as unknown[]).map(asString).map((s) => s.trim()).filter(Boolean) : [],
   };
 
   const changed = convertedFields.length > 0 || droppedFields.length > 0 || "enforcedFields" in parsed;
@@ -313,11 +414,34 @@ export function serializeKConfigContent(c: KConfigContent): string {
     out.layout = l;
   }
   if (c.unixGroups.length > 0) out.unixGroups = c.unixGroups;
+  if (hasKonsoleProfileContent(c.konsoleProfile)) {
+    const k = c.konsoleProfile;
+    const o: Record<string, unknown> = {};
+    if (k.name.trim()) o.name = k.name.trim();
+    if (k.command.trim()) o.command = k.command.trim();
+    if (k.historyMode) o.historyMode = k.historyMode;
+    if (k.historyMode === "1" && k.historySize > 0) o.historySize = Math.floor(k.historySize);
+    if (k.colorScheme.trim()) o.colorScheme = k.colorScheme.trim();
+    if (k.font.trim()) o.font = k.font.trim();
+    if (k.extraIni.trim()) o.extraIni = k.extraIni;
+    if (k.setDefault) o.setDefault = true;
+    if (k.lock) o.lock = true;
+    out.konsoleProfile = o;
+  }
+  if (c.hiddenApplications.length > 0) out.hiddenApplications = c.hiddenApplications;
   return JSON.stringify(out, null, 2);
 }
 
 export function hasAnyKConfigContent(c: KConfigContent): boolean {
-  return c.settings.length > 0 || c.kcmRestrictions.length > 0 || c.urlRestrictions.length > 0 || c.fileImmutableKdeglobals || hasLayoutContent(c.layout);
+  return (
+    c.settings.length > 0 ||
+    c.kcmRestrictions.length > 0 ||
+    c.urlRestrictions.length > 0 ||
+    c.fileImmutableKdeglobals ||
+    hasLayoutContent(c.layout) ||
+    hasKonsoleProfileContent(c.konsoleProfile) ||
+    c.hiddenApplications.length > 0
+  );
 }
 
 /* ── Catalogue-backed settings ── */
@@ -405,7 +529,24 @@ export interface KConfigPreset {
   description: string;
   settings: KConfigPresetSetting[];
   kcmRestrictions?: string[];
+  /** Desktop file ids added to the hidden applications list. */
+  hiddenApplications?: string[];
+  /** Konsole profile fields set when the policy has no profile yet. */
+  konsoleProfile?: Partial<KonsoleProfileJson>;
 }
+
+/** Administrative tools a locked-down desktop usually hides from menus. */
+export const ADMIN_TOOL_APPLICATION_IDS = [
+  "systemsettings.desktop",
+  "org.kde.kinfocenter.desktop",
+  "org.kde.kmenuedit.desktop",
+  "org.kde.discover.desktop",
+  "org.kde.plasma-systemmonitor.desktop",
+  "org.kde.ksystemlog.desktop",
+  "org.kde.partitionmanager.desktop",
+  "org.kde.kwalletmanager.desktop",
+  "org.kde.akonadiconsole.desktop",
+];
 
 const SHARED_LAB_SETTINGS: KConfigPresetSetting[] = [
   { id: "kiosk.shell_access", value: "false", immutable: true },
@@ -491,6 +632,43 @@ export const KCONFIG_PRESETS: KConfigPreset[] = [
       { id: "ksplash.Engine", value: "none", immutable: false },
     ],
   },
+  {
+    id: "hide-admin-tools",
+    label: "Hide administration tools",
+    description: "Removes System Settings, Info Center, the menu editor, Discover, System Monitor, KSystemLog, Partition Manager, KWallet Manager and Akonadi Console from menus and launchers. Hiding does not block execution; combine with Kiosk restrictions where needed.",
+    settings: [],
+    hiddenApplications: ADMIN_TOOL_APPLICATION_IDS,
+  },
+  {
+    id: "konsole-managed",
+    label: "Managed terminal",
+    description: "A locked Konsole profile without scrollback as the only profile users can use, the security-sensitive D-Bus API off and scrollback files kept in the user's cache directory.",
+    settings: [
+      { id: "konsole.EnableSecuritySensitiveDBusAPI", value: "false", immutable: true },
+      { id: "konsole.scrollbackUseSystemLocation", value: "false", immutable: true },
+      { id: "konsole.scrollbackUseCacheLocation", value: "true", immutable: true },
+    ],
+    konsoleProfile: { name: "Managed", historyMode: "0", setDefault: true, lock: true },
+  },
+  {
+    id: "mail-security",
+    label: "Mail security (KDE PIM)",
+    description: "Plain text preferred over HTML, no external content in messages, scam and tracking detection on, phishing check for links, no automatic key import, drafts and sent mail stored encrypted, confirmation before sending.",
+    settings: [
+      { id: "mailviewer.htmlMail", value: "false", immutable: true },
+      { id: "mailviewer.htmlLoadExternal", value: "false", immutable: true },
+      { id: "mailviewer.ScamDetectionEnabled", value: "true", immutable: true },
+      { id: "mailviewer.MailTrackingUrlEnabled", value: "true", immutable: true },
+      { id: "mailviewer.CheckPhishingUrl", value: "true", immutable: true },
+      { id: "mailviewer.AutoImportKeys", value: "false", immutable: true },
+      { id: "mailviewer.MDNNotSendWhenEncrypted", value: "true", immutable: true },
+      { id: "kmail.AlwaysEncryptDrafts", value: "true", immutable: true },
+      { id: "kmail.CryptoStoreEncrypted", value: "true", immutable: true },
+      { id: "kmail.ConfirmBeforeSend", value: "true", immutable: true },
+      { id: "akregator.LoadExternalReferences", value: "false", immutable: true },
+      { id: "akregator.CheckPhishingUrl", value: "true", immutable: true },
+    ],
+  },
 ];
 
 /** Adds a preset's settings that are not configured yet; existing values stay. */
@@ -509,6 +687,17 @@ export function applyKConfigPreset(c: KConfigContent, preset: KConfigPreset): { 
       next = { ...next, kcmRestrictions: [...next.kcmRestrictions, ...missing] };
       added += missing.length;
     }
+  }
+  if (preset.hiddenApplications) {
+    const missing = preset.hiddenApplications.filter((id) => !next.hiddenApplications.includes(id));
+    if (missing.length > 0) {
+      next = { ...next, hiddenApplications: [...next.hiddenApplications, ...missing] };
+      added += missing.length;
+    }
+  }
+  if (preset.konsoleProfile && !hasKonsoleProfileContent(next.konsoleProfile)) {
+    next = { ...next, konsoleProfile: { ...EMPTY_KONSOLE_PROFILE, ...preset.konsoleProfile } };
+    added++;
   }
   return { content: next, added };
 }
@@ -620,6 +809,33 @@ export function renderKConfigPreview(c: KConfigContent): { file: string; content
       if (c.layout.layoutScript.trim()) lines.push("// ... removes the user's panels, then runs the layout script above ...");
       out.push({ file: "plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js", content: lines.join("\n") + "\n", note: "The file name changes with the content, so a changed look is applied again." });
     }
+  }
+
+  // Application files (data directory).
+  if (hasKonsoleProfileContent(c.konsoleProfile)) {
+    const k = c.konsoleProfile;
+    const name = konsoleProfileFileName(k).replace(/\.profile$/, "");
+    const lines = ["# Managed by Bor. Do not edit manually.", "", "[General]", `Name=${name}`, "Parent=FALLBACK/"];
+    if (k.command.trim()) lines.push(`Command=${k.command.trim()}`);
+    if (k.historyMode) {
+      lines.push("", "[Scrolling]", `HistoryMode=${k.historyMode}`);
+      if (k.historyMode === "1") lines.push(`HistorySize=${k.historySize > 0 ? Math.floor(k.historySize) : 1000}`);
+    }
+    if (k.colorScheme.trim() || k.font.trim()) {
+      lines.push("", "[Appearance]");
+      if (k.colorScheme.trim()) lines.push(`ColorScheme=${k.colorScheme.trim()}`);
+      if (k.font.trim()) lines.push(`Font=${k.font.trim()}`);
+    }
+    if (k.extraIni.trim()) lines.push("", k.extraIni.trim());
+    const selected = k.setDefault || k.lock ? ` Selected through konsolerc [Desktop Entry] DefaultProfile${k.lock ? ", enforced, with the profile actions restricted in kdeglobals" : ""}.` : " Not selected as the default profile.";
+    out.push({ file: `konsole/${konsoleProfileFileName(k)}`, content: lines.join("\n") + "\n", note: `Data directory (/etc/bor/share by default).${selected}` });
+  }
+  for (const id of c.hiddenApplications) {
+    out.push({
+      file: `applications/${id}`,
+      content: `[Desktop Entry]\nNoDisplay=true\n# ... the installed entry's other keys follow unchanged ...\n`,
+      note: "Data directory. The agent copies the installed desktop entry and adds NoDisplay=true, so the application disappears from menus and launchers but keeps working for file associations.",
+    });
   }
   return out;
 }

@@ -30,6 +30,11 @@ where one exists, the closest Windows Group Policy setting.
 | Devices & Services | Automatic mounting of removable devices, RDP server autostart | `kded_device_automounterrc`, `krdpserverrc` |
 | Network (KIO) | Proxy configuration for KDE applications | `kioslaverc` |
 | System Settings & URL Rules | Hide System Settings modules, or show only the listed ones; KIO URL restrictions | `kdeglobals` `[KDE Control Module Restrictions]`, `[KDE URL Restrictions]` |
+| Text Editor (Kate) | Kate and KWrite: sessions, backups, swap files, indentation, encoding, line numbers, word wrap, clipboard and search history kept, colour theme, font, which LSP language servers may start | `katerc` |
+| Screenshots (Spectacle) | What the Print key does, saving and clipboard behaviour, pointer and decorations, screenshot and recording folders, file formats and name templates | `spectaclerc` |
+| KDE PIM | KMail composer and reader behaviour, HTML mail and external references, scam and phishing detection, read receipts, encryption of drafts and sent mail; KOrganizer, Akregator and Kontact defaults | `kmail2rc`, `mailviewerrc`, `korganizerrc`, `akregatorrc`, `kontactrc` |
+| Notifications & Feedback | Low disk space warning and thresholds, launch feedback (busy cursor, task bar entry) | `freespacenotifierrc`, `klaunchrc` |
+| Applications | A Konsole terminal profile deployed to the nodes, applications hidden from menus and launchers | `konsole/<Name>.profile`, `applications/<id>.desktop` in the data directory |
 | Custom Entries | Any other KDE configuration key: file, group, key, value and markers | the file you name |
 | Scope | Limit the whole policy to members of Unix groups (local, LDAP or Active Directory) | the same files, under `groups/<group>/` |
 | Advanced | Lock the whole `kdeglobals` file, import an INI file, preview the rendered files | |
@@ -72,6 +77,7 @@ them.
 | `/etc/bor/xdg/<file>` (for example `kdeglobals`, `kwinrc`, `kscreenlockerrc`, `dolphinrc`) | System-wide KDE settings from all KDE Plasma policies, including System Settings module restrictions in `kdeglobals` | `kconfig.config_path` (default `/etc/bor/xdg`) |
 | `/etc/bor/xdg/groups/<group>/<file>` | Files of policies scoped to a Unix group, activated for members by the hook scripts. The whole `groups/` directory belongs to Bor; files no longer needed are removed | `kconfig.config_path` |
 | `/etc/bor/share/plasma/look-and-feel/org.bor.<policy>.desktop/`, `/etc/bor/share/plasma/shells/org.kde.plasma.desktop/contents/updates/bor-<hash>.js` | Generated look-and-feel package (wallpaper, panel layout) and the apply-once update script of the Desktop Layout feature. The whole directory belongs to Bor; files no longer needed are removed | `kconfig.data_path` (default `/etc/bor/share`) |
+| `/etc/bor/share/konsole/<Name>.profile`, `/etc/bor/share/applications/<id>.desktop` | Konsole profile and the desktop entries of hidden applications (copies of the installed entries with `NoDisplay=true`). Group-scoped policies write theirs under `/etc/bor/share/groups/<group>/` | `kconfig.data_path` |
 | Flatpak system override (`flatpak override --system --show`) | Exposes `/etc/bor/xdg` to sandboxed applications and prepends it to their `XDG_CONFIG_DIRS` while KDE Plasma policies apply | `kconfig.flatpak_override` (default `true`) |
 | `/etc/xdg/plasma-workspace/env/00-bor.sh` | Puts the Bor directories first in `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` for every Plasma session (sourced by `startplasma`, independent of the display manager) | Follows `kconfig.config_path` and `kconfig.data_path` |
 | `/etc/profile.d/99-bor.sh` | Same, for login shells and display managers whose session scripts source `/etc/profile` | Follows `kconfig.config_path` and `kconfig.data_path` |
@@ -83,7 +89,8 @@ Both hook scripts contain the same POSIX shell snippet:
 # Group-scoped policy directories, highest priority first.
 bor_group_dirs=""
 bor_gids=" $(id -G 2>/dev/null) "
-case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:" ;; esac
+bor_group_data=""
+case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:" ;; esac
 unset bor_gids
 case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":/etc/bor/xdg:"*) ;;
@@ -92,13 +99,15 @@ esac
 unset bor_group_dirs
 case ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":/etc/bor/share:"*) ;;
-  *) export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+  *) export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
 esac
+unset bor_group_data
 ```
 
-The group lines (everything that mentions `bor_group_dirs`) only appear
-while a policy scoped to a Unix group applies (see *Scoping a policy to
-user groups*); on other nodes the snippet is the two `case` blocks alone.
+The group lines (everything that mentions `bor_group_dirs` or
+`bor_group_data`) only appear while a policy scoped to a Unix group applies
+(see *Scoping a policy to user groups*); on other nodes the snippet is the
+two `case` blocks alone.
 
 KDE searches `XDG_CONFIG_DIRS` for system-wide configuration, so the files
 in `/etc/bor/xdg` take precedence over distribution defaults in `/etc/xdg`;
@@ -235,6 +244,66 @@ own theme selection; the package is still generated.
 The **Branding defaults** preset sets up the theme defaults around the
 wallpaper; add the wallpaper image under Desktop Layout afterwards.
 
+### Konsole profile
+
+**Applications > Konsole profile** deploys a terminal profile the way
+distributions ship theirs. The agent writes `konsole/<Name>.profile` into
+the data directory (`/etc/bor/share/konsole/`), where Konsole lists it next
+to its built-in profiles. The profile sets the **command** the terminal
+starts, the **scrollback** mode and size, the **colour scheme** and the
+**font**; **Additional profile entries** take any other key of a Konsole
+profile as INI text (`[Terminal Features]`, `[Interaction Options]`,
+`[Cursor Options]`, ...). Everything the profile does not set is inherited
+from Konsole's built-in defaults (`Parent=FALLBACK/`).
+
+- **Use as default profile** writes `konsolerc`, `[Desktop Entry]`,
+  `DefaultProfile=<Name>.profile`, so new windows and tabs use it. Without
+  it the profile is only offered in Konsole's profile list.
+- **Lock** writes that selection as enforced and adds the Kiosk
+  restrictions `action/manage-profiles`, `action/edit-current-profile` and
+  `action/switch-profile` to `kdeglobals`, which hide Konsole's profile
+  management. Users can neither switch to another profile nor create or
+  edit one.
+
+Konsole reads profiles when it starts; open windows need a restart. A
+profile of the same name that a user saved under `~/.local/share/konsole/`
+*before* the policy arrived still takes precedence, because the user's data
+directory comes first; pick a name users are unlikely to have used
+("Managed" is the default). One profile per node: when several bound
+policies carry one, the highest binding priority wins and the others report
+theirs as inapplicable. A policy scoped to a Unix group gets its own
+profile under `groups/<group>/konsole/` in the data directory. The
+**Managed terminal** preset combines a locked profile without scrollback
+with the Konsole settings that keep the terminal from being scripted from
+outside.
+
+### Hiding applications
+
+**Applications > Hidden applications** removes applications from the
+application menu, KRunner and other launchers. For every listed desktop
+file id the agent copies the installed entry (from
+`/usr/share/applications`, `/usr/local/share/applications` or the Flatpak
+and Snap export directories) into `applications/` in the data directory and
+adds `NoDisplay=true`; because that directory comes first in
+`XDG_DATA_DIRS`, the copy shadows the original. When no installed entry
+exists, a minimal hidden entry is written so the application stays hidden
+after it gets installed.
+
+Hiding is a menu clean-up, not a block: file associations keep working, and
+the program can still be started from a terminal or a file manager. Use the
+Kiosk restrictions under Session & Shell, System Settings module
+restrictions, polkit rules or package removal to prevent use. Ids are the
+file names under `/usr/share/applications` on the nodes
+(`org.kde.konsole.desktop`, `systemsettings.desktop`, `firefox.desktop`);
+the editor offers the common KDE ones. Lists from all bound policies are
+combined. The change takes effect at the next login; the agent also
+refreshes the application cache (`kbuildsycoca6`) of running sessions.
+Policies scoped to a Unix group hide their applications for members only
+(`groups/<group>/applications/` in the data directory). The **Hide
+administration tools** preset hides System Settings, Info Center, the menu
+editor, Discover, System Monitor, KSystemLog, Partition Manager, KWallet
+Manager and Akonadi Console.
+
 ### Scoping a policy to user groups
 
 Policies normally apply to every user of a node (the Windows "Computer
@@ -264,8 +333,11 @@ Configuration with security filtering"):
   and keep the node-wide policies for what applies to everyone.
 - The desktop layout (look-and-feel package) and System Settings module
   restrictions written in show-only mode apply to every user; a scoped
-  policy that carries a layout reports it as inapplicable. Flatpak
-  applications see only the node-wide settings (see below).
+  policy that carries a layout reports it as inapplicable. Konsole
+  profiles and hidden applications *can* be scoped: their files go to
+  `groups/<group>/` under the data directory, which the hook adds to
+  `XDG_DATA_DIRS` for members. Flatpak applications see only the
+  node-wide settings (see below).
 
 ### Flatpak applications
 

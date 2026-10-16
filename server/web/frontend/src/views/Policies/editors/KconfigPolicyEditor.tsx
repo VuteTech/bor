@@ -40,14 +40,20 @@ import { fetchNodesPaged, type Node } from "../../../apiClient/nodesApi";
 import {
   DEFAULT_PANEL_SNIPPET,
   DEFAULT_URL_RULE,
+  EMPTY_KONSOLE_PROFILE,
   EMPTY_LAYOUT,
   FILL_MODE_LABELS,
+  HISTORY_MODE_LABELS,
   KCM_MODULES,
   KCONFIG_PRESETS,
+  KDE_APPLICATION_IDS,
   KIO_PROTOCOLS,
   URL_RULE_PRESETS,
   applyKConfigPreset,
+  hasKonsoleProfileContent,
   hasLayoutContent,
+  isDesktopFileId,
+  konsoleProfileFileName,
   catalogueEntryForSetting,
   customSettings,
   findEntrySetting,
@@ -66,6 +72,7 @@ import {
   rgbToHex,
   type KConfigContent,
   type KConfigSettingJson,
+  type KonsoleProfileJson,
   type UrlRestrictionRule,
 } from "./kconfigModel";
 
@@ -82,10 +89,33 @@ const KEY_IMPORT = "__import";
 const KEY_CUSTOM_NEW = "__custom_new";
 const KEY_LAYOUT = "__layout";
 const KEY_SCOPE = "__scope";
+const KEY_KONSOLE = "__konsole";
+const KEY_HIDDEN_APPS = "__hidden_apps";
 const CUSTOM_PREFIX = "custom:";
 
 const GROUP_LAYOUT = "Desktop Layout";
 const GROUP_SCOPE = "Scope";
+const GROUP_APPS = "Applications";
+
+/** Splits the hidden-applications textarea into valid desktop file ids
+ *  (de-duplicated, order kept) and the entries the server would reject. */
+function parseDesktopIdText(text: string): { ids: string[]; invalid: string[] } {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  const invalid: string[] = [];
+  for (const raw of text.split(/[\s,]+/)) {
+    const id = raw.trim();
+    if (!id) continue;
+    if (!isDesktopFileId(id)) {
+      invalid.push(id);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return { ids, invalid };
+}
 
 /** Splits the Unix group textarea into valid names (de-duplicated, order
  *  kept) and the entries the server would reject. Same rules as the
@@ -192,6 +222,8 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (content.fileImmutableKdeglobals) keys.push(KEY_FILE_LOCK);
     if (hasLayoutContent(content.layout)) keys.push(KEY_LAYOUT);
     if (content.unixGroups.length > 0) keys.push(KEY_SCOPE);
+    if (hasKonsoleProfileContent(content.konsoleProfile)) keys.push(KEY_KONSOLE);
+    if (content.hiddenApplications.length > 0) keys.push(KEY_HIDDEN_APPS);
     return keys;
   }, [configuredEntryIds, custom, content]);
 
@@ -210,6 +242,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (content.fileImmutableKdeglobals) groups.add(GROUP_ADVANCED);
     if (hasLayoutContent(content.layout)) groups.add(GROUP_LAYOUT);
     if (content.unixGroups.length > 0) groups.add(GROUP_SCOPE);
+    if (hasKonsoleProfileContent(content.konsoleProfile) || content.hiddenApplications.length > 0) groups.add(GROUP_APPS);
     return groups;
   });
   const [filter, setFilter] = useState("");
@@ -294,6 +327,11 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       (i) => !f || i.label.toLowerCase().includes(f.toLowerCase()) || "look and feel theme branding".includes(f.toLowerCase()),
     );
     if (layoutItems.length > 0) t.set(GROUP_LAYOUT, layoutItems);
+    const appItems: TreeItem[] = [
+      { key: KEY_KONSOLE, label: "Konsole profile" },
+      { key: KEY_HIDDEN_APPS, label: "Hidden applications" },
+    ].filter((i) => !f || i.label.toLowerCase().includes(f.toLowerCase()) || "terminal menu launcher desktop entry nodisplay".includes(f.toLowerCase()));
+    if (appItems.length > 0) t.set(GROUP_APPS, appItems);
     const special: TreeItem[] = [
       { key: KEY_KCM, label: "System Settings modules" },
       { key: KEY_URL, label: "URL restrictions" },
@@ -356,6 +394,8 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     else if (key === KEY_FILE_LOCK) write({ ...content, fileImmutableKdeglobals: false });
     else if (key === KEY_LAYOUT) write({ ...content, layout: EMPTY_LAYOUT });
     else if (key === KEY_SCOPE) write({ ...content, unixGroups: [] });
+    else if (key === KEY_KONSOLE) write({ ...content, konsoleProfile: EMPTY_KONSOLE_PROFILE });
+    else if (key === KEY_HIDDEN_APPS) write({ ...content, hiddenApplications: [] });
     if (selectedKey === key && key.startsWith(CUSTOM_PREFIX)) setSelectedKey(null);
   };
 
@@ -372,6 +412,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
         if (e) n.add(e.category);
       }
       if (preset.kcmRestrictions) n.add(GROUP_RESTRICTIONS);
+      if (preset.hiddenApplications || preset.konsoleProfile) n.add(GROUP_APPS);
       return n;
     });
   };
@@ -934,6 +975,142 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     );
   };
 
+  /* ── Konsole profile ── */
+  const renderKonsoleEditor = () => {
+    const k = content.konsoleProfile;
+    const update = (partial: Partial<KonsoleProfileJson>) => write({ ...content, konsoleProfile: { ...k, ...partial } });
+    const configured = hasKonsoleProfileContent(k);
+    const nameOk = k.name.trim() === "" || /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/.test(k.name.trim());
+    const isDefault = k.setDefault || k.lock;
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Konsole profile</Title>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+          The agent writes <code>konsole/{konsoleProfileFileName(k)}</code> into the data directory, where Konsole finds it next to the distribution's profiles. <strong>Use as default profile</strong> makes it the profile of new windows and tabs (<code>konsolerc · [Desktop Entry] · DefaultProfile</code>); <strong>Lock</strong> enforces that and hides Konsole's profile management, so users cannot create, edit or switch profiles. Everything the profile does not set is inherited from Konsole's built-in defaults.
+        </p>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>Windows equivalent: Windows Terminal defaults deployed through its settings file; a locked profile has no direct counterpart.</p>
+        <Form>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <FormGroup label="Profile name" fieldId="kc-konsole-name">
+              <TextInput id="kc-konsole-name" value={k.name} isDisabled={isDisabled} validated={nameOk ? "default" : "error"} aria-invalid={!nameOk || undefined} onChange={(_ev, v) => update({ name: v })} placeholder="Managed" />
+              <FieldHelp>Letters, digits, spaces, dots, underscores and dashes. File name: {konsoleProfileFileName(k)}</FieldHelp>
+            </FormGroup>
+            <FormGroup label="Command" fieldId="kc-konsole-command">
+              <TextInput id="kc-konsole-command" value={k.command} isDisabled={isDisabled} onChange={(_ev, v) => update({ command: v })} placeholder="/bin/bash" />
+              <FieldHelp>Program the terminal starts; empty keeps the user's login shell.</FieldHelp>
+            </FormGroup>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <FormGroup label="Scrollback" fieldId="kc-konsole-history">
+              <FormSelect id="kc-konsole-history" value={k.historyMode} isDisabled={isDisabled} onChange={(_ev, v) => update({ historyMode: v })}>
+                {Object.entries(HISTORY_MODE_LABELS).map(([v, label]) => <FormSelectOption key={v} value={v} label={label} />)}
+              </FormSelect>
+            </FormGroup>
+            {k.historyMode === "1" && (
+              <FormGroup label="Scrollback lines" fieldId="kc-konsole-history-size">
+                <TextInput id="kc-konsole-history-size" type="number" min={1} max={1000000} value={k.historySize > 0 ? String(k.historySize) : ""} isDisabled={isDisabled} onChange={(_ev, v) => update({ historySize: Number(v) || 0 })} placeholder="1000" />
+              </FormGroup>
+            )}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            <FormGroup label="Colour scheme" fieldId="kc-konsole-scheme">
+              <TextInput id="kc-konsole-scheme" value={k.colorScheme} isDisabled={isDisabled} onChange={(_ev, v) => update({ colorScheme: v })} placeholder="Breeze" />
+              <FieldHelp>A .colorscheme Konsole ships or one deployed to the nodes: Breeze, BlackOnWhite, WhiteOnBlack, Solarized, ...</FieldHelp>
+            </FormGroup>
+            <FormGroup label="Font" fieldId="kc-konsole-font">
+              <TextInput id="kc-konsole-font" value={k.font} isDisabled={isDisabled} onChange={(_ev, v) => update({ font: v })} placeholder="Hack,10,-1,5,50,0,0,0,0,0" />
+              <FieldHelp>Qt font string (family, point size, ...) as Konsole writes it.</FieldHelp>
+            </FormGroup>
+          </div>
+          <FormGroup label="Additional profile entries (INI)" fieldId="kc-konsole-extra">
+            <TextArea
+              id="kc-konsole-extra"
+              value={k.extraIni}
+              isDisabled={isDisabled}
+              rows={6}
+              style={mono}
+              onChange={(_ev, v) => update({ extraIni: v })}
+              placeholder={"[Terminal Features]\nBlinkingCursorEnabled=false\n\n[Interaction Options]\nOpenLinksByDirectClickEnabled=false"}
+            />
+            <FieldHelp>Any other key of a Konsole profile: [General], [Appearance], [Scrolling], [Terminal Features], [Cursor Options], [Interaction Options], [Encoding Options], [Keyboard].</FieldHelp>
+          </FormGroup>
+          <FormGroup label="Use as default profile" fieldId="kc-konsole-default">
+            <Switch id="kc-konsole-default" isChecked={isDefault} isDisabled={isDisabled || k.lock} onChange={(_ev, c) => update({ setDefault: c })} label={isDefault ? "New windows and tabs use this profile" : "Listed in Konsole's profiles only"} />
+          </FormGroup>
+          <FormGroup label="Lock" fieldId="kc-konsole-lock">
+            <Switch id="kc-konsole-lock" isChecked={k.lock} isDisabled={isDisabled} onChange={(_ev, c) => update({ lock: c, setDefault: c ? true : k.setDefault })} label={k.lock ? "Enforced default; managing, editing and switching profiles is hidden" : "Users may switch to or create other profiles"} />
+          </FormGroup>
+          {!isDisabled && configured && (
+            <FormGroup fieldId="kc-konsole-actions">
+              <Button variant="danger" size="sm" onClick={() => write({ ...content, konsoleProfile: EMPTY_KONSOLE_PROFILE })}>Remove from policy</Button>
+            </FormGroup>
+          )}
+          {!configured && <p aria-live="polite" style={{ ...subtle, fontSize: "0.85rem" }}>Set a command, scrollback mode, colour scheme, font or additional entries, or switch on the default or the lock, to add the profile to the policy.</p>}
+        </Form>
+      </div>
+    );
+  };
+
+  /* ── Hidden applications ── */
+  const [hiddenText, setHiddenText] = useState(() => content.hiddenApplications.join("\n"));
+  useEffect(() => {
+    if (parseDesktopIdText(hiddenText).ids.join("\n") !== content.hiddenApplications.join("\n")) {
+      setHiddenText(content.hiddenApplications.join("\n"));
+    }
+  }, [content.hiddenApplications, hiddenText]);
+  const renderHiddenAppsEditor = () => {
+    const { invalid } = parseDesktopIdText(hiddenText);
+    const addId = (id: string) => {
+      if (!id || content.hiddenApplications.includes(id)) return;
+      const next = [...content.hiddenApplications, id];
+      setHiddenText(next.join("\n"));
+      write({ ...content, hiddenApplications: next });
+    };
+    return (
+      <div style={{ padding: "0.5rem 0" }}>
+        <Title headingLevel="h3" size="lg" style={{ marginBottom: "0.25rem" }}>Hidden applications</Title>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+          Removes the listed applications from the application menu, KRunner and other launchers. The agent copies each installed desktop entry into <code>applications/</code> in the data directory with <code>NoDisplay=true</code>; that directory comes first in <code>XDG_DATA_DIRS</code>, so the copy shadows the original. File associations keep working and the program can still be started from a terminal or a file manager: hiding is a menu clean-up, not a block. Use Kiosk restrictions (Session &amp; Shell), System Settings module restrictions or package removal to prevent use.
+        </p>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>
+          Windows Group Policy equivalent: Remove programs from the Start menu (hiding only). Ids are the desktop file names under <code>/usr/share/applications</code> on the nodes, for example <code>org.kde.konsole.desktop</code> or <code>systemsettings.desktop</code>. Takes effect at the next login; the agent refreshes the application cache of running sessions.
+        </p>
+        <Form>
+          {!isDisabled && (
+            <FormGroup label="Add a common application" fieldId="kc-hidden-add">
+              <FormSelect id="kc-hidden-add" value="" onChange={(_ev, v) => addId(v)}>
+                <FormSelectOption value="" label="Select an application..." isDisabled />
+                {KDE_APPLICATION_IDS.filter((a) => !content.hiddenApplications.includes(a.id)).map((a) => <FormSelectOption key={a.id} value={a.id} label={`${a.label} (${a.id})`} />)}
+              </FormSelect>
+            </FormGroup>
+          )}
+          <FormGroup label="Desktop file ids (one per line)" fieldId="kc-hidden-ids">
+            <TextArea
+              id="kc-hidden-ids"
+              value={hiddenText}
+              isDisabled={isDisabled}
+              rows={8}
+              style={mono}
+              validated={invalid.length > 0 ? "error" : "default"}
+              aria-invalid={invalid.length > 0 || undefined}
+              onChange={(_ev, v) => {
+                setHiddenText(v);
+                write({ ...content, hiddenApplications: parseDesktopIdText(v).ids });
+              }}
+              placeholder={"org.kde.konsole.desktop\nsystemsettings.desktop"}
+            />
+            <FieldHelp>{invalid.length > 0 ? `Not a desktop file id: ${invalid.join(", ")}` : `${content.hiddenApplications.length} application(s) hidden.`}</FieldHelp>
+          </FormGroup>
+          {!isDisabled && content.hiddenApplications.length > 0 && (
+            <FormGroup fieldId="kc-hidden-actions">
+              <Button variant="danger" size="sm" onClick={() => { setHiddenText(""); write({ ...content, hiddenApplications: [] }); }}>Remove from policy</Button>
+            </FormGroup>
+          )}
+        </Form>
+      </div>
+    );
+  };
+
   /* ── Whole-file lock ── */
   const renderFileLock = () => (
     <div style={{ padding: "0.5rem 0" }}>
@@ -958,7 +1135,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
         <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "1rem" }}>
           What the agent writes under <code>/etc/bor/xdg</code> for this policy on its own (other bound policies are merged by priority on the node; the managed-file header is omitted).
           {content.unixGroups.length > 0 && (
-            <> This policy is limited to {content.unixGroups.join(", ")}, so its files go to <code>groups/&lt;group&gt;/</code> under that directory.</>
+            <> This policy is limited to {content.unixGroups.join(", ")}, so its files go to <code>groups/&lt;group&gt;/</code> under the config and data directories.</>
           )}
         </p>
         {files.length === 0 && <p style={{ ...subtle, fontStyle: "italic" }}>Nothing configured yet.</p>}
@@ -1029,6 +1206,8 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     if (selectedKey === KEY_FILE_LOCK) return renderFileLock();
     if (selectedKey === KEY_LAYOUT) return renderLayoutEditor();
     if (selectedKey === KEY_SCOPE) return renderScopeEditor();
+    if (selectedKey === KEY_KONSOLE) return renderKonsoleEditor();
+    if (selectedKey === KEY_HIDDEN_APPS) return renderHiddenAppsEditor();
     if (selectedKey === KEY_PREVIEW) return renderPreview();
     if (selectedKey === KEY_IMPORT) return renderImport();
     if (selectedKey === KEY_CUSTOM_NEW || selectedKey.startsWith(CUSTOM_PREFIX)) return renderCustomEditor();

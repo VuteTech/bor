@@ -42,8 +42,8 @@ const NotifyDebounce = 10 * time.Second
 // to active user sessions via D-Bus.
 type Notifier struct {
 	mu           sync.Mutex
-	lastSent     map[uint32]time.Time // UID → last notification time
-	lastNotifyID map[uint32]uint32    // UID → last notify-send notification ID
+	lastSent     map[uint32]time.Time // UID -> last notification time
+	lastNotifyID map[uint32]uint32    // UID -> last notify-send notification ID
 
 	debounceMu    sync.Mutex
 	debounceTimer *time.Timer
@@ -110,7 +110,7 @@ type session struct {
 // (e.g. "kwinrc", "kdeglobals"). cfg controls whether notifications
 // are sent, the cooldown, and the message text.
 //
-// All errors are logged but never returned — notification is
+// All errors are logged but never returned - notification is
 // best-effort and must not block policy enforcement.
 func (n *Notifier) NotifyAndReconfigure(cfg Config, changedFiles map[string]bool) {
 	if !cfg.Enabled && len(changedFiles) == 0 {
@@ -321,6 +321,38 @@ func ApplyWallpaperToSessions(imagePath, fillMode string) {
 			log.Printf("notify: wallpaper apply failed for UID %d: %v", s.UID, err)
 		} else {
 			log.Printf("notify: wallpaper applied for user %s (UID %d)", s.User, s.UID)
+		}
+	}
+}
+
+// RebuildSycocaInSessions refreshes the application cache of every active
+// graphical session (kbuildsycoca6, or kbuildsycoca5 on Plasma 5) so that
+// hidden or restored desktop entries show up without a new login.
+// Best-effort: failures are logged, never returned.
+func RebuildSycocaInSessions() {
+	sessions, err := activeGraphicalSessions()
+	if err != nil {
+		log.Printf("notify: failed to enumerate sessions for the application cache: %v", err)
+		return
+	}
+	tool := ""
+	for _, candidate := range []string{"kbuildsycoca6", "kbuildsycoca5"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			tool = candidate
+			break
+		}
+	}
+	if tool == "" {
+		return
+	}
+	seen := make(map[uint32]bool)
+	for _, s := range sessions {
+		if seen[s.UID] {
+			continue
+		}
+		seen[s.UID] = true
+		if err := runAsUser(s, tool); err != nil {
+			log.Printf("notify: application cache rebuild failed for UID %d: %v", s.UID, err)
 		}
 	}
 }

@@ -11,7 +11,17 @@ import { FIREFOX_ALL_POLICIES } from "../../generated/proto/firefox_ui";
 import { THUNDERBIRD_ALL_POLICIES } from "../../generated/proto/thunderbird_ui";
 import { CHROME_ALL_POLICIES } from "../../generated/proto/chrome_ui";
 import { EDGE_ALL_POLICIES } from "../../generated/proto/edge_ui";
-import { FILL_MODE_LABELS, KCM_MODULES, catalogueEntryForSetting, hasLayoutContent, isExtraWrite, parseKConfigContent } from "./editors/kconfigModel";
+import {
+  FILL_MODE_LABELS,
+  HISTORY_MODE_LABELS,
+  KCM_MODULES,
+  catalogueEntryForSetting,
+  hasKonsoleProfileContent,
+  hasLayoutContent,
+  isExtraWrite,
+  konsoleProfileFileName,
+  parseKConfigContent,
+} from "./editors/kconfigModel";
 import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
 
 export interface SettingsRow {
@@ -21,7 +31,7 @@ export interface SettingsRow {
 }
 
 export function formatDisplayValue(val: unknown): string {
-  if (val === undefined || val === null) return "—";
+  if (val === undefined || val === null) return "-";
   if (typeof val === "boolean") return val ? "Yes" : "No";
   if (Array.isArray(val)) return val.length > 0 ? val.join(", ") : "(empty)";
   if (typeof val === "object") return JSON.stringify(val);
@@ -196,6 +206,21 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       rows.push({ setting: "Scope › Unix groups", value: kc.unixGroups.join(", "), locked: null });
     }
 
+    if (hasKonsoleProfileContent(kc.konsoleProfile)) {
+      const k = kc.konsoleProfile;
+      const bits: string[] = [];
+      if (k.command.trim()) bits.push(`command ${k.command.trim()}`);
+      bits.push((HISTORY_MODE_LABELS[k.historyMode] ?? k.historyMode).toLowerCase() + (k.historyMode === "1" && k.historySize > 0 ? ` (${k.historySize} lines)` : ""));
+      if (k.colorScheme.trim()) bits.push(`colour scheme ${k.colorScheme.trim()}`);
+      if (k.font.trim()) bits.push(`font ${k.font.trim()}`);
+      if (k.setDefault || k.lock) bits.push("default profile");
+      rows.push({ setting: `Applications › Konsole profile ${konsoleProfileFileName(k)}`, value: bits.join(", "), locked: k.lock ? "Yes" : "No" });
+    }
+
+    if (kc.hiddenApplications.length > 0) {
+      rows.push({ setting: "Applications › Hidden applications", value: kc.hiddenApplications.join(", "), locked: null });
+    }
+
     if (hasLayoutContent(kc.layout)) {
       const l = kc.layout;
       if (l.wallpaperImage.trim()) {
@@ -237,7 +262,7 @@ export function buildSettingsRows(policyType: string, content: string): Settings
       if (subj.require_active) who.push("active session only");
       rows.push({
         setting: `Rule ${idx + 1} › ${rule.description || actions.join(", ") || "(no actions)"}`,
-        value: `${result} — ${who.length > 0 ? who.join(", ") : "everyone"}${rule.description && actions.length > 0 ? ` (${actions.join(", ")})` : ""}`,
+        value: `${result} - ${who.length > 0 ? who.join(", ") : "everyone"}${rule.description && actions.length > 0 ? ` (${actions.join(", ")})` : ""}`,
         locked: null,
       });
     }
@@ -264,7 +289,7 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     if (fw.forwardPorts?.length) {
       rows.push({
         setting: "Forward ports",
-        value: fw.forwardPorts.map((p) => `${fmtPort(p)} → ${p.toAddr ?? ""}${p.toPort !== undefined ? `:${p.toPort}` : ""}`).join(", "),
+        value: fw.forwardPorts.map((p) => `${fmtPort(p)} -> ${p.toAddr ?? ""}${p.toPort !== undefined ? `:${p.toPort}` : ""}`).join(", "),
         locked: null,
       });
     }
@@ -404,7 +429,7 @@ export function buildSettingsRows(policyType: string, content: string): Settings
         ...(rule.users ?? []).map((u) => `user ${u}`),
         ...(rule.groups ?? []).map((g) => `group ${g}`),
       ];
-      const windows = (rule.windows ?? []).map((w) => `${(w.days ?? []).join("/")} ${w.start ?? "?"}–${w.end ?? "?"}`);
+      const windows = (rule.windows ?? []).map((w) => `${(w.days ?? []).join("/")} ${w.start ?? "?"}-${w.end ?? "?"}`);
       const tail = rule.endAction ? `, then ${rule.endAction.toLowerCase().replace(/_/g, " ")}` : "";
       rows.push({
         setting: `Rule ${idx + 1} › ${rule.description || targets.join(", ") || "(no users or groups)"}`,

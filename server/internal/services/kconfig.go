@@ -188,6 +188,100 @@ func ValidateKConfigPolicy(content string) error {
 		return err
 	}
 
+	if err := validateKonsoleProfile(kcp.GetKonsoleProfile()); err != nil {
+		return err
+	}
+
+	if err := validateHiddenApplications(kcp.GetHiddenApplications()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Limits for the application packs.
+const (
+	maxKonsoleProfileNameLen = 64
+	maxKonsoleProfileExtra   = 8 * 1024
+	maxKonsoleHistorySize    = 1_000_000
+	maxHiddenApplications    = 200
+)
+
+var (
+	konsoleProfileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]*$`)
+	desktopFileIDPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*\.desktop$`)
+)
+
+// konsoleProfileHasContent mirrors the agent's KonsoleProfileHasContent.
+func konsoleProfileHasContent(p *pb.KonsoleProfile) bool {
+	if p == nil {
+		return false
+	}
+	return strings.TrimSpace(p.GetCommand()) != "" || strings.TrimSpace(p.GetHistoryMode()) != "" ||
+		strings.TrimSpace(p.GetColorScheme()) != "" || strings.TrimSpace(p.GetFont()) != "" ||
+		strings.TrimSpace(p.GetExtraIni()) != "" || p.GetSetDefault() || p.GetLock()
+}
+
+// validateKonsoleProfile checks the Konsole profile: a file-name safe
+// profile name, single-line values, a known history mode and INI text made
+// of groups, keys and comments only.
+func validateKonsoleProfile(p *pb.KonsoleProfile) error {
+	if p == nil {
+		return nil
+	}
+	if name := strings.TrimSpace(p.GetName()); name != "" {
+		if len(name) > maxKonsoleProfileNameLen || !konsoleProfileNamePattern.MatchString(name) {
+			return fmt.Errorf("konsoleProfile.name must be letters, digits, spaces, dots, underscores or dashes (max %d characters)", maxKonsoleProfileNameLen)
+		}
+	}
+	for field, v := range map[string]string{"command": p.GetCommand(), "colorScheme": p.GetColorScheme(), "font": p.GetFont()} {
+		if strings.ContainsAny(v, "\r\n") || len(v) > maxKConfigStringLen {
+			return fmt.Errorf("konsoleProfile.%s must be a single line (max %d characters)", field, maxKConfigStringLen)
+		}
+	}
+	switch strings.TrimSpace(p.GetHistoryMode()) {
+	case "", "0", "1", "2":
+	default:
+		return fmt.Errorf("konsoleProfile.historyMode must be 0 (none), 1 (fixed) or 2 (unlimited)")
+	}
+	if p.GetHistorySize() < 0 || p.GetHistorySize() > maxKonsoleHistorySize {
+		return fmt.Errorf("konsoleProfile.historySize must be between 0 and %d lines", maxKonsoleHistorySize)
+	}
+	if len(p.GetExtraIni()) > maxKonsoleProfileExtra {
+		return fmt.Errorf("konsoleProfile.extraIni is too long (max %d bytes)", maxKonsoleProfileExtra)
+	}
+	for i, raw := range strings.Split(strings.ReplaceAll(p.GetExtraIni(), "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case line == "", strings.HasPrefix(line, "#"):
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") && len(line) > 2:
+		default:
+			k, _, ok := strings.Cut(line, "=")
+			if !ok || strings.TrimSpace(k) == "" || strings.ContainsAny(k, "[]") {
+				return fmt.Errorf("konsoleProfile.extraIni line %d: expected [Group], key=value or a # comment", i+1)
+			}
+		}
+	}
+	return nil
+}
+
+// validateHiddenApplications checks the desktop file ids of the hidden
+// applications list.
+func validateHiddenApplications(ids []string) error {
+	if len(ids) > maxHiddenApplications {
+		return fmt.Errorf("too many hiddenApplications (%d, max %d)", len(ids), maxHiddenApplications)
+	}
+	seen := make(map[string]bool, len(ids))
+	for i, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" || len(id) > 255 || strings.Contains(id, "..") || !desktopFileIDPattern.MatchString(id) {
+			return fmt.Errorf("hiddenApplications[%d]: %q is not a desktop file id (expected something like org.kde.konsole.desktop)", i, raw)
+		}
+		if seen[id] {
+			return fmt.Errorf("hiddenApplications[%d]: duplicate %q", i, id)
+		}
+		seen[id] = true
+	}
 	return nil
 }
 
@@ -300,7 +394,9 @@ func kconfigPolicyHasSettings(kcp *pb.KConfigPolicy) bool {
 		len(kcp.KcmRestrictions) > 0 ||
 		len(kcp.Settings) > 0 ||
 		kcp.GetFileImmutableKdeglobals() ||
-		kconfigLayoutHasContent(kcp.GetLayout())
+		kconfigLayoutHasContent(kcp.GetLayout()) ||
+		konsoleProfileHasContent(kcp.GetKonsoleProfile()) ||
+		len(kcp.HiddenApplications) > 0
 }
 
 // legacyKConfigFields lists the deprecated [KDE Resource Restrictions]

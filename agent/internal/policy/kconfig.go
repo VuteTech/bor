@@ -265,6 +265,10 @@ type KConfigMergeResult struct {
 	// highest priority first, as the login hook orders them.
 	GroupFiles map[string]map[string][]byte
 	Groups     []KConfigGroupScope
+	// Apps are the node-wide application files (Konsole profile, hidden
+	// desktop entries); GroupApps the same per group slug.
+	Apps      KConfigAppFiles
+	GroupApps map[string]KConfigAppFiles
 }
 
 // kconfigScope collects the winning entries of one overlay: the node-wide
@@ -274,10 +278,14 @@ type kconfigScope struct {
 	winners       map[string]kconfigWinner
 	entries       []*pb.KConfigEntry
 	fileImmutable map[string]bool
+	// Application files of the scope, and who provided them.
+	apps       KConfigAppFiles
+	konsoleSrc KConfigPolicySource
+	hiddenBy   map[string]string // desktop file id -> first policy hiding it
 }
 
 func newKConfigScope(prefix string) *kconfigScope {
-	return &kconfigScope{prefix: prefix, winners: make(map[string]kconfigWinner), fileImmutable: make(map[string]bool)}
+	return &kconfigScope{prefix: prefix, winners: make(map[string]kconfigWinner), fileImmutable: make(map[string]bool), hiddenBy: make(map[string]string)}
 }
 
 // item builds the compliance item for an entry of this scope.
@@ -423,9 +431,11 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 	}
 	res.Files = files
 	res.Entries = nodeScope.entries
+	res.Apps = nodeScope.apps
 
 	if len(groupScopes) > 0 {
 		res.GroupFiles = make(map[string]map[string][]byte, len(groupScopes))
+		res.GroupApps = make(map[string]KConfigAppFiles, len(groupScopes))
 		for slug, sc := range groupScopes {
 			gf, err := sc.render()
 			if err != nil {
@@ -435,6 +445,7 @@ func MergeKConfigPolicies(sources []KConfigPolicySource, installedKCMs []string)
 				gf = map[string][]byte{}
 			}
 			res.GroupFiles[slug] = gf
+			res.GroupApps[slug] = sc.apps
 			res.Groups = append(res.Groups, *groupMeta[slug])
 		}
 		sort.SliceStable(res.Groups, func(i, j int) bool {
@@ -488,6 +499,13 @@ func mergeSourceIntoScope(sc *kconfigScope, src KConfigPolicySource, installedKC
 		items = append(items, mergeShowOnlyKCMs(sc, src, installedKCMs))
 	}
 
+	// Application files: one Konsole profile per scope (highest priority
+	// wins), hidden desktop entries combined from every policy.
+	if p := src.Policy.GetKonsoleProfile(); KonsoleProfileHasContent(p) {
+		items = append(items, mergeKonsoleProfile(sc, src, p)...)
+	}
+	items = append(items, mergeHiddenApplications(sc, src)...)
+
 	if src.Policy.GetFileImmutableKdeglobals() {
 		sc.fileImmutable[KConfigFileGlobals] = true
 		items = append(items, &pb.ComplianceItemResult{
@@ -496,6 +514,69 @@ func mergeSourceIntoScope(sc *kconfigScope, src KConfigPolicySource, installedKC
 			Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
 			Message:  "Whole file marked immutable",
 		})
+	}
+	return items
+}
+
+// mergeKonsoleProfile records the scope's Konsole profile (first policy in
+// priority order) and claims the entries that select it.
+func mergeKonsoleProfile(sc *kconfigScope, src KConfigPolicySource, p *pb.KonsoleProfile) []*pb.ComplianceItemResult {
+	file := konsoleProfileDir + "/" + KonsoleProfileFile(p)
+	if sc.apps.KonsoleProfile != nil {
+		return []*pb.ComplianceItemResult{{
+			SchemaId: sc.prefix + file,
+			Key:      "profile",
+			Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+			Message:  fmt.Sprintf("Overridden by higher-priority policy %q, which provides the Konsole profile %s", sc.konsoleSrc.Name, KonsoleProfileFile(sc.apps.KonsoleProfile)),
+		}}
+	}
+	sc.apps.KonsoleProfile = p
+	sc.apps.KonsoleProfilePolicy = src.Name
+	sc.konsoleSrc = src
+
+	msg := "Deployed Konsole profile " + KonsoleProfileName(p) + " (" + historyModeLabel(p.GetHistoryMode()) + ")"
+	items := []*pb.ComplianceItemResult{{SchemaId: sc.prefix + file, Key: "profile", Status: pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, Message: msg}}
+	for _, e := range KonsoleProfileEntries(p) {
+		if w, ok := sc.claim(e, src); !ok {
+			if sameKConfigEffect(w.entry, e) {
+				items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, fmt.Sprintf("Same value as higher-priority policy %q", w.src.Name)))
+			} else {
+				items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE,
+					fmt.Sprintf("Overridden by higher-priority policy %q (priority %d); applied value: %s", w.src.Name, w.src.Priority, w.entry.Value)))
+			}
+			continue
+		}
+		items = append(items, sc.item(e, pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT, "Deployed"))
+	}
+	return items
+}
+
+// mergeHiddenApplications adds the policy's hidden desktop entries to the
+// scope. Ids are combined across policies; an invalid id is reported.
+func mergeHiddenApplications(sc *kconfigScope, src KConfigPolicySource) []*pb.ComplianceItemResult {
+	var items []*pb.ComplianceItemResult
+	seen := make(map[string]bool)
+	for _, raw := range src.Policy.GetHiddenApplications() {
+		id := strings.TrimSpace(raw)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		item := &pb.ComplianceItemResult{SchemaId: sc.prefix + applicationsDir + "/" + id, Key: "NoDisplay"}
+		switch {
+		case !ValidDesktopFileID(id):
+			item.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR
+			item.Message = "not a desktop file id (expected something like org.kde.konsole.desktop)"
+		case sc.hiddenBy[id] != "":
+			item.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT
+			item.Message = fmt.Sprintf("Hidden from menus and launchers (also by policy %q)", sc.hiddenBy[id])
+		default:
+			sc.hiddenBy[id] = src.Name
+			sc.apps.HiddenApplications = append(sc.apps.HiddenApplications, id)
+			item.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT
+			item.Message = "Hidden from menus and launchers"
+		}
+		items = append(items, item)
 	}
 	return items
 }
@@ -1025,9 +1106,9 @@ func EnvScriptPaths() []string {
 // envScriptContent returns the POSIX shell snippet that prepends configPath
 // to XDG_CONFIG_DIRS and dataPath to XDG_DATA_DIRS exactly once, however
 // many hooks run it. groups are the per-group overlay directories, highest
-// priority first; each is added before configPath for members of the group
-// (matched on numeric GIDs from `id -G`, so group names never reach the
-// shell).
+// priority first; each is added before the node-wide directory for members
+// of the group (matched on numeric GIDs from `id -G`, so group names never
+// reach the shell).
 func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
 	var b strings.Builder
 	b.WriteString(`# Managed by Bor. Do not edit manually.
@@ -1037,17 +1118,18 @@ func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
 `)
 	// Nodes without group-scoped policies get the plain snippet; the group
 	// logic (and its helper variables) only appears when needed.
-	groupPrefix, groupCleanup := "", ""
+	configPrefix, configCleanup, dataPrefix, dataCleanup := "", "", "", ""
 	if len(groups) > 0 {
 		b.WriteString("# Group-scoped policy directories, highest priority first.\n")
 		b.WriteString("bor_group_dirs=\"\"\n")
+		b.WriteString("bor_group_data=\"\"\n")
 		b.WriteString("bor_gids=\" $(id -G 2>/dev/null) \"\n")
 		for _, g := range groups {
-			fmt.Fprintf(&b, "case \"$bor_gids\" in *\" %d \"*) bor_group_dirs=\"${bor_group_dirs}%s:\" ;; esac\n", g.GID, g.Dir)
+			fmt.Fprintf(&b, "case \"$bor_gids\" in *\" %d \"*) bor_group_dirs=\"${bor_group_dirs}%s:\"; bor_group_data=\"${bor_group_data}%s:\" ;; esac\n", g.GID, g.Dir, g.DataDir)
 		}
 		b.WriteString("unset bor_gids\n")
-		groupPrefix = "${bor_group_dirs}"
-		groupCleanup = "unset bor_group_dirs\n"
+		configPrefix, configCleanup = "${bor_group_dirs}", "unset bor_group_dirs\n"
+		dataPrefix, dataCleanup = "${bor_group_data}", "unset bor_group_data\n"
 	}
 	fmt.Fprintf(&b, `case ":${XDG_CONFIG_DIRS:-/etc/xdg}:" in
   *":%[1]s:"*) ;;
@@ -1055,9 +1137,9 @@ func envScriptContent(configPath, dataPath string, groups []GroupDir) string {
 esac
 %[4]scase ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" in
   *":%[2]s:"*) ;;
-  *) export XDG_DATA_DIRS="%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+  *) export XDG_DATA_DIRS="%[5]s%[2]s:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
 esac
-`, configPath, dataPath, groupPrefix, groupCleanup)
+%[6]s`, configPath, dataPath, configPrefix, configCleanup, dataPrefix, dataCleanup)
 	return b.String()
 }
 

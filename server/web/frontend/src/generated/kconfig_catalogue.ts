@@ -3663,5 +3663,3993 @@ export const KCONFIG_BUILTIN_CATALOGUE: readonly KConfigCatalogueEntry[] = [
     "category": "Ark",
     "reload": "app",
     "source": "builtin"
+  },
+  {
+    "id": "konsole.RememberWindowSize",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "RememberWindowSize",
+    "type": "Bool",
+    "label": "Remember the window size",
+    "defaultValue": "true",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.UseSingleInstance",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "UseSingleInstance",
+    "type": "Bool",
+    "label": "Run all windows in a single process",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.ForceNewTabs",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "ForceNewTabs",
+    "type": "Bool",
+    "label": "Open new tabs instead of new windows",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.ShowWindowTitleOnTitleBar",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "ShowWindowTitleOnTitleBar",
+    "type": "Bool",
+    "label": "Show the terminal title on the window title bar",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.FocusFollowsMouse",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "FocusFollowsMouse",
+    "type": "Bool",
+    "label": "Focus terminals under the mouse pointer",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.RemoveWindowTitleBarAndFrame",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "RemoveWindowTitleBarAndFrame",
+    "type": "Bool",
+    "label": "Remove the window title bar and frame",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.ShowProgressInTaskBar",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "ShowProgressInTaskBar",
+    "type": "Bool",
+    "label": "Show script progress in the task bar",
+    "defaultValue": "true",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.EnableSecuritySensitiveDBusAPI",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "EnableSecuritySensitiveDBusAPI",
+    "type": "Bool",
+    "label": "Allow the security-sensitive D-Bus API",
+    "description": "Lets other programs run commands and send input to open Konsole sessions through D-Bus (runCommand, sendText). Keep it disabled on managed desktops.",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.ListenForZModemTerminalCodes",
+    "file": "konsolerc",
+    "groupPath": [
+      "KonsoleWindow"
+    ],
+    "key": "ListenForZModemTerminalCodes",
+    "type": "Bool",
+    "label": "Listen for ZModem file transfer codes",
+    "description": "Enables automatic file transfers over serial connections when a program sends ZModem start codes.",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.TabBarVisibility",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "TabBarVisibility",
+    "type": "Enum",
+    "label": "Tab bar visibility",
+    "choices": [
+      "AlwaysShowTabBar",
+      "ShowTabBarWhenNeeded",
+      "AlwaysHideTabBar"
+    ],
+    "defaultValue": "ShowTabBarWhenNeeded",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.TabBarPosition",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "TabBarPosition",
+    "type": "Enum",
+    "label": "Tab bar position",
+    "choices": [
+      "Top",
+      "Bottom",
+      "Left",
+      "Right"
+    ],
+    "defaultValue": "Top",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.CloseTabButton",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "CloseTabButton",
+    "type": "Enum",
+    "label": "Close tab button placement",
+    "choices": [
+      "OnEachTab",
+      "OnTabBar",
+      "None"
+    ],
+    "defaultValue": "OnEachTab",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.NewTabButton",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "NewTabButton",
+    "type": "Bool",
+    "label": "Show the New Tab button on the tab bar",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.NewTabBehavior",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "NewTabBehavior",
+    "type": "Enum",
+    "label": "Where new tabs open",
+    "choices": [
+      "PutNewTabAtTheEnd",
+      "PutNewTabAfterCurrentTab"
+    ],
+    "defaultValue": "PutNewTabAtTheEnd",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.ExpandTabWidth",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "ExpandTabWidth",
+    "type": "Bool",
+    "label": "Expand tabs to the full tab bar width",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.CloseTabOnMiddleMouseButton",
+    "file": "konsolerc",
+    "groupPath": [
+      "TabBar"
+    ],
+    "key": "CloseTabOnMiddleMouseButton",
+    "type": "Bool",
+    "label": "Middle-click closes tabs",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.scrollbackUseSystemLocation",
+    "file": "konsolerc",
+    "groupPath": [
+      "FileLocation"
+    ],
+    "key": "scrollbackUseSystemLocation",
+    "type": "Bool",
+    "label": "Scrollback files in the system temporary directory",
+    "description": "Scrollback is spooled to files. Exactly one of the three location switches should be enabled.",
+    "defaultValue": "true",
+    "category": "Konsole",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.scrollbackUseCacheLocation",
+    "file": "konsolerc",
+    "groupPath": [
+      "FileLocation"
+    ],
+    "key": "scrollbackUseCacheLocation",
+    "type": "Bool",
+    "label": "Scrollback files in the user's cache directory",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.scrollbackUseSpecifiedLocation",
+    "file": "konsolerc",
+    "groupPath": [
+      "FileLocation"
+    ],
+    "key": "scrollbackUseSpecifiedLocation",
+    "type": "Bool",
+    "label": "Scrollback files in a specified directory",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.scrollbackUseSpecifiedLocationDirectory",
+    "file": "konsolerc",
+    "groupPath": [
+      "FileLocation"
+    ],
+    "key": "scrollbackUseSpecifiedLocationDirectory",
+    "type": "Url",
+    "label": "Scrollback files: directory",
+    "description": "file:// URL of the directory used with the specified-location switch, e.g. file:///var/tmp/konsole.",
+    "category": "Konsole",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.SyncProfileWithSystemTheme",
+    "file": "konsolerc",
+    "groupPath": [
+      "LightDarkTheme"
+    ],
+    "key": "SyncProfileWithSystemTheme",
+    "type": "Bool",
+    "label": "Switch profile with the light or dark system theme",
+    "defaultValue": "false",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.LightThemeProfile",
+    "file": "konsolerc",
+    "groupPath": [
+      "LightDarkTheme"
+    ],
+    "key": "LightThemeProfile",
+    "type": "String",
+    "label": "Profile for the light system theme",
+    "description": "Profile file name (Managed.profile) or _builtin_.",
+    "defaultValue": "_builtin_",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "konsole.DarkThemeProfile",
+    "file": "konsolerc",
+    "groupPath": [
+      "LightDarkTheme"
+    ],
+    "key": "DarkThemeProfile",
+    "type": "String",
+    "label": "Profile for the dark system theme",
+    "defaultValue": "_builtin_",
+    "category": "Konsole",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kiosk.action.manage_profiles",
+    "file": "kdeglobals",
+    "groupPath": [
+      "KDE Action Restrictions"
+    ],
+    "key": "action/manage-profiles",
+    "type": "Bool",
+    "label": "Restrict managing Konsole profiles",
+    "description": "Hides Settings > Manage Profiles, so users cannot create, edit or delete terminal profiles. Set automatically by a locked Konsole profile.",
+    "category": "Konsole",
+    "inverted": true,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "kiosk.action.edit_current_profile",
+    "file": "kdeglobals",
+    "groupPath": [
+      "KDE Action Restrictions"
+    ],
+    "key": "action/edit-current-profile",
+    "type": "Bool",
+    "label": "Restrict editing the current Konsole profile",
+    "description": "Hides Settings > Edit Current Profile. Set automatically by a locked Konsole profile.",
+    "category": "Konsole",
+    "inverted": true,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "kiosk.action.switch_profile",
+    "file": "kdeglobals",
+    "groupPath": [
+      "KDE Action Restrictions"
+    ],
+    "key": "action/switch-profile",
+    "type": "Bool",
+    "label": "Restrict switching Konsole profiles",
+    "description": "Hides Settings > Switch Profile and the profile list of the New Tab button. Set automatically by a locked Konsole profile.",
+    "category": "Konsole",
+    "inverted": true,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ShowFullPathInTitle",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show Full Path in Title",
+    "type": "Bool",
+    "label": "Show the full path in the window title",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ShowMenuBar",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show Menu Bar",
+    "type": "Bool",
+    "label": "Show the menu bar",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ShowStatusBar",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show Status Bar",
+    "type": "Bool",
+    "label": "Show the status bar",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ShowTabBar",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show Tab Bar",
+    "type": "Bool",
+    "label": "Show the tab bar",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ShowUrlNavBar",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show Url Nav Bar",
+    "type": "Bool",
+    "label": "Show the location bar above the editor",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.StartupSession",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Startup Session",
+    "type": "Enum",
+    "label": "Session at startup",
+    "description": "manual: ask which session to open; last: reopen the last session; new: start with an empty session.",
+    "choices": [
+      "manual",
+      "last",
+      "new"
+    ],
+    "defaultValue": "manual",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.RestoreWindowConfiguration",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Restore Window Configuration",
+    "type": "Bool",
+    "label": "Restore the window layout with the session",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.SaveMetaInfos",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Save Meta Infos",
+    "type": "Bool",
+    "label": "Remember cursor position, bookmarks and folding per document",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.DaysMetaInfos",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Days Meta Infos",
+    "type": "Int",
+    "label": "Keep document metadata for (days)",
+    "defaultValue": "30",
+    "rangeMin": "0",
+    "rangeMax": "3650",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ModifiedNotification",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Modified Notification",
+    "type": "Bool",
+    "label": "Warn about documents changed by other programs",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.CloseAfterLast",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Close After Last",
+    "type": "Bool",
+    "label": "Close the window when the last document closes",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.StashUnsavedFileChanges",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Stash unsaved file changes",
+    "type": "Bool",
+    "label": "Keep unsaved changes of existing files across sessions",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.StashNewUnsavedFiles",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Stash new unsaved files",
+    "type": "Bool",
+    "label": "Keep unsaved new documents across sessions",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ShowWelcomeView",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show welcome view for new window",
+    "type": "Bool",
+    "label": "Show the welcome screen in new windows",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.DiagnosticsLimit",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Diagnostics Limit",
+    "type": "Int",
+    "label": "Maximum diagnostics kept in the Diagnostics tool view",
+    "defaultValue": "12000",
+    "rangeMin": "0",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.TabbarTabLimit",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Tabbar Tab Limit",
+    "type": "Int",
+    "label": "Maximum number of tabs (0 = unlimited)",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.ElideTabText",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Elide Tab Text",
+    "type": "Bool",
+    "label": "Shorten long tab titles",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.AllowTabScrolling",
+    "file": "katerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Allow Tab Scrolling",
+    "type": "Bool",
+    "label": "Scroll through tabs with the mouse wheel",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.AutoSave",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Auto Save",
+    "type": "Bool",
+    "label": "Save documents automatically",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.AutoSaveInterval",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Auto Save Interval",
+    "type": "Int",
+    "label": "Automatic save interval (seconds, 0 = off)",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "rangeMax": "86400",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.AutoSaveOnFocusOut",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Auto Save On Focus Out",
+    "type": "Bool",
+    "label": "Save when the editor loses focus",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.BackupLocal",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Backup Local",
+    "type": "Bool",
+    "label": "Back up local files when saving",
+    "description": "Writes <prefix><name><suffix> next to the document before it is overwritten.",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.BackupRemote",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Backup Remote",
+    "type": "Bool",
+    "label": "Back up remote files when saving",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.BackupPrefix",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Backup Prefix",
+    "type": "String",
+    "label": "Backup file name prefix",
+    "defaultValue": "",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.BackupSuffix",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Backup Suffix",
+    "type": "String",
+    "label": "Backup file name suffix",
+    "defaultValue": "~",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.SwapFileMode",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Swap File Mode",
+    "type": "Int",
+    "label": "Swap (recovery) file",
+    "description": "0 disabled, 1 next to the document (default), 2 in the swap directory below.",
+    "defaultValue": "1",
+    "rangeMin": "0",
+    "rangeMax": "2",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.SwapDirectory",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Swap Directory",
+    "type": "Path",
+    "label": "Swap file directory",
+    "description": "Used with swap file mode 2; for example a local scratch directory on roaming or network home directories.",
+    "defaultValue": "",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.SwapSyncInterval",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Swap Sync Interval",
+    "type": "Int",
+    "label": "Swap file sync interval (seconds)",
+    "defaultValue": "15",
+    "rangeMin": "0",
+    "rangeMax": "3600",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.TabWidth",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Tab Width",
+    "type": "Int",
+    "label": "Tab width",
+    "defaultValue": "4",
+    "rangeMin": "1",
+    "rangeMax": "200",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.IndentationWidth",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Indentation Width",
+    "type": "Int",
+    "label": "Indentation width",
+    "defaultValue": "4",
+    "rangeMin": "1",
+    "rangeMax": "200",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.ReplaceTabsDyn",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "ReplaceTabsDyn",
+    "type": "Bool",
+    "label": "Insert spaces instead of tabulators",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.IndentationMode",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Indentation Mode",
+    "type": "String",
+    "label": "Default indentation mode",
+    "description": "normal, cstyle, python, ruby, xml, lisp, lua, haskell, ada, cmake, latex, pascal, replicode, r or none.",
+    "defaultValue": "normal",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.RemoveSpaces",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Remove Spaces",
+    "type": "Int",
+    "label": "Remove trailing spaces on save",
+    "description": "0 never, 1 on modified lines, 2 in the whole document.",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "rangeMax": "2",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.NewlineAtEOF",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Newline at End of File",
+    "type": "Bool",
+    "label": "Append a newline at the end of the file on save",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.Encoding",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Encoding",
+    "type": "String",
+    "label": "Default encoding",
+    "defaultValue": "UTF-8",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.BOM",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "BOM",
+    "type": "Bool",
+    "label": "Write a byte order mark",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.EndOfLine",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "End of Line",
+    "type": "Int",
+    "label": "Default line ending",
+    "description": "0 Unix (LF), 1 Windows (CR LF), 2 classic Macintosh (CR).",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "rangeMax": "2",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.LineLengthLimit",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Line Length Limit",
+    "type": "Int",
+    "label": "Line length limit before wrapping very long lines",
+    "defaultValue": "10000",
+    "rangeMin": "0",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.WordWrap",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Word Wrap",
+    "type": "Bool",
+    "label": "Static word wrap (insert line breaks)",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.WordWrapColumn",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Word Wrap Column",
+    "type": "Int",
+    "label": "Wrap words at column",
+    "defaultValue": "80",
+    "rangeMin": "1",
+    "rangeMax": "1000",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.OnTheFlySpellcheck",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "On-The-Fly Spellcheck",
+    "type": "Bool",
+    "label": "Automatic spell checking",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.ShowSpaces",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Show Spaces",
+    "type": "Int",
+    "label": "Show whitespace",
+    "description": "0 never, 1 trailing only, 2 everywhere.",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "rangeMax": "2",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.ShowTabs",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Show Tabs",
+    "type": "Bool",
+    "label": "Show tabulators",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.AutoReloadExternal",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Auto Reload If Any External Changes Occurs",
+    "type": "Bool",
+    "label": "Reload documents changed by other programs automatically",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.UseEditorConfig",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Use Editor Config",
+    "type": "Bool",
+    "label": "Honour .editorconfig files",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.doc.CamelCursor",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Document"
+    ],
+    "key": "Camel Cursor",
+    "type": "Bool",
+    "label": "Move by camel-case word parts",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.LineNumbers",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Line Numbers",
+    "type": "Bool",
+    "label": "Show line numbers",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.DynamicWordWrap",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Dynamic Word Wrap",
+    "type": "Bool",
+    "label": "Dynamic word wrap (display only)",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.FoldingBar",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Folding Bar",
+    "type": "Bool",
+    "label": "Show the folding markers",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.ScrollBarMiniMap",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Scroll Bar MiniMap",
+    "type": "Bool",
+    "label": "Show the scroll bar minimap",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.ScrollBarMarks",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Scroll Bar Marks",
+    "type": "Bool",
+    "label": "Show marks on the scroll bar",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.IconBar",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Icon Bar",
+    "type": "Bool",
+    "label": "Show the icon border",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.LineModification",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Line Modification",
+    "type": "Bool",
+    "label": "Show line modification markers",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.ShowWordCount",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Show Word Count",
+    "type": "Bool",
+    "label": "Show the word count in the status bar",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.ShowLineCount",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Show Line Count",
+    "type": "Bool",
+    "label": "Show the line count in the status bar",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.AutoBrackets",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Auto Brackets",
+    "type": "Bool",
+    "label": "Insert closing brackets automatically",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.AutoCompletion",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Auto Completion",
+    "type": "Bool",
+    "label": "Automatic completion popup",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.KeywordCompletion",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Keyword Completion",
+    "type": "Bool",
+    "label": "Complete highlighting keywords",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.WordCompletion",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Word Completion",
+    "type": "Bool",
+    "label": "Complete words from the document",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.PersistentSelection",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Persistent Selection",
+    "type": "Bool",
+    "label": "Keep the selection after typing",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.ScrollPastEnd",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Scroll Past End",
+    "type": "Bool",
+    "label": "Scroll past the end of the document",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.InputMode",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Input Mode",
+    "type": "Int",
+    "label": "Default input mode",
+    "description": "0 normal, 1 Vi.",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "rangeMax": "1",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.ViRelativeLineNumbers",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Vi Relative Line Numbers",
+    "type": "Bool",
+    "label": "Relative line numbers in Vi mode",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.EnableAccessibility",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Enable Accessibility",
+    "type": "Bool",
+    "label": "Expose the editor to screen readers",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.MaxClipboardHistoryEntries",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Max Clipboard History Entries",
+    "type": "Int",
+    "label": "Clipboard history entries kept by the editor",
+    "description": "0 keeps no clipboard history inside Kate (Edit > Paste from clipboard history).",
+    "defaultValue": "20",
+    "rangeMin": "0",
+    "rangeMax": "999",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.view.MaximumSearchHistorySize",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor View"
+    ],
+    "key": "Maximum Search History Size",
+    "type": "Int",
+    "label": "Search history entries kept",
+    "defaultValue": "100",
+    "rangeMin": "0",
+    "rangeMax": "999",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.ColorTheme",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Color Theme",
+    "type": "String",
+    "label": "Editor colour theme",
+    "description": "A KSyntaxHighlighting theme name: Breeze Light, Breeze Dark, Monokai, Solarized Light, ...",
+    "defaultValue": "",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.AutoColorThemeSelection",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Auto Color Theme Selection",
+    "type": "Bool",
+    "label": "Follow the application colour scheme",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.TextFont",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Text Font",
+    "type": "Font",
+    "label": "Editor font",
+    "description": "Qt font string, e.g. Hack,10,-1,5,50,0,0,0,0,0.",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.ShowIndentationLines",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Show Indentation Lines",
+    "type": "Bool",
+    "label": "Show indentation guide lines",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.WordWrapMarker",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Word Wrap Marker",
+    "type": "Bool",
+    "label": "Show the word wrap column marker",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.LineHeightMultiplier",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Line Height Multiplier",
+    "type": "Double",
+    "label": "Line height multiplier",
+    "defaultValue": "1",
+    "rangeMin": "0.5",
+    "rangeMax": "3",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.render.AnimateBracketMatching",
+    "file": "katerc",
+    "groupPath": [
+      "KTextEditor Renderer"
+    ],
+    "key": "Animate Bracket Matching",
+    "type": "Bool",
+    "label": "Animate matching brackets",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.AllowedServerCommandLines",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "AllowedServerCommandLines",
+    "type": "StringList",
+    "label": "LSP server command lines allowed to start",
+    "description": "Language servers Kate may start without asking. Each entry is a full command line as shown in the LSP client's permission prompt.",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.BlockedServerCommandLines",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "BlockedServerCommandLines",
+    "type": "StringList",
+    "label": "LSP server command lines never started",
+    "description": "Language servers Kate refuses to start. Use it to stop automatic downloads or execution of unknown language servers.",
+    "category": "Text Editor (Kate)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.ServerConfiguration",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "ServerConfiguration",
+    "type": "Path",
+    "label": "LSP server configuration file",
+    "description": "JSON file that defines the language servers (merged with Kate's defaults).",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.FormatOnSave",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "FormatOnSave",
+    "type": "Bool",
+    "label": "Format documents on save (LSP)",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.Diagnostics",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "Diagnostics",
+    "type": "Bool",
+    "label": "Show LSP diagnostics",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.SemanticHighlighting",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "SemanticHighlighting",
+    "type": "Bool",
+    "label": "Semantic highlighting (LSP)",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.InlayHints",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "InlayHints",
+    "type": "Bool",
+    "label": "Inlay hints (LSP)",
+    "defaultValue": "false",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kate.lsp.ShowCompletions",
+    "file": "katerc",
+    "groupPath": [
+      "lspclient"
+    ],
+    "key": "ShowCompletions",
+    "type": "Bool",
+    "label": "LSP completions",
+    "defaultValue": "true",
+    "category": "Text Editor (Kate)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.launchAction",
+    "file": "spectaclerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "launchAction",
+    "type": "Enum",
+    "label": "Action when Spectacle starts",
+    "choices": [
+      "TakeRectangularScreenshot",
+      "TakeFullscreenScreenshot",
+      "UseLastUsedCapturemode",
+      "DoNotTakeScreenshot"
+    ],
+    "defaultValue": "TakeRectangularScreenshot",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.printKeyRunningAction",
+    "file": "spectaclerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "printKeyRunningAction",
+    "type": "Enum",
+    "label": "Print key while Spectacle is running",
+    "choices": [
+      "TakeNewScreenshot",
+      "StartNewInstance",
+      "FocusWindow"
+    ],
+    "defaultValue": "TakeNewScreenshot",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.autoSaveImage",
+    "file": "spectaclerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "autoSaveImage",
+    "type": "Bool",
+    "label": "Save screenshots automatically",
+    "defaultValue": "false",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.clipboardGroup",
+    "file": "spectaclerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "clipboardGroup",
+    "type": "Enum",
+    "label": "Clipboard action after a screenshot",
+    "choices": [
+      "PostScreenshotDoNothing",
+      "PostScreenshotCopyImage",
+      "PostScreenshotCopyLocation"
+    ],
+    "defaultValue": "PostScreenshotDoNothing",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.rememberSelectionRect",
+    "file": "spectaclerc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "rememberSelectionRect",
+    "type": "Enum",
+    "label": "Remember the last selected region",
+    "choices": [
+      "Never",
+      "Always",
+      "UntilClosed"
+    ],
+    "defaultValue": "UntilClosed",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.captureOnClick",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "captureOnClick",
+    "type": "Bool",
+    "label": "Take the screenshot on click",
+    "defaultValue": "false",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.captureDelay",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "captureDelay",
+    "type": "Double",
+    "label": "Capture delay (seconds)",
+    "defaultValue": "0",
+    "rangeMin": "0",
+    "rangeMax": "999",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.includePointer",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "includePointer",
+    "type": "Bool",
+    "label": "Include the mouse pointer",
+    "defaultValue": "false",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.includeDecorations",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "includeDecorations",
+    "type": "Bool",
+    "label": "Include window title bar and borders",
+    "defaultValue": "true",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.includeShadow",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "includeShadow",
+    "type": "Bool",
+    "label": "Include the window shadow",
+    "defaultValue": "true",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.quitAfterSaveCopyExport",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "quitAfterSaveCopyExport",
+    "type": "Bool",
+    "label": "Quit after saving, copying or exporting",
+    "defaultValue": "false",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.videoIncludePointer",
+    "file": "spectaclerc",
+    "groupPath": [
+      "GuiConfig"
+    ],
+    "key": "videoIncludePointer",
+    "type": "Bool",
+    "label": "Include the mouse pointer in recordings",
+    "defaultValue": "true",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.imageSaveLocation",
+    "file": "spectaclerc",
+    "groupPath": [
+      "ImageSave"
+    ],
+    "key": "imageSaveLocation",
+    "type": "Url",
+    "label": "Screenshot folder",
+    "description": "file:// URL. Combine with Expand $VARIABLES for a per-user folder such as file://$HOME/Pictures/Screenshots.",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.imageCompressionQuality",
+    "file": "spectaclerc",
+    "groupPath": [
+      "ImageSave"
+    ],
+    "key": "imageCompressionQuality",
+    "type": "UInt",
+    "label": "Compression quality for lossy formats",
+    "defaultValue": "90",
+    "rangeMin": "0",
+    "rangeMax": "100",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.preferredImageFormat",
+    "file": "spectaclerc",
+    "groupPath": [
+      "ImageSave"
+    ],
+    "key": "preferredImageFormat",
+    "type": "String",
+    "label": "Screenshot file format",
+    "description": "PNG, JPEG, WEBP, BMP or another format Qt can write.",
+    "defaultValue": "PNG",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.imageFilenameTemplate",
+    "file": "spectaclerc",
+    "groupPath": [
+      "ImageSave"
+    ],
+    "key": "imageFilenameTemplate",
+    "type": "String",
+    "label": "Screenshot file name template",
+    "description": "Placeholders such as <yyyy><MM><dd>_<hh><mm><ss>, <title> and <#>; see Spectacle's save settings for the list.",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.videoSaveLocation",
+    "file": "spectaclerc",
+    "groupPath": [
+      "VideoSave"
+    ],
+    "key": "videoSaveLocation",
+    "type": "Url",
+    "label": "Screen recording folder",
+    "description": "file:// URL, like the screenshot folder.",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "spectacle.videoFilenameTemplate",
+    "file": "spectaclerc",
+    "groupPath": [
+      "VideoSave"
+    ],
+    "key": "videoFilenameTemplate",
+    "type": "String",
+    "label": "Screen recording file name template",
+    "category": "Screenshots (Spectacle)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "freespace.enableNotification",
+    "file": "freespacenotifierrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "enableNotification",
+    "type": "Bool",
+    "label": "Warn when free space in the home directory is low",
+    "defaultValue": "true",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "freespace.minimumSpace",
+    "file": "freespacenotifierrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "minimumSpace",
+    "type": "Int",
+    "label": "Low free space threshold (MB)",
+    "defaultValue": "200",
+    "rangeMin": "1",
+    "rangeMax": "100000",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "freespace.minimumSpacePercentage",
+    "file": "freespacenotifierrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "minimumSpacePercentage",
+    "type": "Int",
+    "label": "Low free space threshold (percent)",
+    "defaultValue": "5",
+    "rangeMin": "1",
+    "rangeMax": "30",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "launchfeedback.BusyCursor",
+    "file": "klaunchrc",
+    "groupPath": [
+      "FeedbackStyle"
+    ],
+    "key": "BusyCursor",
+    "type": "Bool",
+    "label": "Busy cursor while applications start",
+    "defaultValue": "true",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "windowsEquivalent": "Launch feedback (none)",
+    "source": "builtin"
+  },
+  {
+    "id": "launchfeedback.TaskbarButton",
+    "file": "klaunchrc",
+    "groupPath": [
+      "FeedbackStyle"
+    ],
+    "key": "TaskbarButton",
+    "type": "Bool",
+    "label": "Task bar entry while applications start",
+    "defaultValue": "true",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "launchfeedback.BusyCursorBouncing",
+    "file": "klaunchrc",
+    "groupPath": [
+      "BusyCursorSettings"
+    ],
+    "key": "Bouncing",
+    "type": "Bool",
+    "label": "Bouncing busy cursor",
+    "defaultValue": "true",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "launchfeedback.BusyCursorBlinking",
+    "file": "klaunchrc",
+    "groupPath": [
+      "BusyCursorSettings"
+    ],
+    "key": "Blinking",
+    "type": "Bool",
+    "label": "Blinking busy cursor",
+    "defaultValue": "false",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "launchfeedback.BusyCursorTimeout",
+    "file": "klaunchrc",
+    "groupPath": [
+      "BusyCursorSettings"
+    ],
+    "key": "Timeout",
+    "type": "Int",
+    "label": "Busy cursor timeout (seconds)",
+    "defaultValue": "5",
+    "rangeMin": "1",
+    "rangeMax": "99",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "launchfeedback.TaskbarButtonTimeout",
+    "file": "klaunchrc",
+    "groupPath": [
+      "TaskbarButtonSettings"
+    ],
+    "key": "Timeout",
+    "type": "Int",
+    "label": "Task bar entry timeout (seconds)",
+    "defaultValue": "5",
+    "rangeMin": "1",
+    "rangeMax": "99",
+    "category": "Notifications & Feedback",
+    "immutableDefault": false,
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.SystemTrayEnabled",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "SystemTrayEnabled",
+    "type": "Bool",
+    "label": "KMail: system tray icon",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.StartInTray",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "StartInTray",
+    "type": "Bool",
+    "label": "KMail: start minimised to the tray",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ShowUnreadInTaskbar",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowUnreadInTaskbar",
+    "type": "Bool",
+    "label": "KMail: unread count in the task bar",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.EmptyTrashOnExit",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "empty-trash-on-exit",
+    "type": "Bool",
+    "label": "KMail: empty the local trash on exit",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.DeleteMessageWithoutConfirmation",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "delete-messages-without-confirmation",
+    "type": "Bool",
+    "label": "KMail: delete messages without confirmation",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.CloseToQuotaThreshold",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "CloseToQuotaThreshold",
+    "type": "Int",
+    "label": "KMail: quota warning threshold (percent)",
+    "defaultValue": "80",
+    "rangeMin": "0",
+    "rangeMax": "100",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ShowMenuBar",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowMenuBar",
+    "type": "Bool",
+    "label": "KMail: show the menu bar",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.UseExternalEditor",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "use-external-editor",
+    "type": "Bool",
+    "label": "KMail: compose in an external editor",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ExternalEditor",
+    "file": "kmail2rc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "external-editor",
+    "type": "String",
+    "label": "KMail: external editor command",
+    "defaultValue": "kwrite %f",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ConfirmBeforeSend",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "confirm-before-send",
+    "type": "Bool",
+    "label": "KMail: confirm before sending",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.CheckSpellingBeforeSend",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "check-spelling-before-send",
+    "type": "Bool",
+    "label": "KMail: check spelling before sending",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.RequestMDN",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "request-mdn",
+    "type": "Bool",
+    "label": "KMail: request read receipts by default",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "windowsEquivalent": "Request a read receipt (Outlook)",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.AlwaysEncryptDrafts",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "always-encrypt-drafts",
+    "type": "Bool",
+    "label": "KMail: always encrypt drafts",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.CryptoStoreEncrypted",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "crypto-store-encrypted",
+    "type": "Bool",
+    "label": "KMail: store sent messages encrypted",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.TooManyRecipients",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "too-many-recipients",
+    "type": "Bool",
+    "label": "KMail: warn when sending to many recipients",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.RecipientThreshold",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "recipient-threshold",
+    "type": "Int",
+    "label": "KMail: recipients that trigger the warning",
+    "defaultValue": "5",
+    "rangeMin": "1",
+    "rangeMax": "100",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.UseHtmlMarkup",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "html-markup",
+    "type": "Bool",
+    "label": "KMail: compose in HTML by default",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ShowForgottenAttachmentWarning",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "showForgottenAttachmentWarning",
+    "type": "Bool",
+    "label": "KMail: warn about forgotten attachments",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.AutosaveInterval",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "autosave",
+    "type": "Int",
+    "label": "KMail: composer autosave interval (minutes, 0 = off)",
+    "defaultValue": "2",
+    "rangeMin": "0",
+    "rangeMax": "60",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ForwardingInlineByDefault",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "ForwardingInlineByDefault",
+    "type": "Bool",
+    "label": "KMail: forward inline by default",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.ShowCryptoLabelIndicator",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Composer"
+    ],
+    "key": "ShowCryptoLabelIndicator",
+    "type": "Bool",
+    "label": "KMail: show the encryption and signing indicator",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.SendOnCheck",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Behaviour"
+    ],
+    "key": "SendOnCheck",
+    "type": "Enum",
+    "label": "KMail: send queued mail on mail check",
+    "choices": [
+      "DontSendOnCheck",
+      "SendOnManualChecks",
+      "SendOnAllChecks"
+    ],
+    "defaultValue": "DontSendOnCheck",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.readerWindowMode",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Geometry"
+    ],
+    "key": "readerWindowMode",
+    "type": "Enum",
+    "label": "KMail: message preview pane",
+    "choices": [
+      "hide",
+      "below",
+      "right"
+    ],
+    "defaultValue": "below",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.FolderList",
+    "file": "kmail2rc",
+    "groupPath": [
+      "Geometry"
+    ],
+    "key": "FolderList",
+    "type": "Enum",
+    "label": "KMail: folder list layout",
+    "choices": [
+      "longlist",
+      "shortlist"
+    ],
+    "defaultValue": "longlist",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kmail.EnabledUndoSend",
+    "file": "kmail2rc",
+    "groupPath": [
+      "UndoSend"
+    ],
+    "key": "EnabledUndoSend",
+    "type": "Bool",
+    "label": "KMail: undo send",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.htmlMail",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "htmlMail",
+    "type": "Bool",
+    "label": "Mail viewer: prefer HTML to plain text",
+    "description": "Disabled, messages are shown as plain text when a plain-text part exists. Applies to KMail and other KDE PIM viewers.",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "windowsEquivalent": "Read all standard mail in plain text (inverse)",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.htmlLoadExternal",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "htmlLoadExternal",
+    "type": "Bool",
+    "label": "Mail viewer: load external references from the Internet",
+    "description": "Disabled, remote images and other external content in HTML mail are not fetched (no tracking, no phishing lures).",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "windowsEquivalent": "Display pictures and external content in HTML e-mail (inverse)",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.ScamDetectionEnabled",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "ScamDetectionEnabled",
+    "type": "Bool",
+    "label": "Mail viewer: scam detection",
+    "description": "Analyses messages for mismatched links and other signs of phishing.",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.MailTrackingUrlEnabled",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "MailTrackingUrlEnabled",
+    "type": "Bool",
+    "label": "Mail viewer: detect tracking URLs",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.AlwaysDecrypt",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "AlwaysDecrypt",
+    "type": "Bool",
+    "label": "Mail viewer: decrypt messages without asking",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.AutoImportKeys",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "AutoImportKeys",
+    "type": "Bool",
+    "label": "Mail viewer: import OpenPGP keys from messages automatically",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.CloseAfterReplyOrForward",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "CloseAfterReplyOrForward",
+    "type": "Bool",
+    "label": "Mail viewer: close the message window after replying or forwarding",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.ShowEmoticons",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Reader"
+    ],
+    "key": "ShowEmoticons",
+    "type": "Bool",
+    "label": "Mail viewer: replace smileys with emoticons",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.CheckPhishingUrl",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "Security"
+    ],
+    "key": "CheckPhishingUrl",
+    "type": "Bool",
+    "label": "Mail viewer: check links against the phishing list",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "mailviewer.MDNNotSendWhenEncrypted",
+    "file": "mailviewerrc",
+    "groupPath": [
+      "MDN"
+    ],
+    "key": "not-send-when-encrypted",
+    "type": "Bool",
+    "label": "Mail viewer: no read receipts for encrypted messages",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.ConfirmDeletes",
+    "file": "korganizerrc",
+    "groupPath": [
+      "Save Settings"
+    ],
+    "key": "Confirm Deletes",
+    "type": "Bool",
+    "label": "KOrganizer: confirm deletions",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.Destination",
+    "file": "korganizerrc",
+    "groupPath": [
+      "Save Settings"
+    ],
+    "key": "Destination",
+    "type": "Enum",
+    "label": "KOrganizer: calendar for new items",
+    "choices": [
+      "standardDestination",
+      "askDestination"
+    ],
+    "defaultValue": "askDestination",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.WeekStartDay",
+    "file": "korganizerrc",
+    "groupPath": [
+      "Time & Date"
+    ],
+    "key": "WeekStartDay",
+    "type": "Int",
+    "label": "KOrganizer: first day of the week",
+    "description": "0 Monday ... 6 Sunday. Normally taken from the locale.",
+    "rangeMin": "0",
+    "rangeMax": "6",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.TimeZoneId",
+    "file": "korganizerrc",
+    "groupPath": [
+      "Time & Date"
+    ],
+    "key": "TimeZoneId",
+    "type": "String",
+    "label": "KOrganizer: time zone",
+    "description": "IANA zone name such as Europe/Sofia.",
+    "defaultValue": "",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.ShowWeekNumbers",
+    "file": "korganizerrc",
+    "groupPath": [
+      "General View"
+    ],
+    "key": "Show Week Numbers",
+    "type": "Bool",
+    "label": "KOrganizer: show week numbers",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.EnableToolTips",
+    "file": "korganizerrc",
+    "groupPath": [
+      "General View"
+    ],
+    "key": "Enable ToolTips",
+    "type": "Bool",
+    "label": "KOrganizer: summary tooltips",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.AgendaViewCalendarDisplay",
+    "file": "korganizerrc",
+    "groupPath": [
+      "Agenda View"
+    ],
+    "key": "AgendaViewCalendarDisplay",
+    "type": "Enum",
+    "label": "KOrganizer: multiple calendar display",
+    "choices": [
+      "CalendarsMerged",
+      "CalendarsSideBySide",
+      "AllCalendarViews"
+    ],
+    "defaultValue": "CalendarsMerged",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "korganizer.ShowMenuBar",
+    "file": "korganizerrc",
+    "groupPath": [
+      "Hidden Options"
+    ],
+    "key": "ShowMenuBar",
+    "type": "Bool",
+    "label": "KOrganizer: show the menu bar",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.CheckPhishingUrl",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Security"
+    ],
+    "key": "CheckPhishingUrl",
+    "type": "Bool",
+    "label": "Akregator: check links against the phishing list",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.LoadExternalReferences",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Security"
+    ],
+    "key": "LoadExternalReferences",
+    "type": "Bool",
+    "label": "Akregator: load external references in articles",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "windowsEquivalent": "Display pictures and external content (inverse)",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.EnableJavascript",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Browser"
+    ],
+    "key": "EnableJavascript",
+    "type": "Bool",
+    "label": "Akregator: JavaScript in the article viewer",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.ExternalBrowserUseKdeDefault",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Browser"
+    ],
+    "key": "External Browser Use Kde Default",
+    "type": "Bool",
+    "label": "Akregator: open links in the default browser",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.NewWindowInTab",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Browser"
+    ],
+    "key": "New Window In Tab",
+    "type": "Bool",
+    "label": "Akregator: open new windows as tabs",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.FetchOnStartup",
+    "file": "akregatorrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Fetch On Startup",
+    "type": "Bool",
+    "label": "Akregator: fetch feeds on startup",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.UseIntervalFetch",
+    "file": "akregatorrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Use Interval Fetch",
+    "type": "Bool",
+    "label": "Akregator: fetch feeds periodically",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.AutoFetchInterval",
+    "file": "akregatorrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Auto Fetch Interval",
+    "type": "Int",
+    "label": "Akregator: fetch interval (minutes)",
+    "defaultValue": "30",
+    "rangeMin": "1",
+    "rangeMax": "1440",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.ShowTrayIcon",
+    "file": "akregatorrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Show Tray Icon",
+    "type": "Bool",
+    "label": "Akregator: tray icon",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.UseNotifications",
+    "file": "akregatorrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "Use Notifications",
+    "type": "Bool",
+    "label": "Akregator: notifications for new articles",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.ArchiveMode",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Archive"
+    ],
+    "key": "ArchiveMode",
+    "type": "Enum",
+    "label": "Akregator: article archive",
+    "choices": [
+      "keepAllArticles",
+      "limitArticleNumber",
+      "limitArticleAge",
+      "disableArchiving"
+    ],
+    "defaultValue": "keepAllArticles",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.MaxArticleAge",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Archive"
+    ],
+    "key": "Max Article Age",
+    "type": "Int",
+    "label": "Akregator: article expiry (days)",
+    "defaultValue": "60",
+    "rangeMin": "1",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.MaxArticleNumber",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Archive"
+    ],
+    "key": "Max Article Number",
+    "type": "Int",
+    "label": "Akregator: articles kept per feed",
+    "defaultValue": "1000",
+    "rangeMin": "1",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "akregator.CustomUserAgent",
+    "file": "akregatorrc",
+    "groupPath": [
+      "Network"
+    ],
+    "key": "Custom UserAgent",
+    "type": "String",
+    "label": "Akregator: custom user agent",
+    "defaultValue": "",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kontact.ForceStartupPlugin",
+    "file": "kontactrc",
+    "groupPath": [
+      "View"
+    ],
+    "key": "ForceStartupPlugin",
+    "type": "Bool",
+    "label": "Kontact: always start with a fixed component",
+    "defaultValue": "false",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kontact.ForcedStartupPlugin",
+    "file": "kontactrc",
+    "groupPath": [
+      "View"
+    ],
+    "key": "ForcedStartupPlugin",
+    "type": "String",
+    "label": "Kontact: component to start with",
+    "description": "kontact_kmailplugin, kontact_korganizerplugin, kontact_summaryplugin, ...",
+    "defaultValue": "",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kontact.SideBarOpen",
+    "file": "kontactrc",
+    "groupPath": [
+      "View"
+    ],
+    "key": "SideBarOpen",
+    "type": "Bool",
+    "label": "Kontact: show the component sidebar",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kontact.ShowMenuBar",
+    "file": "kontactrc",
+    "groupPath": [
+      "View"
+    ],
+    "key": "ShowMenuBar",
+    "type": "Bool",
+    "label": "Kontact: show the menu bar",
+    "defaultValue": "true",
+    "category": "KDE PIM (KMail, Kontact, KOrganizer, Akregator)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ObeyDRM",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core General"
+    ],
+    "key": "ObeyDRM",
+    "type": "Bool",
+    "label": "Obey DRM limitations of documents",
+    "description": "Enabled, copying text or printing is refused for documents whose permissions forbid it.",
+    "defaultValue": "true",
+    "category": "Okular",
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ContinueFromLastViewedPage",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core General"
+    ],
+    "key": "ContinueFromLastViewedPage",
+    "type": "Bool",
+    "label": "Reopen documents at the last viewed page",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ChooseGenerators",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core General"
+    ],
+    "key": "ChooseGenerators",
+    "type": "Bool",
+    "label": "Ask which backend to use when several can open a file",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ExternalEditor",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core General"
+    ],
+    "key": "ExternalEditor",
+    "type": "Enum",
+    "label": "Editor for inverse search",
+    "choices": [
+      "Custom",
+      "Kate",
+      "Kile",
+      "Scite",
+      "Emacsclient",
+      "Lyxclient",
+      "Texstudio",
+      "Texifyidea"
+    ],
+    "defaultValue": "Kate",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ExternalEditorCommand",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core General"
+    ],
+    "key": "ExternalEditorCommand",
+    "type": "String",
+    "label": "Custom editor command for inverse search",
+    "defaultValue": "kate --line %l --column %c",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.MemoryLevel",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core Performance"
+    ],
+    "key": "MemoryLevel",
+    "type": "Enum",
+    "label": "Memory usage",
+    "choices": [
+      "Low",
+      "Normal",
+      "Aggressive",
+      "Greedy"
+    ],
+    "defaultValue": "Normal",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.TextAntialias",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core Performance"
+    ],
+    "key": "TextAntialias",
+    "type": "Enum",
+    "label": "Text anti-aliasing",
+    "choices": [
+      "Disabled",
+      "Enabled"
+    ],
+    "defaultValue": "Enabled",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.TextHinting",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core Performance"
+    ],
+    "key": "TextHinting",
+    "type": "Enum",
+    "label": "Text hinting",
+    "choices": [
+      "Disabled",
+      "Enabled"
+    ],
+    "defaultValue": "Disabled",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ShellOpenFileInTabs",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShellOpenFileInTabs",
+    "type": "Bool",
+    "label": "Open files in tabs",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.SwitchToTabIfOpen",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "SwitchToTabIfOpen",
+    "type": "Bool",
+    "label": "Switch to the tab of an already open file",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.DisplayDocumentTitle",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "DisplayDocumentTitle",
+    "type": "Bool",
+    "label": "Show the document title in the window title",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.DisplayDocumentNameOrPath",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "DisplayDocumentNameOrPath",
+    "type": "Enum",
+    "label": "Window title shows the file name or its path",
+    "choices": [
+      "Name",
+      "Path"
+    ],
+    "defaultValue": "Name",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.rtlReadingDirection",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "rtlReadingDirection",
+    "type": "Bool",
+    "label": "Right-to-left reading direction",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.UseTTS",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "UseTTS",
+    "type": "Bool",
+    "label": "Text-to-speech",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ShowEmbeddedContentMessages",
+    "file": "okularpartrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowEmbeddedContentMessages",
+    "type": "Bool",
+    "label": "Show messages about embedded files, forms and signatures",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ViewMode",
+    "file": "okularpartrc",
+    "groupPath": [
+      "PageView"
+    ],
+    "key": "ViewMode",
+    "type": "Enum",
+    "label": "Default view mode",
+    "choices": [
+      "Single",
+      "Facing",
+      "FacingFirstCentered",
+      "Summary"
+    ],
+    "defaultValue": "Single",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ViewContinuous",
+    "file": "okularpartrc",
+    "groupPath": [
+      "PageView"
+    ],
+    "key": "ViewContinuous",
+    "type": "Bool",
+    "label": "Continuous scrolling",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.TrimMargins",
+    "file": "okularpartrc",
+    "groupPath": [
+      "PageView"
+    ],
+    "key": "TrimMargins",
+    "type": "Bool",
+    "label": "Trim margins",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.SmoothScrolling",
+    "file": "okularpartrc",
+    "groupPath": [
+      "PageView"
+    ],
+    "key": "SmoothScrolling",
+    "type": "Bool",
+    "label": "Smooth scrolling",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.ShowLeftPanel",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Main View"
+    ],
+    "key": "ShowLeftPanel",
+    "type": "Bool",
+    "label": "Show the sidebar",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.SlidesAdvance",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core Presentation"
+    ],
+    "key": "SlidesAdvance",
+    "type": "Bool",
+    "label": "Presentation: advance automatically",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.SlidesAdvanceTime",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core Presentation"
+    ],
+    "key": "SlidesAdvanceTime",
+    "type": "UInt",
+    "label": "Presentation: seconds per slide",
+    "defaultValue": "5",
+    "rangeMin": "1",
+    "rangeMax": "3600",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.SlidesLoop",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Core Presentation"
+    ],
+    "key": "SlidesLoop",
+    "type": "Bool",
+    "label": "Presentation: loop after the last page",
+    "defaultValue": "false",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "okular.SlidesShowProgress",
+    "file": "okularpartrc",
+    "groupPath": [
+      "Dlg Presentation"
+    ],
+    "key": "SlidesShowProgress",
+    "type": "Bool",
+    "label": "Presentation: show the progress indicator",
+    "defaultValue": "true",
+    "category": "Okular",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kwallet.DefaultWallet",
+    "file": "kwalletrc",
+    "groupPath": [
+      "Wallet"
+    ],
+    "key": "Default Wallet",
+    "type": "String",
+    "label": "Default wallet name",
+    "defaultValue": "kdewallet",
+    "category": "KWallet",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kwallet.FirstUse",
+    "file": "kwalletrc",
+    "groupPath": [
+      "Wallet"
+    ],
+    "key": "First Use",
+    "type": "Bool",
+    "label": "Show the first-use wizard",
+    "description": "Disabled, the wallet is created silently with the KDE defaults instead of asking the user at first use.",
+    "defaultValue": "true",
+    "category": "KWallet",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kwallet.LeaveManagerOpen",
+    "file": "kwalletrc",
+    "groupPath": [
+      "Wallet"
+    ],
+    "key": "Leave Manager Open",
+    "type": "Bool",
+    "label": "Keep KWallet Manager open after a wallet closes",
+    "defaultValue": "false",
+    "category": "KWallet",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "kwallet.KSecretDEnabled",
+    "file": "kwalletrc",
+    "groupPath": [
+      "KSecretD"
+    ],
+    "key": "Enabled",
+    "type": "Bool",
+    "label": "Secret Service daemon (ksecretd)",
+    "description": "The daemon that answers org.freedesktop.secrets requests on Plasma 6.",
+    "defaultValue": "true",
+    "category": "KWallet",
+    "plasmaMajor": [
+      "6"
+    ],
+    "reload": "logout",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.EditableUrl",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "EditableUrl",
+    "type": "Bool",
+    "label": "Editable location bar",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.AlwaysShowTabBar",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "AlwaysShowTabBar",
+    "type": "Bool",
+    "label": "Always show the tab bar",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ShowCloseButtonOnTabs",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowCloseButtonOnTabs",
+    "type": "Bool",
+    "label": "Close buttons on tabs",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.TabStyle",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "TabStyle",
+    "type": "Enum",
+    "label": "Tab style",
+    "choices": [
+      "AutoSize",
+      "FullWidth",
+      "FixedSize"
+    ],
+    "defaultValue": "AutoSize",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.SplitView",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "SplitView",
+    "type": "Bool",
+    "label": "Start with two views side by side",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.CloseSplitViewChoice",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "CloseSplitViewChoice",
+    "type": "Enum",
+    "label": "Which view closes when leaving split view",
+    "choices": [
+      "ActiveView",
+      "InactiveView",
+      "RightView"
+    ],
+    "defaultValue": "ActiveView",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.FilterBar",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "FilterBar",
+    "type": "Bool",
+    "label": "Show the filter bar",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.GlobalViewProps",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "GlobalViewProps",
+    "type": "Bool",
+    "label": "Use the same view properties for all folders",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ConfirmClosingTerminalRunningProgram",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ConfirmClosingTerminalRunningProgram",
+    "type": "Bool",
+    "label": "Confirm closing a window with a running terminal program",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.RenameInline",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "RenameInline",
+    "type": "Bool",
+    "label": "Rename items inline",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ShowSelectionToggle",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowSelectionToggle",
+    "type": "Bool",
+    "label": "Show selection markers on hover",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ShowPasteBarAfterCopying",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowPasteBarAfterCopying",
+    "type": "Bool",
+    "label": "Show the paste bar after copying or cutting",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.OpenNewTabAfterLastTab",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "OpenNewTabAfterLastTab",
+    "type": "Bool",
+    "label": "Open new tabs after the last tab",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.OpenExternallyCalledFolderInNewTab",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "OpenExternallyCalledFolderInNewTab",
+    "type": "Bool",
+    "label": "Open folders from other programs in a new tab",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ShowToolTips",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowToolTips",
+    "type": "Bool",
+    "label": "Show item information on hover",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.AutoExpandFolders",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "AutoExpandFolders",
+    "type": "Bool",
+    "label": "Expandable folders in every view",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ShowZoomSlider",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "ShowZoomSlider",
+    "type": "Bool",
+    "label": "Zoom slider in the status bar",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.SortingChoice",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "SortingChoice",
+    "type": "Enum",
+    "label": "Sorting mode",
+    "choices": [
+      "NaturalSorting",
+      "CaseInsensitiveSorting",
+      "CaseSensitiveSorting"
+    ],
+    "defaultValue": "NaturalSorting",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.DynamicView",
+    "file": "dolphinrc",
+    "groupPath": [
+      "General"
+    ],
+    "key": "DynamicView",
+    "type": "Bool",
+    "label": "Dynamic view (adapts to the folder content)",
+    "defaultValue": "false",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ConfirmOpenManyFolders",
+    "file": "dolphinrc",
+    "groupPath": [
+      "Notification Messages"
+    ],
+    "key": "ConfirmOpenManyFolders",
+    "type": "Bool",
+    "label": "Confirm opening many folders at once",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ConfirmOpenManyTerminals",
+    "file": "dolphinrc",
+    "groupPath": [
+      "Notification Messages"
+    ],
+    "key": "ConfirmOpenManyTerminals",
+    "type": "Bool",
+    "label": "Confirm opening many terminals at once",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ConfirmRenameFileType",
+    "file": "dolphinrc",
+    "groupPath": [
+      "Notification Messages"
+    ],
+    "key": "ConfirmRenameFileType",
+    "type": "Bool",
+    "label": "Confirm renaming when the file type changes",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowSortBy",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowSortBy",
+    "type": "Bool",
+    "label": "Context menu: Sort By",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowViewMode",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowViewMode",
+    "type": "Bool",
+    "label": "Context menu: View Mode",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowOpenInNewTab",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowOpenInNewTab",
+    "type": "Bool",
+    "label": "Context menu: Open in New Tab",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowOpenInSplitView",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowOpenInSplitView",
+    "type": "Bool",
+    "label": "Context menu: Open in Split View",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowCopyLocation",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowCopyLocation",
+    "type": "Bool",
+    "label": "Context menu: Copy Location",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowCopyToOtherSplitView",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowCopyToOtherSplitView",
+    "type": "Bool",
+    "label": "Context menu: Copy to other split view",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "dolphin.ContextMenu.ShowMoveToOtherSplitView",
+    "file": "dolphinrc",
+    "groupPath": [
+      "ContextMenu"
+    ],
+    "key": "ShowMoveToOtherSplitView",
+    "type": "Bool",
+    "label": "Context menu: Move to other split view",
+    "defaultValue": "true",
+    "category": "File Manager (Dolphin)",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "ark.showInfoPanel",
+    "file": "arkrc",
+    "groupPath": [
+      "MainWindow"
+    ],
+    "key": "showInfoPanel",
+    "type": "Bool",
+    "label": "Show the information panel",
+    "defaultValue": "true",
+    "category": "Ark",
+    "immutableDefault": false,
+    "reload": "app",
+    "source": "builtin"
+  },
+  {
+    "id": "ark.disabledPlugins",
+    "file": "arkrc",
+    "groupPath": [
+      "Plugins"
+    ],
+    "key": "disabledPlugins",
+    "type": "StringList",
+    "label": "Disabled archive plugins",
+    "description": "Plugin ids such as kerfuffle_cli7z or kerfuffle_libzip; disabling a plugin stops Ark from opening the formats it provides.",
+    "category": "Ark",
+    "reload": "app",
+    "source": "builtin"
   }
 ];

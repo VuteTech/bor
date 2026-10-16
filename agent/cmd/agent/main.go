@@ -50,7 +50,7 @@ type kconfigCacheEntry struct {
 	policy   *pb.KConfigPolicy
 }
 
-// kconfigCache maps policy ID → KConfig policy + priority for all active Kconfig policies.
+// kconfigCache maps policy ID -> KConfig policy + priority for all active Kconfig policies.
 // It is maintained across streaming events so that a full re-merge and
 // sync can be performed whenever any single policy changes or is deleted.
 var kconfigCache = make(map[string]kconfigCacheEntry)
@@ -74,7 +74,7 @@ var notifyConfig = notify.Config{
 	Message:  "Desktop policies have been updated. Please log out and log back in for all changes to take effect.",
 }
 
-// firefoxCache maps policy ID → proto policy for all active Firefox policies.
+// firefoxCache maps policy ID -> proto policy for all active Firefox policies.
 var firefoxCache = make(map[string]*pb.FirefoxPolicy)
 
 // firefoxSnapshotStaging accumulates Firefox proto policies during a SNAPSHOT.
@@ -90,7 +90,7 @@ var firefoxNotifyConfig = notify.Config{
 	Message:  "Firefox policies have been updated. Please restart Firefox for all changes to take effect.",
 }
 
-// thunderbirdCache maps policy ID → proto policy for all active Thunderbird policies.
+// thunderbirdCache maps policy ID -> proto policy for all active Thunderbird policies.
 var thunderbirdCache = make(map[string]*pb.ThunderbirdPolicy)
 
 // thunderbirdSnapshotStaging accumulates Thunderbird proto policies during a SNAPSHOT.
@@ -106,7 +106,7 @@ var thunderbirdNotifyConfig = notify.Config{
 	Message:  "Thunderbird policies have been updated. Please restart Thunderbird for all changes to take effect.",
 }
 
-// chromeCache maps policy ID → proto policy for all active Chrome policies.
+// chromeCache maps policy ID -> proto policy for all active Chrome policies.
 var chromeCache = make(map[string]*pb.ChromePolicy)
 
 // chromeSnapshotStaging accumulates Chrome proto policies during a SNAPSHOT.
@@ -123,7 +123,7 @@ var chromeNotifyConfig = notify.Config{
 	Message:  "Chrome/Chromium policies have been updated. Please restart your browser for all changes to take effect.",
 }
 
-// edgeCache maps policy ID → proto policy for all active Edge policies.
+// edgeCache maps policy ID -> proto policy for all active Edge policies.
 var edgeCache = make(map[string]*pb.EdgePolicy)
 
 // edgeSnapshotStaging accumulates Edge proto policies during a SNAPSHOT.
@@ -148,7 +148,7 @@ type dconfCacheEntry struct {
 	policy   *pb.DConfPolicy
 }
 
-// dconfCache maps policy ID → DConf policy + priority for all active Dconf policies.
+// dconfCache maps policy ID -> DConf policy + priority for all active Dconf policies.
 var dconfCache = make(map[string]dconfCacheEntry)
 
 // dconfSnapshotStaging accumulates DConf policies during a SNAPSHOT.
@@ -166,7 +166,7 @@ type polkitCacheEntry struct {
 	policy   *pb.PolkitPolicy
 }
 
-// polkitCache maps policy ID → Polkit policy + priority for all active Polkit policies.
+// polkitCache maps policy ID -> Polkit policy + priority for all active Polkit policies.
 var polkitCache = make(map[string]polkitCacheEntry)
 
 // polkitSnapshotStaging accumulates Polkit policies during a SNAPSHOT.
@@ -180,7 +180,7 @@ type firewalldCacheEntry struct {
 	policy   *pb.FirewalldPolicy
 }
 
-// firewalldCache maps policy ID → Firewalld policy + priority for all active Firewalld policies.
+// firewalldCache maps policy ID -> Firewalld policy + priority for all active Firewalld policies.
 var firewalldCache = make(map[string]firewalldCacheEntry)
 
 // firewalldSnapshotStaging accumulates Firewalld policies during a SNAPSHOT.
@@ -194,7 +194,7 @@ type flatpakCacheEntry struct {
 	policy   *pb.FlatpakPolicy
 }
 
-// flatpakCache maps policy ID → Flatpak policy + priority for all active Flatpak policies.
+// flatpakCache maps policy ID -> Flatpak policy + priority for all active Flatpak policies.
 var flatpakCache = make(map[string]flatpakCacheEntry)
 
 // flatpakSnapshotStaging accumulates Flatpak policies during a SNAPSHOT.
@@ -235,7 +235,7 @@ type sessionAccessCacheEntry struct {
 	policy   *pb.SessionAccessPolicy
 }
 
-// sessionAccessCache maps policy ID → SessionAccess policy for all active
+// sessionAccessCache maps policy ID -> SessionAccess policy for all active
 // SessionAccess policies.
 var sessionAccessCache = make(map[string]sessionAccessCacheEntry)
 
@@ -309,7 +309,7 @@ type packageCacheEntry struct {
 	policy   *pb.PackagePolicy
 }
 
-// packageCache maps policy ID → PackagePolicy + priority for all active Package policies.
+// packageCache maps policy ID -> PackagePolicy + priority for all active Package policies.
 var packageCache = make(map[string]packageCacheEntry)
 
 // packageSnapshotStaging accumulates Package policies during a SNAPSHOT.
@@ -388,7 +388,7 @@ func main() {
 	// covers intentional re-enrollment (moving a node to a different group,
 	// CA rotation, etc.).
 	if resolvedToken != "" && policyclient.IsEnrolled(paths) {
-		log.Println("Enrollment token provided for an already-enrolled agent – removing old certificates for re-enrollment")
+		log.Println("Enrollment token provided for an already-enrolled agent - removing old certificates for re-enrollment")
 		if removeErr := policyclient.RemoveEnrollmentCerts(paths); removeErr != nil {
 			log.Fatalf("Failed to remove old enrollment certificates: %v", removeErr)
 		}
@@ -402,7 +402,7 @@ func main() {
 		// This covers FreeIPA and Active Directory (Samba AD) joined hosts.
 		if cfg.Kerberos.Enabled && cfg.Kerberos.KeytabFile != "" && cfg.Kerberos.ServicePrincipal != "" {
 			if _, statErr := os.Stat(cfg.Kerberos.KeytabFile); statErr == nil {
-				log.Printf("Kerberos keytab found at %s – attempting Kerberos enrollment", cfg.Kerberos.KeytabFile)
+				log.Printf("Kerberos keytab found at %s - attempting Kerberos enrollment", cfg.Kerberos.KeytabFile)
 				krbErr := policyclient.EnrollWithKerberos(
 					cfg.Server.EnrollmentAddr(),
 					cfg.Kerberos.KeytabFile,
@@ -414,12 +414,12 @@ func main() {
 					paths,
 				)
 				if krbErr != nil {
-					log.Printf("Kerberos enrollment failed: %v – falling back to token-based enrollment", krbErr)
+					log.Printf("Kerberos enrollment failed: %v - falling back to token-based enrollment", krbErr)
 				} else {
 					enrolled = true
 				}
 			} else {
-				log.Printf("Kerberos enrollment configured but keytab not found at %s – skipping", cfg.Kerberos.KeytabFile)
+				log.Printf("Kerberos enrollment configured but keytab not found at %s - skipping", cfg.Kerberos.KeytabFile)
 			}
 		}
 
@@ -431,7 +431,7 @@ func main() {
 					"Generate a token from the Node Groups page in the Bor web UI.\n" +
 					"Alternatively, configure Kerberos enrollment in /etc/bor/config.yaml.")
 			}
-			log.Println("Not yet enrolled – starting token-based enrollment...")
+			log.Println("Not yet enrolled - starting token-based enrollment...")
 			if enrollErr := policyclient.Enroll(
 				cfg.Server.EnrollmentAddr(),
 				resolvedToken,
@@ -461,7 +461,7 @@ To follow the agent logs:
 `, cfg.Enrollment.DataDir)
 		os.Exit(0)
 	}
-	log.Println("Agent is enrolled – using mTLS credentials")
+	log.Println("Agent is enrolled - using mTLS credentials")
 
 	agentAddr := cfg.Server.PolicyAddr()
 
@@ -474,7 +474,7 @@ To follow the agent logs:
 	} else if expiring {
 		log.Println("Certificate expires within 30 days, renewing...")
 		if renewErr := policyclient.RenewCertificate(agentAddr, paths.CACert, paths.CertFile, paths.KeyFile); renewErr != nil {
-			log.Printf("Warning: certificate renewal failed: %v — will retry next cycle", renewErr)
+			log.Printf("Warning: certificate renewal failed: %v - will retry next cycle", renewErr)
 		}
 	}
 
@@ -485,7 +485,7 @@ To follow the agent logs:
 		paths.CACert,   // CA cert received during enrollment
 		paths.CertFile, // agent client cert signed by CA
 		paths.KeyFile,  // agent private key
-		false,          // never skip verify after enrollment – we have the CA cert
+		false,          // never skip verify after enrollment - we have the CA cert
 	)
 	if err != nil {
 		log.Fatalf("Failed to create policy client: %v", err)
@@ -565,7 +565,7 @@ To follow the agent logs:
 	logDiskEncryptionProbe(ctx, cfg)
 	defer stopDiskEncTicker()
 
-	// Run the policy enforcement loop — prefer streaming, fall back to polling.
+	// Run the policy enforcement loop - prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
 	log.Println("Bor Agent stopped")
@@ -712,10 +712,10 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		)
 
 		if ctx.Err() != nil {
-			return // parent context cancelled — shutting down
+			return // parent context cancelled - shutting down
 		}
 
-		log.Printf("Policy stream disconnected: %v — reconnecting in %v", err, backoff)
+		log.Printf("Policy stream disconnected: %v - reconnecting in %v", err, backoff)
 
 		select {
 		case <-ctx.Done():
@@ -999,7 +999,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			go triggerDiskEncryptionSync(ctx, client, cfg)
 
 			if *postInitialSync {
-				// Resync from a live admin change — notify if content changed.
+				// Resync from a live admin change - notify if content changed.
 				if len(kconfigChanged) > 0 {
 					kdeNotifier.ScheduleNotification(notifyConfig, kconfigChanged)
 				}
@@ -1259,7 +1259,7 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 	defer updateWatcher(cfg)
 
 	result := policy.SyncFirewalldFromProto(entries, cfg.Firewalld.ZonesDir)
-	log.Printf("Firewalld policies synced (%d policies): %s — %s",
+	log.Printf("Firewalld policies synced (%d policies): %s - %s",
 		len(ids), result.Status.String(), result.Message)
 	for _, id := range ids {
 		_ = client.ReportComplianceWithStatus(ctx, id, result.Status, result.Message, nil)
@@ -1270,7 +1270,7 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 // the Layer-1 enforcer's rule set, applies the Layer-2 pam_time managed block,
 // and reports per-policy compliance. Enforcement actions (locks/logoffs/
 // warnings) happen asynchronously in the enforcer loop and go to the log, not
-// compliance — compliance reflects enforcement *state* (tooling present,
+// compliance - compliance reflects enforcement *state* (tooling present,
 // config valid), not events.
 func syncAllSessionAccess(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
 	sessionAccessMu.Lock()
@@ -1289,7 +1289,7 @@ func syncAllSessionAccess(ctx context.Context, client *policyclient.Client, cfg 
 	pam := applySessionPam(cfg, sources)
 
 	status, message := sessionAccessCompliance(rules, warnings, &pam)
-	log.Printf("SessionAccess policies synced (%d policies, %d rules): %s — %s",
+	log.Printf("SessionAccess policies synced (%d policies, %d rules): %s - %s",
 		len(ids), len(rules), status.String(), message)
 	for _, id := range ids {
 		_ = client.ReportComplianceWithStatus(ctx, id, status, message, nil)
@@ -1349,7 +1349,7 @@ func applySessionPam(cfg *config.Config, sources []policy.SessionPolicySource) s
 		suppressManagedWrites(cfg, policy.TimeConfPath)
 		defer updateWatcher(cfg)
 		if len(lines) == 0 {
-			// PAM requested but no restricted users → nothing to enforce.
+			// PAM requested but no restricted users -> nothing to enforce.
 			teardownSessionPam(cfg)
 			res.state = "applied (no restricted users)"
 			return res
@@ -1475,21 +1475,32 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		}
 	}
 
-	// Desktop layout: look-and-feel package and update script in the data
-	// directory (first in XDG_DATA_DIRS).
-	var layoutFiles map[string][]byte
+	// Data directory (first in XDG_DATA_DIRS): the look-and-feel package
+	// and update script of the desktop layout, plus the application files
+	// (Konsole profile, hidden desktop entries) node-wide and per group.
+	dataFiles := make(map[string][]byte)
 	if merged.Layout != nil {
-		layoutFiles = policy.RenderLayoutFiles(merged.Layout, merged.LayoutPolicyID, merged.LayoutPolicyName)
+		for rel, data := range policy.RenderLayoutFiles(merged.Layout, merged.LayoutPolicyID, merged.LayoutPolicyName) {
+			dataFiles[rel] = data
+		}
+	}
+	for rel, data := range policy.RenderAppFiles(merged.Apps, policy.InstalledDesktopFile) {
+		dataFiles[rel] = data
+	}
+	for slug, apps := range merged.GroupApps {
+		for rel, data := range policy.RenderAppFiles(apps, policy.InstalledDesktopFile) {
+			dataFiles[policy.GroupDataPrefix(slug)+rel] = data
+		}
 	}
 
 	// Suppress watcher events for everything about to be written: overlay
 	// files, data files (current and new), the /etc rc mirror (and its
 	// legacy sibling) and the hook scripts.
-	incomingPaths := make([]string, 0, len(merged.Files)+len(layoutFiles)+4)
+	incomingPaths := make([]string, 0, len(merged.Files)+len(dataFiles)+4)
 	for name := range merged.Files {
 		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.ConfigPath, name))
 	}
-	for rel := range layoutFiles {
+	for rel := range dataFiles {
 		incomingPaths = append(incomingPaths, filepath.Join(cfg.KConfig.DataPath, rel))
 	}
 	for slug, files := range merged.GroupFiles {
@@ -1507,7 +1518,7 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 	// Group scopes: resolve the group names on this node so the hook can
 	// match members by numeric GID. Unknown groups get their files written
 	// but not activated, and say so.
-	groupDirs, unresolved := policy.ResolveGroupDirs(cfg.KConfig.ConfigPath, merged.Groups, policy.LookupGroupGID)
+	groupDirs, unresolved := policy.ResolveGroupDirs(cfg.KConfig.ConfigPath, cfg.KConfig.DataPath, merged.Groups, policy.LookupGroupGID)
 	for _, g := range unresolved {
 		for _, pid := range g.PolicyIDs {
 			merged.Items[pid] = append(merged.Items[pid], &pb.ComplianceItemResult{
@@ -1553,14 +1564,19 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		}
 	}
 
-	changedData, dataErr := policy.SyncDataFiles(cfg.KConfig.DataPath, layoutFiles)
+	changedData, dataErr := policy.SyncDataFiles(cfg.KConfig.DataPath, dataFiles)
 	if dataErr != nil {
 		log.Printf("Error syncing KDE data files: %v", dataErr)
 		reportError("failed to sync KDE data files: " + dataErr.Error())
 		return nil
 	}
-	if merged.Layout != nil && merged.Layout.GetApplyLive() && len(changedData) > 0 && merged.Layout.GetWallpaperImage() != "" {
+	if merged.Layout != nil && merged.Layout.GetApplyLive() && policy.LayoutFilesChanged(changedData) && merged.Layout.GetWallpaperImage() != "" {
 		notify.ApplyWallpaperToSessions(policy.WallpaperPath(merged.Layout.GetWallpaperImage()), policy.WallpaperFillModeName(merged.Layout.GetWallpaperFillMode()))
+	}
+	if policy.AppFilesChanged(changedData) {
+		// Logged-in sessions see hidden or restored desktop entries once
+		// their application cache is rebuilt; new logins rebuild it anyway.
+		notify.RebuildSycocaInSessions()
 	}
 
 	if err := policy.SyncKde5rc(kde5rcContent); err != nil {
@@ -1674,7 +1690,7 @@ func syncAllFirefox(ctx context.Context, client *policyclient.Client, cfg *confi
 	}
 
 	// Flatpak Firefox: write to the system-wide extension directory.
-	// This is best-effort — Flatpak Firefox may not be installed.
+	// This is best-effort - Flatpak Firefox may not be installed.
 	if cfg.Firefox.FlatpakPoliciesPath != "" {
 		if err := policy.SyncFirefoxFlatpakPoliciesFromProto(cfg.Firefox.FlatpakPoliciesPath, policies); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Firefox policies: %v", err)
@@ -1734,7 +1750,7 @@ func syncAllThunderbird(ctx context.Context, client *policyclient.Client, cfg *c
 	}
 
 	// Flatpak Thunderbird: write to the system-wide extension directory.
-	// This is best-effort — Flatpak Thunderbird may not be installed.
+	// This is best-effort - Flatpak Thunderbird may not be installed.
 	if cfg.Thunderbird.FlatpakPoliciesPath != "" {
 		if err := policy.SyncThunderbirdFlatpakPoliciesFromProto(cfg.Thunderbird.FlatpakPoliciesPath, policies); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Thunderbird policies: %v", err)
@@ -1820,7 +1836,7 @@ func syncAllChrome(ctx context.Context, client *policyclient.Client, cfg *config
 		return false
 	}
 
-	// Flatpak Chromium is best-effort — log warning but don't fail.
+	// Flatpak Chromium is best-effort - log warning but don't fail.
 	if cfg.Chrome.FlatpakChromiumPoliciesPath != "" {
 		if err := policy.SyncChromeFromProto(policies, []string{cfg.Chrome.FlatpakChromiumPoliciesPath}); err != nil {
 			log.Printf("Warning: failed to sync Flatpak Chromium policies: %v", err)
@@ -2046,10 +2062,10 @@ func triggerPackageSync(ctx context.Context, client *policyclient.Client, cfg *c
 }
 
 // syncAllPackages enforces all active PackagePolicy entries in two phases:
-//  1. Repository files (fast, file I/O) — written and compliance-reported immediately.
-//  2. Package state via PackageKit D-Bus (slow) — reported after operations complete.
+//  1. Repository files (fast, file I/O) - written and compliance-reported immediately.
+//  2. Package state via PackageKit D-Bus (slow) - reported after operations complete.
 func syncAllPackages(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
-	// Snapshot the cache under a short-lived read — the global maps are only
+	// Snapshot the cache under a short-lived read - the global maps are only
 	// mutated by the stream goroutine, which never blocks on pkgSyncMu.
 	entries := make([]packageCacheEntry, 0, len(packageCache))
 	for _, e := range packageCache {
@@ -2175,8 +2191,8 @@ func triggerFlatpakSync(ctx context.Context, client *policyclient.Client, cfg *c
 }
 
 // syncAllFlatpak enforces all active Flatpak policies in two phases:
-//  1. Remotes (fast: managed files + remote-add/remote-modify) — reported immediately.
-//  2. Applications (slow: downloads) — reported when every operation finished.
+//  1. Remotes (fast: managed files + remote-add/remote-modify) - reported immediately.
+//  2. Applications (slow: downloads) - reported when every operation finished.
 //
 // Must be called with flatpakSyncMu held.
 func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *config.Config) {
@@ -2214,14 +2230,14 @@ func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *confi
 	if !policy.FlatpakAvailable(opts.Binary) {
 		stopFlatpakUpdaterLocked()
 		msg := "flatpak is not installed on this node"
-		log.Printf("Flatpak policies synced (%d policies): INAPPLICABLE — %s", len(ids), msg)
+		log.Printf("Flatpak policies synced (%d policies): INAPPLICABLE - %s", len(ids), msg)
 		report(pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE, msg, nil)
 		return
 	}
 	if _, err := policy.FlatpakVersion(ctx, &opts); err != nil {
 		stopFlatpakUpdaterLocked()
 		msg := "flatpak is installed but unusable: " + err.Error()
-		log.Printf("Flatpak policies synced (%d policies): ERROR — %s", len(ids), msg)
+		log.Printf("Flatpak policies synced (%d policies): ERROR - %s", len(ids), msg)
 		report(pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR, msg, nil)
 		return
 	}
@@ -2235,7 +2251,7 @@ func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *confi
 		if errors.As(err, &inapp) {
 			status = pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE
 		}
-		log.Printf("Flatpak policies synced (%d policies): %s — %v", len(ids), status.String(), err)
+		log.Printf("Flatpak policies synced (%d policies): %s - %v", len(ids), status.String(), err)
 		report(status, err.Error(), nil)
 		return
 	}
@@ -2259,7 +2275,7 @@ func syncAllFlatpak(ctx context.Context, client *policyclient.Client, cfg *confi
 	allItems = append(allItems, remoteItems...)
 	allItems = append(allItems, appItems...)
 	status, msg := policy.RollupFlatpakCompliance(allItems)
-	log.Printf("Flatpak policies synced (%d policies, %d remotes, %d apps): %s — %s",
+	log.Printf("Flatpak policies synced (%d policies, %d remotes, %d apps): %s - %s",
 		len(ids), len(desired.Remotes), len(desired.Apps), status.String(), msg)
 	report(status, msg, flatpakItemsToProto(allItems))
 
@@ -2621,7 +2637,7 @@ func suppressManagedWrites(cfg *config.Config, extra ...string) {
 func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *config.Config, path string) {
 	log.Printf("Tamper protection: restoring %s", path)
 
-	// Collect process info before restoring — the modifying process may still
+	// Collect process info before restoring - the modifying process may still
 	// hold the file open (e.g. an editor), giving us user/comm attribution.
 	holders := procinfo.FindFileHolders(path)
 	procs := make([]policyclient.TamperProcess, len(holders))
@@ -2664,7 +2680,7 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
 	default:
-		log.Printf("Tamper protection: unrecognised managed path %s — no restore action taken", path)
+		log.Printf("Tamper protection: unrecognised managed path %s - no restore action taken", path)
 	}
 
 	if err := client.ReportTamperEvent(ctx, path, procs); err != nil {

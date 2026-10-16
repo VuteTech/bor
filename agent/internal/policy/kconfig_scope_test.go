@@ -128,14 +128,17 @@ func TestMergeKConfigPolicies_NoGroupsNoGroupFiles(t *testing.T) {
 
 func TestEnvScriptContent_Groups(t *testing.T) {
 	got := envScriptContent("/etc/bor/xdg", "/etc/bor/share", []GroupDir{
-		{GID: 1002, Dir: "/etc/bor/xdg/groups/teachers"},
-		{GID: 1003, Dir: "/etc/bor/xdg/groups/students"},
+		{GID: 1002, Dir: "/etc/bor/xdg/groups/teachers", DataDir: "/etc/bor/share/groups/teachers"},
+		{GID: 1003, Dir: "/etc/bor/xdg/groups/students", DataDir: "/etc/bor/share/groups/students"},
 	})
 	for _, want := range []string{
 		`bor_gids=" $(id -G 2>/dev/null) "`,
-		`case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:" ;; esac`,
-		`case "$bor_gids" in *" 1003 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/students:" ;; esac`,
+		`case "$bor_gids" in *" 1002 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/teachers:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/teachers:" ;; esac`,
+		`case "$bor_gids" in *" 1003 "*) bor_group_dirs="${bor_group_dirs}/etc/bor/xdg/groups/students:"; bor_group_data="${bor_group_data}/etc/bor/share/groups/students:" ;; esac`,
 		`export XDG_CONFIG_DIRS="${bor_group_dirs}/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`,
+		`export XDG_DATA_DIRS="${bor_group_data}/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"`,
+		"unset bor_group_dirs\n",
+		"unset bor_group_data\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("hook lacks %q:\n%s", want, got)
@@ -154,10 +157,10 @@ func TestEnvScriptContent_Groups(t *testing.T) {
 	// Without groups the hook is the plain version: no id call, no helper
 	// variables, so nodes without scoped policies see no change at all.
 	plain := envScriptContent("/etc/bor/xdg", "/etc/bor/share", nil)
-	if strings.Contains(plain, "id -G") || strings.Contains(plain, "bor_group_dirs") {
+	if strings.Contains(plain, "id -G") || strings.Contains(plain, "bor_group_dirs") || strings.Contains(plain, "bor_group_data") {
 		t.Errorf("without groups the hook must not carry group logic:\n%s", plain)
 	}
-	if !strings.Contains(plain, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) {
+	if !strings.Contains(plain, `export XDG_CONFIG_DIRS="/etc/bor/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"`) || !strings.Contains(plain, `export XDG_DATA_DIRS="/etc/bor/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"`) {
 		t.Errorf("plain hook wrong:\n%s", plain)
 	}
 }
@@ -173,8 +176,8 @@ func TestResolveGroupDirs(t *testing.T) {
 		}
 		return 0, errors.New("unknown group")
 	}
-	dirs, unresolved := ResolveGroupDirs("/etc/bor/xdg", scopes, lookup)
-	if len(dirs) != 1 || dirs[0].GID != 1002 || dirs[0].Dir != "/etc/bor/xdg/groups/teachers" {
+	dirs, unresolved := ResolveGroupDirs("/etc/bor/xdg", "/etc/bor/share", scopes, lookup)
+	if len(dirs) != 1 || dirs[0].GID != 1002 || dirs[0].Dir != "/etc/bor/xdg/groups/teachers" || dirs[0].DataDir != "/etc/bor/share/groups/teachers" {
 		t.Errorf("dirs = %+v", dirs)
 	}
 	if len(unresolved) != 1 || unresolved[0].Slug != "ghosts" {

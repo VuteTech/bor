@@ -126,7 +126,7 @@ or the file deleted.
 | Microsoft Edge | `/etc/opt/edge/policies/managed/bor_managed.json` | Yes | `edge.edge_policies_path` |
 | KDE Plasma (KConfig) | Configuration files under `/etc/bor/xdg/` | Yes | `kconfig.config_path` |
 | KDE Plasma (KConfig) | Group-scoped configuration files under `/etc/bor/xdg/groups/<group>/` | Yes | `kconfig.config_path` |
-| KDE Plasma (KConfig) | Generated look-and-feel packages and Plasma update scripts under `/etc/bor/share/` (first in `XDG_DATA_DIRS`) | Yes | `kconfig.data_path` |
+| KDE Plasma (KConfig) | Generated look-and-feel packages, Plasma update scripts, Konsole profiles (`konsole/`) and hidden application entries (`applications/`) under `/etc/bor/share/` (first in `XDG_DATA_DIRS`); group-scoped ones under `/etc/bor/share/groups/<group>/` | Yes | `kconfig.data_path` |
 | KDE Plasma (KConfig) | Flatpak system override exposing `/etc/bor/xdg` to sandboxed applications (`flatpak override --system`) | No | `kconfig.flatpak_override` |
 | KDE Plasma (KConfig) | `/etc/xdg/plasma-workspace/env/00-bor.sh` and `/etc/profile.d/99-bor.sh` (put `/etc/bor/xdg` first in `XDG_CONFIG_DIRS`) | Yes (while a policy applies) | - |
 | KDE Plasma (KConfig) | `/etc/kde5rc` (only with `kconfig.write_kde5rc` and KCM restrictions) | Yes | `kconfig.write_kde5rc` |

@@ -33,10 +33,13 @@ type KConfigGroupScope struct {
 	PolicyIDs []string
 }
 
-// GroupDir is a resolved per-group overlay for the login hook.
+// GroupDir is a resolved per-group overlay for the login hook: the config
+// directory (XDG_CONFIG_DIRS) and the data directory (XDG_DATA_DIRS) of
+// the group.
 type GroupDir struct {
-	GID uint32
-	Dir string
+	GID     uint32
+	Dir     string
+	DataDir string
 }
 
 // GroupSlug derives a directory name from a group name: lowercase, with
@@ -101,16 +104,26 @@ func LookupGroupGID(name string) (uint32, error) {
 // ResolveGroupDirs turns the merge's group scopes into hook directories,
 // keeping their order. Groups the node cannot resolve are returned
 // separately; their files are still written but not activated.
-func ResolveGroupDirs(configPath string, scopes []KConfigGroupScope, lookup func(string) (uint32, error)) (dirs []GroupDir, unresolved []KConfigGroupScope) {
+func ResolveGroupDirs(configPath, dataPath string, scopes []KConfigGroupScope, lookup func(string) (uint32, error)) (dirs []GroupDir, unresolved []KConfigGroupScope) {
 	for _, s := range scopes {
 		gid, err := lookup(s.Name)
 		if err != nil {
 			unresolved = append(unresolved, s)
 			continue
 		}
-		dirs = append(dirs, GroupDir{GID: gid, Dir: filepath.Join(configPath, GroupOverlayDir, s.Slug)})
+		dirs = append(dirs, GroupDir{
+			GID:     gid,
+			Dir:     filepath.Join(configPath, GroupOverlayDir, s.Slug),
+			DataDir: filepath.Join(dataPath, GroupOverlayDir, s.Slug),
+		})
 	}
 	return dirs, unresolved
+}
+
+// GroupDataPrefix is the path, relative to the data directory, under which
+// a group's application files live.
+func GroupDataPrefix(slug string) string {
+	return GroupOverlayDir + "/" + slug + "/"
 }
 
 // GroupOverlayRoot is the directory that holds all per-group overlays.

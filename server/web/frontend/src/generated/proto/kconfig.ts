@@ -319,6 +319,62 @@ export interface KConfigPolicy {
    * group differences into scoped policies only.
    */
   unix_groups: string[];
+  /**
+   * Konsole terminal profile deployed as konsole/<Name>.profile in the
+   * data directory. One per scope: the highest-priority policy wins.
+   */
+  konsole_profile:
+    | KonsoleProfile
+    | undefined;
+  /**
+   * Desktop file ids (org.kde.konsole.desktop) hidden from the application
+   * menu, KRunner and other launchers through a NoDisplay override in the
+   * data directory. Lists from all policies are combined. Hiding removes
+   * the entry from menus; it does not prevent running the program.
+   */
+  hidden_applications: string[];
+}
+
+/**
+ * KonsoleProfile is a Konsole terminal profile. The agent writes it as
+ * konsole/<Name>.profile into the data directory (first in XDG_DATA_DIRS)
+ * and, with set_default or lock, selects it in konsolerc.
+ */
+export interface KonsoleProfile {
+  /**
+   * Profile and file name (Managed -> Managed.profile). Letters, digits,
+   * space, dot, underscore and dash; empty = "Managed".
+   */
+  name: string;
+  /** [General] Command: the program the profile starts, e.g. /bin/bash. */
+  command: string;
+  /**
+   * [Scrolling] HistoryMode: "0" no scrollback, "1" fixed size,
+   * "2" unlimited; "" keeps Konsole's default.
+   */
+  history_mode: string;
+  /** [Scrolling] HistorySize in lines, used with history_mode "1". */
+  history_size: number;
+  /** [Appearance] ColorScheme, e.g. Breeze, BlackOnWhite, WhiteOnBlack. */
+  color_scheme: string;
+  /** [Appearance] Font in Qt's text form, e.g. "Hack,10,-1,5,50,0,0,0,0,0". */
+  font: string;
+  /**
+   * Further profile entries as INI text, e.g.
+   * "[Terminal Features]\nBlinkingCursorEnabled=false".
+   */
+  extra_ini: string;
+  /**
+   * Write konsolerc [Desktop Entry] DefaultProfile so new windows and
+   * tabs use this profile.
+   */
+  set_default: boolean;
+  /**
+   * Enforce the default profile and restrict Konsole's profile actions
+   * (manage-profiles, edit-current-profile, switch-profile) so users
+   * cannot switch to or create another profile.
+   */
+  lock: boolean;
 }
 
 /**
