@@ -51,7 +51,9 @@ Read [Concepts](getting-started/concepts.md) for a full explanation.
 
 ## License and community
 
-Bor is licensed under the GNU Lesser General Public License v3.0 or later.
-The source code, issue tracker and releases are on
+Bor is free software, licensed under the GNU Affero General Public License,
+version 3 (`AGPL-3.0-only`). Bor Enterprise, the commercial edition, is
+available from Vute Tech LTD under a separate proprietary license. The source
+code, issue tracker and releases are on
 [GitHub](https://github.com/VuteTech/Bor). The project website is
 [getbor.dev](https://getbor.dev).

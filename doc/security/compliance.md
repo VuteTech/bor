@@ -390,7 +390,7 @@ Usage, filters, retention and syslog configuration:
 
 | Topic | Status |
 |---|---|
-| Source | Public on GitHub (https://github.com/VuteTech/Bor). Licensed LGPL-3.0-or-later. |
+| Source | Public on GitHub (https://github.com/VuteTech/Bor). Licensed AGPL-3.0-only. |
 | Build | GitHub Actions builds deb, rpm, apk and Arch packages for amd64, arm64 and ppc64le with `nfpm` (pinned version) after unit tests and lint pass. Go toolchain version comes from `go.mod`; Go dependencies are pinned by `go.sum`. Builds are not bit-for-bit reproducible and no build provenance is published. |
 | Package signing | The agent repository each server hosts is signed with the project's OpenPGP release key when the CI secret is available; unsigned builds are flagged in the **Deploy agent** dialog, which then falls back to unsigned repository settings. Individual package files are not signed. |
 | Dependency updates | Dependabot checks Go modules (server and agent), npm (frontend) and GitHub Actions weekly. GitHub Actions are referenced by version tag, not by commit hash. |

@@ -407,4 +407,16 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full guide.
 Copyright (C) 2026 Vute Tech LTD
 Copyright (C) 2026 Bor contributors
 
-Licensed under the [GNU Lesser General Public License v3.0](LICENSE.md).
+Bor is free software: you can redistribute it and/or modify it under the
+terms of the [GNU Affero General Public License, version 3](LICENSE)
+(`AGPL-3.0-only`). If you run a modified version of the Bor server for others
+over a network, the AGPL requires you to offer them the source code of your
+version.
+
+Bor Enterprise, the commercial edition from Vute Tech LTD, is distributed
+under a separate proprietary license. For commercial licensing, contact
+<bor@vute.tech>.
+
+Contributions are accepted under the
+[Contributor License Agreement](CLA.md); see
+[Contributing](doc/development/contributing.md).

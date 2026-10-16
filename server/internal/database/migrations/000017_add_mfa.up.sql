@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: LGPL-3.0-or-later
+-- SPDX-License-Identifier: AGPL-3.0-only
 CREATE TABLE user_mfa (
     user_id        UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     totp_secret    TEXT NOT NULL,

@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: LGPL-3.0-or-later
+-- SPDX-License-Identifier: AGPL-3.0-only
 -- Store the FIDO2 backup-eligibility flags recorded at registration time.
 -- go-webauthn validates that these flags are consistent across every
 -- authentication; without them stored, passkey managers (Bitwarden, 1Password,
