@@ -79,11 +79,11 @@ type kcfgChoice struct {
 // kcfgArgFiles maps schemas whose config file is passed at runtime
 // (<kcfgfile arg="true"/>) to the file the application actually uses.
 var kcfgArgFiles = map[string]string{
-	"kwin.kcfg":                "kwinrc",
-	"nightlightsettings.kcfg":  "kwinrc",
-	"okular.kcfg":              "okularpartrc",
-	"okular_core.kcfg":         "okularpartrc",
-	"partitionmanager.kcfg":    "partitionmanagerrc",
+	"kwin.kcfg":                        "kwinrc",
+	"nightlightsettings.kcfg":          "kwinrc",
+	"okular.kcfg":                      "okularpartrc",
+	"okular_core.kcfg":                 "okularpartrc",
+	"partitionmanager.kcfg":            "partitionmanagerrc",
 	"kcmaccessibilityshakecursor.kcfg": "kwinrc",
 }
 
@@ -188,7 +188,8 @@ func parseKcfg(fileName string, data []byte) []*pb.KConfigCatalogueEntry {
 		if strings.ContainsAny(strings.Join(groupPath, ""), "[]\r\n") {
 			continue
 		}
-		for _, en := range g.Entries {
+		for i := range g.Entries {
+			en := &g.Entries[i]
 			key := en.Key
 			if key == "" {
 				key = en.Name
@@ -425,7 +426,7 @@ func kconfigValuesEqual(expected, actual string) bool {
 	return false
 }
 
-func parseKConfigBool(s string) (bool, bool) {
+func parseKConfigBool(s string) (value, ok bool) {
 	switch strings.ToLower(s) {
 	case "true", "on", "yes", "1":
 		return true, true

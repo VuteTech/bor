@@ -3,9 +3,12 @@
 // Copyright (C) 2026 Bor contributors
 
 /**
- * Types and lookups for the KDE settings catalogue. The entries themselves
+ * Types and lookups for the KDE settings catalogue. The built-in entries
  * come from `generated/kconfig_catalogue.ts`, produced from the JSON the
- * server embeds (`npm run gen:kconfig-catalogue`).
+ * server embeds (`npm run gen:kconfig-catalogue`). Entries that nodes
+ * report (KConfigXT schemas) are added at runtime with
+ * `registerCatalogueEntries`; a built-in entry always wins over a reported
+ * one for the same file, group and key.
  */
 
 import { KCONFIG_BUILTIN_CATALOGUE } from "../../../generated/kconfig_catalogue";
@@ -59,6 +62,7 @@ export interface KConfigCatalogueEntry {
   plasmaMajor?: string[];
   reload?: string;
   windowsEquivalent?: string;
+  /** "builtin" for curated entries, "kcfg" for entries reported by nodes. */
   source?: string;
   extraWrites?: KConfigExtraWrite[];
 }
@@ -66,18 +70,50 @@ export interface KConfigCatalogueEntry {
 /** Placeholder in an extra write's value meaning "same as the main setting". */
 export const KCONFIG_VALUE_PLACEHOLDER = "$VALUE";
 
+const KNOWN_TYPES = new Set<string>(["Bool", "Int", "UInt", "Double", "String", "StringList", "Enum", "Path", "Url", "Color", "Font"]);
+
+const entries: KConfigCatalogueEntry[] = [];
 const byId = new Map<string, KConfigCatalogueEntry>();
 const byTarget = new Map<string, KConfigCatalogueEntry>();
-for (const e of KCONFIG_BUILTIN_CATALOGUE) {
-  byId.set(e.id, e);
-  byTarget.set(targetKey(e.file, e.groupPath, e.key), e);
+
+function addEntry(e: KConfigCatalogueEntry): boolean {
+  if (!e.id || !e.file || !e.key || !KNOWN_TYPES.has(e.type)) return false;
+  const groupPath = Array.isArray(e.groupPath) ? e.groupPath : [];
+  if (groupPath.length === 0) return false;
+  const target = targetKey(e.file, groupPath, e.key);
+  if (byId.has(e.id) || byTarget.has(target)) return false;
+  const n: KConfigCatalogueEntry = { ...e, groupPath, label: e.label || e.key, category: e.category || `Node: ${e.file}` };
+  entries.push(n);
+  byId.set(n.id, n);
+  byTarget.set(target, n);
+  return true;
 }
 
-/** Catalogue entries in file order (the JSON is curated by category). */
+for (const e of KCONFIG_BUILTIN_CATALOGUE) addEntry(e);
+
+/** The curated, built-in entries (never changes at runtime). */
 export const KCONFIG_CATALOGUE: readonly KConfigCatalogueEntry[] = KCONFIG_BUILTIN_CATALOGUE;
 
-/** Category names in the order they first appear in the catalogue. */
-export const KCONFIG_CATEGORIES: readonly string[] = Array.from(new Set(KCONFIG_BUILTIN_CATALOGUE.map((e) => e.category)));
+/** Every entry known right now: built-in ones first, then registered node entries. */
+export function allCatalogueEntries(): readonly KConfigCatalogueEntry[] {
+  return entries;
+}
+
+/** Category names in the order they first appear. */
+export function allCategories(): string[] {
+  return Array.from(new Set(entries.map((e) => e.category)));
+}
+
+/**
+ * Adds entries a node reported. Entries whose id or target the catalogue
+ * already knows are ignored, so curated entries keep their labels and
+ * semantics. Returns how many entries were added.
+ */
+export function registerCatalogueEntries(extra: readonly KConfigCatalogueEntry[]): number {
+  let added = 0;
+  for (const e of extra) if (addEntry(e)) added++;
+  return added;
+}
 
 export function findCatalogueEntry(id: string): KConfigCatalogueEntry | undefined {
   return byId.get(id);

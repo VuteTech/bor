@@ -150,6 +150,27 @@ hook scripts stay in place. Agents upgraded from a version that wrote
 URL restrictions and System Settings module restrictions are always
 written as enforced.
 
+### Settings reported by nodes
+
+Every agent on a KDE node reports two things when it connects: the
+settings described by the KConfigXT schemas installed under
+`/usr/share/config.kcfg` (file, group, key, type, choices, default and
+label for roughly 1,400 keys on a stock Plasma 6 installation, including
+KDE applications such as Dolphin, Okular, Ark, KMail or KOrganizer) and
+the System Settings modules it has installed, with their display names.
+
+In the editor, **Settings reported by node** adds that node's settings to
+the tree under groups named after the configuration file (**Node:
+dolphinrc**, **Node: kmail2rc**, ...), marked **reported by a node**, and
+replaces the module list of **System Settings modules** with the node's
+own modules. Keys the built-in catalogue already describes keep their
+curated label and explanation. Use a node that runs the Plasma version and
+applications you manage; what it reports is what those nodes read.
+
+Node-reported settings carry the label from the schema, which is often
+terse, and no Windows equivalent. Their defaults are the KDE defaults for
+the version installed on that node.
+
 ## Examples
 
 ### Disable terminal access and KRunner commands
@@ -293,6 +314,18 @@ be written (for example a value containing a line break, or a show-only
 module list on a node whose installed modules could not be listed). A
 policy that only contains legacy settings is reported as **Inapplicable**
 with an explanation.
+
+With `kconfig.probe_effective: true` in the agent configuration, the agent
+additionally reads every written setting back with `kreadconfig6` (or
+`kreadconfig5`) in a logged-in user's session after each sync. A setting
+whose effective value differs from the policy value is reported
+**Non-compliant** with both values: that happens when a user's own
+configuration overrides a setting that is not enforced. The agent also
+checks that the running Plasma session has the managed directory in
+`XDG_CONFIG_DIRS` and reports a **Non-compliant** `session /
+XDG_CONFIG_DIRS` item until the user logs in again. The probe is off by
+default; it runs read-only commands as the session user and skips nodes
+without a graphical session.
 
 ## Verify on the node
 

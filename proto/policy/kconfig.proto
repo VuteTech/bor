@@ -94,6 +94,26 @@ message KConfigCatalogueEntry {
   repeated KConfigSetting extra_writes = 19;
 }
 
+// KcmModule is one System Settings module installed on a node.
+message KcmModule {
+  string id = 1;    // e.g. "kcm_autostart"
+  string name = 2;  // display name from the module's desktop entry
+}
+
+// ReportKConfigCatalogueRequest is sent by the agent on connect to publish
+// the KConfigXT schemas (/usr/share/config.kcfg) and the System Settings
+// modules installed on the node. The server stores the entries next to
+// the built-in catalogue so the editor can show what a node offers.
+message ReportKConfigCatalogueRequest {
+  string client_id = 1;
+  repeated KConfigCatalogueEntry entries = 2;
+  repeated KcmModule kcms = 3;
+  // Plasma version if detectable, e.g. "6.3.4".
+  string plasma_version = 4;
+}
+
+message ReportKConfigCatalogueResponse {}
+
 // KConfigUrlRestriction describes one KDE URL restriction rule.
 message KConfigUrlRestriction {
   string action = 1;           // "open", "list", or "redirect"

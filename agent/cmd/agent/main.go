@@ -59,6 +59,10 @@ var kconfigCache = make(map[string]kconfigCacheEntry)
 // It is nil when not inside a snapshot sequence.
 var kconfigSnapshotStaging map[string]kconfigCacheEntry
 
+// kconfigCatalogueReported is set once this node's KDE settings catalogue
+// (KConfigXT schemas and System Settings modules) reached the server.
+var kconfigCatalogueReported bool
+
 // kdeNotifier handles desktop notifications and app reconfigure via D-Bus.
 var kdeNotifier = notify.New()
 
@@ -650,6 +654,29 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 					log.Printf("dconf: ReportSchemaCatalogue failed (non-fatal): %v", err)
 				} else {
 					log.Printf("dconf: reported %d schemas to server", len(schemas))
+				}
+			}()
+		}
+
+		// Scan KConfigXT schemas and System Settings modules and report the
+		// KDE settings catalogue on first connect. Best-effort: nodes without
+		// KDE report nothing.
+		if !kconfigCatalogueReported {
+			go func() {
+				entries, err := policy.ScanKConfigSchemas()
+				if err != nil {
+					log.Printf("kconfig: schema scan failed (non-fatal): %v", err)
+					return
+				}
+				kcms := policy.InstalledKCMModules()
+				if len(entries) == 0 && len(kcms) == 0 {
+					return
+				}
+				if err := client.ReportKConfigCatalogue(ctx, entries, kcms, sysinfo.PlasmaVersion()); err != nil {
+					log.Printf("kconfig: ReportKConfigCatalogue failed (non-fatal): %v", err)
+				} else {
+					log.Printf("kconfig: reported %d settings and %d System Settings modules to server", len(entries), len(kcms))
+					kconfigCatalogueReported = true
 				}
 			}()
 		}
@@ -1475,6 +1502,10 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		return nil
 	}
 
+	if cfg.KConfig.ProbeEffective {
+		probeKConfigSession(cfg, merged)
+	}
+
 	log.Printf("KConfig policies synced to %s (%d policies, %d files)", cfg.KConfig.ConfigPath, len(sources), len(merged.Files))
 	if kde5rcContent != nil {
 		log.Printf("KCM restrictions mirrored to %s", policy.Kde5rcPath())
@@ -1500,6 +1531,55 @@ func syncAllKConfig(ctx context.Context, client *policyclient.Client, cfg *confi
 		changedFiles[name] = true
 	}
 	return changedFiles
+}
+
+// probeKConfigSession reads the written KDE settings back with kreadconfig
+// in a logged-in user's session and downgrades the items whose effective
+// value differs: a user setting overriding a non-enforced default. It also
+// checks that the running Plasma session sees the managed directory.
+// Best-effort: without a graphical session or kreadconfig it does nothing.
+func probeKConfigSession(cfg *config.Config, merged *policy.KConfigMergeResult) {
+	uid, ok := notify.FirstGraphicalSessionUID()
+	if !ok {
+		return
+	}
+	tool := policy.KConfigReadTool(exec.LookPath)
+	env := []string{"XDG_CONFIG_DIRS=" + cfg.KConfig.ConfigPath + ":/etc/xdg"}
+	run := func(name string, args ...string) (string, error) {
+		return notify.RunAsSessionUser(uid, env, name, args...)
+	}
+
+	mismatches := make(map[string]policy.KConfigProbeResult)
+	for _, r := range policy.ProbeKConfigEffective(merged.Entries, run, tool) {
+		if r.Mismatch {
+			mismatches[r.File+"\x00"+r.ItemKey] = r
+		}
+	}
+	for _, items := range merged.Items {
+		for _, it := range items {
+			if it.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT || it.Message != "Deployed" {
+				continue
+			}
+			if r, found := mismatches[it.SchemaId+"\x00"+it.Key]; found {
+				it.Status = pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT
+				it.Message = fmt.Sprintf("Effective value for the logged-in user is %q, policy value is %q: a user setting overrides this default; enforce it to fix", r.Actual, r.Expected)
+			}
+		}
+	}
+
+	if found, running := policy.SessionSeesConfigDir(uid, cfg.KConfig.ConfigPath); running && !found {
+		for id, items := range merged.Items {
+			if len(items) == 0 {
+				continue
+			}
+			merged.Items[id] = append(items, &pb.ComplianceItemResult{
+				SchemaId: "session",
+				Key:      "XDG_CONFIG_DIRS",
+				Status:   pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT,
+				Message:  "The running Plasma session does not have " + cfg.KConfig.ConfigPath + " in XDG_CONFIG_DIRS; the user must log out and back in",
+			})
+		}
+	}
 }
 
 // syncAllFirefox re-merges all cached Firefox proto policies and syncs

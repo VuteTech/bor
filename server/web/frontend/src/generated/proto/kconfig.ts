@@ -123,6 +123,31 @@ export interface KConfigCatalogueEntry {
   extra_writes: KConfigSetting[];
 }
 
+/** KcmModule is one System Settings module installed on a node. */
+export interface KcmModule {
+  /** e.g. "kcm_autostart" */
+  id: string;
+  /** display name from the module's desktop entry */
+  name: string;
+}
+
+/**
+ * ReportKConfigCatalogueRequest is sent by the agent on connect to publish
+ * the KConfigXT schemas (/usr/share/config.kcfg) and the System Settings
+ * modules installed on the node. The server stores the entries next to
+ * the built-in catalogue so the editor can show what a node offers.
+ */
+export interface ReportKConfigCatalogueRequest {
+  client_id: string;
+  entries: KConfigCatalogueEntry[];
+  kcms: KcmModule[];
+  /** Plasma version if detectable, e.g. "6.3.4". */
+  plasma_version: string;
+}
+
+export interface ReportKConfigCatalogueResponse {
+}
+
 /** KConfigUrlRestriction describes one KDE URL restriction rule. */
 export interface KConfigUrlRestriction {
   /** "open", "list", or "redirect" */

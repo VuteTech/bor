@@ -296,20 +296,51 @@ func runAsUser(s session, name string, args ...string) error {
 	return nil
 }
 
+// FirstGraphicalSessionUID returns the UID of the first active graphical
+// login session, if there is one.
+func FirstGraphicalSessionUID() (uint32, bool) {
+	sessions, err := activeGraphicalSessions()
+	if err != nil || len(sessions) == 0 {
+		return 0, false
+	}
+	return sessions[0].UID, true
+}
+
+// RunAsSessionUser runs name with args as the user who owns the active
+// graphical session with the given UID, with extraEnv added to the minimal
+// session environment, and returns the command's standard output.
+func RunAsSessionUser(uid uint32, extraEnv []string, name string, args ...string) (string, error) {
+	sessions, err := activeGraphicalSessions()
+	if err != nil {
+		return "", err
+	}
+	for _, s := range sessions {
+		if s.UID == uid {
+			return runAsUserOutputEnv(s, extraEnv, name, args...)
+		}
+	}
+	return "", fmt.Errorf("no active graphical session for UID %d", uid)
+}
+
 // runAsUserOutput is like runAsUser but returns the command's stdout.
 func runAsUserOutput(s session, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...) //nolint:gosec // G204: all call sites pass hardcoded binary names ("notify-send", etc.)
+	return runAsUserOutputEnv(s, nil, name, args...)
+}
+
+// runAsUserOutputEnv is runAsUserOutput with additional environment variables.
+func runAsUserOutputEnv(s session, extraEnv []string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...) //nolint:gosec // G204: all call sites pass hardcoded binary names ("notify-send", "kreadconfig6", etc.)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid: s.UID,
 			Gid: s.GID,
 		},
 	}
-	cmd.Env = []string{
+	cmd.Env = append([]string{
 		fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus", s.UID),
 		fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", s.UID),
 		"HOME=/home/" + s.User,
-	}
+	}, extraEnv...)
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

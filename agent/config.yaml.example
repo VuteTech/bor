@@ -92,6 +92,11 @@ chrome:
 #  # Plasma 5 and 6 read them from kdeglobals, so leave this off unless a
 #  # very old KDE Frameworks release needs it.
 #  write_kde5rc: false
+#  # After each sync, read the written settings back with kreadconfig in a
+#  # logged-in user's session and report settings the user overrides (only
+#  # possible for non-enforced defaults) as non-compliant. Also checks that
+#  # the running Plasma session has the managed directory in XDG_CONFIG_DIRS.
+#  probe_effective: false
 
 # Flatpak policy enforcement (remotes and applications via the flatpak CLI).
 # All values are optional; the defaults shown are used when the section is absent.

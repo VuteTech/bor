@@ -379,6 +379,24 @@ func (c *Client) ReportSchemaCatalogue(ctx context.Context, schemas []*pb.GSetti
 	return nil
 }
 
+// ReportKConfigCatalogue sends the KDE settings catalogue (KConfigXT schema
+// entries and System Settings modules installed on this node) to the server.
+func (c *Client) ReportKConfigCatalogue(ctx context.Context, entries []*pb.KConfigCatalogueEntry, kcms []*pb.KcmModule, plasmaVersion string) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	_, err := c.client.ReportKConfigCatalogue(ctx, &pb.ReportKConfigCatalogueRequest{
+		ClientId:      c.clientID,
+		Entries:       entries,
+		Kcms:          kcms,
+		PlasmaVersion: plasmaVersion,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportKConfigCatalogue RPC failed: %w", err)
+	}
+	return nil
+}
+
 // ReportPolkitCatalogue sends the polkit action catalogue to the server.
 func (c *Client) ReportPolkitCatalogue(ctx context.Context, actions []*pb.PolkitActionDescription) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)

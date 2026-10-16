@@ -125,6 +125,10 @@ type KConfigConfig struct {
 	// /etc/kde5rc. Plasma 5 and 6 read them from kdeglobals, so this is only
 	// for very old KDE Frameworks releases (default false).
 	WriteKde5rc bool `yaml:"write_kde5rc"`
+	// ProbeEffective reads written settings back with kreadconfig in a
+	// logged-in user's session after each sync and reports user overrides
+	// of non-enforced defaults as non-compliant (default false).
+	ProbeEffective bool `yaml:"probe_effective"`
 }
 
 // EnrollmentConfig holds enrollment and mTLS settings.

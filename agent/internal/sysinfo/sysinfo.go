@@ -217,6 +217,15 @@ func collectDesktopEnvs() []DesktopInfo {
 	return envs
 }
 
+// PlasmaVersion returns the installed KDE Plasma version ("6.3.4"), or ""
+// when Plasma is not installed or the version cannot be read.
+func PlasmaVersion() string {
+	if de, ok := detectKDE(); ok {
+		return de.Version
+	}
+	return ""
+}
+
 func detectKDE() (DesktopInfo, bool) {
 	out, err := exec.Command("plasmashell", "--version").Output()
 	if err != nil {

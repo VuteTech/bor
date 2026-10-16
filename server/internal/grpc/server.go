@@ -32,6 +32,7 @@ type PolicyServer struct {
 	enrollSvc   *services.EnrollmentService
 	dconfRepo   dconfRepository
 	polkitRepo  polkitRepository
+	kconfigRepo kconfigRepository
 	hub         *PolicyHub
 	diskEncSvc  *services.DiskEncryptionService
 }

@@ -25,15 +25,18 @@ import { PolicyTreePanel } from "../PolicyTreePanel";
 import { FieldHelp } from "./FieldHelp";
 import type { PolicyContentEditorProps } from "./PolicyContentEditorProps";
 import {
-  KCONFIG_CATALOGUE,
-  KCONFIG_CATEGORIES,
+  allCatalogueEntries,
+  allCategories,
   boolDisplay,
   defaultCatalogueValue,
   findCatalogueEntry,
   groupPathLabel,
+  registerCatalogueEntries,
   targetLabel,
   type KConfigCatalogueEntry,
 } from "./kconfigCatalogue";
+import { fetchKConfigCatalogue, fetchKConfigKcms, type KcmModuleInfo } from "../../../apiClient/kconfigApi";
+import { fetchNodesPaged, type Node } from "../../../apiClient/nodesApi";
 import {
   DEFAULT_URL_RULE,
   KCM_MODULES,
@@ -134,6 +137,8 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
   // for editable policies, written back so the stored shape is current.
   const [initial] = useState(() => parseKConfigContent(contentRaw));
   const content = useMemo(() => parseKConfigContent(contentRaw).content, [contentRaw]);
+  // Bumped when node-reported entries are registered, so derived lists recompute.
+  const [catalogueVersion, setCatalogueVersion] = useState(0);
 
   useEffect(() => {
     if (initial.changed && !isDisabled) onChange(serializeKConfigContent(initial.content));
@@ -143,9 +148,11 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
 
   const configuredEntryIds = useMemo(() => {
     const ids: string[] = [];
-    for (const e of KCONFIG_CATALOGUE) if (findEntrySetting(content, e)) ids.push(e.id);
+    for (const e of allCatalogueEntries()) if (findEntrySetting(content, e)) ids.push(e.id);
     return ids;
-  }, [content]);
+    // catalogueVersion: registered node entries change the result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, catalogueVersion]);
   const custom = useMemo(() => customSettings(content), [content]);
 
   const configuredKeys = useMemo(() => {
@@ -173,6 +180,57 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
   });
   const [filter, setFilter] = useState("");
 
+  // Node-reported catalogue: the KConfigXT schema entries and the System
+  // Settings modules a chosen node reported.
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodeId, setNodeId] = useState("");
+  const [nodeKcms, setNodeKcms] = useState<KcmModuleInfo[] | null>(null);
+  const [nodeSummary, setNodeSummary] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchNodesPaged({ per_page: 200, sort_field: "name", sort_order: "asc" })
+      .then((res) => {
+        if (cancelled) return;
+        setNodes(res.items.filter((n) => !n.desktop_env || /kde|plasma/i.test(n.desktop_env)));
+      })
+      .catch(() => { /* the picker stays hidden */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Settings tagged with ids the built-in catalogue does not know (added
+  // from a node's schemas): load the server's catalogue once so their
+  // labels resolve.
+  useEffect(() => {
+    if (!initial.content.settings.some((s) => s.catalogueId && !findCatalogueEntry(s.catalogueId))) return;
+    let cancelled = false;
+    fetchKConfigCatalogue()
+      .then((entries) => {
+        if (!cancelled && registerCatalogueEntries(entries) > 0) setCatalogueVersion((v) => v + 1);
+      })
+      .catch(() => { /* labels fall back to file, group and key */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectNode = (id: string) => {
+    setNodeId(id);
+    if (!id) {
+      setNodeKcms(null);
+      setNodeSummary("");
+      return;
+    }
+    const node = nodes.find((n) => n.id === id);
+    const name = node?.name ?? "the node";
+    Promise.all([fetchKConfigCatalogue(id), fetchKConfigKcms(id)])
+      .then(([entries, kcms]) => {
+        if (registerCatalogueEntries(entries) > 0) setCatalogueVersion((v) => v + 1);
+        setNodeKcms(kcms.length > 0 ? kcms : null);
+        setNodeSummary(`${name}${node?.desktop_env ? ` (${node.desktop_env})` : ""}: ${entries.length} settings from its KDE schemas, ${kcms.length} System Settings modules.`);
+      })
+      .catch((err: unknown) => setNodeSummary(`Could not load the catalogue of ${name}: ${err instanceof Error ? err.message : String(err)}`));
+  };
+
   // Local (preview) state for the selected catalogue setting.
   const [value, setValue] = useState("");
   const [immutable, setImmutable] = useState(true);
@@ -193,8 +251,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
   const tree = useMemo(() => {
     const t = new Map<string, TreeItem[]>();
     const f = filter.trim();
-    for (const category of KCONFIG_CATEGORIES) {
-      const items = KCONFIG_CATALOGUE.filter((e) => e.category === category && (!f || matchesFilter(e, f))).map((e) => ({ key: e.id, label: e.label }));
+    const entries = allCatalogueEntries();
+    for (const category of allCategories()) {
+      const items = entries.filter((e) => e.category === category && (!f || matchesFilter(e, f))).map((e) => ({ key: e.id, label: e.label }));
       if (items.length > 0) t.set(category, items);
     }
     const special: TreeItem[] = [
@@ -214,7 +273,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
     ].filter((i) => !f || i.label.toLowerCase().includes(f.toLowerCase()));
     if (advanced.length > 0) t.set(GROUP_ADVANCED, advanced);
     return t;
-  }, [filter, custom]);
+    // catalogueVersion: registered node entries add groups.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, custom, catalogueVersion]);
 
   const effectiveExpanded = filter.trim() ? new Set(tree.keys()) : expandedGroups;
 
@@ -298,6 +359,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
           {entry.category} &nbsp;·&nbsp; <code>{targetLabel(entry.file, entry.groupPath, entry.key)}</code>
           {entry.plasmaMajor && entry.plasmaMajor.length > 0 && (
             <Label isCompact color="blue" style={{ marginLeft: "0.5rem" }}>Plasma {entry.plasmaMajor.join(", ")}</Label>
+          )}
+          {entry.source === "kcfg" && (
+            <Label isCompact color="green" style={{ marginLeft: "0.5rem" }}>reported by a node</Label>
           )}
         </p>
         {entry.description && <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.25rem" }}>{entry.description}</p>}
@@ -423,7 +487,9 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
       if (ids.length > 0) updateModules([...modules, ...ids]);
       setKcmCustomInput("");
     };
-    const available = KCM_MODULES.filter((m) => !modules.includes(m.id));
+    // With a node selected, its reported modules replace the built-in list.
+    const moduleList: { id: string; label: string }[] = nodeKcms ? nodeKcms.map((m) => ({ id: m.id, label: m.name || m.id })) : KCM_MODULES;
+    const available = moduleList.filter((m) => !modules.includes(m.id));
     const showOnly = content.kcmMode === "KCM_SHOW_ONLY_LISTED";
 
     return (
@@ -452,6 +518,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
               <FormSelectOption value="" label={available.length > 0 ? "Select a module..." : "(all known modules added)"} isDisabled />
               {available.map((m) => <FormSelectOption key={m.id} value={m.id} label={`${m.label} (${m.id})`} />)}
             </FormSelect>
+            {nodeKcms && <FieldHelp>Modules installed on the selected node</FieldHelp>}
           </FormGroup>
         </div>
         <details style={{ marginBottom: "1rem" }}>
@@ -468,7 +535,7 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
           <div>
             <Title headingLevel="h4" size="md" style={{ marginBottom: "0.5rem" }}>{showOnly ? "Visible" : "Hidden"} modules ({modules.length})</Title>
             {modules.map((id) => {
-              const mod = KCM_MODULES.find((m) => m.id === id);
+              const mod = moduleList.find((m) => m.id === id);
               return (
                 <div key={id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.4rem 0.75rem", borderBottom: "1px solid var(--pf-t--global--border--color--default)", fontSize: "0.85rem" }}>
                   <span>
@@ -808,6 +875,14 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
         <FormGroup label="Search settings" fieldId="kc-search" style={{ flex: "1 1 260px" }}>
           <TextInput id="kc-search" type="search" value={filter} onChange={(_ev, v) => setFilter(v)} placeholder="Label, key, file or Windows policy name" />
         </FormGroup>
+        {nodes.length > 0 && (
+          <FormGroup label="Settings reported by node" fieldId="kc-node" style={{ flex: "0 1 300px" }}>
+            <FormSelect id="kc-node" value={nodeId} onChange={(_ev, v) => selectNode(v)}>
+              <FormSelectOption value="" label="Built-in catalogue only" />
+              {nodes.map((n) => <FormSelectOption key={n.id} value={n.id} label={n.name} />)}
+            </FormSelect>
+          </FormGroup>
+        )}
         {!isDisabled && (
           <FormGroup label="Add a preset" fieldId="kc-preset" style={{ flex: "0 1 320px" }}>
             <FormSelect id="kc-preset" value="" onChange={(_ev, v) => { if (v) applyPreset(v); }}>
@@ -820,8 +895,10 @@ export const KconfigPolicyEditor: React.FC<PolicyContentEditorProps> = ({
           {hasAnyKConfigContent(content) ? `${content.settings.length} setting(s)` : "Nothing configured yet"}
         </div>
       </div>
-      {notice && (
-        <div aria-live="polite" style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.75rem" }}>{notice}</div>
+      {(notice || nodeSummary) && (
+        <div aria-live="polite" style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+          {notice}{notice && nodeSummary ? " " : ""}{nodeSummary}
+        </div>
       )}
       <div style={{ display: "flex", minHeight: "400px" }}>
         <PolicyTreePanel

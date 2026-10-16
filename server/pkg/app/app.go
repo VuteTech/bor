@@ -195,6 +195,8 @@ func Run(opts Options) {
 	auditLogRepo := database.NewAuditLogRepository(db)
 	dconfRepo := database.NewDConfRepository(db)
 	go seedDConfBuiltinSchemas(context.Background(), dconfRepo)
+	kconfigRepo := database.NewKConfigRepository(db)
+	go seedKConfigBuiltinCatalogue(context.Background(), kconfigRepo)
 	polkitRepo := database.NewPolkitRepository(db)
 	go seedPolkitBuiltinActions(context.Background(), polkitRepo)
 	settingsRepo := database.NewSettingsRepository(db)
@@ -388,6 +390,7 @@ func Run(opts Options) {
 	auditLogHandler := api.NewAuditLogHandler(auditSvc)
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
 	dconfHandler := api.NewDConfHandler(dconfRepo)
+	kconfigHandler := api.NewKConfigHandler(kconfigRepo)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
 	ppaHandler := api.NewPPAInfoHandler()
@@ -715,6 +718,10 @@ func Run(opts Options) {
 	// DConf schema catalogue — readable by anyone with policy:view
 	mux.Handle("/api/v1/dconf/schemas", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(dconfHandler.ListSchemas))))
 
+	// KDE settings catalogue (built-in and node-reported) - readable by anyone with policy:view
+	mux.Handle("/api/v1/kconfig/catalogue", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListCatalogue))))
+	mux.Handle("/api/v1/kconfig/kcms", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListKCMs))))
+
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(gate.RequireScoped("compliance", "view")(http.HandlerFunc(complianceHandler.List))))
 
@@ -871,7 +878,8 @@ func Run(opts Options) {
 	)...)
 	pb.RegisterPolicyServiceServer(policyGrpcSrv,
 		grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, polkitRepo, policyHub).
-			WithDiskEncryptionService(diskEncSvc))
+			WithDiskEncryptionService(diskEncSvc).
+			WithKConfigRepository(kconfigRepo))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
