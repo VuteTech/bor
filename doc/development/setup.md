@@ -9,7 +9,7 @@ at your development server.
 
 | Tool | Version | Used for |
 |---|---|---|
-| Go | the version in `server/go.mod` (`go 1.25.0`) or newer | Server and agent |
+| Go | the version in `server/go.mod` (`go 1.26.0`) or newer | Server and agent |
 | Node.js and npm | 22 (the version CI uses) | Web UI build, TypeScript protobuf types |
 | `protoc` | Protocol Buffers compiler | `make proto` |
 | podman and podman-compose | any recent | Development PostgreSQL (`make dev`) |

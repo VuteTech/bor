@@ -12,8 +12,8 @@ This directory is excluded from the published site (`exclude_docs` in
 
 - Google Chrome or Chromium on the host (`CHROME_BIN=/path/to/chrome` to
   override the default `/usr/bin/google-chrome-stable`).
-- Node.js, then once in this directory: `npm install` (installs
-  `puppeteer-core`).
+- Node.js 22.12 or newer, then once in this directory: `npm install`
+  (installs `puppeteer-core`).
 - A **throwaway** Bor server with demo data. Never point the script at a
   real installation: screenshots are published.
 

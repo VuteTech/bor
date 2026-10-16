@@ -21,17 +21,18 @@
  * - The browser resolves BOR_UI_HOST to 127.0.0.1 so URLs in the wizard
  *   show a presentable host name.
  */
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import puppeteer from "puppeteer-core";
+
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const puppeteer = require("puppeteer-core");
 
 const API = process.env.BOR_API || "https://localhost:8443";
 const UI_HOST = process.env.BOR_UI_HOST || "bor.example.com";
 const UI = `https://${UI_HOST}:${new URL(API).port || 443}`;
 const CHROME = process.env.CHROME_BIN || "/usr/bin/google-chrome-stable";
-const DEFAULT_OUT = path.resolve(__dirname, "../../images/screenshots");
+const DEFAULT_OUT = path.resolve(import.meta.dirname, "../../images/screenshots");
 const args = process.argv.slice(2);
 const [OUT, USER, PASS] = args.length >= 3 ? args : [DEFAULT_OUT, ...args];
 if (!USER || !PASS) {
@@ -210,7 +211,7 @@ async function go(page, route, waitFor = "h1") {
 
   const browser = await puppeteer.launch({
     executablePath: CHROME,
-    headless: "new",
+    headless: true,
     args: ["--no-sandbox", "--ignore-certificate-errors", "--window-size=1280,800",
       `--host-resolver-rules=MAP ${UI_HOST} 127.0.0.1`],
     defaultViewport: { width: 1280, height: 800, deviceScaleFactor: 2 },

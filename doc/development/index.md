@@ -99,7 +99,7 @@ you open a pull request.
 
 | Area | Technology |
 |---|---|
-| Server and agent | Go (`go 1.25.0` in both `go.mod` files), built with `GOFIPS140=v1.0.0` |
+| Server and agent | Go (`go 1.26.0` in both `go.mod` files), built with `GOFIPS140=v1.0.0` |
 | Agent and server RPC | gRPC with Protocol Buffers (proto3), mTLS for agents |
 | Database | PostgreSQL (the dev stack uses `postgres:17.6-alpine3.22`) |
 | Web UI | React with TypeScript and PatternFly 6 (`@patternfly/react-core`, `@patternfly/react-table`, `@patternfly/react-icons`) |
