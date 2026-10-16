@@ -1,10 +1,10 @@
 module github.com/VuteTech/Bor/server
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/eclipse-keypont/crypto11 v1.6.8
-	github.com/go-ldap/ldap/v3 v3.4.14
+	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/go-webauthn/webauthn v0.16.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
