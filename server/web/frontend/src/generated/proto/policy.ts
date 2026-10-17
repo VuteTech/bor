@@ -16,6 +16,7 @@ import type { KConfigPolicy } from "./kconfig";
 import type { PackagePolicy } from "./package";
 import type { PolkitPolicy } from "./polkit";
 import type { SessionAccessPolicy } from "./session_access";
+import type { SystemdPolicy } from "./systemd";
 import type { ThunderbirdPolicy } from "./thunderbird";
 
 export const protobufPackage = "bor.policy.v1";
@@ -70,8 +71,9 @@ export interface Policy {
   firewalld_policy?: FirewalldPolicy | undefined;
   session_access_policy?: SessionAccessPolicy | undefined;
   flatpak_policy?: FlatpakPolicy | undefined;
-  disk_encryption_policy?:
-    | DiskEncryptionPolicy
+  disk_encryption_policy?: DiskEncryptionPolicy | undefined;
+  systemd_policy?:
+    | SystemdPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +24,7 @@ type Config struct {
 	Edge        EdgeConfig        `yaml:"edge"`
 	Firewalld   FirewalldConfig   `yaml:"firewalld"`
 	Flatpak     FlatpakConfig     `yaml:"flatpak"`
+	Systemd     SystemdConfig     `yaml:"systemd"`
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
@@ -93,6 +95,18 @@ type EdgeConfig struct {
 // managed zone XML into ZonesDir and reloads firewalld.
 type FirewalldConfig struct {
 	ZonesDir string `yaml:"zones_dir"`
+}
+
+// SystemdConfig holds the settings of the Services & timers policy. The
+// agent writes one drop-in per managed unit under SystemDir, keeps the
+// original unit states in StatePath so they can be restored, and drives
+// systemd over D-Bus.
+type SystemdConfig struct {
+	SystemDir         string        `yaml:"system_dir"`         // administrator unit directory (default /etc/systemd/system)
+	StatePath         string        `yaml:"state_path"`         // record of original unit states (default /var/lib/bor/agent/systemd-state.json)
+	JobTimeout        time.Duration `yaml:"job_timeout"`        // wait for a start/stop/restart job (default 90s)
+	ReconcileInterval time.Duration `yaml:"reconcile_interval"` // re-assert unit states this often while policies apply; 0 disables (default 10m)
+	AnalyzeBinary     string        `yaml:"analyze_binary"`     // systemd-analyze executable for calendar checks (default "systemd-analyze")
 }
 
 // FlatpakConfig holds Flatpak enforcement settings. The agent renders the
@@ -215,6 +229,13 @@ func DefaultConfig() *Config {
 			Binary:    "flatpak",
 			StateDir:  "/etc/bor/flatpak",
 			StateFile: "/var/lib/bor/agent/flatpak-state.json",
+		},
+		Systemd: SystemdConfig{
+			SystemDir:         "/etc/systemd/system",
+			StatePath:         "/var/lib/bor/agent/systemd-state.json",
+			JobTimeout:        90 * time.Second,
+			ReconcileInterval: 10 * time.Minute,
+			AnalyzeBinary:     "systemd-analyze",
 		},
 		KConfig: KConfigConfig{
 			ConfigPath:      "/etc/bor/xdg",

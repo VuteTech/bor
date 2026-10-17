@@ -30,6 +30,7 @@ const (
 	PolicyService_ReportSchemaCatalogue_FullMethodName     = "/bor.policy.v1.PolicyService/ReportSchemaCatalogue"
 	PolicyService_ReportPolkitCatalogue_FullMethodName     = "/bor.policy.v1.PolicyService/ReportPolkitCatalogue"
 	PolicyService_ReportKConfigCatalogue_FullMethodName    = "/bor.policy.v1.PolicyService/ReportKConfigCatalogue"
+	PolicyService_ReportSystemdCatalogue_FullMethodName    = "/bor.policy.v1.PolicyService/ReportSystemdCatalogue"
 	PolicyService_ReportDiskEncryptionState_FullMethodName = "/bor.policy.v1.PolicyService/ReportDiskEncryptionState"
 	PolicyService_GetDiskEncryptionTasks_FullMethodName    = "/bor.policy.v1.PolicyService/GetDiskEncryptionTasks"
 	PolicyService_EscrowRecoveryKey_FullMethodName         = "/bor.policy.v1.PolicyService/EscrowRecoveryKey"
@@ -68,6 +69,10 @@ type PolicyServiceClient interface {
 	// ReportKConfigCatalogue is called by agents at startup to publish the
 	// KDE settings schemas and System Settings modules installed on their node.
 	ReportKConfigCatalogue(ctx context.Context, in *ReportKConfigCatalogueRequest, opts ...grpc.CallOption) (*ReportKConfigCatalogueResponse, error)
+	// ReportSystemdCatalogue is called by agents at startup and after a
+	// sync changed unit states to publish the systemd units installed on
+	// their node.
+	ReportSystemdCatalogue(ctx context.Context, in *ReportSystemdCatalogueRequest, opts ...grpc.CallOption) (*ReportSystemdCatalogueResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
 	// and platform facts. The response piggybacks pending tasks.
 	ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error)
@@ -210,6 +215,16 @@ func (c *policyServiceClient) ReportKConfigCatalogue(ctx context.Context, in *Re
 	return out, nil
 }
 
+func (c *policyServiceClient) ReportSystemdCatalogue(ctx context.Context, in *ReportSystemdCatalogueRequest, opts ...grpc.CallOption) (*ReportSystemdCatalogueResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportSystemdCatalogueResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ReportSystemdCatalogue_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *policyServiceClient) ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReportDiskEncryptionStateResponse)
@@ -291,6 +306,10 @@ type PolicyServiceServer interface {
 	// ReportKConfigCatalogue is called by agents at startup to publish the
 	// KDE settings schemas and System Settings modules installed on their node.
 	ReportKConfigCatalogue(context.Context, *ReportKConfigCatalogueRequest) (*ReportKConfigCatalogueResponse, error)
+	// ReportSystemdCatalogue is called by agents at startup and after a
+	// sync changed unit states to publish the systemd units installed on
+	// their node.
+	ReportSystemdCatalogue(context.Context, *ReportSystemdCatalogueRequest) (*ReportSystemdCatalogueResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
 	// and platform facts. The response piggybacks pending tasks.
 	ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error)
@@ -346,6 +365,9 @@ func (UnimplementedPolicyServiceServer) ReportPolkitCatalogue(context.Context, *
 }
 func (UnimplementedPolicyServiceServer) ReportKConfigCatalogue(context.Context, *ReportKConfigCatalogueRequest) (*ReportKConfigCatalogueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportKConfigCatalogue not implemented")
+}
+func (UnimplementedPolicyServiceServer) ReportSystemdCatalogue(context.Context, *ReportSystemdCatalogueRequest) (*ReportSystemdCatalogueResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportSystemdCatalogue not implemented")
 }
 func (UnimplementedPolicyServiceServer) ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportDiskEncryptionState not implemented")
@@ -574,6 +596,24 @@ func _PolicyService_ReportKConfigCatalogue_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_ReportSystemdCatalogue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportSystemdCatalogueRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ReportSystemdCatalogue(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ReportSystemdCatalogue_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ReportSystemdCatalogue(ctx, req.(*ReportSystemdCatalogueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PolicyService_ReportDiskEncryptionState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReportDiskEncryptionStateRequest)
 	if err := dec(in); err != nil {
@@ -710,6 +750,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportKConfigCatalogue",
 			Handler:    _PolicyService_ReportKConfigCatalogue_Handler,
+		},
+		{
+			MethodName: "ReportSystemdCatalogue",
+			Handler:    _PolicyService_ReportSystemdCatalogue_Handler,
 		},
 		{
 			MethodName: "ReportDiskEncryptionState",

@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// SystemdPolicy manages systemd services and timers on a node: the desired
+// state of existing units (enabled / disabled / masked, running / stopped)
+// and drop-in overrides for their timer schedule and service settings.
+// Several bound policies are merged per unit by binding priority; on equal
+// priority the more restrictive value wins.
+message SystemdPolicy {
+  // Existing units and their desired state.
+  repeated SystemdUnit units = 1;
+
+  // Reserved for Bor-deployed scheduled tasks (2) and preset files (3).
+  reserved 2, 3;
+  reserved "tasks", "write_presets";
+}
+
+// SystemdEnablement is the desired unit-file state.
+enum SystemdEnablement {
+  // Keep the unit-file state as it is.
+  SYSTEMD_ENABLEMENT_UNSPECIFIED = 0;
+  SYSTEMD_ENABLEMENT_ENABLED = 1;
+  SYSTEMD_ENABLEMENT_DISABLED = 2;
+  // Mask the unit: it can no longer be started, not even as a dependency.
+  SYSTEMD_ENABLEMENT_MASKED = 3;
+}
+
+// SystemdActivity is the desired activation state, re-asserted on every
+// sync and on every reconcile pass.
+enum SystemdActivity {
+  // Keep the activation state as it is.
+  SYSTEMD_ACTIVITY_UNSPECIFIED = 0;
+  // Active (running, waiting or listening).
+  SYSTEMD_ACTIVITY_RUNNING = 1;
+  SYSTEMD_ACTIVITY_STOPPED = 2;
+}
+
+// SystemdUnit is the desired state of one existing unit.
+message SystemdUnit {
+  // Full unit name with suffix: "bluetooth.service", "fstrim.timer",
+  // "cups.socket", "ctrl-alt-del.target".
+  string name = 1;
+  SystemdEnablement enablement = 2;
+  SystemdActivity activity = 3;
+  // Restart a running service after its drop-in changed. Timers are always
+  // restarted after a schedule change because the new schedule applies
+  // only then.
+  bool restart_on_change = 4;
+  // Drop-in written to /etc/systemd/system/<name>.d/90-bor.conf.
+  SystemdDropIn drop_in = 5;
+  // For timers and oneshot services: the last run must have succeeded for
+  // the unit to count as compliant.
+  bool require_last_run_success = 6;
+  // Free text shown in the editor and the compliance view.
+  string description = 7;
+}
+
+// SystemdDropIn is the content of the Bor drop-in for one unit.
+message SystemdDropIn {
+  SystemdTimerSettings timer = 1;
+  SystemdServiceSettings service = 2;
+
+  // Reserved for raw directives.
+  reserved 3;
+  reserved "raw";
+}
+
+// SystemdTimerSettings are [Timer] directives. Values use systemd syntax
+// (calendar expressions and time spans); an empty value leaves the
+// directive untouched. A trigger directive that is set replaces the
+// vendor value of that directive.
+message SystemdTimerSettings {
+  // Calendar expressions, e.g. "Sat *-*-* 03:00:00" or "daily".
+  repeated string on_calendar = 1;
+  string on_boot_sec = 2;
+  string on_startup_sec = 3;
+  string on_active_sec = 4;
+  string on_unit_active_sec = 5;
+  string on_unit_inactive_sec = 6;
+  // Catch up a run that was missed while the node was off.
+  optional bool persistent = 7;
+  // Random delay added to every trigger to spread a fleet.
+  string randomized_delay_sec = 8;
+  string accuracy_sec = 9;
+  optional bool wake_system = 10;
+  // Keep the same random delay for every trigger (systemd >= 247).
+  optional bool fixed_random_delay = 11;
+  // Trigger when the system clock jumps (systemd >= 242).
+  optional bool on_clock_change = 12;
+  // Trigger when the timezone changes (systemd >= 242).
+  optional bool on_timezone_change = 13;
+}
+
+// SystemdServiceSettings are [Service] directives.
+message SystemdServiceSettings {
+  // no | on-success | on-failure | on-abnormal | on-abort | on-watchdog | always
+  string restart = 1;
+  string restart_sec = 2;
+  string timeout_start_sec = 3;
+  string timeout_stop_sec = 4;
+  // KEY=value entries added to the service environment.
+  repeated string environment = 5;
+  // Memory limit, e.g. "512M" or "20%".
+  string memory_max = 6;
+  // CPU quota, e.g. "50%".
+  string cpu_quota = 7;
+  string tasks_max = 8;
+  // Scheduling priority, -20..19.
+  string nice = 9;
+  optional bool no_new_privileges = 10;
+  // yes | no | full | strict
+  string protect_system = 11;
+  // yes | no | read-only | tmpfs
+  string protect_home = 12;
+  optional bool private_tmp = 13;
+}
+
+// SystemdUnitInfo describes one unit installed on a node, as reported for
+// the unit catalogue the editor offers.
+message SystemdUnitInfo {
+  string name = 1;
+  string description = 2;
+  // service | timer | socket | target | path
+  string type = 3;
+  // enabled | disabled | static | masked | indirect | generated | ...
+  string unit_file_state = 4;
+  // enabled | disabled | "" (vendor preset)
+  string preset = 5;
+  string active_state = 6;
+  string sub_state = 7;
+  // The unit file has an [Install] section and can be enabled or disabled.
+  bool has_install = 8;
+  // Timers: the OnCalendar expressions of the unit file.
+  repeated string on_calendar = 9;
+  // Timers, sockets and paths: the unit they activate.
+  string triggers = 10;
+  string fragment_path = 11;
+  // Services: simple | oneshot | notify | forking | ...
+  string service_type = 12;
+}
+
+// ReportSystemdCatalogueRequest carries the unit inventory of a node.
+message ReportSystemdCatalogueRequest {
+  string client_id = 1;
+  repeated SystemdUnitInfo units = 2;
+  // systemd version from the manager, e.g. "252".
+  string systemd_version = 3;
+}
+
+message ReportSystemdCatalogueResponse {}

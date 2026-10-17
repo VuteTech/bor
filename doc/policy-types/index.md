@@ -2,7 +2,7 @@
 
 A Bor policy always has exactly one **type**. The type decides which editor
 the web UI shows, which settings you can configure and what the agent
-changes on the endpoint. This page lists all twelve types, explains where
+changes on the endpoint. This page lists all thirteen types, explains where
 each one writes on a node and what the node needs, and then describes the
 behavior that all types share: how several policies of the same type are
 combined, tamper protection, compliance reporting and what happens when a
@@ -24,6 +24,7 @@ The **Type** column shows the label used in the create wizard
 | [Dconf](dconf.md) | Mandatory GSettings keys with optional locks for GNOME and other GSettings-based software | `/etc/dconf/db/<database>.d/00-bor`, `/etc/dconf/db/<database>.d/locks/bor`, `/etc/dconf/profile/user`, then `dconf update` | `dconf` command; `gsettings` for compliance checks |
 | [Polkit](polkit.md) | Which users and groups may run privileged actions | `/etc/polkit-1/rules.d/<priority>-bor-<id>.rules` (one file per policy) | polkit with JavaScript rules support |
 | [Firewall](firewalld.md) (firewalld) | firewalld zone services, ports, rich rules and target | `/etc/firewalld/zones/<zone>.xml`, then a firewalld reload | firewalld installed and running |
+| [Services & timers](systemd.md) (systemd) | Enablement (enabled, disabled, masked) and activity (running, stopped) of existing systemd units; timer schedule and service overrides | Enablement symlinks and masks through systemd; `/etc/systemd/system/<unit>.d/90-bor.conf` drop-ins; `/var/lib/bor/agent/systemd-state.json` | systemd as the init system, the D-Bus system bus; `systemd-analyze` for calendar checks |
 | [Flatpak apps](flatpak.md) | Flatpak remotes, required, updated or removed applications, periodic updates | `/etc/bor/flatpak/*.flatpakrepo`, `*.filter`, `*.gpg`; the system Flatpak installation | `flatpak` |
 | [Package](packages.md) | Software repositories and packages to install or remove | `bor-*` repository and key files in `/etc/apt/sources.list.d`, `/etc/apt/trusted.gpg.d`, `/etc/yum.repos.d`, `/etc/pki/rpm-gpg` or `/etc/zypp/repos.d`; packages through PackageKit | PackageKit for package installs and removals |
 | [Session Access](session-access.md) | Weekly time windows during which users and groups may use the desktop | systemd-logind session lock and terminate; managed block in `/etc/security/time.conf` and the PAM stack | systemd-logind (`loginctl`); `pam_time` for the PAM layer |
@@ -39,8 +40,9 @@ Most paths in the table can be changed in the agent configuration file
     files (the browser types do this, so the policy is ready if the
     browser is installed later) or reports the policy as **Inapplicable**
     (for example Firewall when firewalld is not installed, Flatpak apps
-    without `flatpak`, Package without PackageKit, or a Dconf key whose
-    schema is not installed).
+    without `flatpak`, Package without PackageKit, a Dconf key whose
+    schema is not installed, or a Services & timers unit that is not
+    installed on the node).
 
 ## How a policy reaches a node
 
@@ -71,6 +73,7 @@ type**:
 | Dconf | Entries are merged by schema, path and key. | The policy with the **higher** binding priority wins. The losing policy reports the overridden key as Inapplicable with the message "Overridden by a higher-priority policy". The database name comes from the highest-priority policy that sets one. |
 | Polkit | Not merged: every policy gets its own rules file. | Files are evaluated in file-name order, and the file name starts with the binding priority, so the **lower** priority number is evaluated first. The first rule that returns a result wins. |
 | Firewall | Policies targeting the same zone are merged; services, ports and rich rules are combined. | The zone target comes from the policy with the **higher** binding priority. |
+| Services & timers | Units are merged by name; enablement, activity, the timer block and each service directive are resolved separately. | **Higher** binding priority wins; on equal priority the more restrictive value wins (masked over disabled over enabled, stopped over running). The losing policy reports the unit as Inapplicable with the message "overridden: ... by <policy> (priority N)". |
 | Flatpak apps | Remotes merged by name, applications by ID. | **Higher** binding priority wins. *Auto update* is on if any policy enables it. |
 | Package | Repositories and packages are merged by name. | **Higher** binding priority wins for the same package or repository. |
 | Session Access | Rules from all policies are combined. | A user's allowed time is the union of every rule that targets them. |
@@ -110,6 +113,7 @@ Watched files per type:
 | Dconf | `00-bor` and `locks/bor` in each database directory in use |
 | Polkit | Every Bor-generated file in `/etc/polkit-1/rules.d` |
 | Firewall | Bor-managed zone files in the zones directory |
+| Services & timers | The `90-bor.conf` drop-ins and the state file `/var/lib/bor/agent/systemd-state.json` (unit states changed by hand are undone by the periodic reconcile pass, not reported as tamper events) |
 | Flatpak apps | The rendered remote files in `/etc/bor/flatpak` (not Flatpak's own `/var/lib/flatpak/repo/config`) |
 | Package | Bor-managed `bor-*` repository and key files |
 | Session Access | `/etc/security/time.conf` while a managed block is present |
@@ -148,9 +152,10 @@ What "compliant" means depends on the type:
   the policy value. Per-key results are shown in the expandable row.
 - **Polkit**: the rules file on disk is compared with the expected content,
   rule by rule.
-- **Firewall, Flatpak apps, Package, Session Access, Disk encryption**: the
-  agent checks the live state (zone configuration, installed applications
-  and packages, PAM and logind tooling, LUKS headers). See each type's page.
+- **Firewall, Services & timers, Flatpak apps, Package, Session Access,
+  Disk encryption**: the agent checks the live state (zone configuration,
+  unit states reported by systemd, installed applications and packages,
+  PAM and logind tooling, LUKS headers). See each type's page.
 
 ## When a policy stops applying
 
@@ -167,6 +172,7 @@ that type. If none remain, it cleans up:
 | Dconf | The keyfile and locks file are emptied (written without entries) and `dconf update` runs, so the keys return to their defaults or user values. |
 | Polkit | The policy's rules file is deleted. |
 | Firewall | Managed zone files are restored from their backups and firewalld is reloaded. |
+| Services & timers | Every drop-in is removed, systemd is reloaded, and each unit returns to the enablement and activity recorded when Bor first touched it (a service Bor stopped is started again if it was running before). |
 | Flatpak apps | Remotes Bor created are removed (unless installed applications still depend on them), adopted remotes get their original settings back and the managed files are deleted. Installed applications stay. |
 | Package | Bor-managed repository and key files are removed. Installed packages stay; removing a package always requires an explicit entry. |
 | Session Access | The `time.conf` managed block and Bor's `pam_time` configuration are removed; logind enforcement stops. |

@@ -135,3 +135,19 @@ chrome:
 #  cryptsetup: "cryptsetup"
 #  cryptenroll: "systemd-cryptenroll"
 #  clevis: "clevis"
+
+# Services & timers (systemd) policy settings.
+# The agent writes one drop-in per managed unit (<system_dir>/<unit>.d/90-bor.conf),
+# records the original state of every unit it touches in state_path so the
+# unit can be restored when it leaves every policy, and drives systemd over
+# the D-Bus system bus.
+#systemd:
+#  system_dir: /etc/systemd/system
+#  state_path: /var/lib/bor/agent/systemd-state.json
+#  # How long to wait for a start, stop or restart job to finish.
+#  job_timeout: 90s
+#  # Re-assert unit states this often while Systemd policies apply (drift
+#  # detection for states that are not files); 0 disables the ticker.
+#  reconcile_interval: 10m
+#  # systemd-analyze executable used to validate calendar expressions.
+#  analyze_binary: systemd-analyze

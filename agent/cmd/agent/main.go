@@ -565,6 +565,16 @@ To follow the agent logs:
 	logDiskEncryptionProbe(ctx, cfg)
 	defer stopDiskEncTicker()
 
+	// Connect to systemd once so the journal explains INAPPLICABLE results;
+	// the sync reconnects on demand if the connection is lost.
+	if mgr := systemdManager(cfg); mgr == nil {
+		log.Println("Warning: systemd is not reachable on the system bus; Systemd policies will report INAPPLICABLE or ERROR on this node")
+	} else if ver, verr := mgr.Version(ctx); verr == nil {
+		log.Printf("systemd %s available", ver)
+	}
+	defer stopSystemdReconciler()
+	defer closeSystemdManager()
+
 	// Run the policy enforcement loop - prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
@@ -700,6 +710,16 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			}()
 		}
 
+		// Report the systemd unit inventory on first connect; later syncs
+		// that change unit states refresh it.
+		if !systemdCatalogueReported {
+			go func() {
+				if reportSystemdCatalogue(ctx, client, cfg) {
+					systemdCatalogueReported = true
+				}
+			}()
+		}
+
 		var postInitialSync bool
 		err := client.SubscribePolicyUpdates(ctx, lastRevision,
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
@@ -781,6 +801,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				flatpakSnapshotStaging = nil
 				diskEncCache = make(map[string]diskEncCacheEntry)
 				diskEncSnapshotStaging = nil
+				systemdCacheReplace(nil)
+				systemdSnapshotStaging = nil
 				sessionAccessReplace(nil)
 				sessionAccessSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
@@ -795,6 +817,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				go triggerPackageSync(ctx, client, cfg)
 				go triggerFlatpakSync(ctx, client, cfg)
 				go triggerDiskEncryptionSync(ctx, client, cfg)
+				go triggerSystemdSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -881,6 +904,11 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				diskEncSnapshotStaging = make(map[string]diskEncCacheEntry)
 			}
 			diskEncSnapshotStaging[pi.ID] = diskEncCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DiskEncryptionPolicy}
+		case "Systemd":
+			if systemdSnapshotStaging == nil {
+				systemdSnapshotStaging = make(map[string]systemdCacheEntry)
+			}
+			systemdSnapshotStaging[pi.ID] = systemdCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SystemdPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -982,6 +1010,10 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			}
 			diskEncSnapshotStaging = nil
 
+			// Swap Systemd staging into cache.
+			systemdCacheReplace(systemdSnapshotStaging)
+			systemdSnapshotStaging = nil
+
 			// Swap SessionAccess staging into cache.
 			sessionAccessReplace(sessionAccessSnapshotStaging)
 			sessionAccessSnapshotStaging = nil
@@ -998,6 +1030,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			go triggerPackageSync(ctx, client, cfg)
 			go triggerFlatpakSync(ctx, client, cfg)
 			go triggerDiskEncryptionSync(ctx, client, cfg)
+			go triggerSystemdSync(ctx, client, cfg)
 
 			if *postInitialSync {
 				// Resync from a live admin change - notify if content changed.
@@ -1074,6 +1107,9 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "DiskEncryption":
 			diskEncCache[pi.ID] = diskEncCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.DiskEncryptionPolicy}
 			go triggerDiskEncryptionSync(ctx, client, cfg)
+		case "Systemd":
+			systemdCachePut(systemdCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SystemdPolicy})
+			go triggerSystemdSync(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -1130,6 +1166,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := diskEncCache[pi.ID]; ok {
 			delete(diskEncCache, pi.ID)
 			go triggerDiskEncryptionSync(ctx, client, cfg)
+		} else if removed := systemdCacheRemove(pi.ID); removed {
+			go triggerSystemdSync(ctx, client, cfg)
 		} else if sessionAccessRemove(pi.ID) {
 			syncAllSessionAccess(ctx, client, cfg)
 		} else {
@@ -2714,6 +2752,10 @@ func getManagedPaths(cfg *config.Config) []string {
 	// Disk encryption MANAGE mode: the dracut drop-in and crypttab.
 	paths = append(paths, diskEncManagedPaths()...)
 
+	// Systemd: Bor's drop-ins and the record of original unit states,
+	// watched while Systemd policies apply or the record exists.
+	paths = append(paths, systemdManagedPaths(cfg)...)
+
 	return paths
 }
 
@@ -2785,6 +2827,8 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		go triggerDiskEncryptionSync(ctx, client, cfg)
 	case isBorManagedRepoPath(path):
 		go triggerPackageSync(ctx, client, cfg)
+	case isSystemdManagedPath(cfg, path):
+		go triggerSystemdSync(ctx, client, cfg)
 	default:
 		log.Printf("Tamper protection: unrecognised managed path %s - no restore action taken", path)
 	}

@@ -117,6 +117,7 @@ type PolicyInfo struct {
 	SessionAccessPolicy  *pb.SessionAccessPolicy  // populated from typed_content for SessionAccess type
 	FlatpakPolicy        *pb.FlatpakPolicy        // populated from typed_content for Flatpak type
 	DiskEncryptionPolicy *pb.DiskEncryptionPolicy // populated from typed_content for DiskEncryption type
+	SystemdPolicy        *pb.SystemdPolicy        // populated from typed_content for Systemd type
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -332,6 +333,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if dep := p.GetDiskEncryptionPolicy(); dep != nil {
 				pi.DiskEncryptionPolicy = dep
 			}
+			if sdp := p.GetSystemdPolicy(); sdp != nil {
+				pi.SystemdPolicy = sdp
+			}
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
@@ -395,6 +399,23 @@ func (c *Client) ReportKConfigCatalogue(ctx context.Context, entries []*pb.KConf
 	})
 	if err != nil {
 		return fmt.Errorf("ReportKConfigCatalogue RPC failed: %w", err)
+	}
+	return nil
+}
+
+// ReportSystemdCatalogue sends the systemd unit inventory of this node to
+// the server.
+func (c *Client) ReportSystemdCatalogue(ctx context.Context, units []*pb.SystemdUnitInfo, version string) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	_, err := c.client.ReportSystemdCatalogue(ctx, &pb.ReportSystemdCatalogueRequest{
+		ClientId:       c.clientID,
+		Units:          units,
+		SystemdVersion: version,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportSystemdCatalogue RPC failed: %w", err)
 	}
 	return nil
 }

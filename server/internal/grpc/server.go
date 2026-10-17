@@ -33,6 +33,7 @@ type PolicyServer struct {
 	dconfRepo   dconfRepository
 	polkitRepo  polkitRepository
 	kconfigRepo kconfigRepository
+	systemdRepo systemdRepository
 	hub         *PolicyHub
 	diskEncSvc  *services.DiskEncryptionService
 }
@@ -602,6 +603,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal DiskEncryption typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_DiskEncryptionPolicy{DiskEncryptionPolicy: &dePol}
+		}
+	case "Systemd":
+		var sdPol pb.SystemdPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &sdPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Systemd typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_SystemdPolicy{SystemdPolicy: &sdPol}
 		}
 	}
 

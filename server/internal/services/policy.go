@@ -296,6 +296,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateFlatpakContent(content)
 	case "DiskEncryption":
 		return ValidateDiskEncryptionContent(content)
+	case "Systemd":
+		return ValidateSystemdContent(content)
 	}
 	return nil
 }

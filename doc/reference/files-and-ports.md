@@ -134,6 +134,8 @@ or the file deleted.
 | Dconf | `/etc/dconf/profile/user` (ensures a `system-db:<db>` line) | No | - |
 | Polkit | `/etc/polkit-1/rules.d/<priority>-bor-<id>.rules` | Yes | - |
 | Firewall | Zone files `/etc/firewalld/zones/<zone>.xml` | Yes | `firewalld.zones_dir` |
+| Services & timers | Drop-ins `/etc/systemd/system/<unit>.d/90-bor.conf` (one per unit with overrides) | Yes | `systemd.system_dir` |
+| Services & timers | `/var/lib/bor/agent/systemd-state.json` (original unit states, restored when a unit leaves every policy) | Yes | `systemd.state_path` |
 | Package (apt) | `/etc/apt/sources.list.d/bor-<id>.sources`, `/etc/apt/trusted.gpg.d/bor-<id>.gpg` | Yes | - |
 | Package (dnf) | `/etc/yum.repos.d/bor-<id>.repo`, `/etc/pki/rpm-gpg/bor-<id>.gpg` | Yes | - |
 | Package (zypper) | `/etc/zypp/repos.d/bor-<id>.repo`, `/etc/pki/rpm-gpg/bor-<id>.gpg` | Yes | - |

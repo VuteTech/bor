@@ -16,6 +16,7 @@ import "kconfig.proto";
 import "package.proto";
 import "polkit.proto";
 import "session_access.proto";
+import "systemd.proto";
 import "thunderbird.proto";
 
 // PolicyService manages desktop policies
@@ -58,6 +59,12 @@ service PolicyService {
   // KDE settings schemas and System Settings modules installed on their node.
   rpc ReportKConfigCatalogue(ReportKConfigCatalogueRequest)
       returns (ReportKConfigCatalogueResponse);
+
+  // ReportSystemdCatalogue is called by agents at startup and after a
+  // sync changed unit states to publish the systemd units installed on
+  // their node.
+  rpc ReportSystemdCatalogue(ReportSystemdCatalogueRequest)
+      returns (ReportSystemdCatalogueResponse);
 
   // ─── Disk encryption ─────────────
   // All five RPCs run on the mTLS policy port; the node identity is the
@@ -131,6 +138,7 @@ message Policy {
     SessionAccessPolicy session_access_policy = 20;
     FlatpakPolicy       flatpak_policy        = 21;
     DiskEncryptionPolicy disk_encryption_policy = 22;
+    SystemdPolicy        systemd_policy        = 23;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

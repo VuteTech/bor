@@ -60,13 +60,13 @@ Then add it to `proto/policy/policy.proto`:
 1. `import "widget.proto";` next to the other imports.
 2. A new member of the `typed_content` oneof in `message Policy`, with the
    next free field number (the last one in use is
-   `DiskEncryptionPolicy disk_encryption_policy = 22`):
+   `SystemdPolicy systemd_policy = 23`):
 
     ```proto
     oneof typed_content {
       ...
-      DiskEncryptionPolicy disk_encryption_policy = 22;
-      WidgetPolicy         widget_policy          = 23;
+      SystemdPolicy        systemd_policy         = 23;
+      WidgetPolicy         widget_policy          = 24;
     }
     ```
 

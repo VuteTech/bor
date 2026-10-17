@@ -24,6 +24,7 @@ import {
   parseKConfigContent,
 } from "./editors/kconfigModel";
 import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
+import { describeUnitEntry, parseSystemdContent } from "./systemdModel";
 
 export interface SettingsRow {
   setting: string;
@@ -299,6 +300,18 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     }
     for (const [i, rr] of (fw.richRules ?? []).entries()) {
       rows.push({ setting: `Rich rule ${i + 1}`, value: rr, locked: null });
+    }
+    return rows;
+  }
+
+  if (policyType === "Systemd") {
+    for (const u of parseSystemdContent(content).units) {
+      const what = describeUnitEntry(u) || "(nothing set)";
+      rows.push({
+        setting: u.name || "(unnamed unit)",
+        value: u.description ? `${what} (${u.description})` : what,
+        locked: null,
+      });
     }
     return rows;
   }

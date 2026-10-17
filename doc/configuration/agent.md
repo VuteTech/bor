@@ -103,8 +103,9 @@ After enrollment `data_dir` contains:
 
 The agent considers itself enrolled when all three files exist. Running
 `bor-agent --token-file <file>` on an enrolled node deletes the three files
-and enrolls again. Other agent state, such as `flatpak-state.json` and
-`luks-state.json`, also lives in `/var/lib/bor/agent` by default.
+and enrolls again. Other agent state, such as `flatpak-state.json`,
+`systemd-state.json` and `luks-state.json`, also lives in
+`/var/lib/bor/agent` by default.
 
 !!! warning
     Back up or protect `agent.key` like any private key. Anyone who copies
@@ -172,6 +173,16 @@ Set a path to `""` to stop writing to that location.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `firewalld.zones_dir` | `/etc/firewalld/zones` | Directory where managed zone XML files are written before firewalld is reloaded. |
+
+## systemd
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `systemd.system_dir` | `/etc/systemd/system` | Directory where the `<unit>.d/90-bor.conf` drop-ins of Services & timers policies are written. Tamper-protected. |
+| `systemd.state_path` | `/var/lib/bor/agent/systemd-state.json` | Record of each managed unit's original enablement and activity, restored when the unit leaves every policy. |
+| `systemd.job_timeout` | `90s` | Maximum wait for a start, stop or restart job. |
+| `systemd.reconcile_interval` | `10m` | Interval of the pass that re-asserts the enablement and activity of every managed unit while a policy applies; `0` disables it. |
+| `systemd.analyze_binary` | `systemd-analyze` | Executable used to validate calendar expressions before a timer drop-in is written, looked up in `PATH` unless absolute. |
 
 ## flatpak
 
