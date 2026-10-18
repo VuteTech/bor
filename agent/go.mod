@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/VuteTech/Bor/server v0.0.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/godbus/dbus/v5 v5.2.2
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
