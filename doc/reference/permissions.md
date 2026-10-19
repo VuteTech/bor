@@ -95,6 +95,13 @@ hold yourself.
 | `disk_encryption:reveal` | Reveal an escrowed LUKS recovery key. Revealing also requires re-authentication and is always audit-logged. |
 | `disk_encryption:rotate` | Request rotation of a recovery key. |
 
+### Services & timers
+
+| Permission | Allows |
+|---|---|
+| `systemd:exec` | Create, save, import or release a Services & timers policy that runs commands on nodes: one with scheduled tasks or raw `Exec*` directives. Checked on top of `policy:create` / `policy:edit`; every such save and release is audit-logged (`policy.systemd_exec`) with the task names and a SHA-256 of each script. A policy that only manages existing units needs no extra permission. |
+| `systemd:operate` | Start, stop or restart a unit on one node from the **Services & timers** section of the node details. The action runs on the node at once and is audit-logged (`systemd.unit_action`) with the outcome. Separate from `systemd:exec` so that operators can be allowed to restart services without being allowed to deploy scripts. Can be delegated per node group. |
+
 ## Built-in roles
 
 `Y` means the role holds the permission on a new installation.
@@ -147,6 +154,8 @@ hold yourself.
 | `disk_encryption:view` | Y | Y | | | | Y |
 | `disk_encryption:reveal` | Y | | | | | |
 | `disk_encryption:rotate` | Y | | | | | |
+| `systemd:exec` | Y | | | | | |
+| `systemd:operate` | Y | | | | | |
 
 Built-in roles cannot be modified or deleted. To grant a different
 combination, create a custom role. Because `policy:release` is not

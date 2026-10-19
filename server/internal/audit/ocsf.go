@@ -190,7 +190,18 @@ func buildOCSFEvent(event *auditpb.AuditEvent) ocsfEvent {
 			})
 		}
 		ev.FileActivity = fa
-		ev.Message = "managed file tampered: " + p.Tamper.GetFilePath()
+		switch {
+		case p.Tamper.GetFilePath() != "":
+			ev.Message = "managed file tampered: " + p.Tamper.GetFilePath()
+		default:
+			// A managed resource that is not a file (a systemd unit changed
+			// by hand); the resource name stands in for the path.
+			fa.Path = p.Tamper.GetResource()
+			ev.Message = "managed resource changed by hand: " + p.Tamper.GetResource()
+		}
+		if d := p.Tamper.GetDescription(); d != "" {
+			ev.Message += " (" + d + ")"
+		}
 	}
 
 	return ev

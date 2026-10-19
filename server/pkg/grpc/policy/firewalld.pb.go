@@ -60,9 +60,10 @@ type FirewalldPolicy struct {
 	// Raw firewalld rich-language rule strings, for rules not expressible above.
 	// Example: rule family="ipv4" source address="10.0.0.0/8" service name="ssh" accept
 	RichRules []string `protobuf:"bytes,11,rep,name=rich_rules,json=richRules,proto3" json:"rich_rules,omitempty"`
-	// Phase 2: when true, the agent ensures firewalld is enabled and running
-	// before applying. When false (default) and firewalld is inactive, the
-	// policy is reported INAPPLICABLE. Not yet enforced.
+	// When true, an agent that finds firewalld installed but inactive enables
+	// and starts firewalld.service through systemd before applying. When
+	// false (default) and firewalld is inactive, the policy is reported
+	// INAPPLICABLE.
 	EnsureEnabled bool `protobuf:"varint,12,opt,name=ensure_enabled,json=ensureEnabled,proto3" json:"ensure_enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

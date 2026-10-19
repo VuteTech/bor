@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/export"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -26,11 +27,30 @@ type ExportHandler struct {
 	bindingSvc *services.PolicyBindingService
 	groupSvc   *services.NodeGroupService
 	auditSvc   *services.AuditService
+	// az backs the systemd:exec check on import; nil refuses every
+	// command-running Systemd policy in a bundle (fail closed).
+	az authz.Authorizer
 }
 
 // NewExportHandler wires the export/import endpoints to their services.
 func NewExportHandler(policySvc *services.PolicyService, bindingSvc *services.PolicyBindingService, groupSvc *services.NodeGroupService, auditSvc *services.AuditService) *ExportHandler {
 	return &ExportHandler{policySvc: policySvc, bindingSvc: bindingSvc, groupSvc: groupSvc, auditSvc: auditSvc}
+}
+
+// WithAuthorizer attaches the authorizer behind the systemd:exec check.
+func (h *ExportHandler) WithAuthorizer(az authz.Authorizer) *ExportHandler {
+	h.az = az
+	return h
+}
+
+// callerHasSystemdExec reports whether the caller holds systemd:exec.
+func (h *ExportHandler) callerHasSystemdExec(r *http.Request) bool {
+	claims := GetUserFromContext(r.Context())
+	if claims == nil || h.az == nil {
+		return false
+	}
+	ok, err := h.az.HasPermission(r.Context(), claims.UserID, "systemd", "exec")
+	return ok && err == nil
 }
 
 // Export handles GET /api/v1/policies/export?ids=a,b&include_bindings=true&format=yaml|json
@@ -165,11 +185,32 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		Actor:      actor,
 	}
 
+	// A Systemd policy that deploys tasks or raw Exec* directives runs
+	// commands as root on nodes; importing one needs systemd:exec on top of
+	// policy:create. The check runs inside content validation because the
+	// bundle, not the route, says which policies run commands.
+	var commandSummaries []string
+	hasExec := h.callerHasSystemdExec(r)
+	execDenied := false
+	validate := func(policyType, content string) error {
+		if systemdExecRequired(policyType, content) {
+			if !hasExec {
+				execDenied = true
+				return fmt.Errorf("this policy runs commands on nodes; the systemd:exec permission is required to import it")
+			}
+			commandSummaries = append(commandSummaries, services.SystemdCommandSummary(content))
+		}
+		return services.ValidatePolicyContentByType(policyType, content)
+	}
+
 	report, err := export.Import(r.Context(),
 		scopedPolicyStore{h: h, r: r},
 		scopedBindingStore{h: h, r: r},
 		scopedGroupStore{h: h, r: r},
-		services.ValidatePolicyContentByType, body, opts)
+		validate, body, opts)
+	if execDenied {
+		auditDenial(r, "systemd", "exec", "", "import of a command-running Systemd policy without systemd:exec")
+	}
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -180,6 +221,9 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	if !opts.DryRun {
 		h.audit(r, "policy.import", fmt.Sprintf(`{"created":%d,"updated":%d,"skipped":%d,"errors":%d}`,
 			report.Created, report.Updated, report.Skipped, report.Errors))
+		if report.Ok && len(commandSummaries) > 0 {
+			h.audit(r, "policy.systemd_exec", `{"verb":"import","commands":[`+strings.Join(commandSummaries, ",")+`]}`)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

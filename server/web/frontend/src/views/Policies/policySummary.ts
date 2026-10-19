@@ -24,6 +24,7 @@ import {
   parseKConfigContent,
 } from "./editors/kconfigModel";
 import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
+import { describeTaskEntry, describeUnitEntry, parseSystemdContent } from "./systemdModel";
 
 export interface SettingsRow {
   setting: string;
@@ -299,6 +300,30 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     }
     for (const [i, rr] of (fw.richRules ?? []).entries()) {
       rows.push({ setting: `Rich rule ${i + 1}`, value: rr, locked: null });
+    }
+    return rows;
+  }
+
+  if (policyType === "Systemd") {
+    const sd = parseSystemdContent(content);
+    for (const u of sd.units) {
+      const what = describeUnitEntry(u) || "(nothing set)";
+      rows.push({
+        setting: u.name || "(unnamed unit)",
+        value: u.description ? `${what} (${u.description})` : what,
+        locked: null,
+      });
+    }
+    for (const t of sd.tasks) {
+      const what = describeTaskEntry(t);
+      rows.push({
+        setting: `Task bor-${t.name || "?"}`,
+        value: t.description ? `${what} (${t.description})` : what,
+        locked: null,
+      });
+    }
+    if (sd.writePresets) {
+      rows.push({ setting: "Preset file", value: "10-bor.preset carries the enablement decisions for units installed later", locked: null });
     }
     return rows;
   }

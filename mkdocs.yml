@@ -111,6 +111,7 @@ nav:
       - GNOME (dconf): policy-types/dconf.md
       - Polkit: policy-types/polkit.md
       - Firewalld: policy-types/firewalld.md
+      - Services and timers (systemd): policy-types/systemd.md
       - Flatpak: policy-types/flatpak.md
       - Packages and repositories: policy-types/packages.md
       - Session access: policy-types/session-access.md

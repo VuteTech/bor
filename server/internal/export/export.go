@@ -52,6 +52,8 @@ func newContentMessage(policyType string) proto.Message {
 		return &pb.FlatpakPolicy{}
 	case "DiskEncryption":
 		return &pb.DiskEncryptionPolicy{}
+	case "Systemd":
+		return &pb.SystemdPolicy{}
 	}
 	return nil
 }

@@ -78,6 +78,7 @@ import {
 import { fetchNodeGroups, NodeGroup } from "../../apiClient/nodeGroupsApi";
 import { hasPermission } from "../../apiClient/permissions";
 import { NodeDiskEncryptionSection } from "../DiskEncryption/NodeDiskEncryptionSection";
+import { NodeSystemdSection } from "./NodeSystemdSection";
 
 /* ── Helpers ── */
 
@@ -722,6 +723,8 @@ export const NodesPage: React.FC = () => {
           {hasPermission("disk_encryption:view") && (
             <NodeDiskEncryptionSection nodeId={selectedNode.id} />
           )}
+
+          <NodeSystemdSection nodeId={selectedNode.id} nodeName={selectedNode.name} online={selectedNode.status === "online"} />
 
           <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}>
             Actions

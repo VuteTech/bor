@@ -236,7 +236,7 @@ install-deps:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+	go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3  # same release as CI, so local and CI packages match
 	@echo "Installing protoc-gen-bor-ui plugin..."
 	cd server && go install ./cmd/protoc-gen-bor-ui
 	@echo "Installing TypeScript proto plugin..."

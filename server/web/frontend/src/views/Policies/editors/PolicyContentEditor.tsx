@@ -14,6 +14,7 @@ import { DConfPolicyEditor } from "../DConfPolicyEditor";
 import { PackagePolicyEditor } from "../PackagePolicyEditor";
 import { PolkitPolicyEditor } from "../PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "../FirewalldPolicyEditor";
+import { SystemdPolicyEditor } from "../SystemdPolicyEditor";
 import { SessionAccessPolicyEditor } from "../SessionAccessPolicyEditor";
 import { FlatpakPolicyEditor } from "../FlatpakPolicyEditor";
 import { DiskEncryptionPolicyEditor } from "../DiskEncryptionPolicyEditor";
@@ -122,6 +123,15 @@ export const PolicyContentEditor: React.FC<Props> = ({ type, ...rest }) => {
         return <PackagePolicyEditor contentRaw={rest.contentRaw} onChange={rest.onChange} isDisabled={rest.isDisabled} />;
       case "Firewalld":
         return <FirewalldPolicyEditor contentRaw={rest.contentRaw} onChange={rest.onChange} isDisabled={rest.isDisabled} />;
+      case "Systemd":
+        return (
+          <SystemdPolicyEditor
+            contentRaw={rest.contentRaw}
+            onChange={rest.onChange}
+            isDisabled={rest.isDisabled}
+            onValidityChange={rest.onValidityChange}
+          />
+        );
       case "SessionAccess":
         return <SessionAccessPolicyEditor contentRaw={rest.contentRaw} onChange={rest.onChange} isDisabled={rest.isDisabled} />;
       case "Flatpak":

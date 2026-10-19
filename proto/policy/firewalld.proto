@@ -54,9 +54,10 @@ message FirewalldPolicy {
   // Example: rule family="ipv4" source address="10.0.0.0/8" service name="ssh" accept
   repeated string rich_rules = 11;
 
-  // Phase 2: when true, the agent ensures firewalld is enabled and running
-  // before applying. When false (default) and firewalld is inactive, the
-  // policy is reported INAPPLICABLE. Not yet enforced.
+  // When true, an agent that finds firewalld installed but inactive enables
+  // and starts firewalld.service through systemd before applying. When
+  // false (default) and firewalld is inactive, the policy is reported
+  // INAPPLICABLE.
   bool ensure_enabled = 12;
 }
 

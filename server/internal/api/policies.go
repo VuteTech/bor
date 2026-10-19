@@ -21,6 +21,13 @@ type PolicyHandler struct {
 	// bindings resolves which node groups a policy is bound to, for
 	// node-group-scoped callers. Without it, scoped callers see no policies.
 	bindings policyGroupSource
+	// az and auditSvc back the systemd:exec check: a Systemd policy that
+	// deploys tasks or raw Exec* directives runs commands as root on every
+	// node of its groups, so saving or releasing one needs that permission
+	// on top of policy:create / policy:edit, and is audited. The route-level
+	// gate cannot see the content, so the handler checks it.
+	az       authz.Authorizer
+	auditSvc *services.AuditService
 	// OnPolicyChange is called after a mutation that may affect agents:
 	// Update, SetState, Deprecate. It receives the policy ID so the
 	// caller can scope notifications to the affected node groups.
@@ -38,6 +45,68 @@ func NewPolicyHandler(policySvc *services.PolicyService) *PolicyHandler {
 func (h *PolicyHandler) WithBindings(bindings policyGroupSource) *PolicyHandler {
 	h.bindings = bindings
 	return h
+}
+
+// WithExecGate attaches the authorizer and audit service behind the
+// systemd:exec check. Without an authorizer every command-running policy
+// is refused (fail closed).
+func (h *PolicyHandler) WithExecGate(az authz.Authorizer, auditSvc *services.AuditService) *PolicyHandler {
+	h.az = az
+	h.auditSvc = auditSvc
+	return h
+}
+
+// systemdExecRequired reports whether a policy of the given type and
+// content runs commands on nodes and therefore needs systemd:exec.
+func systemdExecRequired(policyType, content string) bool {
+	return policyType == "Systemd" && services.SystemdContentRunsCommands(content)
+}
+
+// allowSystemdExec answers whether the caller may create, save, release or
+// import a command-running Systemd policy. On refusal it writes the 403
+// response and records an access_denied audit event, and returns false.
+func (h *PolicyHandler) allowSystemdExec(w http.ResponseWriter, r *http.Request, policyID, verb string) bool {
+	claims := GetUserFromContext(r.Context())
+	allowed := false
+	if claims != nil && h.az != nil {
+		ok, err := h.az.HasPermission(r.Context(), claims.UserID, "systemd", "exec")
+		if err != nil {
+			log.Printf("Failed to check systemd:exec for %s: %v", claims.Username, err)
+		}
+		allowed = ok && err == nil
+	}
+	if allowed {
+		return true
+	}
+	reason := "this policy runs commands on nodes; the systemd:exec permission is required to " + verb + " it"
+	auditDenial(r, "systemd", "exec", policyID, reason)
+	writeJSONError(w, http.StatusForbidden, reason)
+	return false
+}
+
+// auditSystemdExec records that a command-running Systemd policy was
+// created, saved, released or imported, with the task names, the SHA-256
+// of every script and the raw Exec* directives.
+func (h *PolicyHandler) auditSystemdExec(r *http.Request, policyID, verb, content string) {
+	if h.auditSvc == nil {
+		return
+	}
+	username := ""
+	if claims := GetUserFromContext(r.Context()); claims != nil {
+		username = claims.Username
+	}
+	details, _ := json.Marshal(map[string]json.RawMessage{
+		"verb":     json.RawMessage(`"` + verb + `"`),
+		"commands": json.RawMessage(services.SystemdCommandSummary(content)),
+	})
+	h.auditSvc.LogEvent(r.Context(), &models.AuditLog{
+		Username:     username,
+		Action:       "policy.systemd_exec",
+		ResourceType: "policy",
+		ResourceID:   policyID,
+		Details:      string(details),
+		IPAddress:    auditSrcIP(r),
+	})
 }
 
 // scopePolicies filters a policy list down to what the caller may view.
@@ -173,6 +242,10 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		// to it until it is bound to one of their groups.
 		req.CreatedByUserID = claims.UserID
 	}
+	runsCommands := systemdExecRequired(req.Type, req.Content)
+	if runsCommands && !h.allowSystemdExec(w, r, "", "create") {
+		return
+	}
 
 	policy, err := h.policySvc.CreatePolicy(r.Context(), &req, createdBy)
 	if err != nil {
@@ -184,6 +257,10 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Failed to encode error response: %v", encErr)
 		}
 		return
+	}
+
+	if runsCommands {
+		h.auditSystemdExec(r, policy.ID, "create", req.Content)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -232,13 +309,27 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := h.loadPolicy(w, r, id, "edit"); !ok {
+	existing, ok := h.loadPolicy(w, r, id, "edit")
+	if !ok {
 		return
 	}
 
 	var req models.UpdatePolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// The saved content decides whether the policy runs commands.
+	nextType, nextContent := existing.Type, existing.Content
+	if req.Type != nil {
+		nextType = *req.Type
+	}
+	if req.Content != nil {
+		nextContent = *req.Content
+	}
+	runsCommands := (req.Type != nil || req.Content != nil) && systemdExecRequired(nextType, nextContent)
+	if runsCommands && !h.allowSystemdExec(w, r, id, "save") {
 		return
 	}
 
@@ -252,6 +343,10 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Failed to encode error response: %v", encErr)
 		}
 		return
+	}
+
+	if runsCommands {
+		h.auditSystemdExec(r, policy.ID, "save", nextContent)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -309,13 +404,21 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	if _, ok := h.loadPolicy(w, r, id, "edit"); !ok {
+	existing, ok := h.loadPolicy(w, r, id, "edit")
+	if !ok {
 		return
 	}
 
 	var req models.SetPolicyStateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// A draft can be released by someone other than its author, so the
+	// release of a command-running policy needs systemd:exec too.
+	releasingCommands := req.State == string(models.PolicyStateReleased) && systemdExecRequired(existing.Type, existing.Content)
+	if releasingCommands && !h.allowSystemdExec(w, r, id, "release") {
 		return
 	}
 
@@ -329,6 +432,10 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 			log.Printf("Failed to encode error response: %v", encErr)
 		}
 		return
+	}
+
+	if releasingCommands {
+		h.auditSystemdExec(r, policy.ID, "release", existing.Content)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

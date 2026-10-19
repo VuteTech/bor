@@ -156,6 +156,7 @@ const EDITOR_SHOTS = {
   SessionAccess: "policy-editor-session-access",
   Flatpak: "policy-editor-flatpak",
   DiskEncryption: "policy-editor-disk-encryption",
+  Systemd: "policy-editor-systemd",
 };
 
 const ONLY = process.env.SHOTS ? new Set(process.env.SHOTS.split(",")) : null;

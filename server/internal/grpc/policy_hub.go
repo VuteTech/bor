@@ -226,8 +226,24 @@ func (h *PolicyHub) SendDiskEncryptionTask(clientID string) bool {
 	return h.sendNodeEvent(clientID, pb.PolicyUpdate_DISK_ENCRYPTION_TASK)
 }
 
+// SendSystemdUnitAction sends a SYSTEMD_UNIT_ACTION command (start, stop
+// or restart of one unit) directly to the named client's stream. Returns
+// false if the client is not connected.
+func (h *PolicyHub) SendSystemdUnitAction(clientID string, action *pb.SystemdUnitAction) bool {
+	return h.sendNodeUpdate(clientID, &pb.PolicyUpdate{
+		Type:              pb.PolicyUpdate_SYSTEMD_UNIT_ACTION,
+		SystemdUnitAction: action,
+	})
+}
+
 // sendNodeEvent sends a policy-less targeted event to one client's stream.
 func (h *PolicyHub) sendNodeEvent(clientID string, eventType pb.PolicyUpdate_UpdateType) bool {
+	return h.sendNodeUpdate(clientID, &pb.PolicyUpdate{Type: eventType})
+}
+
+// sendNodeUpdate stamps the current revision on a targeted update and
+// queues it for one client's stream.
+func (h *PolicyHub) sendNodeUpdate(clientID string, update *pb.PolicyUpdate) bool {
 	h.mu.RLock()
 	ch, ok := h.clients[clientID]
 	rev := h.revision
@@ -237,18 +253,14 @@ func (h *PolicyHub) sendNodeEvent(clientID string, eventType pb.PolicyUpdate_Upd
 		return false
 	}
 
-	ev := &hubEvent{
-		update: &pb.PolicyUpdate{
-			Type:     eventType,
-			Revision: rev,
-		},
-	}
+	update.Revision = rev
+	ev := &hubEvent{update: update}
 
 	select {
 	case ch <- ev:
 		return true
 	default:
-		log.Printf("policy_hub: dropping %s for slow subscriber %s", eventType, clientID)
+		log.Printf("policy_hub: dropping %s for slow subscriber %s", update.GetType(), clientID)
 		return false
 	}
 }

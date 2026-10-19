@@ -135,3 +135,40 @@ chrome:
 #  cryptsetup: "cryptsetup"
 #  cryptenroll: "systemd-cryptenroll"
 #  clevis: "clevis"
+
+# Services & timers (systemd) policy settings.
+# The agent writes one drop-in per managed unit (<system_dir>/<unit>.d/90-bor.conf),
+# records the original state of every unit it touches in state_path so the
+# unit can be restored when it leaves every policy, and drives systemd over
+# the D-Bus system bus.
+#systemd:
+#  system_dir: /etc/systemd/system
+#  # Preset file (10-bor.preset) for policies that extend their enablement
+#  # decisions to units installed later.
+#  preset_dir: /etc/systemd/system-preset
+#  # Scripts of Bor-deployed tasks (bor-<name>.service / .timer).
+#  scripts_dir: /etc/bor/systemd
+#  state_path: /var/lib/bor/agent/systemd-state.json
+#  # How long to wait for a start, stop or restart job to finish.
+#  job_timeout: 90s
+#  # Re-assert unit states this often while Systemd policies apply (drift
+#  # detection for states that are not files); 0 disables the ticker.
+#  reconcile_interval: 10m
+#  # React within seconds to a managed unit stopped, started, enabled or
+#  # disabled by hand, through systemd's D-Bus signals. The ticker above
+#  # remains the backstop when this is off.
+#  watch_signals: true
+#  # Deploy Bor tasks (scripts that run as root). With false, policies that
+#  # carry tasks report an error for them and nothing is written.
+#  allow_tasks: true
+#  # systemd-analyze executable used to validate calendar expressions and
+#  # the unit files of tasks.
+#  analyze_binary: systemd-analyze
+#  # Directories of the user-manager scope: units and tasks a policy marks
+#  # "all users" are written here and enabled as "systemctl --global" does.
+#  user_dir: /etc/systemd/user
+#  user_preset_dir: /etc/systemd/user-preset
+#  # Run the start, stop and restart actions requested from the node page
+#  # of the console (holders of systemd:operate). With false the node
+#  # answers every action with an error.
+#  allow_actions: true

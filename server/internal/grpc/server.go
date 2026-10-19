@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
@@ -33,8 +35,11 @@ type PolicyServer struct {
 	dconfRepo   dconfRepository
 	polkitRepo  polkitRepository
 	kconfigRepo kconfigRepository
-	hub         *PolicyHub
-	diskEncSvc  *services.DiskEncryptionService
+	systemdRepo systemdRepository
+	// systemdActions receives on-demand unit action results; nil drops them.
+	systemdActions systemdActionSink
+	hub            *PolicyHub
+	diskEncSvc     *services.DiskEncryptionService
 }
 
 // dconfRepository is the subset of database.DConfRepository used by PolicyServer.
@@ -414,14 +419,40 @@ func (s *PolicyServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) 
 	return &pb.HeartbeatResponse{Accepted: true}, nil
 }
 
-// ReportTamperEvent records an agent-reported file tamper event in the audit log.
+// tamperResourcePattern matches a non-file tamper resource, "<kind>:<name>"
+// with a unit name after the colon.
+var tamperResourcePattern = regexp.MustCompile(`^[a-z-]{1,32}:[A-Za-z0-9:_.\\@-]{1,255}$`)
+
+// maxTamperDescription bounds the free-text account of a drift.
+const maxTamperDescription = 1024
+
+// ReportTamperEvent records an agent-reported tamper event in the audit
+// log: a managed file that was changed by hand, or a managed resource that
+// is not a file (a systemd unit stopped, started, enabled or disabled by
+// hand), identified by resource.
 func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamperEventRequest) (*pb.ReportTamperEventResponse, error) {
 	clientID, err := requireClientIdentity(ctx, req.GetClientId())
 	if err != nil {
 		return nil, err
 	}
-	if req.GetFilePath() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "file_path is required")
+	filePath, resource := req.GetFilePath(), req.GetResource()
+	if filePath == "" && resource == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "file_path or resource is required")
+	}
+	if resource != "" && !tamperResourcePattern.MatchString(resource) {
+		return nil, status.Errorf(codes.InvalidArgument, "resource is malformed")
+	}
+	resourceType, resourceID := "managed_file", filePath
+	if filePath == "" {
+		kind, name, _ := strings.Cut(resource, ":")
+		resourceType, resourceID = "managed_"+kind, name
+		if kind == "unit" {
+			resourceType = "systemd_unit"
+		}
+	}
+	description := req.GetDescription()
+	if len(description) > maxTamperDescription {
+		description = description[:maxTamperDescription]
 	}
 
 	// Extract caller IP from gRPC peer metadata.
@@ -445,22 +476,28 @@ func (s *PolicyServer) ReportTamperEvent(ctx context.Context, req *pb.ReportTamp
 		Actor:      &auditpb.Actor{Username: clientID},
 		Action:     "tamper_detected",
 		Resource: &auditpb.Resource{
-			Type: "managed_file",
-			Id:   req.GetFilePath(),
+			Type: resourceType,
+			Id:   resourceID,
 		},
 		Outcome: auditpb.Outcome_OUTCOME_SUCCESS,
 		SrcIp:   ipAddr,
 		Payload: &auditpb.AuditEvent_Tamper{
 			Tamper: &auditpb.TamperPayload{
-				FilePath:  req.GetFilePath(),
-				Processes: tamperProcs,
+				FilePath:    filePath,
+				Processes:   tamperProcs,
+				Resource:    resource,
+				Description: description,
 			},
 		},
 	}
 
 	s.auditSvc.Emit(ctx, event)
 
-	log.Printf("Tamper event recorded: node=%s file=%s processes=%d", clientID, req.GetFilePath(), len(tamperProcs))
+	if filePath != "" {
+		log.Printf("Tamper event recorded: node=%s file=%s processes=%d", clientID, filePath, len(tamperProcs))
+	} else {
+		log.Printf("Tamper event recorded: node=%s resource=%s actors=%d", clientID, resource, len(tamperProcs))
+	}
 
 	return &pb.ReportTamperEventResponse{Success: true}, nil
 }
@@ -602,6 +639,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal DiskEncryption typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_DiskEncryptionPolicy{DiskEncryptionPolicy: &dePol}
+		}
+	case "Systemd":
+		var sdPol pb.SystemdPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &sdPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Systemd typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_SystemdPolicy{SystemdPolicy: &sdPol}
 		}
 	}
 

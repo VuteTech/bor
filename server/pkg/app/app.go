@@ -197,6 +197,7 @@ func Run(opts Options) {
 	go seedDConfBuiltinSchemas(context.Background(), dconfRepo)
 	kconfigRepo := database.NewKConfigRepository(db)
 	go seedKConfigBuiltinCatalogue(context.Background(), kconfigRepo)
+	systemdRepo := database.NewSystemdRepository(db)
 	polkitRepo := database.NewPolkitRepository(db)
 	go seedPolkitBuiltinActions(context.Background(), polkitRepo)
 	settingsRepo := database.NewSettingsRepository(db)
@@ -380,7 +381,7 @@ func Run(opts Options) {
 	bindingHandler := api.NewUserRoleBindingHandler(userRoleBindingRepo, roleRepo).
 		WithAuditService(auditSvc).
 		WithNodeGroupScopes(nodeGroupRepo, nodeGroupScopes)
-	policyHandler := api.NewPolicyHandler(policySvc).WithBindings(policyBindingSvc)
+	policyHandler := api.NewPolicyHandler(policySvc).WithBindings(policyBindingSvc).WithExecGate(az, auditSvc)
 	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
 	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo).
@@ -391,6 +392,9 @@ func Run(opts Options) {
 	settingsHandler := api.NewSettingsHandler(settingsSvc, mfaSvc)
 	dconfHandler := api.NewDConfHandler(dconfRepo)
 	kconfigHandler := api.NewKConfigHandler(kconfigRepo)
+	systemdHandler := api.NewSystemdHandler(systemdRepo)
+	systemdActions := services.NewSystemdActionBroker()
+	systemdNodeHandler := api.NewSystemdNodeHandler(nodeSvc, systemdRepo, policyHub, systemdActions, auditSvc, cfg.Audit.AnonymizeIPs)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
 	ppaHandler := api.NewPPAInfoHandler()
@@ -563,7 +567,7 @@ func Run(opts Options) {
 	// Policy export/import (bor.dev/v1 YAML envelope). Export needs view;
 	// import creates drafts and needs create. Both are audit-logged by the
 	// handler itself (exports are GETs, which the audit middleware skips).
-	exportHandler := api.NewExportHandler(policySvc, policyBindingSvc, nodeGroupSvc, auditSvc)
+	exportHandler := api.NewExportHandler(policySvc, policyBindingSvc, nodeGroupSvc, auditSvc).WithAuthorizer(az)
 	mux.Handle("/api/v1/policies/export", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(exportHandler.Export))))
 	mux.Handle("/api/v1/policies/import", authMiddleware(gate.RequireScoped("policy", "create")(http.HandlerFunc(exportHandler.Import))))
 
@@ -582,6 +586,12 @@ func Run(opts Options) {
 	mux.Handle("/api/v1/nodes/status-counts", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(nodeHandler.CountByStatus))))
 	mux.Handle("/api/v1/nodes/filter-options", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(nodeHandler.FilterOptions))))
 	mux.Handle("/api/v1/nodes/", authMiddleware(nodePerms(auditMw(http.HandlerFunc(nodeHandler.ServeHTTP)))))
+	// The Services & timers section of the node details. The unit list is
+	// a node view; an action runs on the node and needs systemd:operate.
+	// The action handler writes its own audit event with the outcome, so
+	// it bypasses the generic audit middleware.
+	mux.Handle("GET /api/v1/nodes/{id}/systemd/units", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(systemdNodeHandler.ListUnits))))
+	mux.Handle("POST /api/v1/nodes/{id}/systemd/actions", authMiddleware(gate.RequireScoped("systemd", "operate")(http.HandlerFunc(systemdNodeHandler.Action))))
 
 	// Node group routes — method-based permission checking
 	groupPerms := gate.RequireScopedMethod([]api.MethodPermission{
@@ -722,6 +732,8 @@ func Run(opts Options) {
 	mux.Handle("/api/v1/kconfig/catalogue", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListCatalogue))))
 	mux.Handle("/api/v1/kconfig/kcms", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListKCMs))))
 	mux.Handle("/api/v1/kconfig/themes", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListThemes))))
+	mux.Handle("/api/v1/systemd/units", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(systemdHandler.ListUnits))))
+	mux.Handle("/api/v1/systemd/calendar-preview", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(systemdHandler.CalendarPreview))))
 
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(gate.RequireScoped("compliance", "view")(http.HandlerFunc(complianceHandler.List))))
@@ -880,7 +892,9 @@ func Run(opts Options) {
 	pb.RegisterPolicyServiceServer(policyGrpcSrv,
 		grpcserver.NewPolicyServer(policySvc, nodeSvc, settingsSvc, auditSvc, enrollSvc, dconfRepo, polkitRepo, policyHub).
 			WithDiskEncryptionService(diskEncSvc).
-			WithKConfigRepository(kconfigRepo))
+			WithKConfigRepository(kconfigRepo).
+			WithSystemdRepository(systemdRepo).
+			WithSystemdActions(systemdActions))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.

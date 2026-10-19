@@ -93,13 +93,17 @@ func marshalDetails(event *auditpb.AuditEvent) string {
 			procs = append(procs, procEntry{PID: pr.GetPid(), Comm: pr.GetComm(), User: pr.GetUser()})
 		}
 		b, err := json.Marshal(struct {
-			File      string      `json:"file"`
-			Node      string      `json:"node"`
-			Processes []procEntry `json:"processes,omitempty"`
+			File        string      `json:"file"`
+			Node        string      `json:"node"`
+			Resource    string      `json:"resource,omitempty"`
+			Description string      `json:"description,omitempty"`
+			Processes   []procEntry `json:"processes,omitempty"`
 		}{
-			File:      p.Tamper.GetFilePath(),
-			Node:      event.GetActor().GetUsername(),
-			Processes: procs,
+			File:        p.Tamper.GetFilePath(),
+			Node:        event.GetActor().GetUsername(),
+			Resource:    p.Tamper.GetResource(),
+			Description: p.Tamper.GetDescription(),
+			Processes:   procs,
 		})
 		if err != nil {
 			return ""

@@ -134,6 +134,13 @@ or the file deleted.
 | Dconf | `/etc/dconf/profile/user` (ensures a `system-db:<db>` line) | No | - |
 | Polkit | `/etc/polkit-1/rules.d/<priority>-bor-<id>.rules` | Yes | - |
 | Firewall | Zone files `/etc/firewalld/zones/<zone>.xml` | Yes | `firewalld.zones_dir` |
+| Services & timers | Drop-ins `/etc/systemd/system/<unit>.d/90-bor.conf` (one per unit with overrides) | Yes | `systemd.system_dir` |
+| Services & timers | Task units `/etc/systemd/system/bor-<task>.service` and `bor-<task>.timer` | Yes | `systemd.system_dir` |
+| Services & timers | Task scripts `/etc/bor/systemd/<task>.sh` (the directory belongs to Bor) | Yes | `systemd.scripts_dir` |
+| Services & timers | `/etc/systemd/system-preset/10-bor.preset` (optional, policies with the preset switch) | Yes | `systemd.preset_dir` |
+| Services & timers | `/var/lib/bor/agent/systemd-state.json` (original unit states, restored when a unit leaves every policy) | Yes | `systemd.state_path` |
+| Services & timers | Drop-ins `/etc/systemd/user/<unit>.d/90-bor.conf`, task units `/etc/systemd/user/bor-<task>.service` and `.timer`, and the enablement symlinks and masks of entries scoped to all users | Yes (files Bor writes) | `systemd.user_dir` |
+| Services & timers | `/etc/systemd/user-preset/10-bor.preset` (optional, policies with the preset switch and units scoped to all users) | Yes | `systemd.user_preset_dir` |
 | Package (apt) | `/etc/apt/sources.list.d/bor-<id>.sources`, `/etc/apt/trusted.gpg.d/bor-<id>.gpg` | Yes | - |
 | Package (dnf) | `/etc/yum.repos.d/bor-<id>.repo`, `/etc/pki/rpm-gpg/bor-<id>.gpg` | Yes | - |
 | Package (zypper) | `/etc/zypp/repos.d/bor-<id>.repo`, `/etc/pki/rpm-gpg/bor-<id>.gpg` | Yes | - |
