@@ -21,6 +21,11 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          # The modules live in the two submodules, not at the repository
+          # root where setup-go looks by default.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Test server
         run: cd server && go test ./...
@@ -41,6 +46,11 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          # The modules live in the two submodules, not at the repository
+          # root where setup-go looks by default.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       # Frontend design-token guardrail (pure grep, no Node needed): bans legacy
       # --pf-v5-* variables and ratchets raw hex literals in component code.
@@ -73,6 +83,11 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          # The modules live in the two submodules, not at the repository
+          # root where setup-go looks by default.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Build server backend
         run: cd server && go build ./...
@@ -91,6 +106,11 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          # The modules live in the two submodules, not at the repository
+          # root where setup-go looks by default.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Build agent
         run: cd agent && go build ./...
@@ -124,7 +144,7 @@ jobs:
 
   # Agent packages first: the server packages EMBED the assembled agent
   # repository (all architectures), so the pipeline is
-  # build-agent-packages → assemble-agent-repo → build-server-packages.
+  # build-agent-packages -> assemble-agent-repo -> build-server-packages.
   build-agent-packages:
     name: Build Agent Packages (${{ matrix.arch }})
     runs-on: ubuntu-latest
@@ -132,6 +152,8 @@ jobs:
     permissions:
       contents: write
     strategy:
+      # One architecture's failure must not cancel the others mid-upload.
+      fail-fast: false
       matrix:
         arch: [amd64, arm64, ppc64le]
 
@@ -143,10 +165,30 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          # The modules live in the two submodules, not at the repository
+          # root where setup-go looks by default.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Install nfpm
-        # Pinned: nfpm >= v2.47.0 requires Go 1.26, newer than our toolchain.
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+        # The prebuilt release binary, pinned by version and checksum: a
+        # single download instead of nfpm's module graph through the Go
+        # proxy and checksum database on every job, which failed on
+        # transient stream errors. The runner is x86_64 whatever the
+        # package architecture; nfpm cross-packages.
+        env:
+          NFPM_VERSION: "2.46.3"
+          NFPM_SHA256: "9170d25ea056d7329def38134b2bcad98d02d221f8331610dcd619e84d28c565"
+        run: |
+          set -euo pipefail
+          tarball="nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$tarball" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/${tarball}"
+          echo "${NFPM_SHA256}  ${tarball}" | sha256sum -c -
+          sudo tar -C /usr/local/bin -xzf "$tarball" nfpm
+          rm -f "$tarball"
+          nfpm --version
 
       - name: Determine version
         id: version
@@ -196,7 +238,7 @@ jobs:
       contents: read
     env:
       BOR_RELEASE_GPG_KEY: ${{ secrets.BOR_RELEASE_GPG_KEY }}
-      # Passphrase of the release key (when protected) — consumed directly by
+      # Passphrase of the release key (when protected) - consumed directly by
       # scripts/assemble-agent-repo.sh via the environment, enabling loopback
       # pinentry. Never passed on a command line.
       SIGN_KEY_PASSPHRASE: ${{ secrets.BOR_RELEASE_GPG_PASSPHRASE }}
@@ -229,7 +271,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends apt-utils createrepo-c jq
 
       # Signing is skipped (with a loud script warning) when the secret is
-      # absent — forks and PRs assemble unsigned; releases must sign.
+      # absent - forks and PRs assemble unsigned; releases must sign.
       - name: Import release signing key
         id: gpg
         run: |
@@ -238,7 +280,7 @@ jobs:
             echo "key_id=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')" >> "$GITHUB_OUTPUT"
           else
             echo "key_id=" >> "$GITHUB_OUTPUT"
-            echo "::warning::BOR_RELEASE_GPG_KEY not set — assembling unsigned agent repositories"
+            echo "::warning::BOR_RELEASE_GPG_KEY not set - assembling unsigned agent repositories"
           fi
 
       - name: Assemble repository
@@ -260,6 +302,8 @@ jobs:
     permissions:
       contents: write
     strategy:
+      # One architecture's failure must not cancel the others mid-upload.
+      fail-fast: false
       matrix:
         arch: [amd64, arm64, ppc64le]
 
@@ -271,6 +315,11 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          # The modules live in the two submodules, not at the repository
+          # root where setup-go looks by default.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -280,8 +329,23 @@ jobs:
           cache-dependency-path: server/web/frontend/package-lock.json
 
       - name: Install nfpm
-        # Pinned: nfpm >= v2.47.0 requires Go 1.26, newer than our toolchain.
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+        # The prebuilt release binary, pinned by version and checksum: a
+        # single download instead of nfpm's module graph through the Go
+        # proxy and checksum database on every job, which failed on
+        # transient stream errors. The runner is x86_64 whatever the
+        # package architecture; nfpm cross-packages.
+        env:
+          NFPM_VERSION: "2.46.3"
+          NFPM_SHA256: "9170d25ea056d7329def38134b2bcad98d02d221f8331610dcd619e84d28c565"
+        run: |
+          set -euo pipefail
+          tarball="nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$tarball" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/${tarball}"
+          echo "${NFPM_SHA256}  ${tarball}" | sha256sum -c -
+          sudo tar -C /usr/local/bin -xzf "$tarball" nfpm
+          rm -f "$tarball"
+          nfpm --version
 
       - name: Determine version
         id: version
@@ -343,7 +407,7 @@ jobs:
           else
             VERSION="${SHORT_SHA}"
             # Package/artifact naming uses the nfpm-compatible scheme (see
-            # the build-packages job) — needed to locate the agent-repo artifact.
+            # the build-packages job) - needed to locate the agent-repo artifact.
             PKG_VERSION="0.0.0.git${SHORT_SHA}"
           fi
           echo "version=${VERSION}"           >> "$GITHUB_OUTPUT"
