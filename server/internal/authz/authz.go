@@ -33,6 +33,9 @@ var scopableResources = map[string]bool{
 	"policy":     true,
 	"binding":    true,
 	"compliance": true,
+	// systemd:operate acts on one node at a time and systemd:exec on
+	// policies; both handlers confine the action to the caller's groups.
+	"systemd": true,
 }
 
 // IsScopable reports whether a node-group-scoped binding can grant

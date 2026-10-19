@@ -6,8 +6,11 @@ package systemd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -21,7 +24,16 @@ type Analyzer struct {
 	Binary string
 	// Run executes the command; injected so tests can stub it.
 	Run func(ctx context.Context, name string, args ...string) ([]byte, error)
+	// RunEnv executes the command with extra environment variables; nil
+	// falls back to Run (tests stub Run only).
+	RunEnv func(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
 }
+
+// userVerifyEnv lets "systemd-analyze --user verify" initialise its
+// offline manager as root: it looks up the runtime directory from
+// XDG_RUNTIME_DIR and fails with ENXIO when root has none; any existing
+// directory satisfies it, nothing is written there.
+var userVerifyEnv = []string{"XDG_RUNTIME_DIR=/run"}
 
 // DefaultAnalyzeBinary is the executable name resolved through PATH.
 const DefaultAnalyzeBinary = "systemd-analyze"
@@ -36,7 +48,20 @@ func NewAnalyzer(binary string) *Analyzer {
 		Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			return exec.CommandContext(ctx, name, args...).CombinedOutput() //nolint:gosec // G204: binary from agent config, constant subcommand, validated value after "--"
 		},
+		RunEnv: func(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+			cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // G204: binary from agent config, constant subcommand, validated value after "--"
+			cmd.Env = append(os.Environ(), env...)
+			return cmd.CombinedOutput()
+		},
 	}
+}
+
+// run executes with extra environment variables when RunEnv is set.
+func (a *Analyzer) run(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	if a.RunEnv != nil {
+		return a.RunEnv(ctx, env, name, args...)
+	}
+	return a.Run(ctx, name, args...)
 }
 
 // Available reports whether the binary can be found.
@@ -80,9 +105,83 @@ func (a *Analyzer) VerifyUnit(ctx context.Context, unit string) error {
 	return nil
 }
 
+// VerifyUserUnit runs "systemd-analyze --user verify <unit>" for a unit
+// file of the user-manager scope.
+func (a *Analyzer) VerifyUserUnit(ctx context.Context, unit string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := a.run(ctx, userVerifyEnv, a.Binary, "--user", "verify", "--", unit)
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("%s", firstLine(msg))
+	}
+	return nil
+}
+
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return s[:i]
 	}
 	return s
+}
+
+// SecurityScore is the sandboxing exposure systemd-analyze security
+// computes for a service: a level from 0.0 (fully sandboxed) to 10.0 and
+// its predicate (SAFE, OK, MEDIUM, EXPOSED or UNSAFE).
+type SecurityScore struct {
+	Exposure  string
+	Predicate string
+}
+
+var (
+	securityExposureRE  = regexp.MustCompile(`^\d{1,2}(\.\d)?$`)
+	securityPredicateRE = regexp.MustCompile(`^[A-Z]{1,12}$`)
+)
+
+// securityTimeout bounds the analysis of every loaded service at once.
+const securityTimeout = 90 * time.Second
+
+// SecurityScores runs "systemd-analyze security --json=short" once for
+// every loaded service of the system manager and returns the scores by
+// unit name. An analyzer that lacks JSON output (systemd before 246)
+// yields an error and no scores.
+func (a *Analyzer) SecurityScores(ctx context.Context) (map[string]SecurityScore, error) {
+	if a == nil {
+		return nil, fmt.Errorf("no analyzer")
+	}
+	ctx, cancel := context.WithTimeout(ctx, securityTimeout)
+	defer cancel()
+	out, err := a.Run(ctx, a.Binary, "security", "--json=short", "--no-pager")
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("systemd-analyze security: %s", firstLine(msg))
+	}
+	return ParseSecurityScores(out)
+}
+
+// ParseSecurityScores parses the JSON list systemd-analyze security prints
+// for several units ({"unit","exposure","predicate","happy"} objects).
+func ParseSecurityScores(out []byte) (map[string]SecurityScore, error) {
+	var rows []struct {
+		Unit      string `json:"unit"`
+		Exposure  string `json:"exposure"`
+		Predicate string `json:"predicate"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return nil, fmt.Errorf("systemd-analyze security: unexpected output: %w", err)
+	}
+	scores := make(map[string]SecurityScore, len(rows))
+	for _, r := range rows {
+		if r.Unit == "" || !securityExposureRE.MatchString(r.Exposure) || !securityPredicateRE.MatchString(r.Predicate) {
+			continue
+		}
+		scores[r.Unit] = SecurityScore{Exposure: r.Exposure, Predicate: r.Predicate}
+	}
+	return scores, nil
 }

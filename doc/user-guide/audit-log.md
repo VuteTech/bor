@@ -20,6 +20,8 @@ requires `audit_log:view`; exporting it requires `audit_log:export`.
 | Authorization | A request refused because the user lacks a permission, including privilege-escalation attempts. | `access_denied` |
 | Role removals | Role assignments removed. | `revoke_role` |
 | Tampering | An agent detected and reverted a local change to a file it manages. The event names the node, the file and the processes that held the file. | `tamper_detected` on `managed_file` |
+| Unit drift | A reconcile pass of the Services & timers policy found a managed systemd unit stopped, started, enabled, disabled or masked by hand and put it back. The event names the node, the unit (`unit:bluetooth.service`), what was found and done, and, when the journal has a `sudo` or polkit record naming the unit, who did it. | `tamper_detected` on `systemd_unit` |
+| Unit actions | An operator started, stopped or restarted a unit on a node from the node details. The event names the node, the unit, the action and the outcome the agent reported (`success`, `failed`, `not_connected`, `timeout`). | `systemd.unit_action` on `node` |
 | Policy transfer | Policy export and completed policy import. | `policy.export`, `policy.import` |
 | Disk encryption | Recovery key escrow, reveal (and refused reveals), rotation and related events. | `recoverykey.*`, `luks.*` |
 
@@ -48,7 +50,9 @@ Select a row to open the event details:
 - **Event** - **Action**, **Resource Type**, **Resource Name** and
   **Resource ID**.
 - For tamper events, **Tampered File** and **Processes at Detection
-  Time**.
+  Time**; for unit drift, **Tampered Unit**, what was found and restored,
+  and **Attributed To** (the `sudo` or polkit record naming the unit, or
+  "no actor identified" when a root shell left none).
 - **Changed Values** or **Details** - the recorded request data.
 
 ### Filter the log
@@ -56,7 +60,7 @@ Select a row to open the event details:
 - **Action** - add one or more actions, for example `create`, `delete`,
   `access_denied` or `tamper_detected`.
 - **Resource Type** - add one or more types, for example `policies`,
-  `nodes`, `users` or `managed_file`.
+  `nodes`, `users`, `managed_file` or `systemd_unit`.
 - **Username** - type a username and select **Add**.
 
 Active filters appear as chips; remove one with its close button or use
@@ -120,7 +124,9 @@ and the body in one of two formats:
 
 In OCSF, API changes use class API Activity (`6003`), user account changes
 use Account Change (`3002`) and tamper events use File System Activity
-(`1001`).
+(`1001`); a unit drift event carries the unit (`unit:<name>`) as the file
+path and the account of the drift in the message. In CEF a unit drift
+carries the unit in `cs1` (labelled `resource`) instead of `filePath`.
 
 ### Configuration
 

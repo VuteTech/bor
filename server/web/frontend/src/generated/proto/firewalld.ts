@@ -52,9 +52,10 @@ export interface FirewalldPolicy {
    */
   rich_rules: string[];
   /**
-   * Phase 2: when true, the agent ensures firewalld is enabled and running
-   * before applying. When false (default) and firewalld is inactive, the
-   * policy is reported INAPPLICABLE. Not yet enforced.
+   * When true, an agent that finds firewalld installed but inactive enables
+   * and starts firewalld.service through systemd before applying. When
+   * false (default) and firewalld is inactive, the policy is reported
+   * INAPPLICABLE.
    */
   ensure_enabled: boolean;
 }

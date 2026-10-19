@@ -569,11 +569,20 @@ To follow the agent logs:
 	// the sync reconnects on demand if the connection is lost.
 	if mgr := systemdManager(cfg); mgr == nil {
 		log.Println("Warning: systemd is not reachable on the system bus; Systemd policies will report INAPPLICABLE or ERROR on this node")
-	} else if ver, verr := mgr.Version(ctx); verr == nil {
-		log.Printf("systemd %s available", ver)
+	} else {
+		if ver, verr := mgr.Version(ctx); verr == nil {
+			log.Printf("systemd %s available", ver)
+		}
+		// Event-driven drift detection: a managed unit stopped, started,
+		// enabled or disabled by hand is reconciled within seconds. The
+		// reconcile ticker remains the backstop.
+		if cfg.Systemd.WatchSignals {
+			startSystemdWatcher(ctx, client, cfg)
+		}
 	}
 	defer stopSystemdReconciler()
 	defer closeSystemdManager()
+	defer closeSystemdUserManagers()
 
 	// Run the policy enforcement loop - prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
@@ -725,7 +734,7 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
 				// Don't let targeted server-to-agent commands overwrite the
 				// last known revision.
-				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" {
+				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" && updateType != "SYSTEMD_UNIT_ACTION" {
 					lastRevision = revision
 				}
 				handlePolicyUpdate(ctx, client, cfg, updateType, pi, snapshotComplete, &postInitialSync)
@@ -759,15 +768,25 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *config.Config, updateType string, pi *policyclient.PolicyInfo, snapshotComplete bool, postInitialSync *bool) {
 	switch updateType {
 	case "METADATA_REQUEST":
-		// Server is requesting fresh system metadata.
+		// Server is requesting fresh system metadata, including the unit
+		// inventory the node page shows.
 		go sendHeartbeat(ctx, client)
 		go reportDiskEncryptionInventory(ctx, client, cfg)
+		go reportSystemdCatalogue(ctx, client, cfg)
 		return
 
 	case "DISK_ENCRYPTION_TASK":
 		// Server pushed a disk-encryption task (e.g. a recovery-key
 		// rotation); fetch and run it via a full sync.
 		go triggerDiskEncryptionSync(ctx, client, cfg)
+		return
+
+	case "SYSTEMD_UNIT_ACTION":
+		// An operator asked for a start, stop or restart of one unit from
+		// the node page; the result goes back over its own RPC.
+		if pi != nil && pi.UnitAction != nil {
+			go runSystemdUnitAction(ctx, client, cfg, pi.UnitAction)
+		}
 		return
 
 	case "SNAPSHOT":
@@ -1283,6 +1302,14 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 		ids = append(ids, e.id)
 	}
 
+	// A policy may ask for firewalld to be enabled and running before its
+	// rules apply; the systemd manager of the Services & timers type does
+	// it. Without the request an inactive firewalld keeps the policy
+	// INAPPLICABLE.
+	if len(entries) > 0 && firewalldEnsureEnabledRequested(entries) && policy.FirewalldAvailable() && !policy.FirewalldActive() {
+		ensureFirewalldRunning(ctx, cfg)
+	}
+
 	// Suppress the watcher for currently-managed zone files plus the files this
 	// sync is about to write (resolved target zones), so our own writes don't
 	// trigger a tamper restore.
@@ -1302,6 +1329,55 @@ func syncAllFirewalld(ctx context.Context, client *policyclient.Client, cfg *con
 		len(ids), result.Status.String(), result.Message)
 	for _, id := range ids {
 		_ = client.ReportComplianceWithStatus(ctx, id, result.Status, result.Message, nil)
+	}
+}
+
+// firewalldEnsureEnabledRequested reports whether any bound Firewalld
+// policy asks the agent to enable and start firewalld.
+func firewalldEnsureEnabledRequested(entries []policy.FirewalldEntry) bool {
+	for _, e := range entries {
+		if e.Policy.GetEnsureEnabled() {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureFirewalldRunning enables and starts firewalld.service through the
+// shared systemd manager and logs the outcome; the Firewalld sync that
+// follows reports the result through its own state check.
+func ensureFirewalldRunning(ctx context.Context, cfg *config.Config) {
+	const unit = "firewalld.service"
+	mgr := systemdManager(cfg)
+	if mgr == nil {
+		log.Println("Warning: firewalld: ensure_enabled requested but systemd is not reachable")
+		return
+	}
+	st, err := mgr.Status(ctx, unit)
+	if err != nil || !st.Exists() {
+		log.Printf("Warning: firewalld: ensure_enabled requested but %s is not installed", unit)
+		return
+	}
+	if st.UnitFileState == "disabled" || st.UnitFileState == "masked" {
+		if st.IsMasked() {
+			if err := mgr.Unmask(ctx, []string{unit}); err != nil {
+				log.Printf("Warning: firewalld: unmask %s: %v", unit, err)
+				return
+			}
+			_ = mgr.Reload(ctx)
+		}
+		if err := mgr.Enable(ctx, []string{unit}); err != nil {
+			log.Printf("Warning: firewalld: enable %s: %v", unit, err)
+		} else {
+			log.Printf("firewalld: enabled %s (ensure_enabled)", unit)
+		}
+	}
+	if !st.IsActive() {
+		if r, err := mgr.Start(ctx, unit); err != nil {
+			log.Printf("Warning: firewalld: start %s: %v", unit, err)
+		} else {
+			log.Printf("firewalld: start %s: %s (ensure_enabled)", unit, r)
+		}
 	}
 }
 

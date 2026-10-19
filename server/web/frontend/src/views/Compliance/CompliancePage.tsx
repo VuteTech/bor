@@ -60,6 +60,13 @@ const LUKS_ITEM_LABELS: Record<string, string> = {
   "platform:secureboot": "Secure Boot",
 };
 
+/** Labels for Services & timers compliance items by schema id. */
+const SYSTEMD_ITEM_LABELS: Record<string, string> = {
+  "systemd:unit": "Unit",
+  "systemd:task": "Scheduled task",
+  "systemd:preset": "Preset file",
+};
+
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {
   unknown:        "grey",
   compliant:      "green",
@@ -124,8 +131,9 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
             : null;
         // Disk encryption items: "luks:recovery" / "3f2a…" -> "Recovery key · 3f2a…".
         const luksKind = LUKS_ITEM_LABELS[item.schema_id ?? ""] ?? null;
-        // Systemd items: "systemd:unit" / "bluetooth.service" -> "Unit · bluetooth.service".
-        const systemdKind = item.schema_id === "systemd:unit" ? "Unit" : null;
+        // Systemd items: "systemd:unit" / "bluetooth.service" -> "Unit · bluetooth.service",
+        // "systemd:task" / "nightly-cleanup" -> "Scheduled task · nightly-cleanup".
+        const systemdKind = SYSTEMD_ITEM_LABELS[item.schema_id ?? ""] ?? null;
         const shortKey = /^[0-9a-f]{8}-/.test(item.key ?? "") ? `${item.key.slice(0, 8)}…` : item.key;
         const label = isPolkit
           ? (item.schema_id.slice("polkit:".length) || item.key)

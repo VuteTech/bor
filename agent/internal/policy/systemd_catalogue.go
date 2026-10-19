@@ -6,6 +6,7 @@ package policy
 
 import (
 	"context"
+	"log"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,11 +19,18 @@ import (
 // MaxSystemdCatalogueUnits caps the units one node reports.
 const MaxSystemdCatalogueUnits = 4000
 
+// SecurityScorer supplies the sandboxing exposure of loaded services
+// (systemd.Analyzer).
+type SecurityScorer interface {
+	SecurityScores(ctx context.Context) (map[string]systemd.SecurityScore, error)
+}
+
 // ScanSystemdUnits builds the unit catalogue of the node: every installed
 // unit file of a managed type, with the description, schedule and
-// activation target read from the file and the live states from the
-// loaded units. Units are not loaded into systemd for the scan.
-func ScanSystemdUnits(ctx context.Context, mgr systemd.Manager) ([]*pb.SystemdUnitInfo, error) {
+// activation target read from the file, the live states from the loaded
+// units and, when scorer is set, the sandboxing exposure of every loaded
+// service. Units are not loaded into systemd for the scan.
+func ScanSystemdUnits(ctx context.Context, mgr systemd.Manager, scorer SecurityScorer) ([]*pb.SystemdUnitInfo, error) {
 	files, err := mgr.ListUnitFiles(ctx, systemd.UnitPatterns())
 	if err != nil {
 		return nil, err
@@ -34,6 +42,12 @@ func ScanSystemdUnits(ctx context.Context, mgr systemd.Manager) ([]*pb.SystemdUn
 	live := make(map[string]*systemd.UnitStatus, len(loaded))
 	for i := range loaded {
 		live[loaded[i].Name] = &loaded[i]
+	}
+	var scores map[string]systemd.SecurityScore
+	if scorer != nil {
+		if scores, err = scorer.SecurityScores(ctx); err != nil {
+			log.Printf("systemd: security scores unavailable: %v", err)
+		}
 	}
 
 	byName := make(map[string]*pb.SystemdUnitInfo, len(files))
@@ -75,6 +89,10 @@ func ScanSystemdUnits(ctx context.Context, mgr systemd.Manager) ([]*pb.SystemdUn
 				entry.Description = st.Description
 			}
 		}
+		if sc, ok := scores[name]; ok {
+			entry.SecurityExposure = sc.Exposure
+			entry.SecurityPredicate = sc.Predicate
+		}
 		byName[name] = entry
 	}
 
@@ -87,4 +105,35 @@ func ScanSystemdUnits(ctx context.Context, mgr systemd.Manager) ([]*pb.SystemdUn
 		out = out[:MaxSystemdCatalogueUnits]
 	}
 	return out, nil
+}
+
+// SystemdUnitInfoFromStatus renders one loaded unit as a catalogue entry,
+// for the result of an on-demand action. The security score is not
+// recomputed; the next full report refreshes it.
+func SystemdUnitInfoFromStatus(st *systemd.UnitStatus) *pb.SystemdUnitInfo {
+	if st == nil {
+		return nil
+	}
+	typ := systemdunits.Type(st.Name)
+	triggers := st.TimerUnit
+	if triggers == "" && (typ == "timer" || typ == "socket" || typ == "path") {
+		triggers = strings.TrimSuffix(st.Name, "."+typ) + ".service"
+	}
+	if triggers != "" && systemdunits.ValidateName(triggers) != nil {
+		triggers = ""
+	}
+	return &pb.SystemdUnitInfo{
+		Name:          st.Name,
+		Description:   st.Description,
+		Type:          typ,
+		UnitFileState: st.UnitFileState,
+		Preset:        st.UnitFilePreset,
+		ActiveState:   st.ActiveState,
+		SubState:      st.SubState,
+		HasInstall:    st.HasInstall(),
+		OnCalendar:    st.TimerCalendar,
+		Triggers:      triggers,
+		FragmentPath:  st.FragmentPath,
+		ServiceType:   st.ServiceType,
+	}
 }

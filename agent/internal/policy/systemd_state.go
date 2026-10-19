@@ -18,9 +18,13 @@ const SystemdStatePath = "/var/lib/bor/agent/systemd-state.json"
 
 // SystemdOriginal is the state a unit had the first time Bor touched it.
 type SystemdOriginal struct {
-	UnitFileState string    `json:"unit_file_state"`
-	Active        bool      `json:"active"`
-	RecordedAt    time.Time `json:"recorded_at"`
+	UnitFileState string `json:"unit_file_state"`
+	Active        bool   `json:"active"`
+	// LinkTarget is the target of the symlink /etc/systemd/system/<unit>
+	// that a mask replaced (a distribution's redirect), recreated when
+	// the unit is restored.
+	LinkTarget string    `json:"link_target,omitempty"`
+	RecordedAt time.Time `json:"recorded_at"`
 }
 
 // SystemdState is the content of the state file.

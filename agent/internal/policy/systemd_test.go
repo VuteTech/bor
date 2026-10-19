@@ -138,7 +138,8 @@ func TestListBorManagedSystemdFiles(t *testing.T) {
 	if err := WriteFileAtomically(other, []byte(systemdDropInHeader+"\n")); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ListBorManagedSystemdFiles(dir)
+	dirs := SystemdDirs{SystemDir: dir, PresetDir: filepath.Join(dir, "preset"), ScriptsDir: filepath.Join(dir, "scripts")}
+	got, err := ListBorManagedSystemdFiles(&dirs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +149,34 @@ func TestListBorManagedSystemdFiles(t *testing.T) {
 	if systemdUnitFromDropInPath(bor) != "fstrim.timer" {
 		t.Error("unit name recovery from the drop-in path failed")
 	}
-	if got, _ := ListBorManagedSystemdFiles(filepath.Join(dir, "missing")); got != nil {
+	if missing, _ := ListBorManagedSystemdFiles(&SystemdDirs{SystemDir: filepath.Join(dir, "missing")}); missing != nil {
 		t.Error("a missing directory yields nothing")
+	}
+
+	// Task units with the header, scripts and the preset file are managed;
+	// a bor-* unit without the header and a vendor unit are not.
+	taskUnit := dirs.TaskServicePath("cleanup")
+	foreignTask := filepath.Join(dir, "bor-other.service")
+	vendor := filepath.Join(dir, "cups.service")
+	script := dirs.TaskScriptPath("cleanup")
+	for path, content := range map[string]string{
+		taskUnit:          systemdDropInHeader + "\n[Service]\n",
+		foreignTask:       "[Service]\nExecStart=/bin/true\n",
+		vendor:            systemdDropInHeader + "\n[Service]\n",
+		script:            "#!/bin/sh\n",
+		dirs.PresetPath(): systemdDropInHeader + "\ndisable cups.service\n",
+	} {
+		if werr := WriteFileAtomically(path, []byte(content)); werr != nil {
+			t.Fatal(werr)
+		}
+	}
+	got, err = ListBorManagedSystemdFiles(&dirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{taskUnit, bor, dirs.PresetPath(), script}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("ListBorManagedSystemdFiles = %v, want %v", got, want)
 	}
 }
 
@@ -191,17 +218,22 @@ type syncEnv struct {
 func newSyncEnv(t *testing.T) *syncEnv {
 	t.Helper()
 	dir := t.TempDir()
+	f := systemd.NewFake()
+	f.UnitDirs = []string{filepath.Join(dir, "system")}
 	return &syncEnv{
-		f: systemd.NewFake(),
+		f: f,
 		opts: SystemdSyncOptions{
-			SystemDir: filepath.Join(dir, "system"),
-			StatePath: filepath.Join(dir, "state.json"),
+			SystemDir:  filepath.Join(dir, "system"),
+			PresetDir:  filepath.Join(dir, "preset"),
+			ScriptsDir: filepath.Join(dir, "scripts"),
+			StatePath:  filepath.Join(dir, "state.json"),
+			AllowTasks: true,
 		},
 	}
 }
 
 func (e *syncEnv) sync(entries ...SystemdEntry) SystemdSyncResult {
-	return SyncSystemd(context.Background(), e.f, entries, e.opts)
+	return SyncSystemd(context.Background(), e.f, entries, &e.opts)
 }
 
 func itemOf(t *testing.T, r SystemdPolicyResult, unit string) *pb.ComplianceItemResult {
@@ -397,7 +429,7 @@ func TestSyncSystemdErrors(t *testing.T) {
 	if got := e.sync(pol).Policies["p"].Status; got != pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE {
 		t.Errorf("unavailable = %s", got)
 	}
-	if got := SyncSystemd(context.Background(), nil, []SystemdEntry{pol}, e.opts).Policies["p"].Status; got != pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR {
+	if got := SyncSystemd(context.Background(), nil, []SystemdEntry{pol}, &e.opts).Policies["p"].Status; got != pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR {
 		t.Errorf("nil manager = %s", got)
 	}
 }
@@ -529,7 +561,7 @@ func TestScanSystemdUnits(t *testing.T) {
 	f.AddUnit(systemd.UnitStatus{Name: "fstrim.timer", UnitFileState: "enabled", ActiveState: "active", SubState: "waiting", FragmentPath: timerPath})
 	f.AddUnit(systemd.UnitStatus{Name: "cups.service", UnitFileState: "static", FragmentPath: svcPath, Description: "CUPS from the manager"})
 	f.AddUnit(systemd.UnitStatus{Name: "home.mount", UnitFileState: "static"})
-	units, err := ScanSystemdUnits(context.Background(), f)
+	units, err := ScanSystemdUnits(context.Background(), f, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

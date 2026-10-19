@@ -118,6 +118,9 @@ type PolicyInfo struct {
 	FlatpakPolicy        *pb.FlatpakPolicy        // populated from typed_content for Flatpak type
 	DiskEncryptionPolicy *pb.DiskEncryptionPolicy // populated from typed_content for DiskEncryption type
 	SystemdPolicy        *pb.SystemdPolicy        // populated from typed_content for Systemd type
+	// UnitAction carries the command of a SYSTEMD_UNIT_ACTION update; the
+	// other fields are empty then.
+	UnitAction *pb.SystemdUnitAction
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -260,6 +263,57 @@ func (c *Client) ReportTamperEvent(ctx context.Context, filePath string, process
 	return nil
 }
 
+// ReportUnitTamperEvent reports a managed resource that is not a file (a
+// systemd unit, "unit:<name>") found changed by hand and put back, with
+// the best-effort attribution from the journal.
+func (c *Client) ReportUnitTamperEvent(ctx context.Context, resource, description string, actors []TamperProcess) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var pbProcs []*pb.TamperProcessInfo
+	for _, p := range actors {
+		pbProcs = append(pbProcs, &pb.TamperProcessInfo{
+			Pid:  clampInt32(p.PID),
+			Comm: p.Comm,
+			User: p.User,
+		})
+	}
+
+	resp, err := c.client.ReportTamperEvent(ctx, &pb.ReportTamperEventRequest{
+		ClientId:    c.clientID,
+		Resource:    resource,
+		Description: description,
+		DetectedAt:  timestamppb.Now(),
+		Processes:   pbProcs,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportTamperEvent RPC failed: %w", err)
+	}
+	if !resp.GetSuccess() {
+		return fmt.Errorf("server rejected tamper event report for %s", resource)
+	}
+	return nil
+}
+
+// ReportSystemdUnitActionResult answers a SYSTEMD_UNIT_ACTION command with
+// the outcome and the unit's state afterwards (unit may be nil).
+func (c *Client) ReportSystemdUnitActionResult(ctx context.Context, actionID string, success bool, message string, unit *pb.SystemdUnitInfo) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	_, err := c.client.ReportSystemdUnitActionResult(ctx, &pb.ReportSystemdUnitActionResultRequest{
+		ClientId: c.clientID,
+		ActionId: actionID,
+		Success:  success,
+		Message:  message,
+		Unit:     unit,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportSystemdUnitActionResult RPC failed: %w", err)
+	}
+	return nil
+}
+
 // PolicyUpdateCallback is called for each policy update received from
 // the server streaming RPC. The revision parameter is the server-side
 // revision after the update; the caller should persist this value to
@@ -336,6 +390,12 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if sdp := p.GetSystemdPolicy(); sdp != nil {
 				pi.SystemdPolicy = sdp
 			}
+		}
+		if ua := update.GetSystemdUnitAction(); ua != nil {
+			if pi == nil {
+				pi = &PolicyInfo{}
+			}
+			pi.UnitAction = ua
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())

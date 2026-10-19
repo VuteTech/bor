@@ -22,6 +22,11 @@ type UnitFileInfo struct {
 	// [Path] Unit=; empty when the file does not name one.
 	Triggers    string
 	ServiceType string
+	// [Install] WantedBy=, RequiredBy= and Alias= entries, for the
+	// enablement symlinks of the user-manager scope.
+	WantedBy   []string
+	RequiredBy []string
+	Alias      []string
 }
 
 // maxUnitFileBytes bounds how much of a unit file the scanner reads.
@@ -103,7 +108,25 @@ func ParseUnitFile(r io.Reader) UnitFileInfo {
 			if key == "Type" {
 				info.ServiceType = value
 			}
+		case "Install":
+			switch key {
+			case "WantedBy":
+				info.WantedBy = appendInstallList(info.WantedBy, value)
+			case "RequiredBy":
+				info.RequiredBy = appendInstallList(info.RequiredBy, value)
+			case "Alias":
+				info.Alias = appendInstallList(info.Alias, value)
+			}
 		}
 	}
 	return info
+}
+
+// appendInstallList adds the space-separated names of one [Install]
+// assignment; an empty assignment resets the list, as in systemd.
+func appendInstallList(list []string, value string) []string {
+	if value == "" {
+		return nil
+	}
+	return append(list, strings.Fields(value)...)
 }

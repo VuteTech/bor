@@ -7,7 +7,9 @@ package systemd
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -39,6 +41,12 @@ type Fake struct {
 	// NextLoadState maps a unit name to the LoadState the unit takes
 	// after the next Reload (bad-setting rollback tests).
 	NextLoadState map[string]string
+	// UnitDirs lists directories whose unit files Reload discovers, so
+	// tests of Bor-deployed tasks see their units appear (disabled, or
+	// static without an [Install] section) and disappear like on a node.
+	UnitDirs []string
+	// discovered tracks the units Reload added from UnitDirs.
+	discovered map[string]string
 
 	// pendingLoad holds load states that take effect on the next Reload
 	// (a mask or unmask); unmasked holds the state a masked unit returns
@@ -55,6 +63,7 @@ func NewFake() *Fake {
 		JobResults:    map[string]JobResult{},
 		StatusErrors:  map[string]error{},
 		NextLoadState: map[string]string{},
+		discovered:    map[string]string{},
 		pendingLoad:   map[string]string{},
 		unmasked:      map[string]string{},
 	}
@@ -257,6 +266,7 @@ func (f *Fake) Reload(context.Context) error {
 	if err := f.record("Reload"); err != nil {
 		return err
 	}
+	f.discoverUnitFiles()
 	for name, u := range f.Units {
 		if ls, ok := f.pendingLoad[name]; ok {
 			u.LoadState = ls
@@ -269,6 +279,46 @@ func (f *Fake) Reload(context.Context) error {
 		u.NeedDaemonReload = false
 	}
 	return nil
+}
+
+// discoverUnitFiles mirrors the unit files under UnitDirs into Units: new
+// files become loaded units, removed files make their unit vanish. Must be
+// called with f.mu held.
+func (f *Fake) discoverUnitFiles() {
+	seen := map[string]bool{}
+	for _, dir := range f.UnitDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !matchesAny(name, UnitPatterns()) {
+				continue
+			}
+			p := filepath.Join(dir, name)
+			seen[name] = true
+			if _, ok := f.Units[name]; ok {
+				continue
+			}
+			info := ScanUnitFile(p)
+			state := "static"
+			if info.HasInstall {
+				state = "disabled"
+			}
+			f.Units[name] = &UnitStatus{
+				Name: name, Description: info.Description, LoadState: "loaded", ActiveState: "inactive", SubState: "dead",
+				UnitFileState: state, FragmentPath: p, ServiceType: info.ServiceType, TimerCalendar: info.OnCalendar, Result: "success",
+			}
+			f.discovered[name] = p
+		}
+	}
+	for name := range f.discovered {
+		if !seen[name] {
+			delete(f.Units, name)
+			delete(f.discovered, name)
+		}
+	}
 }
 
 func (f *Fake) job(verb, name string, apply func(u *UnitStatus)) (JobResult, error) {

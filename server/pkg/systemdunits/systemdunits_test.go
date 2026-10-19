@@ -119,3 +119,111 @@ func TestValidateCalendar(t *testing.T) {
 		t.Error("ValidateCalendar(long) = nil, want error")
 	}
 }
+
+func TestValidateTaskName(t *testing.T) {
+	ok := []string{"nightly-cleanup", "a", "cache0", "x-1-2"}
+	for _, n := range ok {
+		if err := ValidateTaskName(n); err != nil {
+			t.Errorf("ValidateTaskName(%q) = %v, want nil", n, err)
+		}
+	}
+	bad := []string{"", "-lead", "Upper", "with space", "bor-prefixed", "a.b", "toolong-toolong-toolong-toolong-toolong-toolong-x", "../x"}
+	for _, n := range bad {
+		if err := ValidateTaskName(n); err == nil {
+			t.Errorf("ValidateTaskName(%q) = nil, want error", n)
+		}
+	}
+	if TaskServiceUnit("cleanup") != "bor-cleanup.service" || TaskTimerUnit("cleanup") != "bor-cleanup.timer" {
+		t.Error("task unit names")
+	}
+	for unit, want := range map[string]bool{
+		"bor-cleanup.service": true, "bor-cleanup.timer": true, "bor-x.socket": false,
+		"cleanup.service": false, "bor-.service": false, "bor-Bad.service": false, "bor-a.service.timer": false,
+	} {
+		if got := IsTaskUnit(unit); got != want {
+			t.Errorf("IsTaskUnit(%q) = %v, want %v", unit, got, want)
+		}
+	}
+}
+
+func TestValidateUserName(t *testing.T) {
+	for _, n := range []string{"root", "_svc", "bor-task", "nobody"} {
+		if err := ValidateUserName(n); err != nil {
+			t.Errorf("ValidateUserName(%q) = %v", n, err)
+		}
+	}
+	for _, n := range []string{"", "0user", "Root", "a b", "x;y", "toolongtoolongtoolongtoolongtoolong"} {
+		if err := ValidateUserName(n); err == nil {
+			t.Errorf("ValidateUserName(%q) = nil, want error", n)
+		}
+	}
+}
+
+func TestDirectives(t *testing.T) {
+	if err := ValidateDirectiveSection("Service"); err != nil {
+		t.Error(err)
+	}
+	if err := ValidateDirectiveSection("Mount"); err == nil {
+		t.Error("Mount must be rejected")
+	}
+	for _, k := range []string{"IPAddressDeny", "ExecStartPre", "X"} {
+		if err := ValidateDirectiveKey(k); err != nil {
+			t.Errorf("ValidateDirectiveKey(%q) = %v", k, err)
+		}
+	}
+	for _, k := range []string{"", "lower", "Has Space", "Key=", "A-B", "\n"} {
+		if err := ValidateDirectiveKey(k); err == nil {
+			t.Errorf("ValidateDirectiveKey(%q) = nil, want error", k)
+		}
+	}
+	if !IsExecDirective("ExecStartPost") || IsExecDirective("Environment") {
+		t.Error("IsExecDirective")
+	}
+	if err := ValidateDirectiveValue("a=b c"); err != nil {
+		t.Error(err)
+	}
+	if err := ValidateDirectiveValue("a\nb"); err == nil {
+		t.Error("newline must be rejected")
+	}
+}
+
+func TestGlobalScopeLists(t *testing.T) {
+	for _, name := range []string{"graphical-session.target", "dbus.service", "bor-agent.service", "timers.target"} {
+		if !IsProtectedGlobal(name) {
+			t.Errorf("IsProtectedGlobal(%q) = false", name)
+		}
+	}
+	for _, name := range []string{"pipewire.service", "syncthing.service", "ssh-agent.service"} {
+		if IsProtectedGlobal(name) {
+			t.Errorf("IsProtectedGlobal(%q) = true", name)
+		}
+	}
+	for _, name := range []string{"pipewire.service", "pipewire-pulse.socket", "plasma-kwin_wayland.service", "xdg-desktop-portal-kde.service", "sshd.service"} {
+		if !IsRiskyGlobal(name) {
+			t.Errorf("IsRiskyGlobal(%q) = false", name)
+		}
+	}
+	if IsRiskyGlobal("syncthing.service") {
+		t.Error("IsRiskyGlobal(syncthing.service) = true")
+	}
+}
+
+func TestValidateUnitAction(t *testing.T) {
+	ok := []struct{ unit, action string }{
+		{"cups.service", "restart"}, {"fstrim.timer", "start"}, {"cups.socket", "stop"}, {"bor-cleanup.timer", "stop"},
+	}
+	for _, c := range ok {
+		if err := ValidateUnitAction(c.unit, c.action); err != nil {
+			t.Errorf("ValidateUnitAction(%q, %q) = %v", c.unit, c.action, err)
+		}
+	}
+	bad := []struct{ unit, action string }{
+		{"cups.service", "enable"}, {"cups.service", ""}, {"dbus.service", "restart"}, {"bor-agent.service", "stop"},
+		{"multi-user.target", "start"}, {"getty@.service", "restart"}, {"../x.service", "start"}, {"x.mount", "start"},
+	}
+	for _, c := range bad {
+		if err := ValidateUnitAction(c.unit, c.action); err == nil {
+			t.Errorf("ValidateUnitAction(%q, %q) = nil, want error", c.unit, c.action)
+		}
+	}
+}

@@ -37,6 +37,14 @@ type Bus struct {
 	conn       *dbus.Conn
 	jobTimeout time.Duration
 	jobMu      sync.Mutex
+	// user marks a connection to a user's manager (see ConnectUser).
+	user bool
+}
+
+// IsUser reports whether the Bus drives a user's manager rather than the
+// system manager.
+func (b *Bus) IsUser() bool {
+	return b != nil && b.user
 }
 
 // Connect opens a system bus connection and subscribes to manager
@@ -226,13 +234,16 @@ func (b *Bus) Disable(ctx context.Context, names []string) error {
 	return nil
 }
 
-// Mask masks the unit files persistently. force is false, so a unit whose
-// own file lives in /etc/systemd/system is refused rather than replaced.
+// Mask masks the unit files persistently. force is true so that an
+// existing symlink in /etc/systemd/system (a distribution's redirect such
+// as ctrl-alt-del.target to reboot.target) is replaced by the mask; the
+// policy code records such a link and puts it back on restore. A regular
+// unit file in /etc is still refused by systemd rather than replaced.
 func (b *Bus) Mask(ctx context.Context, names []string) error {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	var changes [][]interface{}
-	if err := b.manager().CallWithContext(ctx, managerIface+".MaskUnitFiles", 0, names, false, false).Store(&changes); err != nil {
+	if err := b.manager().CallWithContext(ctx, managerIface+".MaskUnitFiles", 0, names, false, true).Store(&changes); err != nil {
 		return fmt.Errorf("MaskUnitFiles %v: %w", names, err)
 	}
 	return nil

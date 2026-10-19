@@ -66,6 +66,12 @@ service PolicyService {
   rpc ReportSystemdCatalogue(ReportSystemdCatalogueRequest)
       returns (ReportSystemdCatalogueResponse);
 
+  // ReportSystemdUnitActionResult answers a SYSTEMD_UNIT_ACTION command
+  // (start, stop or restart of a unit requested from the node page) with
+  // the job result and the unit's state afterwards.
+  rpc ReportSystemdUnitActionResult(ReportSystemdUnitActionResultRequest)
+      returns (ReportSystemdUnitActionResultResponse);
+
   // ─── Disk encryption ─────────────
   // All five RPCs run on the mTLS policy port; the node identity is the
   // verified certificate CN, and every volume lookup is scoped to it.
@@ -213,6 +219,11 @@ message PolicyUpdate {
     // to fetch and run its pending disk-encryption tasks
     // (GetDiskEncryptionTasks), e.g. a recovery-key rotation.
     DISK_ENCRYPTION_TASK = 6;
+    // SYSTEMD_UNIT_ACTION is a server-to-agent command asking the agent
+    // to start, stop or restart one unit; the command is in
+    // systemd_unit_action and the agent answers with
+    // ReportSystemdUnitActionResult.
+    SYSTEMD_UNIT_ACTION = 7;
   }
 
   UpdateType type = 1;
@@ -226,6 +237,9 @@ message PolicyUpdate {
   // snapshot batch. The client should apply all received SNAPSHOT
   // messages atomically.
   bool snapshot_complete = 4;
+
+  // The command of a SYSTEMD_UNIT_ACTION update; unset otherwise.
+  SystemdUnitAction systemd_unit_action = 5;
 }
 
 // ComplianceItemResult is the compliance result for a single DConf key.
@@ -352,6 +366,17 @@ message ReportTamperEventRequest {
 
   // Processes that had the file open at detection time (best-effort).
   repeated TamperProcessInfo processes = 4;
+
+  // For drift that is not a file: the resource that was changed by hand
+  // and restored, as "<kind>:<name>", e.g. "unit:bluetooth.service".
+  // Either file_path or resource is set. For a unit, processes carries
+  // the best-effort attribution from the journal (sudo and polkit
+  // records naming the unit) rather than file holders.
+  string resource = 5;
+
+  // Human-readable account of the drift and the restore, e.g. "found
+  // inactive (dead), expected running; started".
+  string description = 6;
 }
 
 // ReportTamperEventResponse acknowledges a tamper event report.

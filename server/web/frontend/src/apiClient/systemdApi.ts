@@ -35,6 +35,10 @@ export interface SystemdCatalogueUnit {
   triggers: string;
   fragmentPath: string;
   serviceType: string;
+  /** Services: the exposure level systemd-analyze security computed ("9.6"), "" when unknown. */
+  securityExposure: string;
+  /** Services: SAFE | OK | MEDIUM | EXPOSED | UNSAFE, "" when unknown. */
+  securityPredicate: string;
   /** The server flags units whose stop or mask can cut users off. */
   risky: boolean;
   /** How many nodes reported a unit of this name (1 in a per-node listing). */
@@ -63,5 +67,68 @@ export async function fetchSystemdUnits(query: SystemdUnitsQuery = {}): Promise<
   const s = qs.toString();
   return apiRequest<SystemdCatalogueUnit[]>(`/api/v1/systemd/units${s ? `?${s}` : ""}`, {
     headers: authHeaders(),
+  });
+}
+
+/** Result of the server-side calendar expression preview. */
+export interface SystemdCalendarPreview {
+  /** False when the server has no systemd-analyze; nothing else is set then. */
+  available: boolean;
+  normalized?: string;
+  /** Next elapse times as systemd prints them, in the server's time zone. */
+  next: string[];
+}
+
+/**
+ * Evaluates a calendar expression with the server's systemd-analyze. A
+ * malformed expression rejects with the parser's message.
+ */
+export async function previewSystemdCalendar(expression: string, iterations = 5): Promise<SystemdCalendarPreview> {
+  return apiRequest<SystemdCalendarPreview>("/api/v1/systemd/calendar-preview", {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ expression, iterations }),
+  });
+}
+
+/**
+ * The units one node reported, for the Services & timers section of the
+ * node details (a node view; the catalogue endpoint above is a policy view).
+ */
+export async function fetchNodeSystemdUnits(nodeId: string, query: Omit<SystemdUnitsQuery, "nodeId"> = {}): Promise<SystemdCatalogueUnit[]> {
+  const qs = new URLSearchParams();
+  if (query.q) qs.set("q", query.q);
+  if (query.type) qs.set("type", query.type);
+  const s = qs.toString();
+  return apiRequest<SystemdCatalogueUnit[]>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/systemd/units${s ? `?${s}` : ""}`, {
+    headers: authHeaders(),
+  });
+}
+
+export type SystemdUnitActionVerb = "start" | "stop" | "restart";
+
+/** The outcome of an on-demand unit action once the agent answered. */
+export interface SystemdUnitActionResult {
+  id: string;
+  unit: string;
+  action: SystemdUnitActionVerb;
+  success: boolean;
+  /** The job result or error, possibly with a note that a bound policy will reconcile the unit. */
+  message: string;
+  /** The unit after the action, when the agent reported it. */
+  unitState?: SystemdCatalogueUnit;
+}
+
+/**
+ * Starts, stops or restarts a unit on a node now. The request waits for
+ * the agent's answer; it rejects with the server's message when the node
+ * is not connected (503), the agent did not answer in time (504) or the
+ * caller lacks systemd:operate (403).
+ */
+export async function runSystemdUnitAction(nodeId: string, unit: string, action: SystemdUnitActionVerb): Promise<SystemdUnitActionResult> {
+  return apiRequest<SystemdUnitActionResult>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/systemd/actions`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ unit, action }),
   });
 }

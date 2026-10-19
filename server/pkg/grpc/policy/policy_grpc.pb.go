@@ -19,23 +19,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PolicyService_GetPolicy_FullMethodName                 = "/bor.policy.v1.PolicyService/GetPolicy"
-	PolicyService_ListPolicies_FullMethodName              = "/bor.policy.v1.PolicyService/ListPolicies"
-	PolicyService_SubscribePolicyUpdates_FullMethodName    = "/bor.policy.v1.PolicyService/SubscribePolicyUpdates"
-	PolicyService_ReportCompliance_FullMethodName          = "/bor.policy.v1.PolicyService/ReportCompliance"
-	PolicyService_GetAgentConfig_FullMethodName            = "/bor.policy.v1.PolicyService/GetAgentConfig"
-	PolicyService_Heartbeat_FullMethodName                 = "/bor.policy.v1.PolicyService/Heartbeat"
-	PolicyService_ReportTamperEvent_FullMethodName         = "/bor.policy.v1.PolicyService/ReportTamperEvent"
-	PolicyService_RenewCertificate_FullMethodName          = "/bor.policy.v1.PolicyService/RenewCertificate"
-	PolicyService_ReportSchemaCatalogue_FullMethodName     = "/bor.policy.v1.PolicyService/ReportSchemaCatalogue"
-	PolicyService_ReportPolkitCatalogue_FullMethodName     = "/bor.policy.v1.PolicyService/ReportPolkitCatalogue"
-	PolicyService_ReportKConfigCatalogue_FullMethodName    = "/bor.policy.v1.PolicyService/ReportKConfigCatalogue"
-	PolicyService_ReportSystemdCatalogue_FullMethodName    = "/bor.policy.v1.PolicyService/ReportSystemdCatalogue"
-	PolicyService_ReportDiskEncryptionState_FullMethodName = "/bor.policy.v1.PolicyService/ReportDiskEncryptionState"
-	PolicyService_GetDiskEncryptionTasks_FullMethodName    = "/bor.policy.v1.PolicyService/GetDiskEncryptionTasks"
-	PolicyService_EscrowRecoveryKey_FullMethodName         = "/bor.policy.v1.PolicyService/EscrowRecoveryKey"
-	PolicyService_ConfirmRecoveryKey_FullMethodName        = "/bor.policy.v1.PolicyService/ConfirmRecoveryKey"
-	PolicyService_BeginRecoveryKeyRotation_FullMethodName  = "/bor.policy.v1.PolicyService/BeginRecoveryKeyRotation"
+	PolicyService_GetPolicy_FullMethodName                     = "/bor.policy.v1.PolicyService/GetPolicy"
+	PolicyService_ListPolicies_FullMethodName                  = "/bor.policy.v1.PolicyService/ListPolicies"
+	PolicyService_SubscribePolicyUpdates_FullMethodName        = "/bor.policy.v1.PolicyService/SubscribePolicyUpdates"
+	PolicyService_ReportCompliance_FullMethodName              = "/bor.policy.v1.PolicyService/ReportCompliance"
+	PolicyService_GetAgentConfig_FullMethodName                = "/bor.policy.v1.PolicyService/GetAgentConfig"
+	PolicyService_Heartbeat_FullMethodName                     = "/bor.policy.v1.PolicyService/Heartbeat"
+	PolicyService_ReportTamperEvent_FullMethodName             = "/bor.policy.v1.PolicyService/ReportTamperEvent"
+	PolicyService_RenewCertificate_FullMethodName              = "/bor.policy.v1.PolicyService/RenewCertificate"
+	PolicyService_ReportSchemaCatalogue_FullMethodName         = "/bor.policy.v1.PolicyService/ReportSchemaCatalogue"
+	PolicyService_ReportPolkitCatalogue_FullMethodName         = "/bor.policy.v1.PolicyService/ReportPolkitCatalogue"
+	PolicyService_ReportKConfigCatalogue_FullMethodName        = "/bor.policy.v1.PolicyService/ReportKConfigCatalogue"
+	PolicyService_ReportSystemdCatalogue_FullMethodName        = "/bor.policy.v1.PolicyService/ReportSystemdCatalogue"
+	PolicyService_ReportSystemdUnitActionResult_FullMethodName = "/bor.policy.v1.PolicyService/ReportSystemdUnitActionResult"
+	PolicyService_ReportDiskEncryptionState_FullMethodName     = "/bor.policy.v1.PolicyService/ReportDiskEncryptionState"
+	PolicyService_GetDiskEncryptionTasks_FullMethodName        = "/bor.policy.v1.PolicyService/GetDiskEncryptionTasks"
+	PolicyService_EscrowRecoveryKey_FullMethodName             = "/bor.policy.v1.PolicyService/EscrowRecoveryKey"
+	PolicyService_ConfirmRecoveryKey_FullMethodName            = "/bor.policy.v1.PolicyService/ConfirmRecoveryKey"
+	PolicyService_BeginRecoveryKeyRotation_FullMethodName      = "/bor.policy.v1.PolicyService/BeginRecoveryKeyRotation"
 )
 
 // PolicyServiceClient is the client API for PolicyService service.
@@ -73,6 +74,10 @@ type PolicyServiceClient interface {
 	// sync changed unit states to publish the systemd units installed on
 	// their node.
 	ReportSystemdCatalogue(ctx context.Context, in *ReportSystemdCatalogueRequest, opts ...grpc.CallOption) (*ReportSystemdCatalogueResponse, error)
+	// ReportSystemdUnitActionResult answers a SYSTEMD_UNIT_ACTION command
+	// (start, stop or restart of a unit requested from the node page) with
+	// the job result and the unit's state afterwards.
+	ReportSystemdUnitActionResult(ctx context.Context, in *ReportSystemdUnitActionResultRequest, opts ...grpc.CallOption) (*ReportSystemdUnitActionResultResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
 	// and platform facts. The response piggybacks pending tasks.
 	ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error)
@@ -225,6 +230,16 @@ func (c *policyServiceClient) ReportSystemdCatalogue(ctx context.Context, in *Re
 	return out, nil
 }
 
+func (c *policyServiceClient) ReportSystemdUnitActionResult(ctx context.Context, in *ReportSystemdUnitActionResultRequest, opts ...grpc.CallOption) (*ReportSystemdUnitActionResultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportSystemdUnitActionResultResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ReportSystemdUnitActionResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *policyServiceClient) ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReportDiskEncryptionStateResponse)
@@ -310,6 +325,10 @@ type PolicyServiceServer interface {
 	// sync changed unit states to publish the systemd units installed on
 	// their node.
 	ReportSystemdCatalogue(context.Context, *ReportSystemdCatalogueRequest) (*ReportSystemdCatalogueResponse, error)
+	// ReportSystemdUnitActionResult answers a SYSTEMD_UNIT_ACTION command
+	// (start, stop or restart of a unit requested from the node page) with
+	// the job result and the unit's state afterwards.
+	ReportSystemdUnitActionResult(context.Context, *ReportSystemdUnitActionResultRequest) (*ReportSystemdUnitActionResultResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
 	// and platform facts. The response piggybacks pending tasks.
 	ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error)
@@ -368,6 +387,9 @@ func (UnimplementedPolicyServiceServer) ReportKConfigCatalogue(context.Context, 
 }
 func (UnimplementedPolicyServiceServer) ReportSystemdCatalogue(context.Context, *ReportSystemdCatalogueRequest) (*ReportSystemdCatalogueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportSystemdCatalogue not implemented")
+}
+func (UnimplementedPolicyServiceServer) ReportSystemdUnitActionResult(context.Context, *ReportSystemdUnitActionResultRequest) (*ReportSystemdUnitActionResultResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportSystemdUnitActionResult not implemented")
 }
 func (UnimplementedPolicyServiceServer) ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportDiskEncryptionState not implemented")
@@ -614,6 +636,24 @@ func _PolicyService_ReportSystemdCatalogue_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_ReportSystemdUnitActionResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportSystemdUnitActionResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ReportSystemdUnitActionResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ReportSystemdUnitActionResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ReportSystemdUnitActionResult(ctx, req.(*ReportSystemdUnitActionResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PolicyService_ReportDiskEncryptionState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReportDiskEncryptionStateRequest)
 	if err := dec(in); err != nil {
@@ -754,6 +794,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportSystemdCatalogue",
 			Handler:    _PolicyService_ReportSystemdCatalogue_Handler,
+		},
+		{
+			MethodName: "ReportSystemdUnitActionResult",
+			Handler:    _PolicyService_ReportSystemdUnitActionResult_Handler,
 		},
 		{
 			MethodName: "ReportDiskEncryptionState",

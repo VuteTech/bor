@@ -178,11 +178,18 @@ Set a path to `""` to stop writing to that location.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `systemd.system_dir` | `/etc/systemd/system` | Directory where the `<unit>.d/90-bor.conf` drop-ins of Services & timers policies are written. Tamper-protected. |
+| `systemd.system_dir` | `/etc/systemd/system` | Directory where the `<unit>.d/90-bor.conf` drop-ins and the `bor-<task>.service` / `.timer` units of Services & timers policies are written. Tamper-protected. |
+| `systemd.preset_dir` | `/etc/systemd/system-preset` | Directory of the optional `10-bor.preset` file. Tamper-protected. |
+| `systemd.scripts_dir` | `/etc/bor/systemd` | Scripts of Bor-deployed tasks. Belongs to Bor; every file in it is managed and tamper-protected. |
 | `systemd.state_path` | `/var/lib/bor/agent/systemd-state.json` | Record of each managed unit's original enablement and activity, restored when the unit leaves every policy. |
 | `systemd.job_timeout` | `90s` | Maximum wait for a start, stop or restart job. |
 | `systemd.reconcile_interval` | `10m` | Interval of the pass that re-asserts the enablement and activity of every managed unit while a policy applies; `0` disables it. |
-| `systemd.analyze_binary` | `systemd-analyze` | Executable used to validate calendar expressions before a timer drop-in is written, looked up in `PATH` unless absolute. |
+| `systemd.watch_signals` | `true` | Follow systemd's D-Bus signals so a managed unit changed by hand is reconciled within seconds; the periodic pass remains the backstop. |
+| `systemd.allow_tasks` | `true` | Deploy the scheduled tasks of bound policies (scripts that run as root). `false` reports every task as an error and removes task files deployed earlier. |
+| `systemd.analyze_binary` | `systemd-analyze` | Executable used to validate calendar expressions before a timer drop-in is written and to verify task unit files, looked up in `PATH` unless absolute. Also computes the sandboxing exposure of every loaded service for the unit inventory (`systemd-analyze security`). |
+| `systemd.user_dir` | `/etc/systemd/user` | Directory where the drop-ins and task units of policy entries scoped to **All users** are written and where their enablement symlinks are created, as `systemctl --global` does. Tamper-protected. |
+| `systemd.user_preset_dir` | `/etc/systemd/user-preset` | Directory of the optional `10-bor.preset` file for user managers. Tamper-protected. |
+| `systemd.allow_actions` | `true` | Run the start, stop and restart actions requested from the node details of the console (holders of `systemd:operate`). `false` answers every action with an error. |
 
 ## flatpak
 

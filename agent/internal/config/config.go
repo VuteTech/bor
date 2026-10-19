@@ -98,15 +98,23 @@ type FirewalldConfig struct {
 }
 
 // SystemdConfig holds the settings of the Services & timers policy. The
-// agent writes one drop-in per managed unit under SystemDir, keeps the
-// original unit states in StatePath so they can be restored, and drives
-// systemd over D-Bus.
+// agent writes one drop-in per managed unit and the unit files of Bor
+// tasks under SystemDir, task scripts under ScriptsDir, the preset file
+// under PresetDir, keeps the original unit states in StatePath so they can
+// be restored, and drives systemd over D-Bus.
 type SystemdConfig struct {
 	SystemDir         string        `yaml:"system_dir"`         // administrator unit directory (default /etc/systemd/system)
+	PresetDir         string        `yaml:"preset_dir"`         // preset directory for 10-bor.preset (default /etc/systemd/system-preset)
+	ScriptsDir        string        `yaml:"scripts_dir"`        // task scripts (default /etc/bor/systemd)
 	StatePath         string        `yaml:"state_path"`         // record of original unit states (default /var/lib/bor/agent/systemd-state.json)
 	JobTimeout        time.Duration `yaml:"job_timeout"`        // wait for a start/stop/restart job (default 90s)
 	ReconcileInterval time.Duration `yaml:"reconcile_interval"` // re-assert unit states this often while policies apply; 0 disables (default 10m)
+	WatchSignals      bool          `yaml:"watch_signals"`      // react to unit state changes signalled by systemd (default true)
+	AllowTasks        bool          `yaml:"allow_tasks"`        // deploy Bor tasks (scripts run as root); false reports them as errors (default true)
 	AnalyzeBinary     string        `yaml:"analyze_binary"`     // systemd-analyze executable for calendar checks (default "systemd-analyze")
+	UserDir           string        `yaml:"user_dir"`           // unit directory of the user-manager scope (default /etc/systemd/user)
+	UserPresetDir     string        `yaml:"user_preset_dir"`    // preset directory of the user-manager scope (default /etc/systemd/user-preset)
+	AllowActions      bool          `yaml:"allow_actions"`      // run start/stop/restart requested from the node page (default true)
 }
 
 // FlatpakConfig holds Flatpak enforcement settings. The agent renders the
@@ -232,10 +240,17 @@ func DefaultConfig() *Config {
 		},
 		Systemd: SystemdConfig{
 			SystemDir:         "/etc/systemd/system",
+			PresetDir:         "/etc/systemd/system-preset",
+			ScriptsDir:        "/etc/bor/systemd",
 			StatePath:         "/var/lib/bor/agent/systemd-state.json",
 			JobTimeout:        90 * time.Second,
 			ReconcileInterval: 10 * time.Minute,
+			WatchSignals:      true,
+			AllowTasks:        true,
 			AnalyzeBinary:     "systemd-analyze",
+			UserDir:           "/etc/systemd/user",
+			UserPresetDir:     "/etc/systemd/user-preset",
+			AllowActions:      true,
 		},
 		KConfig: KConfigConfig{
 			ConfigPath:      "/etc/bor/xdg",

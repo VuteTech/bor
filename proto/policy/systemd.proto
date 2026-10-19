@@ -9,17 +9,20 @@ package bor.policy.v1;
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
 // SystemdPolicy manages systemd services and timers on a node: the desired
-// state of existing units (enabled / disabled / masked, running / stopped)
-// and drop-in overrides for their timer schedule and service settings.
-// Several bound policies are merged per unit by binding priority; on equal
-// priority the more restrictive value wins.
+// state of existing units (enabled / disabled / masked, running / stopped),
+// drop-in overrides for their timer schedule and service settings, and
+// Bor-deployed scheduled tasks. Several bound policies are merged per unit
+// and per task by binding priority; on equal priority the more restrictive
+// value wins.
 message SystemdPolicy {
   // Existing units and their desired state.
   repeated SystemdUnit units = 1;
-
-  // Reserved for Bor-deployed scheduled tasks (2) and preset files (3).
-  reserved 2, 3;
-  reserved "tasks", "write_presets";
+  // Bor-deployed service/timer pairs with their script. Saving or
+  // releasing a policy with tasks requires the systemd:exec permission.
+  repeated SystemdTask tasks = 2;
+  // Also write /etc/systemd/system-preset/10-bor.preset so the enablement
+  // decisions of the units section apply to units installed later.
+  bool write_presets = 3;
 }
 
 // SystemdEnablement is the desired unit-file state.
@@ -42,6 +45,19 @@ enum SystemdActivity {
   SYSTEMD_ACTIVITY_STOPPED = 2;
 }
 
+// SystemdScope says which manager a unit or task belongs to.
+enum SystemdScope {
+  // The system manager (same as SYSTEM).
+  SYSTEMD_SCOPE_UNSPECIFIED = 0;
+  // The system manager: units under /etc/systemd/system, enablement and
+  // activity through the system bus.
+  SYSTEMD_SCOPE_SYSTEM = 1;
+  // The user managers of every user: files under /etc/systemd/user,
+  // enablement as "systemctl --global" does it, activity applied in the
+  // manager of every logged-in user.
+  SYSTEMD_SCOPE_GLOBAL = 2;
+}
+
 // SystemdUnit is the desired state of one existing unit.
 message SystemdUnit {
   // Full unit name with suffix: "bluetooth.service", "fstrim.timer",
@@ -60,16 +76,80 @@ message SystemdUnit {
   bool require_last_run_success = 6;
   // Free text shown in the editor and the compliance view.
   string description = 7;
+  // Which manager the unit belongs to; unset means the system manager.
+  SystemdScope scope = 8;
 }
 
 // SystemdDropIn is the content of the Bor drop-in for one unit.
 message SystemdDropIn {
   SystemdTimerSettings timer = 1;
   SystemdServiceSettings service = 2;
+  // Raw directives for anything the typed settings do not cover. Exec*
+  // directives make the policy command-running (systemd:exec permission).
+  repeated SystemdDirective raw = 3;
+}
 
-  // Reserved for raw directives.
-  reserved 3;
-  reserved "raw";
+// SystemdDirective is one raw unit-file directive.
+message SystemdDirective {
+  // Unit | Service | Timer | Socket | Path | Install
+  string section = 1;
+  // Directive name, e.g. "ExecStartPre" or "IPAddressDeny".
+  string key = 2;
+  // One line per value. An empty list writes "Key=" alone, which resets a
+  // list directive; a list directive with values is reset first and then
+  // set to exactly these values.
+  repeated string values = 3;
+}
+
+// SystemdTaskTrigger says what starts a Bor-deployed task.
+enum SystemdTaskTrigger {
+  SYSTEMD_TASK_TRIGGER_UNSPECIFIED = 0;
+  // A timer with the task's schedule (bor-<name>.timer).
+  SYSTEMD_TASK_TRIGGER_TIMER = 1;
+  // At boot: the service is wanted by multi-user.target.
+  SYSTEMD_TASK_TRIGGER_BOOT = 2;
+}
+
+// SystemdTask is a Bor-deployed scheduled task: bor-<name>.service, a
+// bor-<name>.timer when the trigger is a timer, and the script
+// /etc/bor/systemd/<name>.sh. The agent adds the "bor-" prefix; the policy
+// carries the bare name.
+message SystemdTask {
+  // ^[a-z0-9][a-z0-9-]{0,47}$
+  string name = 1;
+  // Free text; becomes the unit's Description.
+  string description = 2;
+  SystemdTaskTrigger trigger = 3;
+  // Timer settings; required for the timer trigger.
+  SystemdTimerSettings schedule = 4;
+  // Exactly one of script or exec_start. The script is written verbatim to
+  // /etc/bor/systemd/<name>.sh (0755) and must start with "#!"; it is
+  // limited to 64 KiB.
+  string script = 5;
+  // argv of the program to run instead of a script; [0] is an absolute
+  // path. No shell is involved.
+  repeated string exec_start = 6;
+  // User and group the service runs as (default root).
+  string user = 7;
+  string group = 8;
+  string working_directory = 9;
+  // KEY=value entries for the service environment.
+  repeated string environment = 10;
+  // TimeoutStartSec of the service (default 1h).
+  string timeout_start_sec = 11;
+  // Sandboxing defaults (NoNewPrivileges, PrivateTmp, ProtectKernelTunables,
+  // ProtectControlGroups, RestrictSUIDSGID, ProtectClock, ProtectHostname).
+  // Unset means on.
+  optional bool hardened = 12;
+  // The last run must have succeeded for the task to count as compliant.
+  bool require_last_run_success = 13;
+  // Whether the timer (or the boot-triggered service) is enabled. Unset
+  // means on; false deploys the files without activating anything.
+  optional bool enabled = 14;
+  // Which manager runs the task; unset means the system manager. A
+  // GLOBAL task runs in every user's manager as that user (user and
+  // group must be empty) and is wanted by default.target at login.
+  SystemdScope scope = 15;
 }
 
 // SystemdTimerSettings are [Timer] directives. Values use systemd syntax
@@ -144,6 +224,12 @@ message SystemdUnitInfo {
   string fragment_path = 11;
   // Services: simple | oneshot | notify | forking | ...
   string service_type = 12;
+  // Services: the overall exposure level systemd-analyze security
+  // computes ("9.6"), empty when unknown.
+  string security_exposure = 13;
+  // Services: the exposure predicate (SAFE | OK | MEDIUM | EXPOSED |
+  // UNSAFE), empty when unknown.
+  string security_predicate = 14;
 }
 
 // ReportSystemdCatalogueRequest carries the unit inventory of a node.
@@ -155,3 +241,37 @@ message ReportSystemdCatalogueRequest {
 }
 
 message ReportSystemdCatalogueResponse {}
+
+// SystemdUnitActionKind is an on-demand operation on a unit of the system
+// manager, requested from the node page.
+enum SystemdUnitActionKind {
+  SYSTEMD_UNIT_ACTION_UNSPECIFIED = 0;
+  SYSTEMD_UNIT_ACTION_START = 1;
+  SYSTEMD_UNIT_ACTION_STOP = 2;
+  SYSTEMD_UNIT_ACTION_RESTART = 3;
+}
+
+// SystemdUnitAction is the server-to-agent command carried by a
+// PolicyUpdate of type SYSTEMD_UNIT_ACTION. The agent answers with
+// ReportSystemdUnitActionResult.
+message SystemdUnitAction {
+  // Server-generated id the result refers to.
+  string id = 1;
+  string unit = 2;
+  SystemdUnitActionKind action = 3;
+}
+
+// ReportSystemdUnitActionResultRequest is the outcome of one action.
+message ReportSystemdUnitActionResultRequest {
+  string client_id = 1;
+  string action_id = 2;
+  bool success = 3;
+  // The job result, the error, or a note (for example that a bound policy
+  // keeps the unit in another state and will reconcile it).
+  string message = 4;
+  // The unit after the action, so the server can refresh its catalogue
+  // row without a full report.
+  SystemdUnitInfo unit = 5;
+}
+
+message ReportSystemdUnitActionResultResponse {}

@@ -96,6 +96,30 @@ Select a row to open the details panel on the right.
 :   Shown when you hold `disk_encryption:view`: the node's LUKS volumes and
     recovery key status. See [Disk encryption](../policy-types/disk-encryption.md).
 
+**Services & timers**
+:   The systemd units the node reported (services, timers, sockets, paths
+    and targets), with a search box and a type filter. Each row shows the
+    unit's activity (`active (running)`), its unit-file state
+    (`enabled`), the schedule of a timer, and for services the
+    **sandboxing exposure** that `systemd-analyze security` computed on
+    the node (`exposure 9.6 UNSAFE`; 0 is fully sandboxed, 10 is
+    unrestricted). Units whose stop can cut users off carry a **risky**
+    label. Nodes report their units when the agent connects, after every
+    sync that changed a unit, and on **Update metadata**; the reload
+    button re-reads what the server holds.
+
+    With `systemd:operate` each row has an actions menu with **Start**,
+    **Stop** and **Restart**. The action runs on the node immediately
+    over the agent's policy stream; the row then shows the state the
+    agent reported back and a toast carries the job result. Stopping or
+    restarting a risky unit asks for a confirmation. A node that is not
+    online cannot take actions, an agent that does not answer within the
+    job timeout answers "the agent did not answer", and a unit that a
+    bound Services & timers policy keeps in another state is put back by
+    the policy's next pass (the result says so). Every action is recorded
+    in the [audit log](audit-log.md) as `systemd.unit_action`. See
+    [Services & timers](../policy-types/systemd.md#on-demand-actions-from-the-node-details).
+
 **Actions**
 :   - **Update metadata** - asks the agent to collect fresh system
       information (OS, desktop, IP address and so on) and report it. Only

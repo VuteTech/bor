@@ -176,6 +176,88 @@ func IsRisky(name string) bool {
 	return false
 }
 
+// protectedGlobalExact are the user-manager units no policy may manage in
+// the global scope, on top of the system list: the user session's exit
+// path, its hook targets and the targets the desktop session hangs off.
+var protectedGlobalExact = map[string]struct{}{
+	"exit.target":                    {},
+	"sockets.target":                 {},
+	"timers.target":                  {},
+	"paths.target":                   {},
+	"graphical-session.target":       {},
+	"graphical-session-pre.target":   {},
+	"xdg-desktop-autostart.target":   {},
+	"systemd-exit.service":           {},
+	"systemd-tmpfiles-setup.service": {},
+}
+
+// IsProtectedGlobal reports whether no policy may manage the unit in the
+// global (user manager) scope.
+func IsProtectedGlobal(name string) bool {
+	if IsProtected(name) {
+		return true
+	}
+	_, ok := protectedGlobalExact[name]
+	return ok
+}
+
+// riskyGlobalPrefixes are user-manager units whose stop can break the
+// desktop session of every user: the audio stack, the desktop portals,
+// the session buses and the session managers of the major desktops.
+var riskyGlobalPrefixes = []string{
+	"pipewire",
+	"wireplumber",
+	"pulseaudio",
+	"xdg-desktop-portal",
+	"plasma-",
+	"gnome-session",
+	"gnome-shell",
+	"dbus-",
+}
+
+// IsRiskyGlobal reports whether the editor should ask for a confirmation
+// before a policy manages the unit in the global scope.
+func IsRiskyGlobal(name string) bool {
+	if IsRisky(name) {
+		return true
+	}
+	for _, p := range riskyGlobalPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// Unit actions the node page may request.
+const (
+	UnitActionStart   = "start"
+	UnitActionStop    = "stop"
+	UnitActionRestart = "restart"
+)
+
+// ValidateUnitAction checks an on-demand action: a known verb on a valid,
+// unprotected service, timer, socket or path.
+func ValidateUnitAction(unit, action string) error {
+	if err := ValidateName(unit); err != nil {
+		return err
+	}
+	if IsProtected(unit) {
+		return fmt.Errorf("%s is protected", unit)
+	}
+	if IsTemplate(unit) {
+		return fmt.Errorf("%s is a template; name an instance", unit)
+	}
+	if Type(unit) == "target" {
+		return fmt.Errorf("targets cannot be started or stopped on demand")
+	}
+	switch action {
+	case UnitActionStart, UnitActionStop, UnitActionRestart:
+		return nil
+	}
+	return fmt.Errorf("action must be start, stop or restart")
+}
+
 // timeSpanRE matches the systemd.time(7) time span grammar in ASCII: a
 // sequence of number-unit pairs ("1h 30min", "90s", "1.5h"), a bare number
 // (seconds) or "infinity".
@@ -213,6 +295,123 @@ func ValidateCalendar(expr string) error {
 	}
 	if !calendarRE.MatchString(expr) {
 		return fmt.Errorf("invalid calendar expression %q: use systemd syntax such as daily, Sat *-*-* 03:00:00 or Mon..Fri 07:00", expr)
+	}
+	return nil
+}
+
+// ── Bor-deployed tasks ─────────────────────────────────────────────────────
+
+// TaskUnitPrefix is prepended to a task name to form its unit names. The
+// prefix is mandatory, so a task can never shadow a vendor unit.
+const TaskUnitPrefix = "bor-"
+
+// MaxTaskScriptBytes caps a task script; anything bigger belongs in a
+// package.
+const MaxTaskScriptBytes = 64 * 1024
+
+// taskNameRE matches a task name: lower-case letters, digits and dashes,
+// at most 48 characters, starting with a letter or digit.
+var taskNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,47}$`)
+
+// ValidateTaskName reports whether name is a well-formed task name (the
+// bare name without the "bor-" prefix).
+func ValidateTaskName(name string) error {
+	if name == "" {
+		return fmt.Errorf("task name must not be empty")
+	}
+	if !taskNameRE.MatchString(name) {
+		return fmt.Errorf("task name %q must be 1-48 lower-case letters, digits or dashes and start with a letter or digit", name)
+	}
+	if strings.HasPrefix(name, TaskUnitPrefix) {
+		return fmt.Errorf("task name %q must not start with %q; the prefix is added automatically", name, TaskUnitPrefix)
+	}
+	return nil
+}
+
+// TaskServiceUnit returns the service unit name of a task.
+func TaskServiceUnit(name string) string {
+	return TaskUnitPrefix + name + ".service"
+}
+
+// TaskTimerUnit returns the timer unit name of a task.
+func TaskTimerUnit(name string) string {
+	return TaskUnitPrefix + name + ".timer"
+}
+
+// IsTaskUnit reports whether a unit name belongs to a Bor task
+// ("bor-<name>.service" or "bor-<name>.timer" with a valid task name).
+func IsTaskUnit(unit string) bool {
+	name, ok := strings.CutPrefix(unit, TaskUnitPrefix)
+	if !ok {
+		return false
+	}
+	i := strings.LastIndexByte(name, '.')
+	if i < 0 {
+		return false
+	}
+	if t := name[i+1:]; t != "service" && t != "timer" {
+		return false
+	}
+	return ValidateTaskName(name[:i]) == nil
+}
+
+// userNameRE matches a POSIX user or group name as the agent passes it into
+// a unit file.
+var userNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+// ValidateUserName reports whether name is a well-formed user or group name.
+func ValidateUserName(name string) error {
+	if !userNameRE.MatchString(name) {
+		return fmt.Errorf("user or group name %q must be 1-32 lower-case letters, digits, underscores or dashes and start with a letter or underscore", name)
+	}
+	return nil
+}
+
+// ── raw directives ─────────────────────────────────────────────────────────
+
+// DirectiveSections lists the unit-file sections a raw directive may name.
+var DirectiveSections = []string{"Unit", "Service", "Timer", "Socket", "Path", "Install"}
+
+// ValidateDirectiveSection reports whether section is one of
+// DirectiveSections.
+func ValidateDirectiveSection(section string) error {
+	for _, s := range DirectiveSections {
+		if section == s {
+			return nil
+		}
+	}
+	return fmt.Errorf("section %q must be one of %s", section, strings.Join(DirectiveSections, ", "))
+}
+
+// directiveKeyRE matches a unit-file directive name.
+var directiveKeyRE = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
+
+// MaxDirectiveKeyLength caps a directive name.
+const MaxDirectiveKeyLength = 64
+
+// ValidateDirectiveKey reports whether key is a well-formed directive name.
+func ValidateDirectiveKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("directive name must not be empty")
+	}
+	if len(key) > MaxDirectiveKeyLength || !directiveKeyRE.MatchString(key) {
+		return fmt.Errorf("directive name %q must be a CamelCase systemd directive such as IPAddressDeny", key)
+	}
+	return nil
+}
+
+// IsExecDirective reports whether a directive runs a command (ExecStart,
+// ExecStartPre, ExecStopPost, ExecReload, ExecCondition, ...). Policies
+// that set one are command-running and need the systemd:exec permission.
+func IsExecDirective(key string) bool {
+	return strings.HasPrefix(key, "Exec")
+}
+
+// ValidateDirectiveValue reports whether a raw directive value can be
+// written as one line of a unit file.
+func ValidateDirectiveValue(value string) error {
+	if strings.ContainsAny(value, "\n\r\x00") {
+		return fmt.Errorf("directive value must be a single line")
 	}
 	return nil
 }

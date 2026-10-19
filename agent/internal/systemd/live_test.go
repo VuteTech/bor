@@ -89,3 +89,40 @@ func TestLiveBus(t *testing.T) {
 		t.Errorf("missing unit reported as existing: %+v", missing)
 	}
 }
+
+// TestLiveUserBus connects to the manager of every user with a running
+// session through systemd-stdio-bridge, which needs root. Skipped unless
+// BOR_SYSTEMD_LIVE=1 and the test runs as root.
+func TestLiveUserBus(t *testing.T) {
+	if os.Getenv("BOR_SYSTEMD_LIVE") != "1" {
+		t.Skip("set BOR_SYSTEMD_LIVE=1 to run against the local systemd")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("user managers are reachable from root only")
+	}
+	sessions := ListUserSessions("")
+	if len(sessions) == 0 {
+		t.Skip("no user manager runs")
+	}
+	ctx := context.Background()
+	for _, sess := range sessions {
+		bus, err := ConnectUser(sess, "", 10*time.Second)
+		if err != nil {
+			t.Fatalf("ConnectUser(%s): %v", sess, err)
+		}
+		ver, err := bus.Version(ctx)
+		if err != nil || ver == "" {
+			t.Fatalf("%s: Version = %q, %v", sess, ver, err)
+		}
+		st, err := bus.Status(ctx, "dbus.service")
+		if err != nil {
+			t.Fatalf("%s: Status: %v", sess, err)
+		}
+		t.Logf("%s: systemd %s, dbus.service %s (%s)", sess, ver, st.ActiveState, st.SubState)
+		units, err := bus.ListUnits(ctx, UnitPatterns())
+		if err != nil || len(units) == 0 {
+			t.Fatalf("%s: ListUnits: %d, %v", sess, len(units), err)
+		}
+		_ = bus.Close()
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
+	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/systemdunits"
 )
 
@@ -35,21 +36,57 @@ func NewSystemdHandler(store systemdCatalogueStore) *SystemdHandler {
 
 // systemdUnitResponse is one catalogue unit as the editor consumes it.
 type systemdUnitResponse struct {
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	Type          string    `json:"type"`
-	UnitFileState string    `json:"unitFileState"`
-	Preset        string    `json:"preset"`
-	ActiveState   string    `json:"activeState"`
-	SubState      string    `json:"subState"`
-	HasInstall    bool      `json:"hasInstall"`
-	OnCalendar    []string  `json:"onCalendar"`
-	Triggers      string    `json:"triggers"`
-	FragmentPath  string    `json:"fragmentPath"`
-	ServiceType   string    `json:"serviceType"`
-	Risky         bool      `json:"risky"`
-	NodeCount     int       `json:"nodeCount"`
-	ReportedAt    time.Time `json:"reportedAt"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Type          string   `json:"type"`
+	UnitFileState string   `json:"unitFileState"`
+	Preset        string   `json:"preset"`
+	ActiveState   string   `json:"activeState"`
+	SubState      string   `json:"subState"`
+	HasInstall    bool     `json:"hasInstall"`
+	OnCalendar    []string `json:"onCalendar"`
+	Triggers      string   `json:"triggers"`
+	FragmentPath  string   `json:"fragmentPath"`
+	ServiceType   string   `json:"serviceType"`
+	// Services: the exposure level and predicate of systemd-analyze
+	// security ("9.6", "UNSAFE"); empty when the node did not report them.
+	SecurityExposure  string    `json:"securityExposure"`
+	SecurityPredicate string    `json:"securityPredicate"`
+	Risky             bool      `json:"risky"`
+	NodeCount         int       `json:"nodeCount"`
+	ReportedAt        time.Time `json:"reportedAt"`
+}
+
+// systemdUnitsResponse converts catalogue rows to the JSON the UI consumes.
+func systemdUnitsResponse(units []database.SystemdCatalogueUnit) []systemdUnitResponse {
+	out := make([]systemdUnitResponse, 0, len(units))
+	for _, u := range units {
+		info := u.Info
+		onCalendar := info.GetOnCalendar()
+		if onCalendar == nil {
+			onCalendar = []string{}
+		}
+		out = append(out, systemdUnitResponse{
+			Name:              info.GetName(),
+			Description:       info.GetDescription(),
+			Type:              info.GetType(),
+			UnitFileState:     info.GetUnitFileState(),
+			Preset:            info.GetPreset(),
+			ActiveState:       info.GetActiveState(),
+			SubState:          info.GetSubState(),
+			HasInstall:        info.GetHasInstall(),
+			OnCalendar:        onCalendar,
+			Triggers:          info.GetTriggers(),
+			FragmentPath:      info.GetFragmentPath(),
+			ServiceType:       info.GetServiceType(),
+			SecurityExposure:  info.GetSecurityExposure(),
+			SecurityPredicate: info.GetSecurityPredicate(),
+			Risky:             systemdunits.IsRisky(info.GetName()),
+			NodeCount:         u.NodeCount,
+			ReportedAt:        u.ReportedAt,
+		})
+	}
+	return out
 }
 
 const maxSystemdQueryLength = 128
@@ -91,33 +128,45 @@ func (h *SystemdHandler) ListUnits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]systemdUnitResponse, 0, len(units))
-	for _, u := range units {
-		info := u.Info
-		onCalendar := info.GetOnCalendar()
-		if onCalendar == nil {
-			onCalendar = []string{}
-		}
-		out = append(out, systemdUnitResponse{
-			Name:          info.GetName(),
-			Description:   info.GetDescription(),
-			Type:          info.GetType(),
-			UnitFileState: info.GetUnitFileState(),
-			Preset:        info.GetPreset(),
-			ActiveState:   info.GetActiveState(),
-			SubState:      info.GetSubState(),
-			HasInstall:    info.GetHasInstall(),
-			OnCalendar:    onCalendar,
-			Triggers:      info.GetTriggers(),
-			FragmentPath:  info.GetFragmentPath(),
-			ServiceType:   info.GetServiceType(),
-			Risky:         systemdunits.IsRisky(info.GetName()),
-			NodeCount:     u.NodeCount,
-			ReportedAt:    u.ReportedAt,
-		})
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(systemdUnitsResponse(units)); err != nil {
+		log.Printf("Failed to encode systemd unit catalogue response: %v", err)
+	}
+}
+
+// calendarPreviewRequest is the body of POST /api/v1/systemd/calendar-preview.
+type calendarPreviewRequest struct {
+	Expression string `json:"expression"`
+	// Iterations is how many elapse times to list (default 5, at most 10).
+	Iterations int `json:"iterations"`
+}
+
+// CalendarPreview handles POST /api/v1/systemd/calendar-preview: it
+// evaluates a calendar expression with the server's systemd-analyze and
+// answers the normalized form and the next elapse times, or
+// {"available": false} on a server without systemd-analyze. A malformed
+// expression answers 400 with the parser's message.
+func (h *SystemdHandler) CalendarPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req calendarPreviewRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	iterations := req.Iterations
+	if iterations <= 0 {
+		iterations = 5
+	}
+	res, err := services.PreviewSystemdCalendar(strings.TrimSpace(req.Expression), iterations)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		log.Printf("Failed to encode systemd unit catalogue response: %v", err)
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		log.Printf("Failed to encode calendar preview response: %v", err)
 	}
 }

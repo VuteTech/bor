@@ -3,12 +3,16 @@
 // Copyright (C) 2026 Bor contributors
 
 /**
- * SystemdPolicyEditor - the units of a `Systemd` ("Services & timers")
- * policy: for each existing unit its enablement, its activity and an
- * optional drop-in with timer or service overrides. Content is protojson
- * (camelCase, enum names); see systemdModel.ts. Unit names come from the
- * catalogue nodes report (free text is allowed for units no node has
- * reported yet) and a node picker shows the chosen node's current states.
+ * SystemdPolicyEditor - a `Systemd` ("Services & timers") policy: for each
+ * existing unit its enablement, its activity and an optional drop-in with
+ * timer or service overrides and raw directives; Bor-deployed scheduled
+ * tasks (a script or program with a timer or boot trigger); and the preset
+ * file switch. Content is protojson (camelCase, enum names); see
+ * systemdModel.ts. Unit names come from the catalogue nodes report (free
+ * text is allowed for units no node has reported yet) and a node picker
+ * shows the chosen node's current states. Tasks and raw Exec* directives
+ * make the policy command-running: saving or releasing it needs the
+ * systemd:exec permission, which the editor points out.
  */
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -18,6 +22,9 @@ import {
   CardBody,
   CardHeader,
   Checkbox,
+  Dropdown,
+  DropdownItem,
+  DropdownList,
   ExpandableSection,
   Form,
   FormGroup,
@@ -28,10 +35,12 @@ import {
   HelperTextItem,
   MenuToggle,
   MenuToggleElement,
+  Radio,
   Select,
   SelectList,
   SelectOption,
   Switch,
+  TextArea,
   TextInput,
   TextInputGroup,
   TextInputGroupMain,
@@ -42,32 +51,53 @@ import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-i
 
 import { LiveAlert } from "../../components/LiveAlert";
 import { ListEditor } from "./ListEditor";
+import { hasPermission } from "../../apiClient/permissions";
 import { fetchNodesPaged, type Node } from "../../apiClient/nodesApi";
-import { fetchSystemdUnits, type SystemdCatalogueUnit } from "../../apiClient/systemdApi";
+import { fetchSystemdUnits, previewSystemdCalendar, type SystemdCatalogueUnit } from "../../apiClient/systemdApi";
 import {
   ACTIVITY_OPTIONS,
+  DIRECTIVE_SECTIONS,
   ENABLEMENT_OPTIONS,
+  MAX_TASK_SCRIPT_BYTES,
   PROTECT_HOME_OPTIONS,
   PROTECT_SYSTEM_OPTIONS,
   RESTART_OPTIONS,
   SCHEDULE_PRESETS,
+  SCOPE_OPTIONS,
   SystemdActivity,
   SystemdContent,
+  SystemdDirectiveEntry,
   SystemdEnablement,
+  SystemdScope,
   SystemdServiceOverrides,
+  SystemdTaskEntry,
+  SystemdTaskTrigger,
   SystemdTimerOverrides,
   SystemdUnitEntry,
+  TASK_HARDENED_DIRECTIVES,
+  TASK_TRIGGER_OPTIONS,
   calendarProblem,
-  isRiskyUnit,
+  contentRunsCommands,
+  directiveKeyProblem,
+  directiveProblem,
+  isExecDirective,
+  isGlobalScope,
+  isRiskyUnitEntry,
+  newDirectiveEntry,
+  newTaskEntry,
   newUnitEntry,
   parseSystemdContent,
   serializeSystemdContent,
   serviceIsEmpty,
+  systemdTemplates,
+  taskEntryProblem,
+  taskNameProblem,
   timeSpanProblem,
   timerIsEmpty,
   unitEntryProblem,
   unitNameProblem,
   unitType,
+  userNameProblem,
   validateSystemdContent,
 } from "./systemdModel";
 
@@ -297,7 +327,44 @@ const TriStateSelect: React.FC<{
 
 const row: React.CSSProperties = { display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "flex-start" };
 const narrow: React.CSSProperties = { flex: "1 1 12rem", maxWidth: "16rem" };
+/** The three selects of a unit row: narrow enough to sit next to the unit name at 1280px. */
+const unitSelect: React.CSSProperties = { flex: "1 1 9rem", maxWidth: "16rem" };
 const wide: React.CSSProperties = { flex: "1 1 20rem" };
+
+/* ── calendar preview ── */
+
+/**
+ * Shows the next elapse times of a calendar expression, computed by the
+ * server's systemd-analyze, or the parser's message for a bad one.
+ */
+const CalendarPreview: React.FC<{ expression: string; id: string }> = ({ expression, id }) => {
+  const [state, setState] = useState<{ expr: string; text: string; error: boolean } | null>(null);
+  useEffect(() => {
+    const expr = expression.trim();
+    if (!expr || calendarProblem(expr)) { setState(null); return; }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      previewSystemdCalendar(expr, 3)
+        .then((res) => {
+          if (cancelled) return;
+          if (!res.available) { setState({ expr, text: "Preview unavailable on this server (no systemd-analyze); the node checks the expression.", error: false }); return; }
+          const next = res.next.length ? `Next: ${res.next.join("; ")}` : "Never elapses";
+          setState({ expr, text: `${res.normalized && res.normalized !== expr ? `${res.normalized}. ` : ""}${next}`, error: false });
+        })
+        .catch((e: unknown) => {
+          if (!cancelled) setState({ expr, text: e instanceof Error ? e.message : "Invalid calendar expression", error: true });
+        });
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+  }, [expression]);
+  if (!state || state.expr !== expression.trim()) return null;
+  if (state.error) return <LiveAlert id={id} message={state.text} variant="danger" isInline isPlain />;
+  return (
+    <FormHelperText>
+      <HelperText><HelperTextItem>{state.text}</HelperTextItem></HelperText>
+    </FormHelperText>
+  );
+};
 
 /* ── timer overrides ── */
 
@@ -306,7 +373,9 @@ const TimerOverrides: React.FC<{
   value: SystemdTimerOverrides;
   onChange: (t: SystemdTimerOverrides) => void;
   isDisabled?: boolean;
-}> = ({ idp, value, onChange, isDisabled }) => {
+  /** Task schedules do not override a vendor schedule. */
+  forTask?: boolean;
+}> = ({ idp, value, onChange, isDisabled, forTask }) => {
   const [preset, setPreset] = useState("");
   const applyPreset = (id: string) => {
     setPreset(id);
@@ -327,7 +396,7 @@ const TimerOverrides: React.FC<{
             {SCHEDULE_PRESETS.map((p) => <FormSelectOption key={p.id} value={p.id} label={p.label} />)}
           </FormSelect>
           <FormHelperText>
-            <HelperText><HelperTextItem>Replaces the vendor OnCalendar schedule.</HelperTextItem></HelperText>
+            <HelperText><HelperTextItem>{forTask ? "When the task runs." : "Replaces the vendor OnCalendar schedule."}</HelperTextItem></HelperText>
           </FormHelperText>
         </FormGroup>
         <FormGroup label="OnCalendar" fieldId={`${idp}-cal`} style={wide}>
@@ -350,6 +419,7 @@ const TimerOverrides: React.FC<{
                     style={{ fontFamily: "monospace" }}
                   />
                   <LiveAlert id={`${idp}-cal-${i}-error`} message={error} variant="danger" isInline isPlain />
+                  {!error && <CalendarPreview expression={expr} id={`${idp}-cal-${i}-preview`} />}
                 </div>
               );
             }}
@@ -358,7 +428,7 @@ const TimerOverrides: React.FC<{
             addLabel="Add expression"
             removeAriaLabel={(i) => `Remove calendar expression ${i + 1}`}
             addVariant="link"
-            emptyText="No calendar expression: the vendor schedule stays."
+            emptyText={forTask ? "No calendar expression yet: pick a preset or add one, or use a monotonic trigger below." : "No calendar expression: the vendor schedule stays."}
             isDisabled={isDisabled}
           />
         </FormGroup>
@@ -458,6 +528,350 @@ const ServiceOverrides: React.FC<{
   </>
 );
 
+/* ── raw directives ── */
+
+const RawDirectives: React.FC<{
+  idp: string;
+  unitTypeName: string;
+  value: SystemdDirectiveEntry[];
+  onChange: (raw: SystemdDirectiveEntry[]) => void;
+  isDisabled?: boolean;
+}> = ({ idp, unitTypeName, value, onChange, isDisabled }) => {
+  const sections = DIRECTIVE_SECTIONS.filter((sec) => !["Service", "Timer", "Socket", "Path"].includes(sec) || sec.toLowerCase() === unitTypeName);
+  const update = (i: number, d: SystemdDirectiveEntry) => onChange(value.map((x, j) => (j === i ? d : x)));
+  return (
+    <FormGroup label="Raw directives" fieldId={`${idp}-raw`} style={{ marginTop: "0.75rem" }}>
+      <FormHelperText>
+        <HelperText>
+          <HelperTextItem>
+            Any directive the fields above do not cover, written verbatim into the drop-in. A directive is
+            reset before it is set, so the values replace the vendor's; leave the values empty to only reset it.
+            <strong> Exec* directives run commands on every node and need the systemd:exec permission.</strong>
+          </HelperTextItem>
+        </HelperText>
+      </FormHelperText>
+      <ListEditor
+        items={value}
+        renderItem={(d, i) => {
+          const keyError = d.key ? directiveKeyProblem(d.key) : null;
+          const rowError = !keyError && d.key ? directiveProblem(d, unitTypeName) : null;
+          const error = keyError ?? rowError;
+          return (
+            <div style={{ flex: 1 }}>
+              <div style={row}>
+                <FormGroup label="Section" fieldId={`${idp}-raw-${i}-sec`} style={{ flex: "0 1 9rem" }}>
+                  <FormSelect id={`${idp}-raw-${i}-sec`} value={d.section} onChange={(_ev, v) => update(i, { ...d, section: v })} isDisabled={isDisabled} aria-label={`Directive ${i + 1} section`}>
+                    {sections.map((sec) => <FormSelectOption key={sec} value={sec} label={`[${sec}]`} />)}
+                  </FormSelect>
+                </FormGroup>
+                <FormGroup label="Directive" fieldId={`${idp}-raw-${i}-key`} style={{ flex: "1 1 12rem" }}>
+                  <TextInput
+                    id={`${idp}-raw-${i}-key`}
+                    value={d.key}
+                    onChange={(_ev, v) => update(i, { ...d, key: v })}
+                    placeholder="IPAddressDeny"
+                    isDisabled={isDisabled}
+                    aria-label={`Directive ${i + 1} name`}
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? `${idp}-raw-${i}-error` : undefined}
+                    validated={error ? "error" : "default"}
+                    style={{ fontFamily: "monospace" }}
+                  />
+                </FormGroup>
+                <FormGroup label="Values (one per line)" fieldId={`${idp}-raw-${i}-val`} style={{ flex: "2 1 16rem" }}>
+                  <TextArea
+                    id={`${idp}-raw-${i}-val`}
+                    value={d.values.join("\n")}
+                    onChange={(_ev, v) => update(i, { ...d, values: v === "" ? [] : v.split("\n") })}
+                    rows={Math.min(4, Math.max(1, d.values.length))}
+                    resizeOrientation="vertical"
+                    isDisabled={isDisabled}
+                    aria-label={`Directive ${i + 1} values`}
+                    style={{ fontFamily: "monospace" }}
+                  />
+                </FormGroup>
+              </div>
+              {isExecDirective(d.key) && (
+                <LiveAlert variant="warning" isInline isPlain message={`${d.key} runs a command as root on every node this policy applies to.`} />
+              )}
+              <LiveAlert id={`${idp}-raw-${i}-error`} message={error} variant="danger" isInline isPlain />
+            </div>
+          );
+        }}
+        onRemove={(i) => onChange(value.filter((_, j) => j !== i))}
+        onAdd={() => onChange([...value, newDirectiveEntry()])}
+        addLabel="Add directive"
+        removeAriaLabel={(i) => `Remove directive ${i + 1}`}
+        addVariant="link"
+        emptyText="No raw directives."
+        isDisabled={isDisabled}
+      />
+    </FormGroup>
+  );
+};
+
+/* ── one task ── */
+
+const TaskRow: React.FC<{
+  idp: string;
+  index: number;
+  task: SystemdTaskEntry;
+  onChange: (t: SystemdTaskEntry) => void;
+  onRemove: () => void;
+  /** The picked node and what it reports for the task's service, for the sandboxing score. */
+  nodeName: string | null;
+  nodeInfo: SystemdCatalogueUnit | null | undefined;
+  isDisabled?: boolean;
+}> = ({ idp, index, task, onChange, onRemove, nodeName, nodeInfo, isDisabled }) => {
+  const n = index + 1;
+  const global = isGlobalScope(task.scope);
+  const nameError = task.name ? taskNameProblem(task.name) : null;
+  const rowError = !nameError ? taskEntryProblem(task) : null;
+  const scriptBytes = new TextEncoder().encode(task.script).length;
+  const scriptError = task.mode === "script" && task.script && !task.script.startsWith("#!")
+    ? "The script must start with an interpreter line such as #!/bin/sh"
+    : task.mode === "script" && scriptBytes > MAX_TASK_SCRIPT_BYTES ? "The script is larger than 64 KiB" : null;
+  const nameId = `${idp}-t${index}-name`;
+  const unitName = task.name && !nameError ? `bor-${task.name}` : "bor-<name>";
+  return (
+    <Card isCompact style={{ marginBottom: "1rem" }}>
+      <CardHeader
+        actions={{
+          actions: (
+            <Button
+              variant="plain"
+              onClick={onRemove}
+              isDisabled={isDisabled}
+              aria-label={`Remove task ${n}${task.name ? ` (${task.name})` : ""}`}
+              style={{ color: "var(--pf-t--global--color--status--danger--100)" }}
+            >
+              <TrashIcon />
+            </Button>
+          ),
+          hasNoOffset: true,
+        }}
+      >
+        <Title headingLevel="h5" size="md">Task {n}{task.name ? `: ${task.name}` : ""}</Title>
+      </CardHeader>
+      <CardBody>
+        <div style={row}>
+          <FormGroup label="Name" fieldId={nameId} isRequired style={narrow}>
+            <TextInput
+              id={nameId}
+              value={task.name}
+              onChange={(_ev, v) => onChange({ ...task, name: v })}
+              placeholder="nightly-cleanup"
+              isDisabled={isDisabled}
+              aria-label={`Task ${n} name`}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? `${nameId}-error` : undefined}
+              validated={nameError ? "error" : "default"}
+            />
+            <LiveAlert id={`${nameId}-error`} message={nameError} variant="danger" isInline isPlain />
+            {!nameError && (
+              <FormHelperText>
+                <HelperText>
+                  <HelperTextItem>
+                    Units {unitName}.service{task.trigger === "SYSTEMD_TASK_TRIGGER_TIMER" ? ` and ${unitName}.timer` : ""}
+                    {global ? " in every user's manager" : ""}.
+                    {!global && nodeName && nodeInfo && nodeInfo.securityPredicate
+                      ? ` On ${nodeName}: sandboxing exposure ${nodeInfo.securityExposure} ${nodeInfo.securityPredicate}.`
+                      : ""}
+                  </HelperTextItem>
+                </HelperText>
+              </FormHelperText>
+            )}
+          </FormGroup>
+          <FormGroup label="Description" fieldId={`${idp}-t${index}-desc`} style={wide}>
+            <TextInput
+              id={`${idp}-t${index}-desc`}
+              value={task.description}
+              onChange={(_ev, v) => onChange({ ...task, description: v })}
+              placeholder="Becomes the unit's Description="
+              isDisabled={isDisabled}
+              aria-label={`Task ${n} description`}
+            />
+          </FormGroup>
+          <FormGroup label="Scope" fieldId={`${idp}-t${index}-scope`} style={narrow}>
+            <FormSelect
+              id={`${idp}-t${index}-scope`}
+              value={global ? "SYSTEMD_SCOPE_GLOBAL" : "SYSTEMD_SCOPE_SYSTEM"}
+              onChange={(_ev, v) => onChange({ ...task, scope: v as SystemdScope })}
+              isDisabled={isDisabled}
+              aria-label={`Task ${n} scope`}
+            >
+              {SCOPE_OPTIONS.map((o) => <FormSelectOption key={o.value} value={o.value} label={o.label} />)}
+            </FormSelect>
+          </FormGroup>
+          <FormGroup label="Trigger" fieldId={`${idp}-t${index}-trig`} style={narrow}>
+            <FormSelect
+              id={`${idp}-t${index}-trig`}
+              value={task.trigger}
+              onChange={(_ev, v) => onChange({ ...task, trigger: v as SystemdTaskTrigger })}
+              isDisabled={isDisabled}
+              aria-label={`Task ${n} trigger`}
+            >
+              {TASK_TRIGGER_OPTIONS.map((o) => <FormSelectOption key={o.value} value={o.value} label={global && o.value === "SYSTEMD_TASK_TRIGGER_BOOT" ? "At login" : o.label} />)}
+            </FormSelect>
+          </FormGroup>
+        </div>
+        {global && (
+          <p style={{ ...subtle, fontSize: "0.85rem", marginTop: "0.5rem" }}>
+            All users: the units go to <code>/etc/systemd/user</code>, the timer is started in the manager of every logged-in user,
+            and the task runs as that user with the user's own permissions.
+          </p>
+        )}
+        {task.trigger === "SYSTEMD_TASK_TRIGGER_TIMER" && (
+          <div style={{ marginTop: "0.75rem" }}>
+            <TimerOverrides idp={`${idp}-t${index}-s`} value={task.schedule} onChange={(schedule) => onChange({ ...task, schedule })} isDisabled={isDisabled} forTask />
+          </div>
+        )}
+        <FormGroup label="What runs" fieldId={`${idp}-t${index}-mode`} style={{ marginTop: "0.75rem" }} role="radiogroup">
+          <div style={row}>
+            <Radio id={`${idp}-t${index}-mode-script`} name={`${idp}-t${index}-mode`} label="A script (written to /etc/bor/systemd on the node)" isChecked={task.mode === "script"} onChange={() => onChange({ ...task, mode: "script" })} isDisabled={isDisabled} />
+            <Radio id={`${idp}-t${index}-mode-program`} name={`${idp}-t${index}-mode`} label="A program with arguments" isChecked={task.mode === "program"} onChange={() => onChange({ ...task, mode: "program", execStart: task.execStart.length ? task.execStart : [""] })} isDisabled={isDisabled} />
+          </div>
+        </FormGroup>
+        {task.mode === "script" ? (
+          <FormGroup label="Script" fieldId={`${idp}-t${index}-script`} isRequired>
+            <TextArea
+              id={`${idp}-t${index}-script`}
+              value={task.script}
+              onChange={(_ev, v) => onChange({ ...task, script: v })}
+              rows={8}
+              resizeOrientation="vertical"
+              isDisabled={isDisabled}
+              aria-label={`Task ${n} script`}
+              aria-invalid={scriptError ? true : undefined}
+              aria-describedby={scriptError ? `${idp}-t${index}-script-error` : undefined}
+              validated={scriptError ? "error" : "default"}
+              style={{ fontFamily: "monospace" }}
+              spellCheck={false}
+            />
+            <LiveAlert id={`${idp}-t${index}-script-error`} message={scriptError} variant="danger" isInline isPlain />
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem>
+                  {scriptBytes.toLocaleString()} of {MAX_TASK_SCRIPT_BYTES.toLocaleString()} bytes. The interpreter comes from the first line; {global ? "the script runs as each logged-in user" : "the script runs as root unless a user is set"}.
+                </HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          </FormGroup>
+        ) : (
+          <FormGroup label="Program and arguments" fieldId={`${idp}-t${index}-argv`} isRequired>
+            <ListEditor
+              items={task.execStart}
+              renderItem={(a, i) => {
+                const error = i === 0 && a && !a.startsWith("/") ? "The program must be an absolute path" : null;
+                return (
+                  <div style={{ flex: 1, maxWidth: "40rem" }}>
+                    <TextInput
+                      id={`${idp}-t${index}-argv-${i}`}
+                      value={a}
+                      onChange={(_ev, v) => onChange({ ...task, execStart: task.execStart.map((x, j) => (j === i ? v : x)) })}
+                      placeholder={i === 0 ? "/usr/bin/program" : "argument"}
+                      isDisabled={isDisabled}
+                      aria-label={i === 0 ? `Task ${n} program` : `Task ${n} argument ${i}`}
+                      aria-invalid={error ? true : undefined}
+                      aria-describedby={error ? `${idp}-t${index}-argv-${i}-error` : undefined}
+                      validated={error ? "error" : "default"}
+                      style={{ fontFamily: "monospace" }}
+                    />
+                    <LiveAlert id={`${idp}-t${index}-argv-${i}-error`} message={error} variant="danger" isInline isPlain />
+                  </div>
+                );
+              }}
+              onRemove={(i) => onChange({ ...task, execStart: task.execStart.filter((_, j) => j !== i) })}
+              onAdd={() => onChange({ ...task, execStart: [...task.execStart, ""] })}
+              addLabel="Add argument"
+              removeAriaLabel={(i) => (i === 0 ? "Remove the program" : `Remove argument ${i}`)}
+              addVariant="link"
+              isDisabled={isDisabled}
+            />
+            <FormHelperText>
+              <HelperText><HelperTextItem>Arguments are passed literally: no shell, no variable or specifier expansion.</HelperTextItem></HelperText>
+            </FormHelperText>
+          </FormGroup>
+        )}
+        <div style={{ ...row, marginTop: "0.75rem" }}>
+          <ValidatedTextInput id={`${idp}-t${index}-user`} label="User" value={task.user} onChange={(v) => onChange({ ...task, user: v })} placeholder={global ? "the logged-in user" : "root"} problem={(v) => userNameProblem(v)} isDisabled={isDisabled || global} style={narrow} />
+          <ValidatedTextInput id={`${idp}-t${index}-group`} label="Group" value={task.group} onChange={(v) => onChange({ ...task, group: v })} placeholder={global ? "the user's group" : "(user's group)"} problem={(v) => userNameProblem(v)} isDisabled={isDisabled || global} style={narrow} />
+          <ValidatedTextInput id={`${idp}-t${index}-wd`} label="Working directory" value={task.workingDirectory} onChange={(v) => onChange({ ...task, workingDirectory: v })} placeholder="/" problem={(v) => (v.startsWith("/") ? null : "Use an absolute path")} isDisabled={isDisabled} style={narrow} />
+          <ValidatedTextInput id={`${idp}-t${index}-timeout`} label="TimeoutStartSec" value={task.timeoutStartSec} onChange={(v) => onChange({ ...task, timeoutStartSec: v })} placeholder="1h" problem={timeSpanProblem} helper="The run is killed after this long." isDisabled={isDisabled} style={narrow} />
+        </div>
+        <FormGroup label="Environment" fieldId={`${idp}-t${index}-env`} style={{ marginTop: "0.75rem" }}>
+          <ListEditor
+            items={task.environment}
+            renderItem={(e, i) => {
+              const error = e && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(e) ? "Must be KEY=value" : null;
+              return (
+                <div style={{ flex: 1, maxWidth: "32rem" }}>
+                  <TextInput
+                    id={`${idp}-t${index}-env-${i}`}
+                    value={e}
+                    onChange={(_ev, v) => onChange({ ...task, environment: task.environment.map((x, j) => (j === i ? v : x)) })}
+                    placeholder="KEY=value"
+                    isDisabled={isDisabled}
+                    aria-label={`Task ${n} environment entry ${i + 1}`}
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? `${idp}-t${index}-env-${i}-error` : undefined}
+                    validated={error ? "error" : "default"}
+                    style={{ fontFamily: "monospace" }}
+                  />
+                  <LiveAlert id={`${idp}-t${index}-env-${i}-error`} message={error} variant="danger" isInline isPlain />
+                </div>
+              );
+            }}
+            onRemove={(i) => onChange({ ...task, environment: task.environment.filter((_, j) => j !== i) })}
+            onAdd={() => onChange({ ...task, environment: [...task.environment, ""] })}
+            addLabel="Add variable"
+            removeAriaLabel={(i) => `Remove environment entry ${i + 1}`}
+            addVariant="link"
+            emptyText="No environment variables."
+            isDisabled={isDisabled}
+          />
+        </FormGroup>
+        <div style={{ ...row, marginTop: "0.75rem" }}>
+          <Switch
+            id={`${idp}-t${index}-hardened`}
+            label="Sandboxed (hardened unit defaults)"
+            isChecked={task.hardened}
+            onChange={(_ev, checked) => onChange({ ...task, hardened: checked })}
+            isDisabled={isDisabled}
+          />
+          <Switch
+            id={`${idp}-t${index}-lrs`}
+            label="Last run must have succeeded"
+            isChecked={task.requireLastRunSuccess}
+            onChange={(_ev, checked) => onChange({ ...task, requireLastRunSuccess: checked })}
+            isDisabled={isDisabled}
+          />
+          <Switch
+            id={`${idp}-t${index}-enabled`}
+            label="Enabled"
+            isChecked={task.enabled}
+            onChange={(_ev, checked) => onChange({ ...task, enabled: checked })}
+            isDisabled={isDisabled}
+          />
+        </div>
+        <FormHelperText>
+          <HelperText>
+            <HelperTextItem>
+              {task.hardened
+                ? global
+                  ? "Sandboxing in a user manager adds NoNewPrivileges=yes and RestrictSUIDSGID=yes; the namespace protections need privileges a user manager does not have."
+                  : `Sandboxing adds ${TASK_HARDENED_DIRECTIVES.join(", ")}. ProtectSystem= and ProtectHome= are left out because maintenance scripts commonly write under /etc, /var and /home.`
+                : "Without sandboxing the task runs with the plain service defaults."}
+              {task.enabled ? "" : " Not enabled: the files are deployed but the timer or boot trigger stays off."}
+            </HelperTextItem>
+          </HelperText>
+        </FormHelperText>
+        <LiveAlert id={`${idp}-t${index}-error`} message={rowError} variant="danger" isInline isPlain style={{ marginTop: "0.5rem" }} />
+      </CardBody>
+    </Card>
+  );
+};
+
 /* ── one unit row ── */
 
 interface UnitRowProps {
@@ -481,19 +895,24 @@ const UnitRow: React.FC<UnitRowProps> = ({
   nodeName, nodeInfo, riskyConfirmed, onConfirmRisky, isDisabled,
 }) => {
   const type = unitType(unit.name);
+  const global = isGlobalScope(unit.scope);
   const nameError = unit.name ? unitNameProblem(unit.name) : null;
   const rowError = !nameError ? unitEntryProblem(unit) : null;
-  const risky = !nameError && isRiskyUnit(unit.name);
-  const hasOverrides = (type === "timer" && !timerIsEmpty(unit.timer)) || (type === "service" && !serviceIsEmpty(unit.service));
+  const risky = !nameError && isRiskyUnitEntry(unit);
+  const hasOverrides = (type === "timer" && !timerIsEmpty(unit.timer)) || (type === "service" && !serviceIsEmpty(unit.service)) || unit.raw.length > 0;
   const [overridesOpen, setOverridesOpen] = useState(hasOverrides);
   const n = index + 1;
   const nameId = `${idp}-u${index}-name`;
 
   const staticHint =
-    nodeInfo && nodeInfo.unitFileState === "static" &&
+    !global && nodeInfo && nodeInfo.unitFileState === "static" &&
     (unit.enablement === "SYSTEMD_ENABLEMENT_ENABLED" || unit.enablement === "SYSTEMD_ENABLEMENT_DISABLED")
       ? `${unit.name} is static on ${nodeName}: it has no [Install] section and cannot be enabled or disabled. Set an activity instead.`
       : null;
+  const scoreHint =
+    nodeInfo && nodeInfo.type === "service" && nodeInfo.securityPredicate
+      ? `; sandboxing exposure ${nodeInfo.securityExposure} ${nodeInfo.securityPredicate}`
+      : "";
 
   return (
     <Card isCompact style={{ marginBottom: "1rem" }}>
@@ -535,17 +954,30 @@ const UnitRow: React.FC<UnitRowProps> = ({
               <FormHelperText>
                 <HelperText>
                   <HelperTextItem>
-                    {nodeInfo === undefined
-                      ? `Loading the state on ${nodeName}...`
-                      : nodeInfo
-                        ? `Now on ${nodeName}: ${describeState(nodeInfo)}${nodeInfo.onCalendar.length ? `; schedule ${nodeInfo.onCalendar.join(" | ")}` : ""}${nodeInfo.description ? ` - ${nodeInfo.description}` : ""}`
-                        : `Not reported by ${nodeName}: the unit is not installed there, or the node has not reported yet.`}
+                    {global
+                      ? "Nodes report their system units; a unit of all users is checked in each logged-in session when the policy applies."
+                      : nodeInfo === undefined
+                        ? `Loading the state on ${nodeName}...`
+                        : nodeInfo
+                          ? `Now on ${nodeName}: ${describeState(nodeInfo)}${nodeInfo.onCalendar.length ? `; schedule ${nodeInfo.onCalendar.join(" | ")}` : ""}${scoreHint}${nodeInfo.description ? ` - ${nodeInfo.description}` : ""}`
+                          : `Not reported by ${nodeName}: the unit is not installed there, or the node has not reported yet.`}
                   </HelperTextItem>
                 </HelperText>
               </FormHelperText>
             )}
           </FormGroup>
-          <FormGroup label="Enablement" fieldId={`${idp}-u${index}-en`} style={narrow}>
+          <FormGroup label="Scope" fieldId={`${idp}-u${index}-scope`} style={unitSelect}>
+            <FormSelect
+              id={`${idp}-u${index}-scope`}
+              value={global ? "SYSTEMD_SCOPE_GLOBAL" : "SYSTEMD_SCOPE_SYSTEM"}
+              onChange={(_ev, v) => onChange({ ...unit, scope: v as SystemdScope })}
+              isDisabled={isDisabled}
+              aria-label={`Unit ${n} scope`}
+            >
+              {SCOPE_OPTIONS.map((o) => <FormSelectOption key={o.value} value={o.value} label={o.label} />)}
+            </FormSelect>
+          </FormGroup>
+          <FormGroup label="Enablement" fieldId={`${idp}-u${index}-en`} style={unitSelect}>
             <FormSelect
               id={`${idp}-u${index}-en`}
               value={unit.enablement}
@@ -557,7 +989,7 @@ const UnitRow: React.FC<UnitRowProps> = ({
             </FormSelect>
           </FormGroup>
           {type !== "target" && (
-            <FormGroup label="Activity" fieldId={`${idp}-u${index}-act`} style={narrow}>
+            <FormGroup label="Activity" fieldId={`${idp}-u${index}-act`} style={unitSelect}>
               <FormSelect
                 id={`${idp}-u${index}-act`}
                 value={unit.activity}
@@ -572,6 +1004,12 @@ const UnitRow: React.FC<UnitRowProps> = ({
         </div>
         {staticHint && (
           <LiveAlert message={staticHint} variant="warning" isInline isPlain />
+        )}
+        {global && (
+          <p style={{ ...subtle, fontSize: "0.85rem", marginTop: "0.5rem" }}>
+            All users: enablement is applied as <code>systemctl --global</code> does it (symlinks under <code>/etc/systemd/user</code>);
+            activity is applied in the manager of every logged-in user on each sync and reconcile pass.
+          </p>
         )}
         <div style={{ ...row, marginTop: "0.75rem" }}>
           {type === "service" && (
@@ -607,7 +1045,7 @@ const UnitRow: React.FC<UnitRowProps> = ({
           <LiveAlert
             variant="warning"
             isInline
-            title={`${unit.name} can cut users or administrators off from the node`}
+            title={global ? `${unit.name} can break every user's desktop session` : `${unit.name} can cut users or administrators off from the node`}
             style={{ marginTop: "0.75rem" }}
           >
             <p>Stopping or masking it on a whole group is one release away. Bind the policy to a pilot group first.</p>
@@ -638,9 +1076,12 @@ const UnitRow: React.FC<UnitRowProps> = ({
               {type ? "" : " Name the unit first."}
             </p>
           )}
-          {(type === "timer" || type === "service") && (
+          {type && (
+            <RawDirectives idp={`${idp}-u${index}-r`} unitTypeName={type} value={unit.raw} onChange={(raw) => onChange({ ...unit, raw })} isDisabled={isDisabled} />
+          )}
+          {type && (
             <p style={{ ...subtle, fontSize: "0.85rem", marginTop: "0.5rem" }}>
-              Written to <code>/etc/systemd/system/{unit.name}.d/90-bor.conf</code>; the vendor unit file stays untouched.
+              Written to <code>/etc/systemd/{global ? "user" : "system"}/{unit.name}.d/90-bor.conf</code>; the vendor unit file stays untouched.
             </p>
           )}
         </ExpandableSection>
@@ -719,16 +1160,21 @@ export const SystemdPolicyEditor: React.FC<SystemdPolicyEditorProps> = ({ conten
 
   /* risky-unit confirmations: units already in a saved draft count as confirmed */
   const [confirmed, setConfirmed] = useState<Set<string>>(
-    () => new Set(parseSystemdContent(contentRaw).units.map((u) => u.name).filter(isRiskyUnit)),
+    () => new Set(parseSystemdContent(contentRaw).units.filter(isRiskyUnitEntry).map((u) => u.name)),
   );
   const unconfirmed = useMemo(
-    () => content.units.filter((u) => u.name && !unitNameProblem(u.name) && isRiskyUnit(u.name) && !confirmed.has(u.name)),
+    () => content.units.filter((u) => u.name && !unitNameProblem(u.name) && isRiskyUnitEntry(u) && !confirmed.has(u.name)),
     [content.units, confirmed],
   );
 
+  /* command-running content needs systemd:exec */
+  const runsCommands = useMemo(() => contentRunsCommands(content), [content]);
+  const canExec = hasPermission("systemd:exec");
+  const execBlocked = runsCommands && !canExec;
+
   /* validity */
   const problem = useMemo(() => validateSystemdContent(content), [content]);
-  const valid = problem === null && unconfirmed.length === 0;
+  const valid = problem === null && unconfirmed.length === 0 && !execBlocked;
   useEffect(() => {
     onValidityChange?.(valid);
   }, [valid, onValidityChange]);
@@ -738,6 +1184,22 @@ export const SystemdPolicyEditor: React.FC<SystemdPolicyEditorProps> = ({ conten
     push({ ...content, units: content.units.map((x, i) => (i === index ? u : x)) });
   const removeUnit = (index: number) => push({ ...content, units: content.units.filter((_, i) => i !== index) });
   const addUnit = () => push({ ...content, units: [...content.units, newUnitEntry()] });
+  const updateTask = (index: number, t: SystemdTaskEntry) =>
+    push({ ...content, tasks: content.tasks.map((x, i) => (i === index ? t : x)) });
+  const removeTask = (index: number) => push({ ...content, tasks: content.tasks.filter((_, i) => i !== index) });
+  const addTask = () => push({ ...content, tasks: [...content.tasks, newTaskEntry()] });
+
+  /* templates: add the units of a template that the policy does not list yet */
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const templates = useMemo(() => systemdTemplates(), []);
+  const applyTemplate = (id: string) => {
+    setTemplatesOpen(false);
+    const tpl = templates.find((t) => t.id === id);
+    if (!tpl) return;
+    const present = new Set(content.units.map((u) => u.name));
+    const added = tpl.units.filter((u) => !present.has(u.name));
+    push({ ...content, units: [...content.units, ...added] });
+  };
 
   return (
     <Form onSubmit={(e) => e.preventDefault()}>
@@ -761,7 +1223,7 @@ export const SystemdPolicyEditor: React.FC<SystemdPolicyEditorProps> = ({ conten
       <LiveAlert message={catalogueError} variant="warning" isInline isPlain />
 
       {content.units.length === 0 && (
-        <p style={{ ...subtle, fontSize: "0.85rem" }}>No units yet. Add one to start.</p>
+        <p style={{ ...subtle, fontSize: "0.85rem" }}>No units yet. Add one, or start from a template.</p>
       )}
       {content.units.map((u, i) => (
         <UnitRow
@@ -787,9 +1249,78 @@ export const SystemdPolicyEditor: React.FC<SystemdPolicyEditorProps> = ({ conten
           isDisabled={isDisabled}
         />
       ))}
-      <div>
+      <div style={{ ...row, alignItems: "center" }}>
         <Button variant="secondary" icon={<PlusCircleIcon />} onClick={addUnit} isDisabled={isDisabled} size="sm">
           Add unit
+        </Button>
+        <Dropdown
+          isOpen={templatesOpen}
+          onOpenChange={setTemplatesOpen}
+          onSelect={(_ev, value) => applyTemplate(String(value))}
+          toggle={(toggleRef: React.Ref<MenuToggleElement>) => (
+            <MenuToggle ref={toggleRef} onClick={() => setTemplatesOpen((o) => !o)} isExpanded={templatesOpen} isDisabled={isDisabled} size="sm" variant="secondary">
+              Add template
+            </MenuToggle>
+          )}
+          popperProps={{ position: "left" }}
+        >
+          <DropdownList aria-label="Unit templates">
+            {templates.map((t) => (
+              <DropdownItem key={t.id} value={t.id} description={t.description}>
+                {t.label}
+              </DropdownItem>
+            ))}
+          </DropdownList>
+        </Dropdown>
+      </div>
+
+      <Switch
+        id={`${idp}-presets`}
+        label="Also write a preset file (10-bor.preset) so the enablement decisions above apply to units installed later"
+        isChecked={content.writePresets}
+        onChange={(_ev, checked) => push({ ...content, writePresets: checked })}
+        isDisabled={isDisabled}
+      />
+
+      <div style={{ marginTop: "1rem" }}>
+        <Title headingLevel="h4" size="md">Scheduled tasks</Title>
+        <p style={{ ...subtle, fontSize: "0.85rem", marginTop: "0.25rem" }}>
+          Scripts or programs Bor deploys as <code>bor-&lt;name&gt;.service</code> with a timer or a boot trigger,
+          sandboxed by default, with the last result in the compliance report. The agent adds the <code>bor-</code> prefix;
+          a task can never replace a vendor unit.
+        </p>
+      </div>
+      <LiveAlert
+        variant={execBlocked ? "danger" : "info"}
+        isInline
+        isPlain={!runsCommands}
+        message={
+          execBlocked
+            ? "This policy runs commands as root on every node it applies to. Saving or releasing it needs the systemd:exec permission, which your account does not hold."
+            : runsCommands
+              ? "This policy runs commands as root on every node it applies to. Saving and releasing it needs the systemd:exec permission and is recorded in the audit log with a hash of every script."
+              : "Tasks run commands as root on every node the policy applies to; saving or releasing a policy with tasks needs the systemd:exec permission."
+        }
+      />
+      {content.tasks.length === 0 && (
+        <p style={{ ...subtle, fontSize: "0.85rem" }}>No tasks.</p>
+      )}
+      {content.tasks.map((t, i) => (
+        <TaskRow
+          key={i}
+          idp={idp}
+          index={i}
+          task={t}
+          onChange={(nt) => updateTask(i, nt)}
+          onRemove={() => removeTask(i)}
+          nodeName={nodeName}
+          nodeInfo={nodeId ? (nodeUnits ? nodeUnits.get(`bor-${t.name}.service`) ?? null : undefined) : null}
+          isDisabled={isDisabled}
+        />
+      ))}
+      <div>
+        <Button variant="secondary" icon={<PlusCircleIcon />} onClick={addTask} isDisabled={isDisabled} size="sm">
+          Add task
         </Button>
       </div>
 
@@ -800,7 +1331,7 @@ export const SystemdPolicyEditor: React.FC<SystemdPolicyEditorProps> = ({ conten
           message={`Confirm the risky ${unconfirmed.length === 1 ? "unit" : "units"} ${unconfirmed.map((u) => u.name).join(", ")} before saving`}
         />
       )}
-      {problem && content.units.length > 0 && (
+      {problem && (content.units.length > 0 || content.tasks.length > 0) && (
         <LiveAlert message={problem} variant="danger" isInline />
       )}
     </Form>

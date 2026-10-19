@@ -75,6 +75,24 @@ func (r *SystemdRepository) ReplaceNodeUnits(ctx context.Context, nodeID string,
 	return tx.Commit()
 }
 
+// UpsertNodeUnit replaces one unit of a node, as reported after an
+// on-demand action, without touching the node's other rows.
+func (r *SystemdRepository) UpsertNodeUnit(ctx context.Context, nodeID string, u *pb.SystemdUnitInfo) error {
+	data, err := systemdUnitMarshal.Marshal(u)
+	if err != nil {
+		return fmt.Errorf("systemd: marshal unit %s: %w", u.GetName(), err)
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO node_systemd_units (node_id, name, unit_type, info_json, reported_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (node_id, name) DO UPDATE SET unit_type = EXCLUDED.unit_type, info_json = EXCLUDED.info_json, reported_at = EXCLUDED.reported_at`,
+		nodeID, u.GetName(), u.GetType(), string(data), time.Now())
+	if err != nil {
+		return fmt.Errorf("systemd: upsert node unit: %w", err)
+	}
+	return nil
+}
+
 // ListUnits returns the union of the units every node reported, one row
 // per name with the most recently reported state. q filters by a
 // case-insensitive substring of the name or description, typ by unit

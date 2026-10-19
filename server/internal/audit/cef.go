@@ -65,11 +65,18 @@ func FormatCEF(event *auditpb.AuditEvent) string {
 
 	case *auditpb.AuditEvent_Tamper:
 		writeExt(&ext, "filePath", cefEscapeVal(p.Tamper.GetFilePath()))
-		if len(p.Tamper.GetProcesses()) > 0 {
-			parts := make([]string, 0, len(p.Tamper.GetProcesses()))
-			for _, pr := range p.Tamper.GetProcesses() {
-				parts = append(parts, fmt.Sprintf("%s(pid=%d,user=%s)", pr.GetComm(), pr.GetPid(), pr.GetUser()))
-			}
+		if res := p.Tamper.GetResource(); res != "" {
+			writeExt(&ext, "cs1Label", "resource")
+			writeExt(&ext, "cs1", cefEscapeVal(res))
+		}
+		var parts []string
+		if d := p.Tamper.GetDescription(); d != "" {
+			parts = append(parts, d)
+		}
+		for _, pr := range p.Tamper.GetProcesses() {
+			parts = append(parts, fmt.Sprintf("%s(pid=%d,user=%s)", pr.GetComm(), pr.GetPid(), pr.GetUser()))
+		}
+		if len(parts) > 0 {
 			writeExt(&ext, "msg", cefEscapeVal(strings.Join(parts, "; ")))
 		}
 	}

@@ -172,7 +172,7 @@ use camelCase.
 | `masquerade` | boolean | Enable masquerading. |
 | `forwardPorts` | list of `{port, protocol, toPort, toAddr}` | Port forwards. |
 | `richRules` | list of strings | Raw rich-language rules. |
-| `ensureEnabled` | boolean | Present in the schema but not enforced yet; the agent never starts firewalld. |
+| `ensureEnabled` | boolean | When true, an agent that finds firewalld installed but inactive enables and starts `firewalld.service` through systemd before it applies the rules (the action is logged by the agent). When false (default) an inactive firewalld keeps the policy **inapplicable**. |
 
 ### Example: SSH and a remote-support port on the default zone
 

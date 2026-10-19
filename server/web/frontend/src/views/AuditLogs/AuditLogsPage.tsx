@@ -50,11 +50,11 @@ import {
 
 // ─── Known filter values ──────────────────────────────────────────────────────
 
-const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "access_denied", "tamper_detected"];
+const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "access_denied", "tamper_detected", "systemd.unit_action"];
 const KNOWN_RESOURCE_TYPES = [
   "policies", "nodes", "node-groups", "users", "roles",
   "user-groups", "user-role-bindings", "user_role_binding",
-  "user_group_role_binding", "policy-bindings", "managed_file", "settings",
+  "user_group_role_binding", "policy-bindings", "managed_file", "systemd_unit", "settings",
   // Permission resources, used by access_denied events.
   "user_group", "user", "role", "policy", "node", "node_group", "binding",
 ];
@@ -75,6 +75,7 @@ const ACTION_LABEL_COLOR: Record<string, LabelColor> = {
   revoke_role: "purple",
   access_denied: "yellow",
   tamper_detected: "orange",
+  "systemd.unit_action": "teal",
 };
 const DEFAULT_ACTION_LABEL_COLOR: LabelColor = "grey";
 
@@ -112,21 +113,35 @@ function nextChipId() { return String(++_chipSeq); }
 // ─── Tamper event types ───────────────────────────────────────────────────────
 
 interface TamperProcess { pid: number; comm: string; user: string }
-interface TamperDetailsData { file?: string; node?: string; processes?: TamperProcess[] }
+/**
+ * A tamper event names either a managed file (`file`) or a managed resource
+ * that is not a file (`resource`, e.g. "unit:bluetooth.service" for a systemd
+ * unit changed by hand); `description` says what was found and restored, and
+ * `processes` holds the file holders or the journal attribution.
+ */
+interface TamperDetailsData { file?: string; resource?: string; description?: string; node?: string; processes?: TamperProcess[] }
 
 function parseTamperDetails(raw: string): TamperDetailsData | null {
   try {
     const d = JSON.parse(raw);
-    if (d && typeof d === "object" && ("file" in d || "processes" in d)) return d;
+    if (d && typeof d === "object" && ("file" in d || "resource" in d || "processes" in d)) return d;
   } catch { /* not JSON */ }
   return null;
 }
 
+/** "unit:bluetooth.service" -> "bluetooth.service"; other kinds are shown as they are. */
+function tamperResourceName(d: TamperDetailsData): string {
+  return d.resource?.startsWith("unit:") ? d.resource.slice("unit:".length) : (d.resource ?? "");
+}
+
 function tamperDetailsSummary(d: TamperDetailsData): string {
-  if (!d.processes || d.processes.length === 0) return "no process identified";
+  const subject = d.resource && !d.file ? `${tamperResourceName(d)}: ` : "";
+  if (!d.processes || d.processes.length === 0) {
+    return subject + (d.resource && !d.file ? (d.description || "no actor identified") : "no process identified");
+  }
   const parts = d.processes.map((p) => `${p.comm} (${p.user})`);
-  if (parts.length <= 2) return parts.join(", ");
-  return `${parts[0]}, ${parts[1]} +${parts.length - 2} more`;
+  if (parts.length <= 2) return subject + parts.join(", ");
+  return `${subject}${parts[0]}, ${parts[1]} +${parts.length - 2} more`;
 }
 
 // ─── Structured body details ──────────────────────────────────────────────────
@@ -335,7 +350,7 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
           )}
         </DescriptionList>
 
-        {/* ── Tamper: file & processes ── */}
+        {/* ── Tamper: file or unit, and who touched it ── */}
         {tamperData && (
           <>
             {tamperData.file && (
@@ -350,11 +365,28 @@ const EntryDetailPanel: React.FC<{ entry: AuditLog; onClose: () => void }> = ({ 
                 </code>
               </>
             )}
+            {!tamperData.file && tamperData.resource && (
+              <>
+                <SectionLabel>{tamperData.resource.startsWith("unit:") ? "Tampered Unit" : "Tampered Resource"}</SectionLabel>
+                <code style={{
+                  display: "block", fontFamily: "monospace", fontSize: "0.8125rem",
+                  wordBreak: "break-all", background: "var(--pf-t--global--background--color--secondary--default)",
+                  padding: "6px 10px", borderRadius: 4,
+                }}>
+                  {tamperResourceName(tamperData)}
+                </code>
+              </>
+            )}
+            {tamperData.description && (
+              <p style={{ fontSize: "0.875rem", margin: "6px 0 0" }}>{tamperData.description}</p>
+            )}
 
-            <SectionLabel>Processes at Detection Time</SectionLabel>
+            <SectionLabel>{tamperData.file ? "Processes at Detection Time" : "Attributed To"}</SectionLabel>
             {!tamperData.processes || tamperData.processes.length === 0 ? (
               <p style={{ color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.875rem", margin: 0 }}>
-                No process identified — the modifying process had already exited.
+                {tamperData.file
+                  ? "No process identified — the modifying process had already exited."
+                  : "No actor identified — the journal has no sudo or polkit record naming the unit (a root shell leaves none)."}
               </p>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>

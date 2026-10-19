@@ -26,7 +26,7 @@ import ShieldAltIcon from "@patternfly/react-icons/dist/esm/icons/shield-alt-ico
 import UserClockIcon from "@patternfly/react-icons/dist/esm/icons/user-clock-icon";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
 import CogIcon from "@patternfly/react-icons/dist/esm/icons/cog-icon";
-import ProcessAutomationIcon from "@patternfly/react-icons/dist/esm/icons/process-automation-icon";
+import StopwatchIcon from "@patternfly/react-icons/dist/esm/icons/stopwatch-icon";
 
 import { FirefoxMarkIcon } from "../icons/policyTypes/FirefoxMarkIcon";
 import { ThunderbirdMarkIcon } from "../icons/policyTypes/ThunderbirdMarkIcon";
@@ -341,20 +341,22 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
     category: "system",
     tagline: "Service state, timer schedules and scheduled tasks",
     description:
-      "Enable, disable or mask systemd services and timers, keep them running or stopped, and override timer schedules and service settings with drop-ins that survive package updates. Policies bound to the same node are merged per unit by binding priority.",
+      "Enable, disable or mask systemd services and timers, keep them running or stopped, override timer schedules and service settings with drop-ins that survive package updates, and deploy scheduled tasks (a script with a timer or boot trigger). Policies bound to the same node are merged per unit by binding priority.",
     manages: [
       "Unit enablement and running state through systemd",
       "/etc/systemd/system/<unit>.d/90-bor.conf drop-ins",
+      "/etc/systemd/system/bor-<task>.service and .timer with /etc/bor/systemd/<task>.sh",
+      "/etc/systemd/system-preset/10-bor.preset (optional)",
       "/var/lib/bor/agent/systemd-state.json (original states, restored on removal)",
     ],
     appliesTo: ["Every node with systemd as the init system"],
     examples: [
       "Mask avahi-daemon and disable Bluetooth on office desktops",
       "Move the weekly fstrim and update timers into a maintenance window",
-      "Keep a monitoring agent enabled and running on every lab machine",
+      "Run a nightly cache cleanup script on lab machines and see failed runs on the compliance page",
     ],
     docsHref: `${DOCS_BASE}/systemd.md`,
-    Icon: ProcessAutomationIcon,
+    Icon: StopwatchIcon,
     defaultContent: () => pretty({ units: [] }),
     validateContent: (content) => {
       if (!parseObject(content)) return "Systemd policy content is not valid JSON";

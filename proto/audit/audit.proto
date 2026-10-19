@@ -89,13 +89,23 @@ message HttpPayload {
   string body_json = 3;
 }
 
-// TamperPayload carries context from an agent-reported file tamper event.
+// TamperPayload carries context from an agent-reported tamper event: a
+// managed file that was modified or deleted, or a managed resource that is
+// not a file (a systemd unit stopped or re-enabled by hand).
 message TamperPayload {
-  // Absolute path of the file that was modified or deleted.
+  // Absolute path of the file that was modified or deleted; empty for a
+  // resource that is not a file.
   string file_path = 1;
 
-  // Processes that had the file open at detection time (best-effort).
+  // Processes that had the file open at detection time (best-effort), or
+  // the journal attribution of a unit change.
   repeated TamperProcess processes = 2;
+
+  // The non-file resource as "<kind>:<name>", e.g. "unit:bluetooth.service".
+  string resource = 3;
+
+  // What was found and what the agent did about it.
+  string description = 4;
 }
 
 // TamperProcess describes a single process involved in the tamper event.
