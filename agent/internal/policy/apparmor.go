@@ -48,7 +48,10 @@ type ApparmorEntry struct {
 	Policy   *pb.ApparmorPolicy
 }
 
-type apparmorModeRule struct {
+// ApparmorModeRule is one profile mode entry of the merged policies: the
+// file name or pattern it matches, the mode it asks for and the policy it
+// came from.
+type ApparmorModeRule struct {
 	Match     string
 	Mode      pb.ApparmorMode
 	EditFlags bool
@@ -71,7 +74,7 @@ type ApparmorDesired struct {
 	UsernsBy       macSource
 	Unconfined     pb.ApparmorSwitch
 	UnconfinedBy   macSource
-	Rules          []apparmorModeRule
+	Rules          []ApparmorModeRule
 	Custom         map[string]*apparmorTextDesired
 	Overrides      map[string]*apparmorTextDesired
 	HomeDirs       []string
@@ -144,7 +147,7 @@ func MergeApparmorPolicies(entries []ApparmorEntry) *ApparmorDesired {
 			if pm.GetMode() == pb.ApparmorMode_APPARMOR_MODE_UNSPECIFIED || macrules.ValidateProfileMatch(pm.GetMatch()) != nil {
 				continue
 			}
-			d.Rules = append(d.Rules, apparmorModeRule{Match: pm.GetMatch(), Mode: pm.GetMode(), EditFlags: pm.GetEditVendorFlags(), By: src, exact: !macrules.IsGlob(pm.GetMatch()), spec: macrules.GlobSpecificity(pm.GetMatch())})
+			d.Rules = append(d.Rules, ApparmorModeRule{Match: pm.GetMatch(), Mode: pm.GetMode(), EditFlags: pm.GetEditVendorFlags(), By: src, exact: !macrules.IsGlob(pm.GetMatch()), spec: macrules.GlobSpecificity(pm.GetMatch())})
 		}
 		for _, c := range p.GetCustomProfiles() {
 			cur, ok := d.Custom[c.GetName()]
@@ -175,8 +178,8 @@ func MergeApparmorPolicies(entries []ApparmorEntry) *ApparmorDesired {
 }
 
 // ResolveMode returns the rule that decides a profile file's mode, or nil.
-func (d *ApparmorDesired) ResolveMode(file string) *apparmorModeRule {
-	var best *apparmorModeRule
+func (d *ApparmorDesired) ResolveMode(file string) *ApparmorModeRule {
+	var best *ApparmorModeRule
 	for i := range d.Rules {
 		r := &d.Rules[i]
 		if !macrules.MatchProfileFile(r.Match, file) {
@@ -189,7 +192,7 @@ func (d *ApparmorDesired) ResolveMode(file string) *apparmorModeRule {
 	return best
 }
 
-func apparmorRuleBetter(a, b *apparmorModeRule) bool {
+func apparmorRuleBetter(a, b *ApparmorModeRule) bool {
 	if a.exact != b.exact {
 		return a.exact
 	}
