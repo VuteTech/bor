@@ -767,7 +767,7 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
 				// Don't let targeted server-to-agent commands overwrite the
 				// last known revision.
-				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" && updateType != "SYSTEMD_UNIT_ACTION" && updateType != "MAC_ACTION" {
+				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" && updateType != "SYSTEMD_UNIT_ACTION" && updateType != "MAC_ACTION" && updateType != "UPDATES_ACTION" {
 					lastRevision = revision
 				}
 				handlePolicyUpdate(ctx, client, cfg, updateType, pi, snapshotComplete, &postInitialSync)
@@ -807,6 +807,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		go reportDiskEncryptionInventory(ctx, client, cfg)
 		go reportSystemdCatalogue(ctx, client, cfg)
 		go reportMacInventory(ctx, client, cfg)
+		go reportUpdatesInventory(ctx, client, cfg)
 		return
 
 	case "DISK_ENCRYPTION_TASK":
@@ -828,6 +829,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		// from this node's recent denials.
 		if pi != nil && pi.MacAction != nil {
 			go runMacAction(ctx, client, cfg, pi.MacAction)
+		}
+		return
+
+	case "UPDATES_ACTION":
+		// An operator asked for a metadata refresh, an engine run or a
+		// reboot from the node page.
+		if pi != nil && pi.UpdatesAction != nil {
+			go runUpdatesAction(ctx, client, cfg, pi.UpdatesAction)
 		}
 		return
 

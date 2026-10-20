@@ -286,7 +286,7 @@ func Run(opts Options) {
 	policySvc := services.NewPolicyService(policyRepo, policyBindingRepo)
 
 	// Initialize node service
-	nodeSvc := services.NewNodeService(nodeRepo)
+	nodeSvc := services.NewNodeService(nodeRepo).WithUpdatesSummaries(updatesRepo.SummariesByNodeIDs)
 
 	// Initialize node group service
 	nodeGroupSvc := services.NewNodeGroupService(nodeGroupRepo)
@@ -400,7 +400,8 @@ func Run(opts Options) {
 	macHandler := api.NewMacHandler(macRepo)
 	macActions := services.NewMacActionBroker()
 	macNodeHandler := api.NewMacNodeHandler(nodeSvc, macRepo, policyHub, macActions, auditSvc, cfg.Audit.AnonymizeIPs)
-	updatesNodeHandler := api.NewUpdatesNodeHandler(nodeSvc, updatesRepo)
+	updatesActions := services.NewUpdatesActionBroker()
+	updatesNodeHandler := api.NewUpdatesNodeHandler(nodeSvc, updatesRepo, policyHub, updatesActions, auditSvc, cfg.Audit.AnonymizeIPs)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
 	ppaHandler := api.NewPPAInfoHandler()
@@ -616,6 +617,8 @@ func Run(opts Options) {
 	// Software updates state of a node.
 	mux.Handle("GET /api/v1/nodes/{id}/updates", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.Get))))
 	mux.Handle("GET /api/v1/nodes/{id}/updates/pending", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.ListPending))))
+	mux.Handle("POST /api/v1/nodes/{id}/updates/actions", authMiddleware(gate.RequireScoped("updates", "operate")(http.HandlerFunc(updatesNodeHandler.Action))))
+	mux.Handle("GET /api/v1/updates/summary", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.Summary))))
 
 	// Node group routes — method-based permission checking
 	groupPerms := gate.RequireScopedMethod([]api.MethodPermission{
@@ -924,7 +927,8 @@ func Run(opts Options) {
 			WithSystemdActions(systemdActions).
 			WithMacRepository(macRepo).
 			WithUpdatesRepository(updatesRepo).
-			WithMacActions(macActions))
+			WithMacActions(macActions).
+			WithUpdatesActions(updatesActions))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.

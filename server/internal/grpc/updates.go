@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/VuteTech/Bor/server/internal/services"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,6 +26,19 @@ type updatesRepository interface {
 // WithUpdatesRepository enables the Software updates inventory RPC.
 func (s *PolicyServer) WithUpdatesRepository(repo updatesRepository) *PolicyServer {
 	s.updatesRepo = repo
+	return s
+}
+
+// updatesActionSink receives the results of on-demand Software updates
+// actions (services.UpdatesActionBroker).
+type updatesActionSink interface {
+	Deliver(id, node string, r services.UpdatesActionResult) bool
+}
+
+// WithUpdatesActions routes the results of on-demand actions to the
+// requests waiting for them.
+func (s *PolicyServer) WithUpdatesActions(sink updatesActionSink) *PolicyServer {
+	s.updatesActions = sink
 	return s
 }
 
@@ -143,6 +157,8 @@ func sanitizeUpdatesInventory(in *pb.UpdatesInventory) *pb.UpdatesInventory {
 		}
 	}
 	out.LastPolicyReboot = cleanTime(in.GetLastPolicyReboot())
+	out.OldestSecuritySince = cleanTime(in.GetOldestSecuritySince())
+	out.PendingFirmware = max(in.GetPendingFirmware(), 0)
 	return out
 }
 
@@ -171,4 +187,24 @@ func (s *PolicyServer) ReportUpdatesInventory(ctx context.Context, req *pb.Repor
 	log.Printf("updates inventory: node %s reported %s (%s): %d pending, %d security, reboot required=%v",
 		clientID, inv.Engine, inv.EffectiveMode, inv.PendingTotal, inv.PendingSecurity, inv.GetReboot().GetRequired())
 	return &pb.ReportUpdatesInventoryResponse{}, nil
+}
+
+// ReportUpdatesActionResult hands the outcome of a check, install or
+// reboot action to the request waiting for it.
+func (s *PolicyServer) ReportUpdatesActionResult(ctx context.Context, req *pb.ReportUpdatesActionResultRequest) (*pb.ReportUpdatesActionResultResponse, error) {
+	clientID, err := requireClientIdentity(ctx, req.GetClientId())
+	if err != nil {
+		return nil, err
+	}
+	if !macActionIDPattern.MatchString(req.GetActionId()) {
+		return nil, status.Errorf(codes.InvalidArgument, "action_id is malformed")
+	}
+	result := services.UpdatesActionResult{
+		Success: req.GetSuccess(),
+		Message: truncateString(req.GetMessage(), maxMacActionMessage),
+		Text:    truncateString(req.GetText(), maxMacActionText),
+	}
+	delivered := s.updatesActions != nil && s.updatesActions.Deliver(req.GetActionId(), clientID, result)
+	log.Printf("updates action %s: node %s reported success=%v (waiting request: %v)", req.GetActionId(), clientID, req.GetSuccess(), delivered)
+	return &pb.ReportUpdatesActionResultResponse{}, nil
 }

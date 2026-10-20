@@ -27,6 +27,19 @@ export interface UpdatesReboot {
   message: string;
 }
 
+/** Compliance thresholds in days; 0 leaves a threshold unchecked. */
+export interface UpdatesLimits {
+  securityMaxAgeDays: number;
+  rebootMaxAgeDays: number;
+  checkMaxAgeDays: number;
+}
+
+export interface UpdatesFirmware {
+  /** null = keep the node's fwupd-refresh.timer state. */
+  refreshMetadata: boolean | null;
+  reportPending: boolean;
+}
+
 export interface UpdatesContent {
   mode: UpdatesMode;
   schedule: UpdatesSchedule;
@@ -35,7 +48,11 @@ export interface UpdatesContent {
   removeUnusedDependencies: boolean;
   installEngine: boolean;
   requireEngine: boolean;
+  limits: UpdatesLimits;
+  firmware: UpdatesFirmware;
 }
+
+export const UPDATES_MAX_LIMIT_DAYS = 3650;
 
 export const UPDATES_MODE_OPTIONS: { value: UpdatesMode; label: string; help: string }[] = [
   { value: "UPDATES_MODE_UNSPECIFIED", label: "Keep the node's configuration", help: "The policy does not change what the node installs on its own." },
@@ -78,6 +95,8 @@ export function emptyUpdatesContent(): UpdatesContent {
     removeUnusedDependencies: false,
     installEngine: true,
     requireEngine: false,
+    limits: { securityMaxAgeDays: 0, rebootMaxAgeDays: 0, checkMaxAgeDays: 0 },
+    firmware: { refreshMetadata: null, reportPending: false },
   };
 }
 
@@ -106,6 +125,10 @@ export function parseUpdatesContent(raw: string): UpdatesContent {
   c.removeUnusedDependencies = d.removeUnusedDependencies === true;
   c.installEngine = d.installEngine !== false;
   c.requireEngine = d.requireEngine === true;
+  const l = obj(d.limits);
+  c.limits = { securityMaxAgeDays: num(l.securityMaxAgeDays), rebootMaxAgeDays: num(l.rebootMaxAgeDays), checkMaxAgeDays: num(l.checkMaxAgeDays) };
+  const f = obj(d.firmware);
+  c.firmware = { refreshMetadata: typeof f.refreshMetadata === "boolean" ? f.refreshMetadata : null, reportPending: f.reportPending === true };
   return c;
 }
 
@@ -131,7 +154,29 @@ export function serializeUpdatesContent(c: UpdatesContent): string {
   if (c.removeUnusedDependencies) out.removeUnusedDependencies = true;
   if (!c.installEngine) out.installEngine = false;
   if (c.requireEngine) out.requireEngine = true;
+  if (hasLimits(c.limits)) {
+    const l: Record<string, unknown> = {};
+    if (c.limits.securityMaxAgeDays > 0) l.securityMaxAgeDays = c.limits.securityMaxAgeDays;
+    if (c.limits.rebootMaxAgeDays > 0) l.rebootMaxAgeDays = c.limits.rebootMaxAgeDays;
+    if (c.limits.checkMaxAgeDays > 0) l.checkMaxAgeDays = c.limits.checkMaxAgeDays;
+    out.limits = l;
+  }
+  if (c.firmware.refreshMetadata !== null || c.firmware.reportPending) {
+    const f: Record<string, unknown> = {};
+    if (c.firmware.refreshMetadata !== null) f.refreshMetadata = c.firmware.refreshMetadata;
+    if (c.firmware.reportPending) f.reportPending = true;
+    out.firmware = f;
+  }
   return JSON.stringify(out, null, 2);
+}
+
+export function hasLimits(l: UpdatesLimits): boolean {
+  return l.securityMaxAgeDays > 0 || l.rebootMaxAgeDays > 0 || l.checkMaxAgeDays > 0;
+}
+
+export function limitProblem(v: number): string | null {
+  if (!Number.isFinite(v) || v < 0 || v > UPDATES_MAX_LIMIT_DAYS) return `Use 0 (not checked) to ${UPDATES_MAX_LIMIT_DAYS} days`;
+  return null;
 }
 
 const HOLD_RE = /^[A-Za-z0-9][A-Za-z0-9._+*?-]{0,127}$/;
@@ -163,12 +208,13 @@ export function calendarProblem(v: string): string | null {
 
 export function hasUpdatesSettings(c: UpdatesContent): boolean {
   return c.mode !== "UPDATES_MODE_UNSPECIFIED" || !!c.schedule.onCalendar || c.reboot.policy !== "UPDATES_REBOOT_UNSPECIFIED" ||
-    c.hold.length > 0 || c.removeUnusedDependencies || c.requireEngine || !c.installEngine;
+    c.hold.length > 0 || c.removeUnusedDependencies || c.requireEngine || !c.installEngine ||
+    hasLimits(c.limits) || c.firmware.refreshMetadata !== null || c.firmware.reportPending;
 }
 
 /** Why the content cannot be saved, or null. */
 export function validateUpdatesContent(c: UpdatesContent): string | null {
-  if (!hasUpdatesSettings(c)) return "Set a mode, a schedule, a reboot rule or a hold";
+  if (!hasUpdatesSettings(c)) return "Set a mode, a schedule, a reboot rule, a hold or a limit";
   if (c.schedule.onCalendar) {
     const p = calendarProblem(c.schedule.onCalendar);
     if (p) return `Schedule: ${p}`;
@@ -182,6 +228,10 @@ export function validateUpdatesContent(c: UpdatesContent): string | null {
   if (c.reboot.forceAfterDays < 0 || c.reboot.forceAfterDays > 365) return "Force after days must be between 0 and 365";
   if (c.reboot.warnMinutes < 0 || c.reboot.warnMinutes > 1440) return "Warning minutes must be between 0 and 1440";
   if (c.reboot.message.length > 512) return "The reboot message is longer than 512 characters";
+  for (const [name, v] of [["Security age limit", c.limits.securityMaxAgeDays], ["Reboot age limit", c.limits.rebootMaxAgeDays], ["Check age limit", c.limits.checkMaxAgeDays]] as const) {
+    const p = limitProblem(v);
+    if (p) return `${name}: ${p}`;
+  }
   const seen = new Set<string>();
   for (const h of c.hold) {
     const p = holdProblem(h);
@@ -211,23 +261,25 @@ export const UPDATES_TEMPLATES: UpdatesTemplate[] = [
   {
     id: "workstation",
     label: "Workstations: security updates nightly, reboot in the window",
-    description: "Security updates install at 02:00 with up to an hour of random delay. A reboot an update needs happens between 03:00 and 05:00 when nobody is logged in, and after seven days even with a user logged in, with a ten-minute warning.",
+    description: "Security updates install at 02:00 with up to an hour of random delay. A reboot an update needs happens between 03:00 and 05:00 when nobody is logged in, and after seven days even with a user logged in, with a ten-minute warning. A security update pending longer than 14 days, a reboot pending longer than 10 or metadata older than 3 days is non-compliant.",
     content: {
       ...emptyUpdatesContent(),
       mode: "UPDATES_MODE_SECURITY",
       schedule: { onCalendar: "*-*-* 02:00", randomizedDelay: "1h", persistent: true },
       reboot: { policy: "UPDATES_REBOOT_WHEN_NEEDED", window: "03:00-05:00", onlyWithoutSessions: true, forceAfterDays: 7, warnMinutes: 10, message: "" },
+      limits: { securityMaxAgeDays: 14, rebootMaxAgeDays: 10, checkMaxAgeDays: 3 },
     },
   },
   {
     id: "servers",
     label: "Servers: all updates, no automatic reboot",
-    description: "Every update installs at 04:00. The node never reboots on its own; a pending reboot shows on the node page and the Compliance page.",
+    description: "Every update installs at 04:00. The node never reboots on its own; a pending reboot shows on the node page and the Compliance page. A security update pending longer than 30 days or metadata older than 3 days is non-compliant.",
     content: {
       ...emptyUpdatesContent(),
       mode: "UPDATES_MODE_ALL",
       schedule: { onCalendar: "*-*-* 04:00", randomizedDelay: "30m", persistent: true },
       reboot: { policy: "UPDATES_REBOOT_NEVER", window: "", onlyWithoutSessions: true, forceAfterDays: 0, warnMinutes: 0, message: "" },
+      limits: { securityMaxAgeDays: 30, rebootMaxAgeDays: 0, checkMaxAgeDays: 3 },
     },
   },
   {

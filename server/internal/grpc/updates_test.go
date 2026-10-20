@@ -19,6 +19,7 @@ func TestSanitizeUpdatesInventory(t *testing.T) {
 		LastRun:       &pb.UpdatesRun{Time: timestamppb.Now(), Success: true, Packages: -1, Message: "ok\x00\x1f" + strings.Repeat("x", 2000)},
 		Reboot:        &pb.UpdatesRebootState{Required: true, Reasons: []string{"kernel\n7", "", "a", "b", "c", "d", "e", "f", "g", "h"}},
 		RunningKernel: "7.2\x07", ForeignMechanisms: []string{"packagekit-background.timer"},
+		PendingFirmware: -2, OldestSecuritySince: timestamppb.Now(),
 	}
 	for i := 0; i < 250; i++ {
 		in.Pending = append(in.Pending, &pb.UpdatesPending{Name: "pkg" + strings.Repeat("a", i%3), Version: "1", Advisory: "FEDORA-1", Severity: "huge", Security: true, Kind: "odd",
@@ -28,8 +29,11 @@ func TestSanitizeUpdatesInventory(t *testing.T) {
 	if out.Engine != "none" || out.EngineManagedBy != "" || out.EffectiveMode != "security" {
 		t.Errorf("words not sanitised: %+v", out)
 	}
-	if out.PendingTotal != 0 || out.PendingSecurity != 2 || out.LastRun.Packages != 0 {
+	if out.PendingTotal != 0 || out.PendingSecurity != 2 || out.LastRun.Packages != 0 || out.PendingFirmware != 0 {
 		t.Errorf("negative counts must clamp: %+v", out)
+	}
+	if out.OldestSecuritySince == nil {
+		t.Error("oldest security timestamp must pass through")
 	}
 	if strings.ContainsAny(out.LastRun.Message, "\x00\x1f") || len(out.LastRun.Message) > maxUpdatesMessage {
 		t.Error("message not cleaned")

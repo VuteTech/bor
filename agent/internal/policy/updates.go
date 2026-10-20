@@ -30,6 +30,12 @@ const (
 	updatesItemReboot   = "updates:reboot"
 	updatesItemHold     = "updates:hold"
 	updatesItemLastRun  = "updates:last-run"
+	// The age items: a security update, a reboot or the metadata older
+	// than the policy's limit.
+	updatesItemSecurityAge = "updates:security-age"
+	updatesItemRebootAge   = "updates:reboot-age"
+	updatesItemCheckAge    = "updates:check-age"
+	updatesItemFirmware    = "updates:firmware"
 )
 
 // UpdatesEntry is one bound Software updates policy with its binding
@@ -60,6 +66,13 @@ type UpdatesDesired struct {
 	// InstallEngine is true unless a policy switches it off.
 	InstallEngine bool
 	RequireEngine bool
+
+	// FirmwareRefresh is the fwupd-refresh.timer state the highest
+	// priority policy asks for; nil keeps the node's.
+	FirmwareRefresh   *bool
+	FirmwareRefreshBy macSource
+	// FirmwareReport is true when any policy reports pending firmware.
+	FirmwareReport bool
 }
 
 func updatesModeRank(m pb.UpdatesMode) int {
@@ -88,7 +101,9 @@ func updatesRebootRank(r pb.UpdatesRebootPolicy) int {
 	return 0
 }
 
-// updatesModeWord maps the proto mode to the engine driver's word.
+// UpdatesModeWord maps the proto mode to the engine driver's word.
+func UpdatesModeWord(m pb.UpdatesMode) updates.Mode { return updatesModeWord(m) }
+
 func updatesModeWord(m pb.UpdatesMode) updates.Mode {
 	switch m {
 	case pb.UpdatesMode_UPDATES_MODE_OFF:
@@ -161,6 +176,15 @@ func MergeUpdatesPolicies(entries []UpdatesEntry) *UpdatesDesired {
 		}
 		if p.GetRequireEngine() {
 			d.RequireEngine = true
+		}
+		if fw := p.GetFirmware(); fw != nil {
+			if fw.RefreshMetadata != nil && d.FirmwareRefresh == nil {
+				v := fw.GetRefreshMetadata()
+				d.FirmwareRefresh, d.FirmwareRefreshBy = &v, src
+			}
+			if fw.GetReportPending() {
+				d.FirmwareReport = true
+			}
 		}
 	}
 	return d
@@ -235,6 +259,7 @@ type updatesSyncer struct {
 	installErr   string
 	configErr    string
 	timerErr     string
+	firmwareErr  string
 	dropInErr    string
 	lockErr      map[string]string
 	timerEnabled map[string]bool
@@ -286,6 +311,7 @@ func SyncUpdates(ctx context.Context, deps *UpdatesDeps, entries []UpdatesEntry,
 	s.ensureEngine()
 	s.applyConfig()
 	s.applyTimers()
+	s.applyFirmwareTimer()
 	s.applyDropIn()
 	s.applyLocks()
 	s.lastRun = s.readLastRun()
@@ -540,6 +566,49 @@ func (s *updatesSyncer) applyTimers() {
 	}
 }
 
+// applyFirmwareTimer enables or disables fwupd's metadata refresh timer
+// when a policy asks, recording its state for the restore.
+func (s *updatesSyncer) applyFirmwareTimer() {
+	want := s.desired.FirmwareRefresh
+	if want == nil {
+		return
+	}
+	if s.deps.Systemd == nil || !s.deps.Systemd.Available() {
+		s.firmwareErr = "systemd is not reachable; the timer state cannot be set"
+		return
+	}
+	t := updates.FwupdRefreshTimer
+	st, err := s.deps.Systemd.Status(s.ctx, t)
+	if err != nil || st == nil || !st.Exists() {
+		s.firmwareErr = "fwupd is not installed"
+		return
+	}
+	cur := systemd.IsEnabledState(st.UnitFileState)
+	if _, recorded := s.state.Timers[t]; !recorded {
+		s.state.Timers[t] = cur
+	}
+	if cur == *want {
+		return
+	}
+	s.drift("updates:timer:"+t, fmt.Sprintf("found %s, expected %s", enabledWord(cur), enabledWord(*want)))
+	if *want {
+		err = s.deps.Systemd.Enable(s.ctx, []string{t})
+		if err == nil {
+			_, err = s.deps.Systemd.Start(s.ctx, t)
+		}
+	} else {
+		err = s.deps.Systemd.Disable(s.ctx, []string{t})
+		if err == nil {
+			_, err = s.deps.Systemd.Stop(s.ctx, t)
+		}
+	}
+	if err != nil {
+		s.firmwareErr = t + ": " + err.Error()
+		return
+	}
+	s.changed()
+}
+
 // applyDropIn writes the schedule drop-in of the engine timer.
 func (s *updatesSyncer) applyDropIn() {
 	want := s.desired.Schedule
@@ -634,6 +703,19 @@ func (s *updatesSyncer) readLastRun() *updates.Run {
 		return updates.DnfLastRun(s.ctx, s.deps.Run, s.p)
 	}
 	return nil
+}
+
+// ReadUpdatesLastRun reads the engine's last run from its log or history.
+func ReadUpdatesLastRun(ctx context.Context, deps *UpdatesDeps) *updates.Run {
+	if deps == nil || deps.Platform == nil {
+		return nil
+	}
+	run := deps.Run
+	if run == nil {
+		run = updates.DefaultRunner
+	}
+	s := &updatesSyncer{ctx: ctx, deps: &UpdatesDeps{Platform: deps.Platform, Run: run}, p: deps.Platform}
+	return s.readLastRun()
 }
 
 // restoreAll undoes everything the state records.
@@ -791,8 +873,112 @@ func (s *updatesSyncer) compliance(e UpdatesEntry) UpdatesPolicyResult {
 		}
 	}
 
+	items = append(items, UpdatesAgeItems(p.GetLimits(), s.state, s.deps.now())...)
+
+	// Firmware.
+	if fw := p.GetFirmware(); fw != nil {
+		if fw.RefreshMetadata != nil {
+			word := "refresh timer " + enabledWord(fw.GetRefreshMetadata())
+			switch {
+			case s.desired.FirmwareRefreshBy.ID != e.ID:
+				items = append(items, macItem(updatesItemFirmware, "refresh", na, "overridden by policy "+s.desired.FirmwareRefreshBy.label()))
+			case s.firmwareErr == "fwupd is not installed":
+				items = append(items, macItem(updatesItemFirmware, "refresh", na, s.firmwareErr))
+			case s.firmwareErr != "":
+				items = append(items, macItem(updatesItemFirmware, "refresh", errSt, s.firmwareErr))
+			default:
+				items = append(items, macItem(updatesItemFirmware, "refresh", ok, word))
+			}
+		}
+		if fw.GetReportPending() {
+			switch {
+			case s.p.FwupdmgrBin == "":
+				items = append(items, macItem(updatesItemFirmware, "pending", na, "fwupd is not installed"))
+			case s.state.LastScan == nil:
+				items = append(items, macItem(updatesItemFirmware, "pending", na, "awaiting the first update scan"))
+			case len(s.state.PendingFirmware) == 0:
+				items = append(items, macItem(updatesItemFirmware, "pending", ok, "no firmware updates pending"))
+			default:
+				items = append(items, macItem(updatesItemFirmware, "pending", bad, fmt.Sprintf("%d firmware update(s) pending: %s", len(s.state.PendingFirmware), strings.Join(firstN(s.state.PendingFirmware, 3), ", "))))
+			}
+		}
+	}
+
 	status, message := rollupMacItems(items, "policy has no settings", "nothing applies on this node")
 	return UpdatesPolicyResult{Status: status, Message: message, Items: items}
+}
+
+// firstN returns up to n entries of list, with an ellipsis entry when
+// more follow.
+func firstN(list []string, n int) []string {
+	if len(list) <= n {
+		return list
+	}
+	return append(append([]string(nil), list[:n]...), fmt.Sprintf("and %d more", len(list)-n))
+}
+
+// UpdatesAgeItems evaluates a policy's age limits against what the last
+// inventory scan recorded: how long each security update has been
+// pending on the node, since when a reboot is pending, and when the
+// metadata was last refreshed. A limit of 0 is not checked.
+func UpdatesAgeItems(limits *pb.UpdatesLimits, state *UpdatesState, now time.Time) []*pb.ComplianceItemResult {
+	if limits == nil || state == nil {
+		return nil
+	}
+	ok := pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT
+	bad := pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT
+	na := pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE
+	var items []*pb.ComplianceItemResult
+	days := func(since time.Time) int { return int(now.Sub(since).Hours() / 24) }
+
+	if limit := limits.GetSecurityMaxAgeDays(); limit > 0 {
+		switch {
+		case state.LastScan == nil:
+			items = append(items, macItem(updatesItemSecurityAge, "security", na, "awaiting the first update scan"))
+		case len(state.PendingSince) == 0:
+			items = append(items, macItem(updatesItemSecurityAge, "security", ok, fmt.Sprintf("no security updates pending (limit %d days)", limit)))
+		default:
+			var oldest time.Time
+			var late []string
+			for name, since := range state.PendingSince {
+				if oldest.IsZero() || since.Before(oldest) {
+					oldest = since
+				}
+				if days(since) > int(limit) {
+					late = append(late, name)
+				}
+			}
+			sort.Strings(late)
+			if len(late) > 0 {
+				items = append(items, macItem(updatesItemSecurityAge, "security", bad, fmt.Sprintf("%d security update(s) pending longer than %d days, oldest %d days: %s", len(late), limit, days(oldest), strings.Join(firstN(late, 3), ", "))))
+			} else {
+				items = append(items, macItem(updatesItemSecurityAge, "security", ok, fmt.Sprintf("%d security update(s) pending, oldest %d days (limit %d)", len(state.PendingSince), days(oldest), limit)))
+			}
+		}
+	}
+	if limit := limits.GetRebootMaxAgeDays(); limit > 0 {
+		switch {
+		case state.RebootPendingSince == nil:
+			items = append(items, macItem(updatesItemRebootAge, "reboot", ok, fmt.Sprintf("no reboot pending (limit %d days)", limit)))
+		case days(*state.RebootPendingSince) > int(limit):
+			items = append(items, macItem(updatesItemRebootAge, "reboot", bad, fmt.Sprintf("reboot pending for %d days (limit %d): %s", days(*state.RebootPendingSince), limit, strings.Join(state.RebootReasons, "; "))))
+		default:
+			items = append(items, macItem(updatesItemRebootAge, "reboot", ok, fmt.Sprintf("reboot pending for %d days (limit %d)", days(*state.RebootPendingSince), limit)))
+		}
+	}
+	if limit := limits.GetCheckMaxAgeDays(); limit > 0 {
+		switch {
+		case state.LastScan == nil:
+			items = append(items, macItem(updatesItemCheckAge, "check", na, "awaiting the first update scan"))
+		case state.LastCheck == nil:
+			items = append(items, macItem(updatesItemCheckAge, "check", bad, "no metadata refresh found; the engine has not run"))
+		case days(*state.LastCheck) > int(limit):
+			items = append(items, macItem(updatesItemCheckAge, "check", bad, fmt.Sprintf("metadata last refreshed %d days ago (limit %d)", days(*state.LastCheck), limit)))
+		default:
+			items = append(items, macItem(updatesItemCheckAge, "check", ok, fmt.Sprintf("metadata refreshed %s (limit %d days)", state.LastCheck.Format("2006-01-02 15:04"), limit)))
+		}
+	}
+	return items
 }
 
 func containsString(list []string, s string) bool {
@@ -1046,6 +1232,11 @@ func ScanUpdatesInventory(ctx context.Context, deps *UpdatesDeps, state *Updates
 			}
 		}
 	}
+	// The caches on disk say when the metadata was really refreshed, timer
+	// or not (a manual "apt update", a first run still to come).
+	if t := updates.MetadataRefreshTime(p); !t.IsZero() && (inv.LastCheck == nil || t.After(inv.LastCheck.AsTime())) {
+		inv.LastCheck = timestamppb.New(t)
+	}
 	inv.EffectiveMode = string(effectiveMode(p, cfgData, cfgErr == nil, inv.EngineTimerEnabled))
 	// Pending updates.
 	var pending []updates.Pending
@@ -1097,11 +1288,39 @@ func ScanUpdatesInventory(ctx context.Context, deps *UpdatesDeps, state *Updates
 	if lastRun != nil {
 		inv.LastRun = &pb.UpdatesRun{Time: timestamppb.New(lastRun.Time), Success: lastRun.Success, Packages: clampInt32(lastRun.Packages), Message: lastRun.Message}
 	}
+	// Firmware, listed after the packages and counted apart.
+	firmware := updates.FwupdPending(ctx, run, p)
+	inv.PendingFirmware = clampInt32(len(firmware))
+	for _, fw := range firmware {
+		if len(inv.Pending) >= UpdatesInventoryLimit {
+			break
+		}
+		inv.Pending = append(inv.Pending, &pb.UpdatesPending{Name: fw.Name, Version: fw.Version, Advisory: fw.Advisory, Severity: fw.Severity, Cves: uniqueStrings(fw.CVEs), Security: fw.Security, Kind: "firmware"})
+	}
 	// Reboot state, with the slow signal, recorded for the quick rule.
 	required, reasons, staged := RebootSignals(ctx, deps, false)
 	inv.Reboot = &pb.UpdatesRebootState{Required: required, Reasons: reasons, Staged: staged}
 	if state != nil {
 		now := deps.now()
+		state.LastScan = &now
+		state.LastCheck = nil
+		if inv.LastCheck != nil {
+			t := inv.LastCheck.AsTime()
+			state.LastCheck = &t
+		}
+		var securityNames []string
+		for _, pe := range pending {
+			if pe.Security {
+				securityNames = append(securityNames, pe.Name)
+			}
+		}
+		if oldest := state.TrackPendingSecurity(securityNames, now); !oldest.IsZero() {
+			inv.OldestSecuritySince = timestamppb.New(oldest)
+		}
+		state.PendingFirmware = nil
+		for _, fw := range firmware {
+			state.PendingFirmware = append(state.PendingFirmware, fw.Name)
+		}
 		if required {
 			if state.RebootPendingSince == nil {
 				state.RebootPendingSince = &now

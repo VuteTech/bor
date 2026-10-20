@@ -23,6 +23,8 @@ func TestValidateUpdatesContent(t *testing.T) {
 		"wrap window": `{"reboot":{"policy":"UPDATES_REBOOT_WHEN_NEEDED","window":"22:00-04:00"}}`,
 		"engine off":  `{"installEngine":false}`,
 		"check mode":  `{"mode":"UPDATES_MODE_CHECK","requireEngine":true}`,
+		"limits only": `{"limits":{"securityMaxAgeDays":14,"rebootMaxAgeDays":7,"checkMaxAgeDays":3}}`,
+		"firmware":    `{"firmware":{"refreshMetadata":true,"reportPending":true}}`,
 	}
 	for name, content := range valid {
 		if err := ValidateUpdatesContent(content); err != nil {
@@ -32,6 +34,8 @@ func TestValidateUpdatesContent(t *testing.T) {
 	invalid := map[string]string{
 		"empty":          `{}`,
 		"nothing set":    `{"mode":"UPDATES_MODE_UNSPECIFIED"}`,
+		"limit too big":  `{"limits":{"securityMaxAgeDays":4000}}`,
+		"limit negative": `{"mode":"UPDATES_MODE_ALL","limits":{"checkMaxAgeDays":-1}}`,
 		"bad mode":       `{"mode":"UPDATES_MODE_YES"}`,
 		"delay no cal":   `{"schedule":{"randomizedDelay":"1h"}}`,
 		"bad delay":      `{"schedule":{"onCalendar":"daily","randomizedDelay":"soon"}}`,

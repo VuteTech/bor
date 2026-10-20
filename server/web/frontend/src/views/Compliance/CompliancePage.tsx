@@ -87,6 +87,10 @@ const SYSTEMD_ITEM_LABELS: Record<string, string> = {
   "updates:reboot": "Reboot rule",
   "updates:hold": "Hold",
   "updates:last-run": "Last update run",
+  "updates:security-age": "Security update age",
+  "updates:reboot-age": "Reboot age",
+  "updates:check-age": "Metadata age",
+  "updates:firmware": "Firmware",
 };
 
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {

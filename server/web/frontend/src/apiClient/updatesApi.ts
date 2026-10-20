@@ -52,6 +52,10 @@ export interface UpdatesInventory {
   newestKernel: string;
   foreignMechanisms: string[];
   lastPolicyReboot?: string;
+  /** When the agent first saw the oldest pending security update. */
+  oldestSecuritySince?: string;
+  /** Pending firmware updates (fwupd), not counted in pendingTotal. */
+  pendingFirmware: number;
 }
 
 export interface UpdatesNodeStatus {
@@ -82,6 +86,40 @@ export async function fetchNodeUpdatesPending(nodeId: string, opts: { q?: string
   if (opts.limit) qs.set("limit", String(opts.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiRequest<UpdatesPendingRow[]>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/updates/pending${suffix}`, { headers: authHeaders() });
+}
+
+export type UpdatesActionKind = "check" | "install" | "reboot";
+
+export interface UpdatesActionResult {
+  id: string;
+  kind: UpdatesActionKind;
+  force: boolean;
+  success: boolean;
+  message: string;
+  /** The tail of the engine's output. */
+  text: string;
+}
+
+/** Ask the node to refresh its metadata, run its engine once or reboot; waits for the outcome. */
+export async function runUpdatesAction(nodeId: string, kind: UpdatesActionKind, force = false): Promise<UpdatesActionResult> {
+  return apiRequest<UpdatesActionResult>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/updates/actions`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, force }),
+  });
+}
+
+/** Fleet counts by update state, within the caller's scope. */
+export interface UpdatesFleetSummary {
+  nodes: number;
+  reported: number;
+  securityPending: number;
+  rebootPending: number;
+  engineMissing: number;
+}
+
+export async function fetchUpdatesSummary(): Promise<UpdatesFleetSummary> {
+  return apiRequest<UpdatesFleetSummary>("/api/v1/updates/summary", { headers: authHeaders() });
 }
 
 export function updatesEngineLabel(engine: string): string {

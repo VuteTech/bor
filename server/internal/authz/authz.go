@@ -38,6 +38,9 @@ var scopableResources = map[string]bool{
 	"systemd": true,
 	// mac:operate asks one node for a mandatory access control proposal.
 	"mac": true,
+	// updates:operate runs a Software updates check, install or reboot on
+	// one node.
+	"updates": true,
 }
 
 // IsScopable reports whether a node-group-scoped binding can grant

@@ -21,6 +21,7 @@ const (
 	maxUpdatesMessageChars = 512
 	maxUpdatesForceDays    = 365
 	maxUpdatesWarnMinutes  = 1440
+	maxUpdatesLimitDays    = 3650
 )
 
 var (
@@ -94,6 +95,13 @@ func ValidateUpdatesContent(content string) error {
 			return fmt.Errorf("the reboot message must be one line")
 		}
 	}
+	if l := pol.GetLimits(); l != nil {
+		for name, v := range map[string]int32{"security": l.GetSecurityMaxAgeDays(), "reboot": l.GetRebootMaxAgeDays(), "check": l.GetCheckMaxAgeDays()} {
+			if v < 0 || v > maxUpdatesLimitDays {
+				return fmt.Errorf("the %s age limit must be between 0 and %d days", name, maxUpdatesLimitDays)
+			}
+		}
+	}
 	if n := len(pol.GetHold()); n > maxUpdatesHolds {
 		return fmt.Errorf("%d holds; the limit is %d", n, maxUpdatesHolds)
 	}
@@ -114,7 +122,12 @@ func updatesPolicyHasSettings(p *pb.UpdatesPolicy) bool {
 	return p.GetMode() != pb.UpdatesMode_UPDATES_MODE_UNSPECIFIED ||
 		(p.GetSchedule() != nil && p.GetSchedule().GetOnCalendar() != "") ||
 		(p.GetReboot() != nil && p.GetReboot().GetPolicy() != pb.UpdatesRebootPolicy_UPDATES_REBOOT_UNSPECIFIED) ||
-		len(p.GetHold()) > 0 || p.GetRemoveUnusedDependencies() || p.GetRequireEngine() || p.InstallEngine != nil
+		len(p.GetHold()) > 0 || p.GetRemoveUnusedDependencies() || p.GetRequireEngine() || p.InstallEngine != nil ||
+		updatesLimitsSet(p.GetLimits()) || (p.GetFirmware() != nil && (p.GetFirmware().RefreshMetadata != nil || p.GetFirmware().GetReportPending()))
+}
+
+func updatesLimitsSet(l *pb.UpdatesLimits) bool {
+	return l != nil && (l.GetSecurityMaxAgeDays() > 0 || l.GetRebootMaxAgeDays() > 0 || l.GetCheckMaxAgeDays() > 0)
 }
 
 // UpdatesContentHasHolds reports whether a policy holds packages back

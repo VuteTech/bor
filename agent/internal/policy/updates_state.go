@@ -45,6 +45,49 @@ type UpdatesState struct {
 	RebootWarnedAt         *time.Time `json:"reboot_warned_at,omitempty"`
 	LastPolicyReboot       *time.Time `json:"last_policy_reboot,omitempty"`
 	LastPolicyRebootReason string     `json:"last_policy_reboot_reason,omitempty"`
+	// Inventory facts the age items read: when the last scan ran, the
+	// last metadata refresh it found, and when each pending security
+	// update was first seen on the node, by package name.
+	LastScan     *time.Time           `json:"last_scan,omitempty"`
+	LastCheck    *time.Time           `json:"last_check,omitempty"`
+	PendingSince map[string]time.Time `json:"pending_since,omitempty"`
+	// PendingFirmware names the firmware updates the last scan found.
+	PendingFirmware []string `json:"pending_firmware,omitempty"`
+}
+
+// updatesPendingSinceLimit caps the first-seen map; a node with more
+// pending security updates than this is tracked by its oldest ones.
+const updatesPendingSinceLimit = 1000
+
+// TrackPendingSecurity records when each pending security update was
+// first seen and forgets the ones no longer pending. It returns the
+// oldest first-seen time, zero when nothing is pending.
+func (s *UpdatesState) TrackPendingSecurity(names []string, now time.Time) time.Time {
+	if s.PendingSince == nil {
+		s.PendingSince = map[string]time.Time{}
+	}
+	current := make(map[string]bool, len(names))
+	for _, n := range names {
+		current[n] = true
+		if _, ok := s.PendingSince[n]; !ok && len(s.PendingSince) < updatesPendingSinceLimit {
+			s.PendingSince[n] = now
+		}
+	}
+	for n := range s.PendingSince {
+		if !current[n] {
+			delete(s.PendingSince, n)
+		}
+	}
+	var oldest time.Time
+	for _, t := range s.PendingSince {
+		if oldest.IsZero() || t.Before(oldest) {
+			oldest = t
+		}
+	}
+	if len(s.PendingSince) == 0 {
+		s.PendingSince = nil
+	}
+	return oldest
 }
 
 func newUpdatesState() *UpdatesState {
@@ -54,7 +97,8 @@ func newUpdatesState() *UpdatesState {
 // Empty reports whether nothing is recorded.
 func (s *UpdatesState) Empty() bool {
 	return s.ConfigBackup == "" && !s.ConfigWritten && len(s.Timers) == 0 && len(s.DropIns) == 0 && len(s.Locks) == 0 &&
-		s.RebootPendingSince == nil && s.RebootWarnedAt == nil && s.LastPolicyReboot == nil
+		s.RebootPendingSince == nil && s.RebootWarnedAt == nil && s.LastPolicyReboot == nil &&
+		s.LastScan == nil && len(s.PendingSince) == 0
 }
 
 // LoadUpdatesState reads the state file; a missing file yields an empty

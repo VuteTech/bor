@@ -124,6 +124,12 @@ type Platform struct {
 	DpkgQueryBin   string
 	NeedrestartBin string
 	SystemctlBin   string
+	// FwupdmgrBin is fwupd's client, for the firmware inventory.
+	FwupdmgrBin string
+	// EngineRunBin runs the engine once with the node's configuration
+	// (dnf5 automatic, dnf-automatic, unattended-upgrade, os-update,
+	// rpm-ostree); empty when the engine is not installed.
+	EngineRunBin string
 	// Root is prepended to every absolute path (tests).
 	Root string
 }
@@ -162,6 +168,7 @@ func Detect() *Platform {
 	p.NeedrestartBin = look("needrestart")
 	p.RpmBin = look("rpm")
 	p.DpkgQueryBin = look("dpkg-query")
+	p.FwupdmgrBin = look("fwupdmgr")
 	// SUSE ships dnf as an alternative client of the same repositories;
 	// its update mechanism is zypper's.
 	suse := strings.Contains(p.OSID, "suse") || p.OSID == "sles" || strings.Contains(strings.ToLower(osr["ID_LIKE"]), "suse")
@@ -173,6 +180,7 @@ func Detect() *Platform {
 		p.ConfigPath = "/etc/rpm-ostreed.conf"
 		p.TimerUnit = "rpm-ostreed-automatic.timer"
 		p.ServiceUnit = "rpm-ostreed-automatic.service"
+		p.EngineRunBin = p.RpmOstreeBin
 	case suse && look("zypper") != "":
 		p.Engine = EngineOsUpdate
 		p.ZypperBin = look("zypper")
@@ -181,6 +189,9 @@ func Detect() *Platform {
 		p.TimerUnit = "os-update.timer"
 		p.ServiceUnit = "os-update.service"
 		p.Installed = fileExists("/usr/libexec/os-update") || fileExists("/usr/lib/systemd/system/os-update.timer")
+		if fileExists("/usr/libexec/os-update") {
+			p.EngineRunBin = "/usr/libexec/os-update"
+		}
 	case look("dnf5") != "":
 		p.Engine = EngineDnf
 		p.DNF5 = true
@@ -190,6 +201,9 @@ func Detect() *Platform {
 		p.TimerUnit = "dnf5-automatic.timer"
 		p.ServiceUnit = "dnf5-automatic.service"
 		p.Installed = fileExists("/usr/lib64/dnf5/plugins/automatic_cmd_plugin.so") || fileExists("/usr/lib/dnf5/plugins/automatic_cmd_plugin.so") || fileExists("/usr/lib/systemd/system/dnf5-automatic.timer")
+		if p.Installed {
+			p.EngineRunBin = p.DnfBin
+		}
 	case look("dnf") != "":
 		p.Engine = EngineDnf
 		p.DnfBin = look("dnf")
@@ -198,6 +212,7 @@ func Detect() *Platform {
 		p.TimerUnit = "dnf-automatic.timer"
 		p.ServiceUnit = "dnf-automatic.service"
 		p.Installed = look("dnf-automatic") != "" || fileExists("/usr/lib/systemd/system/dnf-automatic.timer")
+		p.EngineRunBin = look("dnf-automatic")
 	case look("apt-get") != "":
 		p.Engine = EngineApt
 		p.AptGetBin = look("apt-get")
@@ -206,6 +221,7 @@ func Detect() *Platform {
 		p.TimerUnit = "apt-daily-upgrade.timer"
 		p.ServiceUnit = "apt-daily-upgrade.service"
 		p.Installed = look("unattended-upgrade") != ""
+		p.EngineRunBin = look("unattended-upgrade")
 	case look("zypper") != "":
 		p.Engine = EngineOsUpdate
 		p.ZypperBin = look("zypper")
@@ -214,6 +230,9 @@ func Detect() *Platform {
 		p.TimerUnit = "os-update.timer"
 		p.ServiceUnit = "os-update.service"
 		p.Installed = fileExists("/usr/libexec/os-update") || fileExists("/usr/lib/systemd/system/os-update.timer")
+		if fileExists("/usr/libexec/os-update") {
+			p.EngineRunBin = "/usr/libexec/os-update"
+		}
 	}
 	return p
 }

@@ -35,6 +35,7 @@ const (
 	PolicyService_ReportMacInventory_FullMethodName            = "/bor.policy.v1.PolicyService/ReportMacInventory"
 	PolicyService_ReportUpdatesInventory_FullMethodName        = "/bor.policy.v1.PolicyService/ReportUpdatesInventory"
 	PolicyService_ReportMacActionResult_FullMethodName         = "/bor.policy.v1.PolicyService/ReportMacActionResult"
+	PolicyService_ReportUpdatesActionResult_FullMethodName     = "/bor.policy.v1.PolicyService/ReportUpdatesActionResult"
 	PolicyService_ReportDiskEncryptionState_FullMethodName     = "/bor.policy.v1.PolicyService/ReportDiskEncryptionState"
 	PolicyService_GetDiskEncryptionTasks_FullMethodName        = "/bor.policy.v1.PolicyService/GetDiskEncryptionTasks"
 	PolicyService_EscrowRecoveryKey_FullMethodName             = "/bor.policy.v1.PolicyService/EscrowRecoveryKey"
@@ -89,6 +90,8 @@ type PolicyServiceClient interface {
 	ReportUpdatesInventory(ctx context.Context, in *ReportUpdatesInventoryRequest, opts ...grpc.CallOption) (*ReportUpdatesInventoryResponse, error)
 	// ReportMacActionResult answers a MAC_ACTION command.
 	ReportMacActionResult(ctx context.Context, in *ReportMacActionResultRequest, opts ...grpc.CallOption) (*ReportMacActionResultResponse, error)
+	// ReportUpdatesActionResult answers an UPDATES_ACTION command.
+	ReportUpdatesActionResult(ctx context.Context, in *ReportUpdatesActionResultRequest, opts ...grpc.CallOption) (*ReportUpdatesActionResultResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
 	// and platform facts. The response piggybacks pending tasks.
 	ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error)
@@ -281,6 +284,16 @@ func (c *policyServiceClient) ReportMacActionResult(ctx context.Context, in *Rep
 	return out, nil
 }
 
+func (c *policyServiceClient) ReportUpdatesActionResult(ctx context.Context, in *ReportUpdatesActionResultRequest, opts ...grpc.CallOption) (*ReportUpdatesActionResultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportUpdatesActionResultResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ReportUpdatesActionResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *policyServiceClient) ReportDiskEncryptionState(ctx context.Context, in *ReportDiskEncryptionStateRequest, opts ...grpc.CallOption) (*ReportDiskEncryptionStateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReportDiskEncryptionStateResponse)
@@ -378,6 +391,8 @@ type PolicyServiceServer interface {
 	ReportUpdatesInventory(context.Context, *ReportUpdatesInventoryRequest) (*ReportUpdatesInventoryResponse, error)
 	// ReportMacActionResult answers a MAC_ACTION command.
 	ReportMacActionResult(context.Context, *ReportMacActionResultRequest) (*ReportMacActionResultResponse, error)
+	// ReportUpdatesActionResult answers an UPDATES_ACTION command.
+	ReportUpdatesActionResult(context.Context, *ReportUpdatesActionResultRequest) (*ReportUpdatesActionResultResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
 	// and platform facts. The response piggybacks pending tasks.
 	ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error)
@@ -448,6 +463,9 @@ func (UnimplementedPolicyServiceServer) ReportUpdatesInventory(context.Context, 
 }
 func (UnimplementedPolicyServiceServer) ReportMacActionResult(context.Context, *ReportMacActionResultRequest) (*ReportMacActionResultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportMacActionResult not implemented")
+}
+func (UnimplementedPolicyServiceServer) ReportUpdatesActionResult(context.Context, *ReportUpdatesActionResultRequest) (*ReportUpdatesActionResultResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportUpdatesActionResult not implemented")
 }
 func (UnimplementedPolicyServiceServer) ReportDiskEncryptionState(context.Context, *ReportDiskEncryptionStateRequest) (*ReportDiskEncryptionStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportDiskEncryptionState not implemented")
@@ -766,6 +784,24 @@ func _PolicyService_ReportMacActionResult_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_ReportUpdatesActionResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportUpdatesActionResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ReportUpdatesActionResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ReportUpdatesActionResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ReportUpdatesActionResult(ctx, req.(*ReportUpdatesActionResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PolicyService_ReportDiskEncryptionState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReportDiskEncryptionStateRequest)
 	if err := dec(in); err != nil {
@@ -922,6 +958,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportMacActionResult",
 			Handler:    _PolicyService_ReportMacActionResult_Handler,
+		},
+		{
+			MethodName: "ReportUpdatesActionResult",
+			Handler:    _PolicyService_ReportUpdatesActionResult_Handler,
 		},
 		{
 			MethodName: "ReportDiskEncryptionState",

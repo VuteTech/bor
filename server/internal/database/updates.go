@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/VuteTech/Bor/server/internal/models"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -182,4 +184,63 @@ func (r *UpdatesRepository) ListPending(ctx context.Context, nodeID, q string, s
 		out = append(out, row)
 	}
 	return out, rows.Err()
+}
+
+// SummariesByNodeIDs returns the list summary of every given node that
+// has reported, keyed by node id.
+func (r *UpdatesRepository) SummariesByNodeIDs(ctx context.Context, nodeIDs []string) (map[string]*models.NodeUpdatesSummary, error) {
+	out := map[string]*models.NodeUpdatesSummary{}
+	if len(nodeIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT node_id, engine, COALESCE((info_json->>'engineInstalled')::boolean, FALSE), pending_total, pending_security, reboot_required, reboot_since, reported_at
+		FROM node_updates_status WHERE node_id = ANY($1::uuid[])`, pq.Array(nodeIDs))
+	if err != nil {
+		return nil, fmt.Errorf("updates: summaries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			id    string
+			sm    models.NodeUpdatesSummary
+			since sql.NullTime
+		)
+		if err := rows.Scan(&id, &sm.Engine, &sm.EngineInstalled, &sm.PendingTotal, &sm.PendingSecurity, &sm.RebootRequired, &since, &sm.ReportedAt); err != nil {
+			return nil, fmt.Errorf("updates: scan summary: %w", err)
+		}
+		if since.Valid {
+			t := since.Time
+			sm.RebootSince = &t
+		}
+		s := sm
+		out[id] = &s
+	}
+	return out, rows.Err()
+}
+
+// FleetSummary counts the nodes by their update state. A non-nil scope
+// limits the count to nodes in at least one of the scope's groups.
+func (r *UpdatesRepository) FleetSummary(ctx context.Context, scope *models.GroupScopeFilter) (*models.UpdatesFleetSummary, error) {
+	scopeCond, args := "TRUE", []any(nil)
+	if scope != nil {
+		if len(scope.GroupIDs) == 0 {
+			return &models.UpdatesFleetSummary{}, nil
+		}
+		scopeCond = "EXISTS (SELECT 1 FROM node_group_members sgm WHERE sgm.node_id = n.id AND sgm.node_group_id = ANY($1::uuid[]))"
+		args = append(args, pq.Array(scope.GroupIDs))
+	}
+	query := fmt.Sprintf(`
+		SELECT COUNT(*),
+		       COUNT(us.node_id),
+		       COUNT(*) FILTER (WHERE us.pending_security > 0),
+		       COUNT(*) FILTER (WHERE us.reboot_required),
+		       COUNT(*) FILTER (WHERE us.node_id IS NOT NULL AND (us.engine = 'none' OR NOT COALESCE((us.info_json->>'engineInstalled')::boolean, FALSE)))
+		FROM nodes n LEFT JOIN node_updates_status us ON us.node_id = n.id
+		WHERE %s`, scopeCond)
+	var sm models.UpdatesFleetSummary
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&sm.Nodes, &sm.Reported, &sm.SecurityPending, &sm.RebootPending, &sm.EngineMissing); err != nil {
+		return nil, fmt.Errorf("updates: fleet summary: %w", err)
+	}
+	return &sm, nil
 }

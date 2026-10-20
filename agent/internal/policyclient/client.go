@@ -126,6 +126,8 @@ type PolicyInfo struct {
 	UnitAction *pb.SystemdUnitAction
 	// MacAction carries the command of a MAC_ACTION update.
 	MacAction *pb.MacAction
+	// UpdatesAction carries the command of an UPDATES_ACTION update.
+	UpdatesAction *pb.UpdatesAction
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -421,6 +423,12 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			}
 			pi.MacAction = ma
 		}
+		if ua := update.GetUpdatesAction(); ua != nil {
+			if pi == nil {
+				pi = &PolicyInfo{}
+			}
+			pi.UpdatesAction = ua
+		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
 	}
@@ -566,6 +574,24 @@ func (c *Client) ReportMacActionResult(ctx context.Context, actionID string, suc
 	})
 	if err != nil {
 		return fmt.Errorf("ReportMacActionResult RPC failed: %w", err)
+	}
+	return nil
+}
+
+// ReportUpdatesActionResult answers an UPDATES_ACTION command with the
+// outcome and the engine's output.
+func (c *Client) ReportUpdatesActionResult(ctx context.Context, actionID string, success bool, message, text string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := c.client.ReportUpdatesActionResult(ctx, &pb.ReportUpdatesActionResultRequest{
+		ClientId: c.clientID,
+		ActionId: actionID,
+		Success:  success,
+		Message:  message,
+		Text:     text,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportUpdatesActionResult RPC failed: %w", err)
 	}
 	return nil
 }

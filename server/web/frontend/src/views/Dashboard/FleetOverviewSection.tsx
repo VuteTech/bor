@@ -23,6 +23,9 @@ import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle
 import ExclamationCircleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-circle-icon";
 import QuestionCircleIcon from "@patternfly/react-icons/dist/esm/icons/question-circle-icon";
 import ExclamationTriangleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-triangle-icon";
+import SecurityIcon from "@patternfly/react-icons/dist/esm/icons/security-icon";
+import PowerOffIcon from "@patternfly/react-icons/dist/esm/icons/power-off-icon";
+import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 
 import type { FleetOverview, CertExpiryEntry } from "../../apiClient/dashboardApi";
 import { StatCard } from "../../components/StatCard";
@@ -99,6 +102,47 @@ export const FleetOverviewSection: React.FC<FleetOverviewSectionProps> = ({ data
             href="/nodes?status=unknown"
           />
         </GridItem>
+
+        {data.updates && (
+          <>
+            <GridItem span={3}>
+              <StatCard
+                title="Security updates pending"
+                value={data.updates.securityPending}
+                icon={<SecurityIcon />}
+                color={data.updates.securityPending > 0 ? "red" : "green"}
+                href="/nodes?updates=security"
+              />
+            </GridItem>
+            <GridItem span={3}>
+              <StatCard
+                title="Reboot pending"
+                value={data.updates.rebootPending}
+                icon={<PowerOffIcon />}
+                color={data.updates.rebootPending > 0 ? "orange" : "green"}
+                href="/nodes?updates=reboot"
+              />
+            </GridItem>
+            <GridItem span={3}>
+              <StatCard
+                title="No update engine"
+                value={data.updates.engineMissing}
+                icon={<ExclamationTriangleIcon />}
+                color={data.updates.engineMissing > 0 ? "orange" : "green"}
+                href="/nodes?updates=engine-missing"
+              />
+            </GridItem>
+            <GridItem span={3}>
+              <StatCard
+                title="Update state reported"
+                value={`${data.updates.reported} / ${data.updates.nodes}`}
+                icon={<SyncAltIcon />}
+                color="blue"
+                href="/nodes?updates=not-reported"
+              />
+            </GridItem>
+          </>
+        )}
 
         <GridItem span={4}>
           <Card isCompact>

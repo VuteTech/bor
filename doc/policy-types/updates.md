@@ -32,6 +32,14 @@ are merged, and how to verify and troubleshoot the result.
 - **Holds** - packages the engine must not upgrade.
 - **Engine** - the engine package is installed when missing, and a node
   without an engine can count as non-compliant.
+- **Limits** - compliance thresholds in days: a security update pending
+  longer than the limit, a reboot pending longer than the limit, or
+  package metadata older than the limit makes the node non-compliant.
+- **Firmware** - fwupd's daily metadata refresh, and whether pending
+  firmware updates count against compliance. Firmware is never installed
+  by policy.
+
+Snap packages are out of scope: Bor does not manage snapd.
 
 The engine per distribution:
 
@@ -115,6 +123,16 @@ node leaves every policy.
 **Holds**
 :   Package names or patterns with `*` and `?`.
 
+**Limits**
+:   The three age thresholds, in days; 0 leaves a threshold unchecked.
+    The ages are measured on the node: how long each security update has
+    been pending there since the agent first saw it, since when a reboot
+    is pending, and when the engine last refreshed its metadata.
+
+**Firmware**
+:   Keep, enable or disable `fwupd-refresh.timer`, and whether pending
+    firmware updates are reported as non-compliant.
+
 **Templates**: *Workstations: security updates nightly, reboot in the
 window*, *Servers: all updates, no automatic reboot*, *Check only: report
 pending updates*.
@@ -133,6 +151,8 @@ pending updates*.
 | Hold | `hold[]` | name or pattern | `excludepkgs` (dnf), `Package-Blacklist` (apt), `zypper addlock` |
 | Unused dependencies | `removeUnusedDependencies` | bool | apt `Remove-Unused-Dependencies` |
 | Engine | `installEngine`, `requireEngine` | bool | installs the engine package; non-compliant without one |
+| Limits | `limits.securityMaxAgeDays`, `.rebootMaxAgeDays`, `.checkMaxAgeDays` | 0 to 3650 days | evaluates the age items after every inventory scan |
+| Firmware | `firmware.refreshMetadata`, `firmware.reportPending` | bool | enables or disables `fwupd-refresh.timer` (its state is recorded for the restore); reports pending firmware |
 
 ### Example: workstations
 
@@ -165,7 +185,11 @@ switches), holds are a union, **Remove unused dependencies** and
 **Treat nodes without an engine as non-compliant** are on when any policy
 sets them, and the engine is installed unless a policy switches it off.
 Two schedules with different expressions at equal priority are a conflict:
-neither applies and both policies report an error item.
+neither applies and both policies report an error item. The fwupd refresh
+setting of the highest priority policy applies; pending firmware is
+reported when any policy asks. Limits are evaluated per policy: each
+policy reports its own thresholds, so two policies with different limits
+both report, each against its own.
 
 ## What the agent changes on the node
 
@@ -175,6 +199,7 @@ neither applies and both policies report an error item.
 | `/etc/apt/apt.conf.d/90bor-updates` | the mode (apt lists are cleared and re-declared there) | yes |
 | `/etc/systemd/system/<timer>.d/90-bor.conf` | the schedule | yes |
 | the engine timer's enabled state | the mode | reconciled |
+| `fwupd-refresh.timer`'s enabled state | the firmware setting | reconciled |
 | zypper package locks | holds on SUSE | reconciled |
 | `/var/lib/bor/agent/updates-state.json`, `/var/lib/bor/agent/updates-backups/` | every original state | yes |
 
@@ -224,9 +249,38 @@ effective mode, who configured it (Bor, the vendor defaults or someone
 else), the timer state, the last check and the last run with its outcome,
 the running and newest installed kernel, whether a reboot is pending and
 why, and the pending updates with their advisories, severities and CVE
-ids, searchable and filterable to security updates. Other update
-mechanisms the node runs (PackageKit's background refresh, YaST's online
-update job) are named.
+ids, searchable and filterable to security updates, with pending
+firmware updates when fwupd knows of any. Other update mechanisms the
+node runs (PackageKit's background refresh, YaST's online update job)
+are named.
+
+Holders of `updates:operate` get three actions there:
+
+- **Check for updates** refreshes the package metadata (`dnf makecache`,
+  `apt-get update`, `zypper refresh`, `rpm-ostree upgrade --check`) and
+  reports the inventory again.
+- **Install updates now** runs the engine once with the policy's mode,
+  the way its timer would (`dnf5 automatic`, `dnf-automatic`,
+  `unattended-upgrade`, `os-update`, `rpm-ostree upgrade`), waits for it
+  and shows the tail of its output. Refused when the policy's mode
+  installs nothing. An engine run can take several minutes; the request
+  waits up to fifteen.
+- **Reboot** restarts the node at once when nobody is logged in. With a
+  user logged in it is refused unless forced: then every graphical
+  session gets a desktop warning and the node restarts after one minute
+  (`shutdown -r +1`).
+
+Every action is audit-logged as `updates.action` with the kind, the
+outcome and the agent's message; a reboot also records a tamper-style
+event with the resource `updates:reboot`. The agent refuses installs with
+`updates.allow_install: false` and reboots with `updates.allow_reboot:
+false`.
+
+The nodes list has an **Updates** column (security updates pending, a
+reboot pending, no engine, up to date) and a filter with the same values
+plus *Not reported*. The dashboard's fleet overview counts the nodes with
+security updates pending, with a reboot pending and without an engine,
+each linking to the filtered list.
 
 ## Compliance
 
@@ -238,6 +292,18 @@ update job) are named.
 | `updates:reboot` | the reboot rule is applied; the message says since when a reboot is pending |
 | `updates:hold` | the hold is in the configuration or the lock exists |
 | `updates:last-run` | the engine's last run succeeded (error with its message otherwise) |
+| `updates:security-age` | no security update has been pending on the node longer than the limit; the message names the oldest ones. Inapplicable until the first inventory scan |
+| `updates:reboot-age` | no reboot has been pending longer than the limit |
+| `updates:check-age` | the engine refreshed its metadata within the limit; non-compliant when no refresh is found |
+| `updates:firmware` | `refresh`: the fwupd timer is in the requested state; `pending`: no firmware update is pending (inapplicable without fwupd) |
+
+The age items read what the inventory scan recorded (every
+`updates.inventory_interval`, after every sync and after every action),
+so a scan is followed by a compliance report when a policy sets a limit.
+On the Compliance page the mode and the age items carry the CIS control
+*Ensure updates, patches, and additional security software are
+installed* (1.2.2.1 in CIS Red Hat Enterprise Linux 9 Benchmark v2.0.0
+and CIS Ubuntu Linux 24.04 LTS Benchmark v1.0.0).
 
 ## Verify on the endpoint
 
@@ -292,3 +358,7 @@ security updates only.
   configures the distribution's engine and runs that engine's own units.
 - The inventory carries package names, versions and advisory ids, no user
   data; the pending list is capped at 200 entries per node.
+- The node actions change the node at once and need `updates:operate`,
+  which only Super Admin holds on a new installation; every request is
+  audited with the actor and the outcome. A forced reboot warns the
+  users first and is refused by nodes with `updates.allow_reboot: false`.

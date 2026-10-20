@@ -21,7 +21,7 @@ import type { SelinuxPolicy } from "./selinux";
 import type { SessionAccessPolicy } from "./session_access";
 import type { SystemdPolicy, SystemdUnitAction } from "./systemd";
 import type { ThunderbirdPolicy } from "./thunderbird";
-import type { UpdatesPolicy } from "./updates";
+import type { UpdatesAction, UpdatesPolicy } from "./updates";
 
 export const protobufPackage = "bor.policy.v1";
 
@@ -157,7 +157,11 @@ export interface PolicyUpdate {
     | SystemdUnitAction
     | undefined;
   /** The command of a MAC_ACTION update; unset otherwise. */
-  mac_action: MacAction | undefined;
+  mac_action:
+    | MacAction
+    | undefined;
+  /** The command of an UPDATES_ACTION update; unset otherwise. */
+  updates_action: UpdatesAction | undefined;
 }
 
 /** Update type */
@@ -192,6 +196,13 @@ export enum PolicyUpdate_UpdateType {
    * the agent answers with ReportMacActionResult.
    */
   MAC_ACTION = 8,
+  /**
+   * UPDATES_ACTION - UPDATES_ACTION is a server-to-agent command asking the agent to
+   * check, install or reboot for Software updates; the command is in
+   * updates_action and the agent answers with
+   * ReportUpdatesActionResult.
+   */
+  UPDATES_ACTION = 9,
   UNRECOGNIZED = -1,
 }
 

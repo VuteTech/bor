@@ -27,10 +27,23 @@ func cis(framework, short, id, title string) ComplianceControl {
 
 // complianceControls maps a compliance item schema id to the controls it
 // contributes to. The mandatory access control items map onto the SELinux
-// and AppArmor sections of the CIS benchmarks; the numbering is that of
-// the benchmark version named, other versions of the same benchmark use
-// other numbers for the same controls.
+// and AppArmor sections of the CIS benchmarks and the Software updates
+// items onto their package update control; the numbering is that of the
+// benchmark version named, other versions of the same benchmark use other
+// numbers for the same controls.
 var complianceControls = map[string][]ComplianceControl{
+	"updates:mode": {
+		cis(cisRHEL9, "CIS RHEL 9", "1.2.2.1", "Ensure updates, patches, and additional security software are installed"),
+		cis(cisUbuntu, "CIS Ubuntu 24.04", "1.2.2.1", "Ensure updates, patches, and additional security software are installed"),
+	},
+	"updates:security-age": {
+		cis(cisRHEL9, "CIS RHEL 9", "1.2.2.1", "Ensure updates, patches, and additional security software are installed"),
+		cis(cisUbuntu, "CIS Ubuntu 24.04", "1.2.2.1", "Ensure updates, patches, and additional security software are installed"),
+	},
+	"updates:check-age": {
+		cis(cisRHEL9, "CIS RHEL 9", "1.2.2.1", "Ensure updates, patches, and additional security software are installed"),
+		cis(cisUbuntu, "CIS Ubuntu 24.04", "1.2.2.1", "Ensure updates, patches, and additional security software are installed"),
+	},
 	"selinux:active": {
 		cis(cisRHEL9, "CIS RHEL 9", "1.3.1.1", "Ensure SELinux is installed"),
 		cis(cisRHEL9, "CIS RHEL 9", "1.3.1.2", "Ensure SELinux is not disabled in bootloader configuration"),

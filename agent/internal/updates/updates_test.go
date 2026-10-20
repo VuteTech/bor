@@ -255,3 +255,75 @@ func TestWindow(t *testing.T) {
 		t.Errorf("drop-in wrong:\n%s", drop)
 	}
 }
+
+func TestParseFwupdUpdates(t *testing.T) {
+	doc := `{"Devices":[{"Name":"System Firmware","DeviceId":"abc","Version":"1.10","Releases":[{"Version":"1.12","Urgency":"high","Summary":"Fixes a boot issue","Issues":["CVE-2026-1111","LVFS-1"]},{"Version":"1.11","Urgency":"low"}]},{"Name":"No releases","Releases":[]}]}`
+	got, err := ParseFwupdUpdates([]byte(doc))
+	if err != nil || len(got) != 1 {
+		t.Fatalf("expected one firmware update, got %v (%v)", got, err)
+	}
+	fw := got[0]
+	if fw.Name != "System Firmware" || fw.Version != "1.12" || fw.Severity != "important" || !fw.Security || len(fw.CVEs) != 1 || fw.CVEs[0] != "CVE-2026-1111" || fw.Advisory != "Fixes a boot issue" {
+		t.Errorf("firmware entry wrong: %+v", fw)
+	}
+	if got, err := ParseFwupdUpdates([]byte("No updatable devices\n")); err != nil || got != nil {
+		t.Errorf("non-JSON output must mean no updates, got %v %v", got, err)
+	}
+}
+
+func TestEngineRunCommand(t *testing.T) {
+	dnf5 := &Platform{Engine: EngineDnf, DNF5: true, Installed: true, DnfBin: "/usr/bin/dnf5", EngineRunBin: "/usr/bin/dnf5"}
+	apt := &Platform{Engine: EngineApt, Installed: true, EngineRunBin: "/usr/bin/unattended-upgrade"}
+	ostree := &Platform{Engine: EngineRpmOstree, Installed: true, RpmOstreeBin: "/usr/bin/rpm-ostree", EngineRunBin: "/usr/bin/rpm-ostree"}
+	cases := []struct {
+		name     string
+		p        *Platform
+		mode     Mode
+		wantBin  string
+		wantArgs string
+		refused  bool
+	}{
+		{"dnf5 security", dnf5, ModeSecurity, "/usr/bin/dnf5", "automatic", false},
+		{"apt all", apt, ModeAll, "/usr/bin/unattended-upgrade", "-v", false},
+		{"check refused", apt, ModeCheck, "", "", true},
+		{"off refused", dnf5, ModeOff, "", "", true},
+		{"keep refused", apt, ModeKeep, "", "", true},
+		{"ostree check", ostree, ModeCheck, "/usr/bin/rpm-ostree", "upgrade --check", false},
+		{"ostree all", ostree, ModeAll, "/usr/bin/rpm-ostree", "upgrade", false},
+		{"not installed", &Platform{Engine: EngineApt}, ModeAll, "", "", true},
+	}
+	for _, c := range cases {
+		bin, args, reason := EngineRunCommand(c.p, c.mode)
+		if bin != c.wantBin || strings.Join(args, " ") != c.wantArgs || (reason == "") == c.refused {
+			t.Errorf("%s: got %q %q (%q)", c.name, bin, args, reason)
+		}
+	}
+	if bin, args := RefreshCommand(apt); bin != "" || args != nil {
+		t.Errorf("apt without apt-get must have no refresh command, got %q %q", bin, args)
+	}
+	if bin, args := RefreshCommand(&Platform{Engine: EngineApt, AptGetBin: "/usr/bin/apt-get"}); bin != "/usr/bin/apt-get" || strings.Join(args, " ") != "update" {
+		t.Errorf("apt refresh wrong: %q %q", bin, args)
+	}
+}
+
+func TestMetadataRefreshTime(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var", "lib", "apt", "lists"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := &Platform{Engine: EngineApt, Root: root}
+	if !MetadataRefreshTime(p).IsZero() {
+		t.Error("no cache means no refresh time")
+	}
+	list := filepath.Join(root, "var", "lib", "apt", "lists", "archive_dists_resolute_main_binary-amd64_Packages")
+	if err := os.WriteFile(list, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(list, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if got := MetadataRefreshTime(p); got.Sub(old).Abs() > time.Second {
+		t.Errorf("expected the list mtime %v, got %v", old, got)
+	}
+}

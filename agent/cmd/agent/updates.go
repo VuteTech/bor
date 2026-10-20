@@ -23,6 +23,9 @@ import (
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 )
 
+// updatesActionTextLimit caps the engine output sent back with an action.
+const updatesActionTextLimit = 32 * 1024
+
 // updatesCacheEntry holds a Software updates policy alongside its binding
 // priority and name.
 type updatesCacheEntry struct {
@@ -370,7 +373,178 @@ func reportUpdatesInventory(ctx context.Context, client *policyclient.Client, cf
 		log.Printf("updates: ReportUpdatesInventory failed (non-fatal): %v", err)
 		return
 	}
-	log.Printf("updates: reported inventory (engine %s, mode %q, %d pending, %d security, reboot required=%v)", inv.GetEngine(), inv.GetEffectiveMode(), inv.GetPendingTotal(), inv.GetPendingSecurity(), inv.GetReboot().GetRequired())
+	log.Printf("updates: reported inventory (engine %s, mode %q, %d pending, %d security, %d firmware, reboot required=%v)", inv.GetEngine(), inv.GetEffectiveMode(), inv.GetPendingTotal(), inv.GetPendingSecurity(), inv.GetPendingFirmware(), inv.GetReboot().GetRequired())
+	// The age and firmware items read what the scan recorded: refresh the
+	// compliance of policies that set them.
+	if state != nil && updatesEntriesNeedScan(updatesCacheEntries()) {
+		syncAllUpdates(ctx, client, cfg, true)
+	}
+}
+
+// updatesEntriesNeedScan reports whether any bound policy has items that
+// depend on the inventory scan.
+func updatesEntriesNeedScan(entries []policy.UpdatesEntry) bool {
+	for _, e := range entries {
+		if e.Policy == nil {
+			continue
+		}
+		if l := e.Policy.GetLimits(); l != nil && (l.GetSecurityMaxAgeDays() > 0 || l.GetRebootMaxAgeDays() > 0 || l.GetCheckMaxAgeDays() > 0) {
+			return true
+		}
+		if e.Policy.GetFirmware().GetReportPending() {
+			return true
+		}
+	}
+	return false
+}
+
+// runUpdatesAction executes a check, install or reboot an operator asked
+// for and reports the outcome.
+func runUpdatesAction(ctx context.Context, client *policyclient.Client, cfg *config.Config, action *pb.UpdatesAction) {
+	report := func(ok bool, msg, text string) {
+		log.Printf("updates action %s (%s force=%v): success=%v %s", action.GetId(), action.GetKind(), action.GetForce(), ok, msg)
+		if err := client.ReportUpdatesActionResult(ctx, action.GetId(), ok, msg, text); err != nil {
+			log.Printf("Failed to report updates action result: %v", err)
+		}
+	}
+	switch action.GetKind() {
+	case pb.UpdatesActionKind_UPDATES_ACTION_CHECK:
+		ok, msg, text := updatesActionCheck(ctx, cfg)
+		report(ok, msg, text)
+		if ok {
+			reportUpdatesInventory(ctx, client, cfg)
+		}
+	case pb.UpdatesActionKind_UPDATES_ACTION_INSTALL:
+		if !cfg.Updates.AllowInstall {
+			report(false, "installing updates is disabled on this node (updates.allow_install is off)", "")
+			return
+		}
+		ok, msg, text := updatesActionInstall(ctx, client, cfg)
+		report(ok, msg, text)
+		if ok {
+			reportUpdatesInventory(ctx, client, cfg)
+		}
+	case pb.UpdatesActionKind_UPDATES_ACTION_REBOOT:
+		if !cfg.Updates.AllowReboot {
+			report(false, "reboots are disabled on this node (updates.allow_reboot is off)", "")
+			return
+		}
+		ok, msg := updatesActionReboot(ctx, client, cfg, action.GetForce())
+		report(ok, msg, "")
+	default:
+		report(false, "unknown action", "")
+	}
+}
+
+// updatesActionCheck refreshes the package metadata.
+func updatesActionCheck(ctx context.Context, cfg *config.Config) (ok bool, msg, text string) {
+	p := updatesPlatformCached()
+	bin, args := updates.RefreshCommand(p)
+	if bin == "" {
+		return false, "this node has no update engine to refresh", ""
+	}
+	updatesSyncMu.Lock()
+	defer updatesSyncMu.Unlock()
+	toolCtx, cancel := context.WithTimeout(ctx, cfg.Updates.ToolTimeout)
+	defer cancel()
+	out, err := updates.DefaultRunner(toolCtx, bin, args...)
+	text = tailString(string(out), updatesActionTextLimit)
+	if err != nil && (p.Engine != updates.EngineRpmOstree || updates.ExitCode(err) != 77) {
+		return false, fmt.Sprintf("%s failed: %v", bin, err), text
+	}
+	return true, "metadata refreshed", text
+}
+
+// updatesActionInstall runs the engine once with the node's configuration.
+func updatesActionInstall(ctx context.Context, client *policyclient.Client, cfg *config.Config) (ok bool, msg, text string) {
+	entries := updatesCacheEntries()
+	desired := policy.MergeUpdatesPolicies(entries)
+	mode := updates.ModeKeep
+	if len(entries) > 0 {
+		mode = policy.UpdatesModeWord(desired.Mode)
+	}
+	p := updatesPlatformCached()
+	bin, args, reason := updates.EngineRunCommand(p, mode)
+	if bin == "" {
+		return false, reason, ""
+	}
+	updatesSyncMu.Lock()
+	defer updatesSyncMu.Unlock()
+	toolCtx, cancel := context.WithTimeout(ctx, cfg.Updates.ToolTimeout)
+	defer cancel()
+	start := time.Now()
+	out, err := updates.DefaultRunner(toolCtx, bin, args...)
+	text = tailString(string(out), updatesActionTextLimit)
+	elapsed := time.Since(start).Round(time.Second)
+	if err != nil {
+		if p.Engine == updates.EngineRpmOstree && updates.ExitCode(err) == 77 {
+			return true, fmt.Sprintf("no update available (%s)", elapsed), text
+		}
+		return false, fmt.Sprintf("%s failed after %s: %v", bin, elapsed, err), text
+	}
+	msg = fmt.Sprintf("engine run finished in %s", elapsed)
+	if run := policy.ReadUpdatesLastRun(toolCtx, updatesDeps(cfg)); run != nil && time.Since(run.Time) < 2*elapsed+time.Minute {
+		msg += ": " + run.Message
+	}
+	// The reboot rule sees what the run installed at its next tick; the
+	// sync refreshes the last-run item now.
+	syncAllUpdates(ctx, client, cfg, true)
+	return true, msg, text
+}
+
+// updatesActionReboot reboots the node: at once when nobody is logged in,
+// after a one-minute warning when forced, refused otherwise.
+func updatesActionReboot(ctx context.Context, client *policyclient.Client, cfg *config.Config, force bool) (ok bool, msg string) {
+	deps := updatesDeps(cfg)
+	sessions := updates.Sessions(deps.Logind)
+	updatesSyncMu.Lock()
+	defer updatesSyncMu.Unlock()
+	if len(sessions) > 0 && !force {
+		names := make([]string, 0, len(sessions))
+		for _, s := range sessions {
+			names = append(names, s.User)
+		}
+		return false, fmt.Sprintf("%d user session(s) active (%s); force the reboot to warn them and restart in one minute", len(sessions), strings.Join(policy.UniqueStrings(names), ", "))
+	}
+	if state, err := policy.LoadUpdatesState(cfg.Updates.StatePath); err == nil {
+		now := time.Now()
+		state.LastPolicyReboot = &now
+		state.LastPolicyRebootReason = "requested by an operator"
+		suppressManagedWrites(cfg, cfg.Updates.StatePath)
+		_ = policy.SaveUpdatesState(cfg.Updates.StatePath, state)
+	}
+	if len(sessions) == 0 {
+		_ = client.ReportUnitTamperEvent(ctx, "updates:reboot", "rebooted by an operator action", nil)
+		if err := rebootNode(ctx, cfg); err != nil {
+			return false, err.Error()
+		}
+		return true, "rebooting now"
+	}
+	message := "This computer will restart in 1 minute to finish installing updates. Save your work."
+	warned := 0
+	for _, s := range sessions {
+		if s.Graphical && deps.Notify != nil && deps.Notify(s, "Restart required", message) == nil {
+			warned++
+		}
+	}
+	out, err := exec.CommandContext(ctx, "shutdown", "-r", "+1", message).CombinedOutput()
+	if err != nil {
+		return false, fmt.Sprintf("shutdown -r +1: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	_ = client.ReportUnitTamperEvent(ctx, "updates:reboot", "reboot scheduled by an operator action with users logged in", nil)
+	return true, fmt.Sprintf("reboot scheduled in 1 minute; %d user(s) warned", warned)
+}
+
+// tailString keeps the last n bytes of s, on a line boundary.
+func tailString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := s[len(s)-n:]
+	if i := strings.IndexByte(cut, '\n'); i >= 0 && i < len(cut)-1 {
+		cut = cut[i+1:]
+	}
+	return "[...]\n" + cut
 }
 
 // startUpdatesInventoryTicker reports once now and then periodically.

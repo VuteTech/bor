@@ -35,6 +35,30 @@ message UpdatesPolicy {
   // A node without a usable engine is non-compliant instead of
   // inapplicable.
   bool require_engine = 7;
+  // Compliance thresholds; 0 leaves a threshold unchecked.
+  UpdatesLimits limits = 8;
+  // Firmware (fwupd) settings.
+  UpdatesFirmware firmware = 9;
+}
+
+message UpdatesLimits {
+  // A security update pending on the node longer than this many days is
+  // reported as updates:security-age.
+  int32 security_max_age_days = 1;
+  // A reboot pending longer than this many days is reported as
+  // updates:reboot-age.
+  int32 reboot_max_age_days = 2;
+  // Metadata older than this many days (the engine is not running) is
+  // reported as updates:check-age.
+  int32 check_max_age_days = 3;
+}
+
+message UpdatesFirmware {
+  // Enable or disable fwupd-refresh.timer, the daily metadata refresh.
+  // Unset keeps the node's state.
+  optional bool refresh_metadata = 1;
+  // Report pending firmware updates as the updates:firmware item.
+  bool report_pending = 2;
 }
 
 // UpdatesMode is what the node installs without a person.
@@ -151,6 +175,11 @@ message UpdatesInventory {
   repeated string foreign_mechanisms = 15;
   // The engine's own last reboot requested by a policy, when any.
   google.protobuf.Timestamp last_policy_reboot = 16;
+  // When the agent first saw the oldest pending security update.
+  google.protobuf.Timestamp oldest_security_since = 17;
+  // Pending firmware updates (fwupd), listed in pending with kind
+  // "firmware"; not counted in pending_total.
+  int32 pending_firmware = 18;
 }
 
 // ReportUpdatesInventoryRequest carries the update state of a node.
@@ -160,3 +189,36 @@ message ReportUpdatesInventoryRequest {
 }
 
 message ReportUpdatesInventoryResponse {}
+
+// UpdatesActionKind is what an operator asks a node to do now.
+enum UpdatesActionKind {
+  UPDATES_ACTION_UNSPECIFIED = 0;
+  // Refresh the package metadata and report the inventory again.
+  UPDATES_ACTION_CHECK = 1;
+  // Run the engine once now, with the policy's mode.
+  UPDATES_ACTION_INSTALL = 2;
+  // Reboot the node: at once without sessions, after a one-minute
+  // warning with force, refused otherwise.
+  UPDATES_ACTION_REBOOT = 3;
+}
+
+// UpdatesAction is the command of an UPDATES_ACTION policy update.
+message UpdatesAction {
+  // Correlation id the agent sends back in ReportUpdatesActionResult.
+  string id = 1;
+  UpdatesActionKind kind = 2;
+  // Reboot despite logged-in users (they are warned first).
+  bool force = 3;
+}
+
+message ReportUpdatesActionResultRequest {
+  string client_id = 1;
+  string action_id = 2;
+  bool success = 3;
+  // One line: what happened.
+  string message = 4;
+  // The tail of the engine's output.
+  string text = 5;
+}
+
+message ReportUpdatesActionResultResponse {}

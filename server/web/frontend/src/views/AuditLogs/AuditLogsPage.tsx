@@ -50,7 +50,7 @@ import {
 
 // ─── Known filter values ──────────────────────────────────────────────────────
 
-const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "access_denied", "tamper_detected", "systemd.unit_action", "mac.action"];
+const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "access_denied", "tamper_detected", "systemd.unit_action", "mac.action", "updates.action"];
 // policy.updates_hold is listed with the other policy audit actions in the type-specific filters below.
 const KNOWN_RESOURCE_TYPES = [
   "policies", "nodes", "node-groups", "users", "roles",
@@ -77,6 +77,8 @@ const ACTION_LABEL_COLOR: Record<string, LabelColor> = {
   access_denied: "yellow",
   tamper_detected: "orange",
   "systemd.unit_action": "teal",
+  "mac.action": "teal",
+  "updates.action": "teal",
 };
 const DEFAULT_ACTION_LABEL_COLOR: LabelColor = "grey";
 

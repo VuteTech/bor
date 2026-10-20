@@ -38,6 +38,21 @@ export enum UpdatesRebootPolicy {
   UNRECOGNIZED = -1,
 }
 
+/** UpdatesActionKind is what an operator asks a node to do now. */
+export enum UpdatesActionKind {
+  UPDATES_ACTION_UNSPECIFIED = 0,
+  /** UPDATES_ACTION_CHECK - Refresh the package metadata and report the inventory again. */
+  UPDATES_ACTION_CHECK = 1,
+  /** UPDATES_ACTION_INSTALL - Run the engine once now, with the policy's mode. */
+  UPDATES_ACTION_INSTALL = 2,
+  /**
+   * UPDATES_ACTION_REBOOT - Reboot the node: at once without sessions, after a one-minute
+   * warning with force, refused otherwise.
+   */
+  UPDATES_ACTION_REBOOT = 3,
+  UNRECOGNIZED = -1,
+}
+
 /**
  * UpdatesPolicy manages the distribution's unattended update mechanism
  * (dnf-automatic, unattended-upgrades, os-update, rpm-ostree) and the
@@ -81,6 +96,42 @@ export interface UpdatesPolicy {
    * inapplicable.
    */
   require_engine: boolean;
+  /** Compliance thresholds; 0 leaves a threshold unchecked. */
+  limits:
+    | UpdatesLimits
+    | undefined;
+  /** Firmware (fwupd) settings. */
+  firmware: UpdatesFirmware | undefined;
+}
+
+export interface UpdatesLimits {
+  /**
+   * A security update pending on the node longer than this many days is
+   * reported as updates:security-age.
+   */
+  security_max_age_days: number;
+  /**
+   * A reboot pending longer than this many days is reported as
+   * updates:reboot-age.
+   */
+  reboot_max_age_days: number;
+  /**
+   * Metadata older than this many days (the engine is not running) is
+   * reported as updates:check-age.
+   */
+  check_max_age_days: number;
+}
+
+export interface UpdatesFirmware {
+  /**
+   * Enable or disable fwupd-refresh.timer, the daily metadata refresh.
+   * Unset keeps the node's state.
+   */
+  refresh_metadata?:
+    | boolean
+    | undefined;
+  /** Report pending firmware updates as the updates:firmware item. */
+  report_pending: boolean;
 }
 
 /**
@@ -182,7 +233,18 @@ export interface UpdatesInventory {
   /** Other update mechanisms the node runs that Bor does not manage. */
   foreign_mechanisms: string[];
   /** The engine's own last reboot requested by a policy, when any. */
-  last_policy_reboot: Date | undefined;
+  last_policy_reboot:
+    | Date
+    | undefined;
+  /** When the agent first saw the oldest pending security update. */
+  oldest_security_since:
+    | Date
+    | undefined;
+  /**
+   * Pending firmware updates (fwupd), listed in pending with kind
+   * "firmware"; not counted in pending_total.
+   */
+  pending_firmware: number;
 }
 
 /** ReportUpdatesInventoryRequest carries the update state of a node. */
@@ -192,4 +254,26 @@ export interface ReportUpdatesInventoryRequest {
 }
 
 export interface ReportUpdatesInventoryResponse {
+}
+
+/** UpdatesAction is the command of an UPDATES_ACTION policy update. */
+export interface UpdatesAction {
+  /** Correlation id the agent sends back in ReportUpdatesActionResult. */
+  id: string;
+  kind: UpdatesActionKind;
+  /** Reboot despite logged-in users (they are warned first). */
+  force: boolean;
+}
+
+export interface ReportUpdatesActionResultRequest {
+  client_id: string;
+  action_id: string;
+  success: boolean;
+  /** One line: what happened. */
+  message: string;
+  /** The tail of the engine's output. */
+  text: string;
+}
+
+export interface ReportUpdatesActionResultResponse {
 }

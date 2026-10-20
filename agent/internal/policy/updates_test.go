@@ -68,6 +68,8 @@ func fakeRunner(t *testing.T, calls *[]string) updates.Runner {
 			return []byte("linux-image-7.0.0-38-generic\tinstall ok installed\nlinux-image-7.0.0-34-generic\tinstall ok installed\n"), nil
 		case strings.HasSuffix(name, "needrestart"):
 			return []byte("NEEDRESTART-VER: 3.11\nNEEDRESTART-KCUR: 7.0.0-34-generic\nNEEDRESTART-KEXP: 7.0.0-38-generic\nNEEDRESTART-KSTA: 3\n"), nil
+		case strings.HasSuffix(name, "fwupdmgr"):
+			return []byte(`{"Devices":[{"Name":"System Firmware","Releases":[{"Version":"1.12","Urgency":"high","Summary":"Fixes a boot issue"}]}]}`), nil
 		}
 		t.Logf("unexpected command %s", line)
 		return nil, nil
@@ -300,5 +302,130 @@ func TestEffectiveModeAndInventory(t *testing.T) {
 	}
 	if inv.RunningKernel != "7.0.0-38-generic" || inv.NewestKernel != "7.0.0-38-generic" || inv.BootTime == nil {
 		t.Errorf("kernel/boot fields wrong: %+v", inv)
+	}
+}
+
+func TestTrackPendingSecurityAndAgeItems(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
+	st := newUpdatesState()
+	if oldest := st.TrackPendingSecurity([]string{"openssl", "curl"}, now.Add(-20*24*time.Hour)); !oldest.Equal(now.Add(-20 * 24 * time.Hour)) {
+		t.Errorf("first seen must be the oldest, got %v", oldest)
+	}
+	// curl was installed, vim is new.
+	oldest := st.TrackPendingSecurity([]string{"openssl", "vim"}, now)
+	if _, ok := st.PendingSince["curl"]; ok || len(st.PendingSince) != 2 || !oldest.Equal(now.Add(-20*24*time.Hour)) {
+		t.Errorf("tracking wrong: %+v", st.PendingSince)
+	}
+	st.LastScan = &now
+	lastCheck := now.Add(-5 * 24 * time.Hour)
+	st.LastCheck = &lastCheck
+	since := now.Add(-3 * 24 * time.Hour)
+	st.RebootPendingSince = &since
+	st.RebootReasons = []string{"kernel 7.0.0-38 installed, 7.0.0-34 running"}
+
+	items := UpdatesAgeItems(&pb.UpdatesLimits{SecurityMaxAgeDays: 14, RebootMaxAgeDays: 7, CheckMaxAgeDays: 3}, st, now)
+	got := map[string]*pb.ComplianceItemResult{}
+	for _, it := range items {
+		got[it.SchemaId] = it
+	}
+	if it := got["updates:security-age"]; it == nil || it.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT || !strings.Contains(it.Message, "openssl") || !strings.Contains(it.Message, "oldest 20 days") {
+		t.Errorf("security age item wrong: %+v", it)
+	}
+	if it := got["updates:reboot-age"]; it == nil || it.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT || !strings.Contains(it.Message, "3 days") {
+		t.Errorf("reboot age item wrong: %+v", it)
+	}
+	if it := got["updates:check-age"]; it == nil || it.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT || !strings.Contains(it.Message, "5 days") {
+		t.Errorf("check age item wrong: %+v", it)
+	}
+	// Unchecked limits produce no items; a fresh state is inapplicable.
+	if items := UpdatesAgeItems(&pb.UpdatesLimits{}, st, now); len(items) != 0 {
+		t.Errorf("zero limits must produce no items, got %v", items)
+	}
+	fresh := UpdatesAgeItems(&pb.UpdatesLimits{SecurityMaxAgeDays: 1, CheckMaxAgeDays: 1, RebootMaxAgeDays: 1}, newUpdatesState(), now)
+	for _, it := range fresh {
+		want := pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE
+		if it.SchemaId == "updates:reboot-age" {
+			want = pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT
+		}
+		if it.Status != want {
+			t.Errorf("fresh state: %s = %s, want %s", it.SchemaId, it.Status, want)
+		}
+	}
+	// Saving keeps the scan facts; the file is not empty.
+	if st.Empty() {
+		t.Error("a state with scan facts is not empty")
+	}
+}
+
+func TestSyncUpdatesLimitsAndFirmware(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"etc/apt/apt.conf.d", "proc/sys/kernel", "boot"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(root, "proc", "sys", "kernel", "osrelease"), []byte("7.0.0-38-generic\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "boot", "vmlinuz-7.0.0-38-generic"), []byte("k"), 0o600)
+	fake := systemd.NewFake()
+	fake.AddUnit(systemd.UnitStatus{Name: "apt-daily-upgrade.timer", LoadState: "loaded", ActiveState: "active", UnitFileState: "enabled"})
+	fake.AddUnit(systemd.UnitStatus{Name: "fwupd-refresh.timer", LoadState: "loaded", ActiveState: "inactive", UnitFileState: "disabled"})
+	var calls []string
+	p := aptPlatform(root)
+	p.NeedrestartBin = ""
+	p.FwupdmgrBin = "/usr/bin/fwupdmgr"
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
+	deps := &UpdatesDeps{Platform: p, Run: fakeRunner(t, &calls), Systemd: fake, Now: func() time.Time { return now }}
+	statePath := filepath.Join(root, "state.json")
+	opts := UpdatesSyncOptions{StatePath: statePath, BackupDir: filepath.Join(root, "backups"), SystemDir: filepath.Join(root, "etc", "systemd", "system"), AllowInstall: true, AllowReboot: true}
+	pol := &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_SECURITY, Limits: &pb.UpdatesLimits{SecurityMaxAgeDays: 14, CheckMaxAgeDays: 3},
+		Firmware: &pb.UpdatesFirmware{RefreshMetadata: bptr(true), ReportPending: true}}
+	entries := []UpdatesEntry{updEntry("p", 10, pol)}
+
+	// Before any scan the age and firmware items are inapplicable.
+	res := SyncUpdates(context.Background(), deps, entries, opts)
+	r := res.Policies["p"]
+	status := map[string]string{}
+	for _, it := range r.Items {
+		status[it.SchemaId+"/"+it.Key] = it.Status.String()
+	}
+	if status["updates:security-age/security"] != "COMPLIANCE_STATUS_INAPPLICABLE" || status["updates:firmware/pending"] != "COMPLIANCE_STATUS_INAPPLICABLE" {
+		t.Errorf("before a scan the scan items must be inapplicable: %v", status)
+	}
+	if status["updates:firmware/refresh"] != "COMPLIANCE_STATUS_COMPLIANT" || !fake.HasCall("Enable fwupd-refresh.timer") {
+		t.Errorf("fwupd-refresh.timer must be enabled: %v (%v)", status, calls)
+	}
+	// A scan records the facts; the next sync evaluates them.
+	state, _ := LoadUpdatesState(statePath)
+	if state.Timers["fwupd-refresh.timer"] != false {
+		t.Errorf("the timer's prior state must be recorded for the restore: %+v", state.Timers)
+	}
+	inv := ScanUpdatesInventory(context.Background(), deps, state, opts.SystemDir)
+	if inv.PendingFirmware != 1 || len(inv.Pending) != 3 || inv.Pending[2].Kind != "firmware" || inv.OldestSecuritySince == nil {
+		t.Errorf("inventory firmware/oldest fields wrong: %+v", inv)
+	}
+	if err := SaveUpdatesState(statePath, state); err != nil {
+		t.Fatal(err)
+	}
+	res = SyncUpdates(context.Background(), deps, entries, opts)
+	r = res.Policies["p"]
+	status = map[string]string{}
+	msg := map[string]string{}
+	for _, it := range r.Items {
+		status[it.SchemaId+"/"+it.Key] = it.Status.String()
+		msg[it.SchemaId+"/"+it.Key] = it.Message
+	}
+	if status["updates:security-age/security"] != "COMPLIANCE_STATUS_COMPLIANT" || !strings.Contains(msg["updates:security-age/security"], "1 security update(s) pending, oldest 0 days") {
+		t.Errorf("security age after scan wrong: %v %v", status, msg)
+	}
+	if status["updates:check-age/check"] != "COMPLIANCE_STATUS_NON_COMPLIANT" {
+		t.Errorf("no last check means the check-age item fails: %v %v", status, msg)
+	}
+	if status["updates:firmware/pending"] != "COMPLIANCE_STATUS_NON_COMPLIANT" || !strings.Contains(msg["updates:firmware/pending"], "System Firmware") {
+		t.Errorf("pending firmware must be reported: %v %v", status, msg)
+	}
+	// Unbinding restores the fwupd timer.
+	SyncUpdates(context.Background(), deps, nil, opts)
+	if !fake.HasCall("Disable fwupd-refresh.timer") {
+		t.Errorf("restore must disable fwupd-refresh.timer again: %v", calls)
 	}
 }

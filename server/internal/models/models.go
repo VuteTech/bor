@@ -128,6 +128,31 @@ type Node struct {
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
 	CertSerial     *string    `json:"cert_serial,omitempty" db:"cert_serial"`
 	CertNotAfter   *time.Time `json:"cert_not_after,omitempty" db:"cert_not_after"`
+	// Updates is the node's last Software updates report, attached to
+	// list rows; nil when the node has not reported.
+	Updates *NodeUpdatesSummary `json:"updates,omitempty"`
+}
+
+// NodeUpdatesSummary is what the nodes list shows of a node's Software
+// updates state.
+type NodeUpdatesSummary struct {
+	Engine          string     `json:"engine"`
+	EngineInstalled bool       `json:"engine_installed"`
+	PendingTotal    int        `json:"pending_total"`
+	PendingSecurity int        `json:"pending_security"`
+	RebootRequired  bool       `json:"reboot_required"`
+	RebootSince     *time.Time `json:"reboot_since,omitempty"`
+	ReportedAt      time.Time  `json:"reported_at"`
+}
+
+// UpdatesFleetSummary counts the nodes of the caller's scope by their
+// Software updates state, for the dashboard.
+type UpdatesFleetSummary struct {
+	Nodes           int `json:"nodes"`
+	Reported        int `json:"reported"`
+	SecurityPending int `json:"securityPending"`
+	RebootPending   int `json:"rebootPending"`
+	EngineMissing   int `json:"engineMissing"`
 }
 
 // UpdateNodeRequest represents a request to update a node
@@ -466,6 +491,7 @@ type NodeListRequest struct {
 	Desktop      string `json:"desktop,omitempty"`       // matches desktop_env
 	AgentVersion string `json:"agent_version,omitempty"` // matches agent_version
 	LSM          string `json:"lsm,omitempty"`           // matches lsm ("selinux", "apparmor", "none")
+	Updates      string `json:"updates,omitempty"`       // "security" (pending), "reboot" (pending), "engine-missing", "not-reported"
 	Group        string `json:"group,omitempty"`         // node group id, or "none" for unassigned
 	SortField    string `json:"sort_field,omitempty"`
 	SortOrder    string `json:"sort_order,omitempty"` // "asc" | "desc"

@@ -10,15 +10,20 @@
  */
 
 import React, { useCallback, useEffect, useId, useState } from "react";
-import { Button, Checkbox, Label, SearchInput, Spinner, Title, Tooltip } from "@patternfly/react-core";
+import { Button, Checkbox, ExpandableSection, Label, SearchInput, Spinner, Title, Tooltip } from "@patternfly/react-core";
 import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { ConfirmModal } from "../../components/ConfirmModal";
+import { hasPermission } from "../../apiClient/permissions";
 import {
   fetchNodeUpdates,
   fetchNodeUpdatesPending,
+  runUpdatesAction,
   updatesEngineLabel,
   updatesModeLabel,
+  type UpdatesActionKind,
+  type UpdatesActionResult,
   type UpdatesNodeStatus,
   type UpdatesPendingRow,
 } from "../../apiClient/updatesApi";
@@ -61,10 +66,14 @@ const subtle: React.CSSProperties = { color: "var(--pf-t--global--text--color--s
 
 interface Props {
   nodeId: string;
+  nodeName?: string;
 }
 
-export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
+const ACTION_LABELS: Record<UpdatesActionKind, string> = { check: "Check for updates", install: "Install updates now", reboot: "Reboot" };
+
+export const NodeUpdatesSection: React.FC<Props> = ({ nodeId, nodeName }) => {
   const idp = useId();
+  const canOperate = hasPermission("updates:operate");
   const [status, setStatus] = useState<UpdatesNodeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +81,11 @@ export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
   const [securityOnly, setSecurityOnly] = useState(false);
   const [pending, setPending] = useState<UpdatesPendingRow[] | null>(null);
   const [pendingError, setPendingError] = useState<string | null>(null);
+  const [running, setRunning] = useState<UpdatesActionKind | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionResult, setActionResult] = useState<UpdatesActionResult | null>(null);
+  const [confirm, setConfirm] = useState<UpdatesActionKind | null>(null);
+  const [forceReboot, setForceReboot] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,7 +102,23 @@ export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
   useEffect(() => { setStatus(null); void load(); }, [load]);
 
   const inv = status?.inventory;
-  const hasPending = (inv?.pendingTotal ?? 0) > 0;
+  const hasPending = (inv?.pendingTotal ?? 0) + (inv?.pendingFirmware ?? 0) > 0;
+
+  const runAction = useCallback(async (kind: UpdatesActionKind, force: boolean) => {
+    setRunning(kind);
+    setActionError(null);
+    setActionResult(null);
+    try {
+      const res = await runUpdatesAction(nodeId, kind, force);
+      setActionResult(res);
+      if (!res.success) setActionError(res.message || `The node could not ${kind}`);
+      if (kind !== "reboot") void load();
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : `The ${kind} request failed`);
+    } finally {
+      setRunning(null);
+    }
+  }, [nodeId, load]);
 
   useEffect(() => {
     if (!hasPending) { setPending([]); return; }
@@ -113,6 +143,27 @@ export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
       <LiveAlert id={`${idp}-error`} variant="danger" isInline message={error} />
       {loading && !status && <Spinner size="md" aria-label="Loading" />}
       {status && !inv && <p style={subtle}>Not reported: the node has not sent its update state yet.</p>}
+      {inv && canOperate && (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem", alignItems: "center" }}>
+          <Tooltip content="Refresh the package metadata on the node and report the inventory again">
+            <Button variant="secondary" size="sm" onClick={() => void runAction("check", false)} isDisabled={running !== null} isLoading={running === "check"}>{ACTION_LABELS.check}</Button>
+          </Tooltip>
+          <Tooltip content="Run the update engine once now with the policy's mode (what the schedule would do), then report">
+            <Button variant="secondary" size="sm" onClick={() => setConfirm("install")} isDisabled={running !== null} isLoading={running === "install"}>{ACTION_LABELS.install}</Button>
+          </Tooltip>
+          <Tooltip content="Restart the node now; with users logged in they are warned and the node restarts after one minute">
+            <Button variant="danger" size="sm" onClick={() => { setForceReboot(false); setConfirm("reboot"); }} isDisabled={running !== null} isLoading={running === "reboot"}>{ACTION_LABELS.reboot}</Button>
+          </Tooltip>
+          {running && <span style={subtle} aria-live="polite">Waiting for the node{running === "install" ? " (an engine run can take several minutes)" : ""}...</span>}
+        </div>
+      )}
+      <LiveAlert id={`${idp}-action-error`} variant="danger" isInline message={actionError} style={{ marginTop: "0.5rem" }} />
+      {actionResult?.success && <LiveAlert id={`${idp}-action-ok`} variant="success" isInline message={`${ACTION_LABELS[actionResult.kind]}: ${actionResult.message}`} style={{ marginTop: "0.5rem" }} />}
+      {actionResult?.text && (
+        <ExpandableSection toggleText="Engine output" isIndented style={{ marginTop: "0.25rem" }}>
+          <pre style={{ fontSize: "0.75rem", maxHeight: "16rem", overflow: "auto", whiteSpace: "pre-wrap" }}>{actionResult.text}</pre>
+        </ExpandableSection>
+      )}
       {inv && (
         <>
           <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
@@ -137,11 +188,13 @@ export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
             <p style={{ ...subtle, marginTop: "0.25rem" }}>Reboot needed: {inv.reboot.reasons.join("; ")}{inv.reboot.staged ? " (a deployment is staged)" : ""}.</p>
           ) : null}
           {inv.lastPolicyReboot ? <p style={{ ...subtle, marginTop: "0.25rem" }}>Last reboot by policy {new Date(inv.lastPolicyReboot).toLocaleString()}.</p> : null}
+          {inv.oldestSecuritySince ? <p style={{ ...subtle, marginTop: "0.25rem" }}>Oldest security update pending since {new Date(inv.oldestSecuritySince).toLocaleString()} ({timeAgo(inv.oldestSecuritySince)}).</p> : null}
           {inv.foreignMechanisms?.length ? <p style={{ ...subtle, marginTop: "0.25rem" }}>Other update mechanisms on this node: {inv.foreignMechanisms.join(", ")}.</p> : null}
 
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.75rem", flexWrap: "wrap" }}>
             <strong>{inv.pendingTotal ?? 0} pending update{(inv.pendingTotal ?? 0) === 1 ? "" : "s"}</strong>
             {(inv.pendingSecurity ?? 0) > 0 && <Label isCompact color="red">{inv.pendingSecurity} security</Label>}
+            {(inv.pendingFirmware ?? 0) > 0 && <Label isCompact color="purple">{inv.pendingFirmware} firmware</Label>}
           </div>
           {hasPending && (
             <>
@@ -175,6 +228,26 @@ export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
           )}
         </>
       )}
+      <ConfirmModal
+        isOpen={confirm === "install"}
+        title={`Install updates on ${nodeName ?? "this node"} now?`}
+        confirmLabel="Install now"
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => { setConfirm(null); void runAction("install", false); }}
+      >
+        The node runs its update engine once with the policy's mode, as its schedule would. Packages are downloaded and installed at once; the run can take several minutes and is audit-logged. The reboot rule of the policy decides any reboot afterwards.
+      </ConfirmModal>
+      <ConfirmModal
+        isOpen={confirm === "reboot"}
+        title={`Reboot ${nodeName ?? "this node"}?`}
+        confirmLabel={forceReboot ? "Warn users and reboot" : "Reboot"}
+        isDanger
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => { setConfirm(null); void runAction("reboot", forceReboot); }}
+      >
+        <p>The node restarts at once when nobody is logged in. With a user logged in the reboot is refused unless you force it: the user gets a desktop warning and the node restarts after one minute, losing unsaved work.</p>
+        <Checkbox id={`${idp}-force`} label="Reboot even if users are logged in (they get a one-minute warning)" isChecked={forceReboot} onChange={(_ev, v) => setForceReboot(v)} style={{ marginTop: "0.75rem" }} />
+      </ConfirmModal>
     </section>
   );
 };

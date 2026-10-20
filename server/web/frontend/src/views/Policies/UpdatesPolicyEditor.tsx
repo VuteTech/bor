@@ -39,6 +39,8 @@ import { fetchNodesPaged, type Node } from "../../apiClient/nodesApi";
 import { fetchNodeUpdates, updatesEngineLabel, updatesModeLabel as inventoryModeLabel, type UpdatesNodeStatus } from "../../apiClient/updatesApi";
 import { SCHEDULE_PRESETS } from "./systemdModel";
 import {
+  hasLimits,
+  limitProblem,
   UPDATES_MODE_OPTIONS,
   UPDATES_REBOOT_OPTIONS,
   UPDATES_TEMPLATES,
@@ -325,6 +327,33 @@ export const UpdatesPolicyEditor: React.FC<UpdatesPolicyEditorProps> = ({ conten
               emptyText="No packages are held back."
               isDisabled={isDisabled}
             />
+          </div>
+        </Tab>
+
+        <Tab eventKey="limits" title={<TabTitleText>Limits{hasLimits(model.limits) ? " (set)" : ""}</TabTitleText>}>
+          <div style={{ padding: "1rem 0" }}>
+            <p style={{ ...subtle, marginBottom: "0.5rem" }}>
+              Compliance thresholds, in days. A node that misses one is non-compliant on the Compliance page, where the items carry the CIS patching control. 0 leaves a threshold unchecked. The ages are measured on the node: how long each security update has been pending there, since when a reboot is pending, and when the package metadata was last refreshed.
+            </p>
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+              <Field id={`${idp}-lim-security`} label="Security update pending for more than" type="number" value={String(model.limits.securityMaxAgeDays)} onChange={(v) => update((m) => ({ ...m, limits: { ...m.limits, securityMaxAgeDays: Math.max(0, Math.trunc(Number(v) || 0)) } }))} helper="Days a security update may stay pending on a node. 14 is a common patch SLA." problem={limitProblem(model.limits.securityMaxAgeDays)} isDisabled={isDisabled} style={{ maxWidth: "14rem" }} />
+              <Field id={`${idp}-lim-reboot`} label="Reboot pending for more than" type="number" value={String(model.limits.rebootMaxAgeDays)} onChange={(v) => update((m) => ({ ...m, limits: { ...m.limits, rebootMaxAgeDays: Math.max(0, Math.trunc(Number(v) || 0)) } }))} helper="Days a node may run with a reboot pending after updates." problem={limitProblem(model.limits.rebootMaxAgeDays)} isDisabled={isDisabled} style={{ maxWidth: "14rem" }} />
+              <Field id={`${idp}-lim-check`} label="Metadata older than" type="number" value={String(model.limits.checkMaxAgeDays)} onChange={(v) => update((m) => ({ ...m, limits: { ...m.limits, checkMaxAgeDays: Math.max(0, Math.trunc(Number(v) || 0)) } }))} helper="Days since the engine last refreshed its metadata; catches nodes whose engine stopped running." problem={limitProblem(model.limits.checkMaxAgeDays)} isDisabled={isDisabled} style={{ maxWidth: "14rem" }} />
+            </div>
+          </div>
+        </Tab>
+
+        <Tab eventKey="firmware" title={<TabTitleText>Firmware{model.firmware.refreshMetadata !== null || model.firmware.reportPending ? " (set)" : ""}</TabTitleText>}>
+          <div style={{ padding: "1rem 0" }}>
+            <p style={{ ...subtle, marginBottom: "0.5rem" }}>
+              Firmware updates come from fwupd, when it is installed. Nodes always list the pending firmware updates in their inventory; these settings control fwupd's daily metadata refresh and whether pending firmware counts against compliance. Firmware is never installed by policy.
+            </p>
+            <FormGroup label="Metadata refresh (fwupd-refresh.timer)" fieldId={`${idp}-fw-refresh`} role="radiogroup">
+              {([["keep", "Keep the node's state", null], ["on", "Enabled: refresh the firmware metadata daily", true], ["off", "Disabled", false]] as const).map(([id, label, value]) => (
+                <Radio key={id} id={`${idp}-fw-refresh-${id}`} name={`${idp}-fw-refresh`} label={label} isChecked={model.firmware.refreshMetadata === value} onChange={() => update((m) => ({ ...m, firmware: { ...m.firmware, refreshMetadata: value } }))} isDisabled={isDisabled} />
+              ))}
+            </FormGroup>
+            <Switch id={`${idp}-fw-report`} label="Report pending firmware updates as non-compliant" isChecked={model.firmware.reportPending} onChange={(_ev, v) => update((m) => ({ ...m, firmware: { ...m.firmware, reportPending: v } }))} isDisabled={isDisabled} style={{ marginTop: "0.75rem" }} />
           </div>
         </Tab>
       </Tabs>

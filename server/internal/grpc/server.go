@@ -43,8 +43,10 @@ type PolicyServer struct {
 	macActions macActionSink
 	// updatesRepo stores the Software updates inventory.
 	updatesRepo updatesRepository
-	hub         *PolicyHub
-	diskEncSvc  *services.DiskEncryptionService
+	// updatesActions receives on-demand Software updates action results.
+	updatesActions updatesActionSink
+	hub            *PolicyHub
+	diskEncSvc     *services.DiskEncryptionService
 }
 
 // dconfRepository is the subset of database.DConfRepository used by PolicyServer.

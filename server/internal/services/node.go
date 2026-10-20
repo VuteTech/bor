@@ -17,6 +17,16 @@ import (
 // NodeService handles node business logic
 type NodeService struct {
 	nodeRepo *database.NodeRepository
+	// updatesSummaries attaches the Software updates summary to list rows
+	// when set.
+	updatesSummaries func(ctx context.Context, nodeIDs []string) (map[string]*models.NodeUpdatesSummary, error)
+}
+
+// WithUpdatesSummaries makes the paged list carry each node's Software
+// updates summary.
+func (s *NodeService) WithUpdatesSummaries(fn func(ctx context.Context, nodeIDs []string) (map[string]*models.NodeUpdatesSummary, error)) *NodeService {
+	s.updatesSummaries = fn
+	return s
 }
 
 // NewNodeService creates a new NodeService
@@ -60,6 +70,19 @@ func (s *NodeService) ListNodesPaged(ctx context.Context, req *models.NodeListRe
 	}
 	if nodes == nil {
 		nodes = []*models.Node{}
+	}
+	if s.updatesSummaries != nil && len(nodes) > 0 {
+		ids := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			ids = append(ids, n.ID)
+		}
+		summaries, err := s.updatesSummaries(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range nodes {
+			n.Updates = summaries[n.ID]
+		}
 	}
 	totalPages := 0
 	if perPage > 0 {
