@@ -17,28 +17,28 @@
     "@patternfly/react-icons": "^6.4.0",
     "@patternfly/react-table": "^6.4.1",
     "@simplewebauthn/browser": "^13.3.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-router": "^8.3.1"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
-    "@babel/preset-react": "^7.26.3",
-    "@babel/preset-typescript": "^7.26.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "@typescript-eslint/parser": "^8.65.0",
+    "@babel/preset-react": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@typescript-eslint/parser": "^8.72.0",
     "babel-loader": "^10.1.1",
     "copy-webpack-plugin": "^14.0.0",
-    "css-loader": "^7.1.4",
+    "css-loader": "^7.1.5",
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "globals": "^15.15.0",
-    "html-webpack-plugin": "^5.6.7",
+    "html-webpack-plugin": "^5.6.8",
     "style-loader": "^4.0.0",
     "ts-proto": "^2.11.8",
     "typescript": "^5.7.3",
-    "webpack": "^5.106.1",
-    "webpack-cli": "^7.0.1"
+    "webpack": "^5.112.0",
+    "webpack-cli": "^7.2.3"
   }
 }
