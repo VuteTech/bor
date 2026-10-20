@@ -381,8 +381,16 @@ export function unitNameProblem(name: string): string | null {
 
 /* ── value syntax (mirror systemdunits.ValidateTimeSpan / ValidateCalendar and services/systemd.go) ── */
 
-const TIME_SPAN_RE =
-  /^(infinity|(\d+(\.\d+)?\s*(usec|us|nsec|ns|msec|ms|seconds|second|sec|s|minutes|minute|min|m|hours|hour|hr|h|days|day|d|weeks|week|w|months|month|M|years|year|y)?\s*)+)$/;
+// One systemd.time(7) unit; longer spellings come first so a prefix never wins.
+const TIME_SPAN_UNIT =
+  "(?:usec|us|nsec|ns|msec|ms|seconds|second|sec|s|minutes|minute|min|m|hours|hour|hr|h|days|day|d|weeks|week|w|months|month|M|years|year|y)";
+const TIME_SPAN_NUMBER = "\\d+(?:\\.\\d+)?";
+// "infinity", or numbers each optionally followed by a unit. Two numbers must
+// be separated by a unit or by spaces, so every input matches in exactly one
+// way and the pattern cannot backtrack exponentially.
+const TIME_SPAN_RE = new RegExp(
+  `^(?:infinity|${TIME_SPAN_NUMBER}(?:(?: *${TIME_SPAN_UNIT} *| +)${TIME_SPAN_NUMBER})*(?: *${TIME_SPAN_UNIT})? *)$`,
+);
 const CALENDAR_RE = /^[A-Za-z0-9 *,.:~/@-]+$/;
 const SIZE_RE = /^(\d+(\.\d+)?[KMGTPE]?|\d+(\.\d+)?%|infinity)$/;
 const PERCENT_RE = /^\d+(\.\d+)?%$/;

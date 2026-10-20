@@ -93,7 +93,7 @@ func TestValidateTimeSpan(t *testing.T) {
 			t.Errorf("ValidateTimeSpan(%q) = %v, want nil", s, err)
 		}
 	}
-	for _, s := range []string{"", "abc", "15 minutes ago", "1h;rm", "-5s", "1h\n", "5 lightyears"} {
+	for _, s := range []string{"", "abc", "15 minutes ago", "1h;rm", "-5s", "1h\n", "1h\t30min", "1.51.5", "5 lightyears"} {
 		if err := ValidateTimeSpan(s); err == nil {
 			t.Errorf("ValidateTimeSpan(%q) = nil, want error", s)
 		}
