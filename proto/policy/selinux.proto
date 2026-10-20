@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+// SelinuxPolicy manages SELinux on a node: the enforcement mode, booleans,
+// per-domain permissive exceptions, the enabled state of policy modules,
+// Bor-deployed CIL modules, file contexts and login mappings. Several bound
+// policies are merged per key by binding priority; on equal priority the
+// more restrictive mode wins and conflicting values of the other keys are
+// reported as errors.
+message SelinuxPolicy {
+  // Desired enforcement mode (runtime and /etc/selinux/config). Unset keeps
+  // the node's mode. Bor never writes "disabled".
+  SelinuxMode mode = 1;
+  // Report a node without SELinux as non-compliant instead of inapplicable.
+  bool require_active = 2;
+  // On a node where SELinux is disabled, set the config to permissive and
+  // request a relabel at the next boot (/.autorelabel), so the node can be
+  // switched to enforcing after it was rebooted. The agent never reboots.
+  bool prepare_disabled_nodes = 3;
+  // Boolean values, set persistently with setsebool -P.
+  repeated SelinuxBoolean booleans = 4;
+  // Domains that run in permissive mode while the rest of the system is
+  // enforcing ("corpvpn_t"). Rendered into the Bor module bor-permissive.
+  repeated string permissive_domains = 5;
+  // Enabled state of existing policy modules (semodule -e / -d).
+  repeated SelinuxModule modules = 6;
+  // Bor-deployed modules written in CIL; installed as bor-<name> at the
+  // agent's module priority.
+  repeated SelinuxCustomModule custom_modules = 7;
+  // File context rules, rendered into the Bor module bor-filecontexts and
+  // applied with restorecon.
+  repeated SelinuxFileContext file_contexts = 8;
+  // Login to SELinux user mappings (semanage login). Needs semanage on the
+  // node.
+  repeated SelinuxLogin logins = 9;
+}
+
+// SelinuxMode is the desired enforcement mode.
+enum SelinuxMode {
+  SELINUX_MODE_UNSPECIFIED = 0;
+  SELINUX_MODE_ENFORCING = 1;
+  SELINUX_MODE_PERMISSIVE = 2;
+}
+
+// SelinuxBoolean is one boolean and its desired value.
+message SelinuxBoolean {
+  // Boolean name, e.g. "deny_ptrace".
+  string name = 1;
+  bool value = 2;
+  // Free text shown in the editor and the compliance view.
+  string description = 3;
+}
+
+// SelinuxModule is the desired enabled state of an existing policy module.
+message SelinuxModule {
+  // Module name as semodule lists it, e.g. "abrt".
+  string name = 1;
+  bool enabled = 2;
+}
+
+// SelinuxCustomModule is a Bor-deployed policy module in CIL.
+message SelinuxCustomModule {
+  // ^[a-z0-9][a-z0-9_.-]{0,63}$; the agent installs it as bor-<name>.
+  string name = 1;
+  // CIL source, at most 64 KiB.
+  string cil = 2;
+  string description = 3;
+}
+
+// SelinuxFileKind is the object class a file context rule applies to.
+enum SelinuxFileKind {
+  // Every kind ("any" in semanage terms).
+  SELINUX_FILE_KIND_UNSPECIFIED = 0;
+  SELINUX_FILE_KIND_FILE = 1;
+  SELINUX_FILE_KIND_DIR = 2;
+  SELINUX_FILE_KIND_CHAR = 3;
+  SELINUX_FILE_KIND_BLOCK = 4;
+  SELINUX_FILE_KIND_SOCKET = 5;
+  SELINUX_FILE_KIND_PIPE = 6;
+  SELINUX_FILE_KIND_SYMLINK = 7;
+}
+
+// SelinuxFileContext labels files matching a path regular expression.
+message SelinuxFileContext {
+  // Path regular expression as semanage fcontext takes it, e.g.
+  // "/opt/corpapp(/.*)?". The literal prefix is what restorecon walks.
+  string path_regex = 1;
+  // SELinux type, e.g. "bin_t".
+  string type = 2;
+  SelinuxFileKind kind = 3;
+  // Run restorecon -R on the literal prefix after the rule changed.
+  bool restorecon = 4;
+}
+
+// SelinuxLogin maps a Linux login to an SELinux user.
+message SelinuxLogin {
+  // Login name, or "%group" for a group. "__default__" is refused.
+  string login = 1;
+  // SELinux user, e.g. "user_u", "staff_u".
+  string seuser = 2;
+  // MLS/MCS range, e.g. "s0" or "s0-s0:c0.c1023"; empty keeps the
+  // default.
+  string range = 3;
+}
+
+// SelinuxStatus is the SELinux state a node reports with its inventory.
+message SelinuxStatus {
+  // SELinux is in the LSM list and /sys/fs/selinux is mounted.
+  bool active = 1;
+  // enforcing | permissive | disabled
+  string mode = 2;
+  // SELINUX= from /etc/selinux/config.
+  string config_mode = 3;
+  // SELINUXTYPE= from /etc/selinux/config, e.g. "targeted".
+  string policy_type = 4;
+  int32 policy_version = 5;
+  int32 boolean_count = 6;
+  int32 module_count = 7;
+  bool semanage_present = 8;
+  bool audit2allow_present = 9;
+  bool setroubleshoot_present = 10;
+  // secure_mode_policyload is on: no policy change is possible until reboot.
+  bool policyload_locked = 11;
+  // Policy store root (store-root in semanage.conf).
+  string store_root = 12;
+  // Kernel command line switches that affect SELinux ("selinux=0",
+  // "enforcing=0").
+  repeated string boot_flags = 13;
+  // A relabel is pending (/.autorelabel exists).
+  bool relabel_pending = 14;
+  // Libsemanage/policycoreutils version when known.
+  string tools_version = 15;
+}
+
+// SelinuxBooleanInfo is one boolean of a node's policy.
+message SelinuxBooleanInfo {
+  string name = 1;
+  bool current = 2;
+  // The value after the next boot (the pending/persistent value).
+  bool persistent = 3;
+  // Description from the node (semanage) when it has real descriptions.
+  string description = 4;
+}
+
+// SelinuxModuleInfo is one policy module of a node's store.
+message SelinuxModuleInfo {
+  string name = 1;
+  int32 priority = 2;
+  bool enabled = 3;
+  // cil | pp
+  string lang = 4;
+}

@@ -15,6 +15,8 @@ import { PackagePolicyEditor } from "../PackagePolicyEditor";
 import { PolkitPolicyEditor } from "../PolkitPolicyEditor";
 import { FirewalldPolicyEditor } from "../FirewalldPolicyEditor";
 import { SystemdPolicyEditor } from "../SystemdPolicyEditor";
+import { SelinuxPolicyEditor } from "../SelinuxPolicyEditor";
+import { ApparmorPolicyEditor } from "../ApparmorPolicyEditor";
 import { SessionAccessPolicyEditor } from "../SessionAccessPolicyEditor";
 import { FlatpakPolicyEditor } from "../FlatpakPolicyEditor";
 import { DiskEncryptionPolicyEditor } from "../DiskEncryptionPolicyEditor";
@@ -126,6 +128,24 @@ export const PolicyContentEditor: React.FC<Props> = ({ type, ...rest }) => {
       case "Systemd":
         return (
           <SystemdPolicyEditor
+            contentRaw={rest.contentRaw}
+            onChange={rest.onChange}
+            isDisabled={rest.isDisabled}
+            onValidityChange={rest.onValidityChange}
+          />
+        );
+      case "Selinux":
+        return (
+          <SelinuxPolicyEditor
+            contentRaw={rest.contentRaw}
+            onChange={rest.onChange}
+            isDisabled={rest.isDisabled}
+            onValidityChange={rest.onValidityChange}
+          />
+        );
+      case "Apparmor":
+        return (
+          <ApparmorPolicyEditor
             contentRaw={rest.contentRaw}
             onChange={rest.onChange}
             isDisabled={rest.isDisabled}

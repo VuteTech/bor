@@ -584,6 +584,20 @@ To follow the agent logs:
 	defer closeSystemdManager()
 	defer closeSystemdUserManagers()
 
+	// Mandatory access control: log what the node runs, follow the audit
+	// log for manual changes while policies apply.
+	if lsm, mode := macLSM(); lsm != "none" {
+		log.Printf("mandatory access control: %s (%s)", lsm, mode)
+	} else {
+		log.Println("mandatory access control: none; SELinux and AppArmor policies will report INAPPLICABLE on this node")
+	}
+	if cfg.Selinux.FollowAudit || cfg.Apparmor.FollowAudit {
+		go macAuditFollower(ctx, client, cfg)
+	}
+	defer stopSelinuxReconciler()
+	defer stopApparmorReconciler()
+	defer stopMacInventoryTicker()
+
 	// Run the policy enforcement loop - prefer streaming, fall back to polling.
 	runStreamingLoop(ctx, client, cfg)
 
@@ -729,12 +743,23 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			}()
 		}
 
+		// Report the mandatory access control inventory on first connect;
+		// a ticker refreshes it (and the denial summary) afterwards.
+		if !macInventoryReported {
+			go func() {
+				if reportMacInventory(ctx, client, cfg) {
+					macInventoryReported = true
+				}
+			}()
+		}
+		startMacInventoryTicker(ctx, client, cfg)
+
 		var postInitialSync bool
 		err := client.SubscribePolicyUpdates(ctx, lastRevision,
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
 				// Don't let targeted server-to-agent commands overwrite the
 				// last known revision.
-				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" && updateType != "SYSTEMD_UNIT_ACTION" {
+				if updateType != "METADATA_REQUEST" && updateType != "DISK_ENCRYPTION_TASK" && updateType != "SYSTEMD_UNIT_ACTION" && updateType != "MAC_ACTION" {
 					lastRevision = revision
 				}
 				handlePolicyUpdate(ctx, client, cfg, updateType, pi, snapshotComplete, &postInitialSync)
@@ -773,6 +798,7 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		go sendHeartbeat(ctx, client)
 		go reportDiskEncryptionInventory(ctx, client, cfg)
 		go reportSystemdCatalogue(ctx, client, cfg)
+		go reportMacInventory(ctx, client, cfg)
 		return
 
 	case "DISK_ENCRYPTION_TASK":
@@ -786,6 +812,14 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		// the node page; the result goes back over its own RPC.
 		if pi != nil && pi.UnitAction != nil {
 			go runSystemdUnitAction(ctx, client, cfg, pi.UnitAction)
+		}
+		return
+
+	case "MAC_ACTION":
+		// An operator asked for a mandatory access control proposal built
+		// from this node's recent denials.
+		if pi != nil && pi.MacAction != nil {
+			go runMacAction(ctx, client, cfg, pi.MacAction)
 		}
 		return
 
@@ -822,6 +856,10 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				diskEncSnapshotStaging = nil
 				systemdCacheReplace(nil)
 				systemdSnapshotStaging = nil
+				selinuxCacheReplace(nil)
+				selinuxSnapshotStaging = nil
+				apparmorCacheReplace(nil)
+				apparmorSnapshotStaging = nil
 				sessionAccessReplace(nil)
 				sessionAccessSnapshotStaging = nil
 				syncAllKConfig(ctx, client, cfg)
@@ -837,6 +875,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				go triggerFlatpakSync(ctx, client, cfg)
 				go triggerDiskEncryptionSync(ctx, client, cfg)
 				go triggerSystemdSync(ctx, client, cfg)
+				go triggerSelinuxSync(ctx, client, cfg)
+				go triggerApparmorSync(ctx, client, cfg)
 				if *postInitialSync {
 					if hadKconfigPolicies {
 						kdeNotifier.ScheduleNotification(notifyConfig, map[string]bool{"kwinrc": true, "kdeglobals": true})
@@ -928,6 +968,16 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 				systemdSnapshotStaging = make(map[string]systemdCacheEntry)
 			}
 			systemdSnapshotStaging[pi.ID] = systemdCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SystemdPolicy}
+		case "Selinux":
+			if selinuxSnapshotStaging == nil {
+				selinuxSnapshotStaging = make(map[string]selinuxCacheEntry)
+			}
+			selinuxSnapshotStaging[pi.ID] = selinuxCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SelinuxPolicy}
+		case "Apparmor":
+			if apparmorSnapshotStaging == nil {
+				apparmorSnapshotStaging = make(map[string]apparmorCacheEntry)
+			}
+			apparmorSnapshotStaging[pi.ID] = apparmorCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.ApparmorPolicy}
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -1033,6 +1083,12 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			systemdCacheReplace(systemdSnapshotStaging)
 			systemdSnapshotStaging = nil
 
+			// Swap SELinux and AppArmor staging into their caches.
+			selinuxCacheReplace(selinuxSnapshotStaging)
+			selinuxSnapshotStaging = nil
+			apparmorCacheReplace(apparmorSnapshotStaging)
+			apparmorSnapshotStaging = nil
+
 			// Swap SessionAccess staging into cache.
 			sessionAccessReplace(sessionAccessSnapshotStaging)
 			sessionAccessSnapshotStaging = nil
@@ -1050,6 +1106,8 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 			go triggerFlatpakSync(ctx, client, cfg)
 			go triggerDiskEncryptionSync(ctx, client, cfg)
 			go triggerSystemdSync(ctx, client, cfg)
+			go triggerSelinuxSync(ctx, client, cfg)
+			go triggerApparmorSync(ctx, client, cfg)
 
 			if *postInitialSync {
 				// Resync from a live admin change - notify if content changed.
@@ -1129,6 +1187,12 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		case "Systemd":
 			systemdCachePut(systemdCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SystemdPolicy})
 			go triggerSystemdSync(ctx, client, cfg)
+		case "Selinux":
+			selinuxCachePut(selinuxCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.SelinuxPolicy})
+			go triggerSelinuxSync(ctx, client, cfg)
+		case "Apparmor":
+			apparmorCachePut(apparmorCacheEntry{id: pi.ID, name: pi.Name, priority: pi.Priority, policy: pi.ApparmorPolicy})
+			go triggerApparmorSync(ctx, client, cfg)
 		default:
 			log.Printf("Unknown policy type %q for policy %s, skipping", pi.Type, pi.Name)
 			_ = client.ReportCompliance(ctx, pi.ID, false,
@@ -1185,12 +1249,19 @@ func handlePolicyUpdate(ctx context.Context, client *policyclient.Client, cfg *c
 		} else if _, ok := diskEncCache[pi.ID]; ok {
 			delete(diskEncCache, pi.ID)
 			go triggerDiskEncryptionSync(ctx, client, cfg)
-		} else if removed := systemdCacheRemove(pi.ID); removed {
-			go triggerSystemdSync(ctx, client, cfg)
-		} else if sessionAccessRemove(pi.ID) {
-			syncAllSessionAccess(ctx, client, cfg)
 		} else {
-			log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
+			switch {
+			case systemdCacheRemove(pi.ID):
+				go triggerSystemdSync(ctx, client, cfg)
+			case selinuxCacheRemove(pi.ID):
+				go triggerSelinuxSync(ctx, client, cfg)
+			case apparmorCacheRemove(pi.ID):
+				go triggerApparmorSync(ctx, client, cfg)
+			case sessionAccessRemove(pi.ID):
+				syncAllSessionAccess(ctx, client, cfg)
+			default:
+				log.Printf("Policy %s deleted (not in any policy cache)", pi.ID)
+			}
 		}
 	}
 }
@@ -1995,6 +2066,7 @@ func sendHeartbeat(ctx context.Context, client *policyclient.Client) {
 		desktopEnvs = append(desktopEnvs, de.String())
 	}
 
+	lsm, lsmMode := macLSM()
 	info := &policyclient.NodeInfo{
 		FQDN:         si.FQDN,
 		IPAddress:    si.IPAddress,
@@ -2003,6 +2075,8 @@ func sendHeartbeat(ctx context.Context, client *policyclient.Client) {
 		DesktopEnvs:  desktopEnvs,
 		AgentVersion: Version,
 		MachineID:    si.MachineID,
+		LSM:          lsm,
+		LSMMode:      lsmMode,
 	}
 
 	if err := client.Heartbeat(ctx, info); err != nil {
@@ -2832,6 +2906,11 @@ func getManagedPaths(cfg *config.Config) []string {
 	// watched while Systemd policies apply or the record exists.
 	paths = append(paths, systemdManagedPaths(cfg)...)
 
+	// SELinux and AppArmor: Bor's module sources and profiles, the files
+	// they edit and their state records.
+	paths = append(paths, selinuxManagedPaths(cfg)...)
+	paths = append(paths, apparmorManagedPaths(cfg)...)
+
 	return paths
 }
 
@@ -2851,8 +2930,30 @@ func suppressManagedWrites(cfg *config.Config, extra ...string) {
 	if fileWatcher == nil {
 		return
 	}
+	suppressManagedWritesFor(cfg, 2*time.Second, extra...)
+}
+
+// suppressManagedWritesFor is suppressManagedWrites with a caller-chosen
+// window, for syncs whose tools run longer than the default two seconds
+// (a policy store rebuild, a reload of every AppArmor profile). Callers
+// shorten the window again when the sync is done.
+func suppressManagedWritesFor(cfg *config.Config, d time.Duration, extra ...string) {
+	if fileWatcher == nil {
+		return
+	}
 	paths := append(getManagedPaths(cfg), extra...)
-	fileWatcher.Suppress(paths, 2*time.Second)
+	fileWatcher.Suppress(paths, d)
+}
+
+// resetManagedWriteWindow ends a long suppression window opened with
+// suppressManagedWritesFor: the paths fall back to the usual two seconds
+// from now, so an edit after the sync is caught again.
+func resetManagedWriteWindow(cfg *config.Config, extra ...string) {
+	if fileWatcher == nil {
+		return
+	}
+	paths := append(getManagedPaths(cfg), extra...)
+	fileWatcher.SuppressReset(paths, 2*time.Second)
 }
 
 // onTamperedFile is called by the file watcher when a managed file is modified
@@ -2905,6 +3006,10 @@ func onTamperedFile(ctx context.Context, client *policyclient.Client, cfg *confi
 		go triggerPackageSync(ctx, client, cfg)
 	case isSystemdManagedPath(cfg, path):
 		go triggerSystemdSync(ctx, client, cfg)
+	case isSelinuxManagedPath(cfg, path):
+		go triggerSelinuxSync(ctx, client, cfg)
+	case isApparmorManagedPath(cfg, path):
+		go triggerApparmorSync(ctx, client, cfg)
 	default:
 		log.Printf("Tamper protection: unrecognised managed path %s - no restore action taken", path)
 	}

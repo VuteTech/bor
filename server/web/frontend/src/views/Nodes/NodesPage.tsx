@@ -79,6 +79,8 @@ import { fetchNodeGroups, NodeGroup } from "../../apiClient/nodeGroupsApi";
 import { hasPermission } from "../../apiClient/permissions";
 import { NodeDiskEncryptionSection } from "../DiskEncryption/NodeDiskEncryptionSection";
 import { NodeSystemdSection } from "./NodeSystemdSection";
+import { NodeMacSection } from "./NodeMacSection";
+import { macLsmLabel } from "../../apiClient/macApi";
 
 /* ── Helpers ── */
 
@@ -105,6 +107,13 @@ const statusTooltip = (status: NodeStatus, reason?: string): string => {
 
 const osDisplay = (node: Node): string =>
   [node.os_name, node.os_version].filter(Boolean).join(" ") || "";
+
+/** "SELinux (enforcing)", "AppArmor (enabled)", "None" or "" when not reported. */
+const macDisplay = (node: Node): string => {
+  const label = macLsmLabel((node.lsm ?? "") as "selinux" | "apparmor" | "none" | "");
+  if (!label) return "";
+  return node.lsm_mode ? `${label} (${node.lsm_mode})` : label;
+};
 
 const timeAgo = (dateStr?: string): string => {
   if (!dateStr) return "Never";
@@ -144,6 +153,7 @@ export const NodesPage: React.FC = () => {
   const [groupFilter, setGroupFilter] = useState<string>(() => searchParams.get("group") ?? "All");
   const [osFilter, setOsFilter] = useState<string>("All");
   const [desktopFilter, setDesktopFilter] = useState<string>("All");
+  const [lsmFilter, setLsmFilter] = useState<string>("All");
   const [agentVersionFilter, setAgentVersionFilter] = useState<string>("All");
 
   // Sort
@@ -158,6 +168,7 @@ export const NodesPage: React.FC = () => {
     os: [],
     desktops: [],
     agent_versions: [],
+    lsms: [],
   });
 
   // Drawer
@@ -225,12 +236,13 @@ export const NodesPage: React.FC = () => {
       status: statusFilter !== "All" ? statusFilter : undefined,
       os: osFilter !== "All" ? osFilter : undefined,
       desktop: desktopFilter !== "All" ? desktopFilter : undefined,
+      lsm: lsmFilter !== "All" ? lsmFilter : undefined,
       agent_version: agentVersionFilter !== "All" ? agentVersionFilter : undefined,
       group: groupFilter !== "All" ? groupFilter : undefined,
       sort_field: sortField,
       sort_order: sortDirection,
     }),
-    [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, groupFilter, sortField, sortDirection],
+    [appliedSearch, statusFilter, osFilter, desktopFilter, lsmFilter, agentVersionFilter, groupFilter, sortField, sortDirection],
   );
 
   /* ── Load a page of data (all filtering/sorting is server-side) ── */
@@ -260,7 +272,7 @@ export const NodesPage: React.FC = () => {
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedSearch, statusFilter, osFilter, desktopFilter, agentVersionFilter, groupFilter, sortField, sortDirection]);
+  }, [appliedSearch, statusFilter, osFilter, desktopFilter, lsmFilter, agentVersionFilter, groupFilter, sortField, sortDirection]);
 
   /* ── Filter dropdown options (distinct values, fetched once) ── */
   useEffect(() => {
@@ -269,6 +281,7 @@ export const NodesPage: React.FC = () => {
 
   const osOptions = useMemo(() => ["All", ...filterOptions.os], [filterOptions.os]);
   const desktopOptions = useMemo(() => ["All", ...filterOptions.desktops], [filterOptions.desktops]);
+  const lsmOptions = useMemo(() => ["All", ...(filterOptions.lsms ?? [])], [filterOptions.lsms]);
   const agentVersionOptions = useMemo(
     () => ["All", ...filterOptions.agent_versions],
     [filterOptions.agent_versions],
@@ -597,6 +610,10 @@ export const NodesPage: React.FC = () => {
               <DescriptionListDescription>{selectedNode.desktop_env || "—"}</DescriptionListDescription>
             </DescriptionListGroup>
             <DescriptionListGroup>
+              <DescriptionListTerm>Mandatory access control</DescriptionListTerm>
+              <DescriptionListDescription>{macDisplay(selectedNode) || "—"}</DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
               <DescriptionListTerm>Agent Version</DescriptionListTerm>
               <DescriptionListDescription>{selectedNode.agent_version || "—"}</DescriptionListDescription>
             </DescriptionListGroup>
@@ -726,6 +743,8 @@ export const NodesPage: React.FC = () => {
 
           <NodeSystemdSection nodeId={selectedNode.id} nodeName={selectedNode.name} online={selectedNode.status === "online"} />
 
+          <NodeMacSection nodeId={selectedNode.id} nodeName={selectedNode.name} online={selectedNode.status === "online"} />
+
           <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}>
             Actions
           </Title>
@@ -835,6 +854,7 @@ export const NodesPage: React.FC = () => {
   if (statusFilter !== "All") activeFilters.push(`Status: ${statusFilter}`);
   if (osFilter !== "All") activeFilters.push(`OS: ${osFilter}`);
   if (desktopFilter !== "All") activeFilters.push(`Desktop: ${desktopFilter}`);
+  if (lsmFilter !== "All") activeFilters.push(`MAC: ${macLsmLabel(lsmFilter as "selinux" | "apparmor" | "none") || lsmFilter}`);
   if (agentVersionFilter !== "All") activeFilters.push(`Agent: ${agentVersionFilter}`);
   if (groupFilter !== "All") activeFilters.push(`Group: ${groupLabel(groupFilter)}`);
 
@@ -872,6 +892,7 @@ export const NodesPage: React.FC = () => {
                   setStatusFilter("All");
                   setOsFilter("All");
                   setDesktopFilter("All");
+                  setLsmFilter("All");
                   setAgentVersionFilter("All");
                   setGroupFilter("All");
                 }}
@@ -947,6 +968,21 @@ export const NodesPage: React.FC = () => {
                       selected={desktopFilter}
                       onSelect={setDesktopFilter}
                       options={desktopOptions.map((d) => ({ value: d, label: d }))}
+                    />
+                  </ToolbarFilter>
+
+                  <ToolbarFilter
+                    labels={lsmFilter !== "All" ? [macLsmLabel(lsmFilter as "selinux" | "apparmor" | "none") || lsmFilter] : []}
+                    deleteLabel={() => setLsmFilter("All")}
+                    categoryName="MAC"
+                  >
+                    <SearchableSelect
+                      ariaLabel="Filter by mandatory access control"
+                      placeholder="Filter by MAC"
+                      emptyValue="All"
+                      selected={lsmFilter}
+                      onSelect={setLsmFilter}
+                      options={lsmOptions.map((l) => ({ value: l, label: l === "All" ? "All" : (macLsmLabel(l as "selinux" | "apparmor" | "none") || l) }))}
                     />
                   </ToolbarFilter>
 
@@ -1078,6 +1114,7 @@ export const NodesPage: React.FC = () => {
                       <Th>Status</Th>
                       <Th>Node Group</Th>
                       <Th>OS</Th>
+                      <Th>MAC</Th>
                       <Th sort={getSortParams("last_seen")}>Last Seen</Th>
                       <Th>Agent</Th>
                       <Th>Notes</Th>
@@ -1111,6 +1148,7 @@ export const NodesPage: React.FC = () => {
                         </Td>
                         <Td dataLabel="Groups">{node.node_group_names?.join(", ") || "—"}</Td>
                         <Td dataLabel="OS">{osDisplay(node) || "—"}</Td>
+                        <Td dataLabel="MAC">{macDisplay(node) || "—"}</Td>
                         <Td dataLabel="Last Seen">{timeAgo(node.last_seen)}</Td>
                         <Td dataLabel="Agent">{node.agent_version || "—"}</Td>
                         <Td dataLabel="Notes">

@@ -298,6 +298,10 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateDiskEncryptionContent(content)
 	case "Systemd":
 		return ValidateSystemdContent(content)
+	case "Selinux":
+		return ValidateSelinuxContent(content)
+	case "Apparmor":
+		return ValidateApparmorContent(content)
 	}
 	return nil
 }

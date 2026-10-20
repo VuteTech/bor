@@ -109,6 +109,33 @@ func (h *PolicyHandler) auditSystemdExec(r *http.Request, policyID, verb, conten
 	})
 }
 
+// auditMacCustom records that an SELinux or AppArmor policy carrying
+// administrator-authored policy text (custom modules or profiles, local
+// overrides, file contexts, login mappings, permissive domains) was
+// created, saved, released or imported, with a SHA-256 of every text.
+func (h *PolicyHandler) auditMacCustom(r *http.Request, policyID, verb, policyType, content string) {
+	if h.auditSvc == nil || !services.MacContentHasCustom(policyType, content) {
+		return
+	}
+	username := ""
+	if claims := GetUserFromContext(r.Context()); claims != nil {
+		username = claims.Username
+	}
+	details, _ := json.Marshal(map[string]json.RawMessage{
+		"verb":    json.RawMessage(`"` + verb + `"`),
+		"type":    json.RawMessage(`"` + policyType + `"`),
+		"content": json.RawMessage(services.MacCustomSummary(policyType, content)),
+	})
+	h.auditSvc.LogEvent(r.Context(), &models.AuditLog{
+		Username:     username,
+		Action:       "policy.mac_custom",
+		ResourceType: "policy",
+		ResourceID:   policyID,
+		Details:      string(details),
+		IPAddress:    auditSrcIP(r),
+	})
+}
+
 // scopePolicies filters a policy list down to what the caller may view.
 func (h *PolicyHandler) scopePolicies(r *http.Request, policies []*models.Policy) ([]*models.Policy, error) {
 	scope := requestScope(r, "policy", "view")
@@ -262,6 +289,7 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if runsCommands {
 		h.auditSystemdExec(r, policy.ID, "create", req.Content)
 	}
+	h.auditMacCustom(r, policy.ID, "create", req.Type, req.Content)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -347,6 +375,9 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	if runsCommands {
 		h.auditSystemdExec(r, policy.ID, "save", nextContent)
+	}
+	if req.Type != nil || req.Content != nil {
+		h.auditMacCustom(r, policy.ID, "save", nextType, nextContent)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -436,6 +467,9 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 
 	if releasingCommands {
 		h.auditSystemdExec(r, policy.ID, "release", existing.Content)
+	}
+	if req.State == string(models.PolicyStateReleased) {
+		h.auditMacCustom(r, policy.ID, "release", existing.Type, existing.Content)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

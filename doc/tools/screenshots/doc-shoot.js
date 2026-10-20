@@ -157,6 +157,8 @@ const EDITOR_SHOTS = {
   Flatpak: "policy-editor-flatpak",
   DiskEncryption: "policy-editor-disk-encryption",
   Systemd: "policy-editor-systemd",
+  Selinux: "policy-editor-selinux",
+  Apparmor: "policy-editor-apparmor",
 };
 
 const ONLY = process.env.SHOTS ? new Set(process.env.SHOTS.split(",")) : null;

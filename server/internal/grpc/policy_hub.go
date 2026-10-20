@@ -236,6 +236,23 @@ func (h *PolicyHub) SendSystemdUnitAction(clientID string, action *pb.SystemdUni
 	})
 }
 
+// SendMacAction sends a MAC_ACTION command (a policy proposal request)
+// directly to the named client's stream. Returns false if the client is
+// not connected.
+func (h *PolicyHub) SendMacAction(clientID string, action *pb.MacAction) bool {
+	return h.sendNodeUpdate(clientID, &pb.PolicyUpdate{
+		Type:      pb.PolicyUpdate_MAC_ACTION,
+		MacAction: action,
+	})
+}
+
+// SendResync asks one connected agent to take a fresh snapshot, for a
+// change that concerns that node alone (its node group membership).
+// Returns false if the client is not connected.
+func (h *PolicyHub) SendResync(clientID string) bool {
+	return h.sendNodeEvent(clientID, pb.PolicyUpdate_SNAPSHOT)
+}
+
 // sendNodeEvent sends a policy-less targeted event to one client's stream.
 func (h *PolicyHub) sendNodeEvent(clientID string, eventType pb.PolicyUpdate_UpdateType) bool {
 	return h.sendNodeUpdate(clientID, &pb.PolicyUpdate{Type: eventType})

@@ -191,6 +191,46 @@ Set a path to `""` to stop writing to that location.
 | `systemd.user_preset_dir` | `/etc/systemd/user-preset` | Directory of the optional `10-bor.preset` file for user managers. Tamper-protected. |
 | `systemd.allow_actions` | `true` | Run the start, stop and restart actions requested from the node details of the console (holders of `systemd:operate`). `false` answers every action with an error. |
 
+## selinux
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `selinux.config_path` | `/etc/selinux/config` | Configuration file whose `SELINUX=` line SELinux policies rewrite. Tamper-protected while a policy applies. |
+| `selinux.modules_dir` | `/etc/bor/selinux` | CIL sources of the modules Bor installs. Tamper-protected. |
+| `selinux.module_priority` | `450` | `semodule -X` priority of Bor modules, apart from the distribution's (100) and the administrator's (400). |
+| `selinux.state_path` | `/var/lib/bor/agent/selinux-state.json` | Record of every original value (mode, booleans, module flags, login mappings), restored when it leaves every policy. |
+| `selinux.reconcile_interval` | `5m` | Interval of the pass that re-asserts the mode, booleans and modules while a policy applies; `0` disables it. |
+| `selinux.allow_mode_change` | `true` | Let policies switch between enforcing and permissive. |
+| `selinux.allow_custom_modules` | `true` | Install Bor modules (custom modules, permissive domains, file contexts). |
+| `selinux.follow_audit` | `true` | Follow the audit records (`MAC_STATUS`, `MAC_CONFIG_CHANGE`, `MAC_POLICY_LOAD`) so a manual change is reconciled within seconds. |
+| `selinux.tool_timeout` | `5m` | Maximum run time of one `semodule` or `setsebool` call. |
+
+## apparmor
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `apparmor.profiles_dir` | `/etc/apparmor.d` | Profile directory: Bor profiles, local override blocks, the home tunable and the `disable/` and `force-complain/` links live under it. Tamper-protected. |
+| `apparmor.parser_binary` | `apparmor_parser` | Parser executable, looked up in `PATH`, `/usr/sbin` and `/sbin` unless absolute. |
+| `apparmor.sysctl_path` | `/etc/sysctl.d/zz-bor-apparmor.conf` | sysctl file for the user namespace switches. Tamper-protected. |
+| `apparmor.state_path` | `/var/lib/bor/agent/apparmor-state.json` | Record of every original state, restored when it leaves every policy. |
+| `apparmor.backup_dir` | `/var/lib/bor/agent/apparmor-backups` | Backups of vendor profile files whose mode flags a policy edited. |
+| `apparmor.reconcile_interval` | `5m` | Interval of the pass that re-asserts links, loaded modes and sysctls; `0` disables it. |
+| `apparmor.allow_custom_profiles` | `true` | Write Bor profiles and local overrides. |
+| `apparmor.allow_vendor_flag_edits` | `false` | Let policies strip the complain flag inside vendor profile files (package conffiles). |
+| `apparmor.follow_audit` | `true` | Follow the kernel's AppArmor status records so a manual profile change is reconciled within seconds. |
+| `apparmor.tool_timeout` | `2m` | Maximum run time of one `apparmor_parser` call. |
+
+## mac
+
+Settings shared by the SELinux and AppArmor types.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `mac.inventory_interval` | `1h` | How often the node re-sends its mandatory access control inventory (status, booleans or profiles, denial summary) while connected. |
+| `mac.denial_window` | `24h` | How far back the denial summary looks in the journal. |
+| `mac.collect_denials` | `true` | Read the journal's audit records for the denial summary. Records are aggregated and redacted on the node. |
+| `mac.allow_actions` | `true` | Answer proposal requests (`audit2allow`, AppArmor rules from denials) from the node page, for holders of `mac:operate`. |
+
 ## flatpak
 
 | Key | Default | Description |

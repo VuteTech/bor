@@ -190,6 +190,7 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	// policy:create. The check runs inside content validation because the
 	// bundle, not the route, says which policies run commands.
 	var commandSummaries []string
+	var macSummaries []string
 	hasExec := h.callerHasSystemdExec(r)
 	execDenied := false
 	validate := func(policyType, content string) error {
@@ -199,6 +200,9 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 				return fmt.Errorf("this policy runs commands on nodes; the systemd:exec permission is required to import it")
 			}
 			commandSummaries = append(commandSummaries, services.SystemdCommandSummary(content))
+		}
+		if services.MacContentHasCustom(policyType, content) {
+			macSummaries = append(macSummaries, `{"type":"`+policyType+`","content":`+services.MacCustomSummary(policyType, content)+`}`)
 		}
 		return services.ValidatePolicyContentByType(policyType, content)
 	}
@@ -223,6 +227,9 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 			report.Created, report.Updated, report.Skipped, report.Errors))
 		if report.Ok && len(commandSummaries) > 0 {
 			h.audit(r, "policy.systemd_exec", `{"verb":"import","commands":[`+strings.Join(commandSummaries, ",")+`]}`)
+		}
+		if report.Ok && len(macSummaries) > 0 {
+			h.audit(r, "policy.mac_custom", `{"verb":"import","policies":[`+strings.Join(macSummaries, ",")+`]}`)
 		}
 	}
 

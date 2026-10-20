@@ -121,6 +121,8 @@ func (s *NodeService) ProcessHeartbeat(ctx context.Context, nodeID string, info 
 		"desktop_env":   strings.Join(info.DesktopEnvs, ", "),
 		"agent_version": info.AgentVersion,
 		"machine_id":    info.MachineID,
+		"lsm":           info.LSM,
+		"lsm_mode":      info.LSMMode,
 	}
 	// Omit empty values so we don't overwrite existing data with blanks.
 	for k, v := range facts {

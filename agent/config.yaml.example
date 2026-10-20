@@ -172,3 +172,63 @@ chrome:
 #  # of the console (holders of systemd:operate). With false the node
 #  # answers every action with an error.
 #  allow_actions: true
+
+# SELinux policy settings.
+# The agent sets the mode through selinuxfs and /etc/selinux/config,
+# booleans with setsebool -P, writes Bor's CIL modules under modules_dir and
+# installs them with semodule at module_priority, and records every original
+# value in state_path so it can be restored when it leaves every policy.
+#selinux:
+#  config_path: /etc/selinux/config
+#  modules_dir: /etc/bor/selinux
+#  # semodule priority of Bor modules; keeps them apart from the
+#  # distribution's (100) and the administrator's (400).
+#  module_priority: 450
+#  state_path: /var/lib/bor/agent/selinux-state.json
+#  # Re-assert the mode, booleans and modules this often while SELinux
+#  # policies apply; 0 disables the ticker.
+#  reconcile_interval: 5m
+#  # Let policies switch the node between enforcing and permissive.
+#  allow_mode_change: true
+#  # Install Bor CIL modules, permissive domains and file contexts.
+#  allow_custom_modules: true
+#  # Follow the audit log so a manual setenforce or setsebool is reconciled
+#  # within seconds. The ticker above remains the backstop.
+#  follow_audit: true
+#  # Maximum run time of one semodule or setsebool call.
+#  tool_timeout: 5m
+
+# AppArmor policy settings.
+# The agent sets profile modes through the disable/ and force-complain/
+# links of profiles_dir, writes Bor profiles there (bor-<name>), local
+# overrides into its local/ directory and the home directory tunable, and
+# drives apparmor_parser.
+#apparmor:
+#  profiles_dir: /etc/apparmor.d
+#  parser_binary: apparmor_parser
+#  # sysctl.d file for the user namespace restriction switches.
+#  sysctl_path: /etc/sysctl.d/zz-bor-apparmor.conf
+#  state_path: /var/lib/bor/agent/apparmor-state.json
+#  # Backups of vendor profile files whose mode flags a policy edited.
+#  backup_dir: /var/lib/bor/agent/apparmor-backups
+#  reconcile_interval: 5m
+#  # Write Bor profiles and local overrides.
+#  allow_custom_profiles: true
+#  # Let policies strip the complain flag inside vendor profile files
+#  # (package conffiles). Off by default.
+#  allow_vendor_flag_edits: false
+#  follow_audit: true
+#  tool_timeout: 2m
+
+# Shared settings of both mandatory access control types.
+#mac:
+#  # How often the inventory (status, booleans or profiles, denial summary)
+#  # is re-sent while the agent is connected.
+#  inventory_interval: 1h
+#  # How far back the denial summary looks.
+#  denial_window: 24h
+#  # Read the audit records of the journal for the denial summary.
+#  collect_denials: true
+#  # Answer proposal requests (audit2allow, AppArmor rules from denials)
+#  # from the node page of the console (holders of mac:operate).
+#  allow_actions: true

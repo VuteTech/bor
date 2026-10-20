@@ -30,7 +30,8 @@ func NewNodeRepository(db *DB) *NodeRepository {
 const nodeSelect = `
 	n.id, n.name, n.fqdn, n.machine_id, n.ip_address, n.os_name, n.os_version, n.desktop_env,
 	n.agent_version, n.status_cached, n.status_reason, n.groups, n.notes,
-	n.last_seen, n.created_at, n.updated_at, n.cert_serial, n.cert_not_after`
+	n.last_seen, n.created_at, n.updated_at, n.cert_serial, n.cert_not_after,
+	n.lsm, n.lsm_mode`
 
 const nodeFrom = `FROM nodes n`
 
@@ -45,6 +46,7 @@ func scanNode(row interface {
 		&node.Groups, &node.Notes,
 		&node.LastSeen, &node.CreatedAt, &node.UpdatedAt,
 		&node.CertSerial, &node.CertNotAfter,
+		&node.LSM, &node.LSMMode,
 	)
 	return node, err
 }
@@ -293,6 +295,10 @@ func buildNodeFilter(req *models.NodeListRequest) (where string, args []interfac
 		args = append(args, req.AgentVersion)
 		conds = append(conds, fmt.Sprintf("n.agent_version = $%d", len(args)))
 	}
+	if req.LSM != "" {
+		args = append(args, req.LSM)
+		conds = append(conds, fmt.Sprintf("n.lsm = $%d", len(args)))
+	}
 	if req.Group == "none" {
 		// Nodes not a member of any group (unassigned).
 		conds = append(conds, "NOT EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id)")
@@ -336,7 +342,7 @@ func nodeScopeCondition(scope *models.GroupScopeFilter, argOffset int) (cond str
 // agent_version values, for populating filter dropdowns. A non-nil scope
 // limits the values to nodes the delegated administrator can see.
 func (r *NodeRepository) DistinctFilterValues(ctx context.Context, scope *models.GroupScopeFilter) (*models.NodeFilterOptions, error) {
-	opts := &models.NodeFilterOptions{OS: []string{}, Desktops: []string{}, AgentVersions: []string{}}
+	opts := &models.NodeFilterOptions{OS: []string{}, Desktops: []string{}, AgentVersions: []string{}, LSMs: []string{}}
 	scopeCond, scopeArgs := "TRUE", []interface{}(nil)
 	if scope != nil {
 		scopeCond, scopeArgs = nodeScopeCondition(scope, 0)
@@ -348,6 +354,7 @@ func (r *NodeRepository) DistinctFilterValues(ctx context.Context, scope *models
 		{"os_name", &opts.OS},
 		{"desktop_env", &opts.Desktops},
 		{"agent_version", &opts.AgentVersions},
+		{"lsm", &opts.LSMs},
 	}
 	for _, c := range cols {
 		// Column name is from a fixed local list, never request input.
@@ -556,6 +563,16 @@ func (r *NodeRepository) UpdateHeartbeat(ctx context.Context, id string, facts m
 	}
 	if v, ok := facts["machine_id"]; ok {
 		setClauses = append(setClauses, fmt.Sprintf("machine_id = $%d", argIdx))
+		args = append(args, v)
+		argIdx++
+	}
+	if v, ok := facts["lsm"]; ok {
+		setClauses = append(setClauses, fmt.Sprintf("lsm = $%d", argIdx))
+		args = append(args, v)
+		argIdx++
+	}
+	if v, ok := facts["lsm_mode"]; ok {
+		setClauses = append(setClauses, fmt.Sprintf("lsm_mode = $%d", argIdx))
 		args = append(args, v)
 		argIdx++
 	}

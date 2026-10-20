@@ -65,6 +65,22 @@ const SYSTEMD_ITEM_LABELS: Record<string, string> = {
   "systemd:unit": "Unit",
   "systemd:task": "Scheduled task",
   "systemd:preset": "Preset file",
+  "selinux:active": "SELinux",
+  "selinux:mode": "SELinux mode",
+  "selinux:boolean": "Boolean",
+  "selinux:permissive": "Permissive domain",
+  "selinux:module": "Module",
+  "selinux:custom": "Custom module",
+  "selinux:fcontext": "File context",
+  "selinux:login": "Login mapping",
+  "apparmor:enabled": "AppArmor",
+  "apparmor:service": "Service",
+  "apparmor:userns": "User namespace restriction",
+  "apparmor:unconfined": "Unconfined restriction",
+  "apparmor:profile": "Profile",
+  "apparmor:custom": "Custom profile",
+  "apparmor:local": "Local override",
+  "apparmor:homedirs": "Home directories",
 };
 
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {

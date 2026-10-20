@@ -103,14 +103,19 @@ type Client struct {
 
 // Node represents a managed desktop node/agent
 type Node struct {
-	ID             string     `json:"id" db:"id"`
-	Name           string     `json:"name" db:"name"`
-	FQDN           *string    `json:"fqdn,omitempty" db:"fqdn"`
-	MachineID      *string    `json:"machine_id,omitempty" db:"machine_id"`
-	IPAddress      *string    `json:"ip_address,omitempty" db:"ip_address"`
-	OSName         *string    `json:"os_name,omitempty" db:"os_name"`
-	OSVersion      *string    `json:"os_version,omitempty" db:"os_version"`
-	DesktopEnv     *string    `json:"desktop_env,omitempty" db:"desktop_env"`
+	ID         string  `json:"id" db:"id"`
+	Name       string  `json:"name" db:"name"`
+	FQDN       *string `json:"fqdn,omitempty" db:"fqdn"`
+	MachineID  *string `json:"machine_id,omitempty" db:"machine_id"`
+	IPAddress  *string `json:"ip_address,omitempty" db:"ip_address"`
+	OSName     *string `json:"os_name,omitempty" db:"os_name"`
+	OSVersion  *string `json:"os_version,omitempty" db:"os_version"`
+	DesktopEnv *string `json:"desktop_env,omitempty" db:"desktop_env"`
+	// LSM is the active mandatory access control system ("selinux",
+	// "apparmor", "none") and LSMMode its state ("enforcing", "permissive",
+	// "disabled" / "enabled", "disabled"), both from the heartbeat.
+	LSM            *string    `json:"lsm,omitempty" db:"lsm"`
+	LSMMode        *string    `json:"lsm_mode,omitempty" db:"lsm_mode"`
 	AgentVersion   *string    `json:"agent_version,omitempty" db:"agent_version"`
 	StatusCached   string     `json:"status" db:"status_cached"`
 	StatusReason   *string    `json:"status_reason,omitempty" db:"status_reason"`
@@ -460,6 +465,7 @@ type NodeListRequest struct {
 	OS           string `json:"os,omitempty"`            // matches os_name
 	Desktop      string `json:"desktop,omitempty"`       // matches desktop_env
 	AgentVersion string `json:"agent_version,omitempty"` // matches agent_version
+	LSM          string `json:"lsm,omitempty"`           // matches lsm ("selinux", "apparmor", "none")
 	Group        string `json:"group,omitempty"`         // node group id, or "none" for unassigned
 	SortField    string `json:"sort_field,omitempty"`
 	SortOrder    string `json:"sort_order,omitempty"` // "asc" | "desc"
@@ -480,6 +486,7 @@ type NodeFilterOptions struct {
 	OS            []string `json:"os"`
 	Desktops      []string `json:"desktops"`
 	AgentVersions []string `json:"agent_versions"`
+	LSMs          []string `json:"lsms"`
 }
 
 // NodeListResponse represents a paginated list of nodes.
@@ -562,6 +569,8 @@ type NodeHeartbeatInfo struct {
 	DesktopEnvs  []string
 	AgentVersion string
 	MachineID    string
+	LSM          string
+	LSMMode      string
 }
 
 // ─── MFA Models ───────────────────────────────────────────────────────────────

@@ -198,6 +198,7 @@ func Run(opts Options) {
 	kconfigRepo := database.NewKConfigRepository(db)
 	go seedKConfigBuiltinCatalogue(context.Background(), kconfigRepo)
 	systemdRepo := database.NewSystemdRepository(db)
+	macRepo := database.NewMacRepository(db)
 	polkitRepo := database.NewPolkitRepository(db)
 	go seedPolkitBuiltinActions(context.Background(), polkitRepo)
 	settingsRepo := database.NewSettingsRepository(db)
@@ -395,6 +396,9 @@ func Run(opts Options) {
 	systemdHandler := api.NewSystemdHandler(systemdRepo)
 	systemdActions := services.NewSystemdActionBroker()
 	systemdNodeHandler := api.NewSystemdNodeHandler(nodeSvc, systemdRepo, policyHub, systemdActions, auditSvc, cfg.Audit.AnonymizeIPs)
+	macHandler := api.NewMacHandler(macRepo)
+	macActions := services.NewMacActionBroker()
+	macNodeHandler := api.NewMacNodeHandler(nodeSvc, macRepo, policyHub, macActions, auditSvc, cfg.Audit.AnonymizeIPs)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
 	ppaHandler := api.NewPPAInfoHandler()
@@ -416,6 +420,15 @@ func Run(opts Options) {
 	}
 	policyBindingHandler.OnBindingChange = func(b *models.PolicyBinding) {
 		policyHub.PublishResync(b.GroupID)
+	}
+	// A node moved between groups gets the policies of its new groups (and
+	// loses those of the old ones) without waiting for a reconnect.
+	nodeHandler.OnMembershipChange = func(nodeID string) {
+		n, lookupErr := nodeSvc.GetNode(context.Background(), nodeID)
+		if lookupErr != nil || n == nil {
+			return
+		}
+		policyHub.SendResync(n.Name)
 	}
 
 	// Agent package repository — local downloads, the deploy wizard manifest
@@ -592,6 +605,12 @@ func Run(opts Options) {
 	// it bypasses the generic audit middleware.
 	mux.Handle("GET /api/v1/nodes/{id}/systemd/units", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(systemdNodeHandler.ListUnits))))
 	mux.Handle("POST /api/v1/nodes/{id}/systemd/actions", authMiddleware(gate.RequireScoped("systemd", "operate")(http.HandlerFunc(systemdNodeHandler.Action))))
+	// The Mandatory access control section of the node details: status,
+	// denial summary and inventory are a node view; a proposal runs a tool
+	// on the node and needs mac:operate. The action handler audits itself.
+	mux.Handle("GET /api/v1/nodes/{id}/mac", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(macNodeHandler.Get))))
+	mux.Handle("GET /api/v1/nodes/{id}/mac/items", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(macNodeHandler.ListItems))))
+	mux.Handle("POST /api/v1/nodes/{id}/mac/actions", authMiddleware(gate.RequireScoped("mac", "operate")(http.HandlerFunc(macNodeHandler.Action))))
 
 	// Node group routes — method-based permission checking
 	groupPerms := gate.RequireScopedMethod([]api.MethodPermission{
@@ -734,6 +753,9 @@ func Run(opts Options) {
 	mux.Handle("/api/v1/kconfig/themes", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(kconfigHandler.ListThemes))))
 	mux.Handle("/api/v1/systemd/units", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(systemdHandler.ListUnits))))
 	mux.Handle("/api/v1/systemd/calendar-preview", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(systemdHandler.CalendarPreview))))
+	// SELinux booleans and modules, AppArmor profiles (node-reported and
+	// curated) for the policy editors.
+	mux.Handle("/api/v1/mac/catalogue", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(macHandler.ListCatalogue))))
 
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(gate.RequireScoped("compliance", "view")(http.HandlerFunc(complianceHandler.List))))
@@ -894,7 +916,9 @@ func Run(opts Options) {
 			WithDiskEncryptionService(diskEncSvc).
 			WithKConfigRepository(kconfigRepo).
 			WithSystemdRepository(systemdRepo).
-			WithSystemdActions(systemdActions))
+			WithSystemdActions(systemdActions).
+			WithMacRepository(macRepo).
+			WithMacActions(macActions))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.

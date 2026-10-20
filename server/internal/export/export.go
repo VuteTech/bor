@@ -54,6 +54,10 @@ func newContentMessage(policyType string) proto.Message {
 		return &pb.DiskEncryptionPolicy{}
 	case "Systemd":
 		return &pb.SystemdPolicy{}
+	case "Selinux":
+		return &pb.SelinuxPolicy{}
+	case "Apparmor":
+		return &pb.ApparmorPolicy{}
 	}
 	return nil
 }
