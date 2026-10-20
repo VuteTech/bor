@@ -32,14 +32,31 @@ func (u *webAuthnUser) WebAuthnName() string                       { return u.na
 func (u *webAuthnUser) WebAuthnDisplayName() string                { return u.displayName }
 func (u *webAuthnUser) WebAuthnCredentials() []webauthn.Credential { return u.credentials }
 
+// WebAuthnStore persists security-key credentials and the state of ceremonies
+// in flight. *database.WebAuthnRepository implements it; tests use an
+// in-memory store.
+type WebAuthnStore interface {
+	ListByUserID(ctx context.Context, userID string) ([]*database.WebAuthnCredentialRow, error)
+	GetByCredentialID(ctx context.Context, credentialID string) (*database.WebAuthnCredentialRow, error)
+	Create(ctx context.Context, row *database.WebAuthnCredentialRow) error
+	UpdateAfterLogin(ctx context.Context, credentialID string, signCount uint32, backupState bool) error
+	Rename(ctx context.Context, id, userID, name string) error
+	Delete(ctx context.Context, id, userID string) error
+	CreateSession(ctx context.Context, row *database.WebAuthnSessionRow) error
+	GetSession(ctx context.Context, userID, sessionType string) (*database.WebAuthnSessionRow, error)
+	DeleteSession(ctx context.Context, userID, sessionType string) error
+}
+
+var _ WebAuthnStore = (*database.WebAuthnRepository)(nil)
+
 // WebAuthnService handles WebAuthn registration and authentication.
 type WebAuthnService struct {
-	repo *database.WebAuthnRepository
+	repo WebAuthnStore
 	wa   *webauthn.WebAuthn
 }
 
 // NewWebAuthnService creates a WebAuthnService. Returns an error if RPID is empty.
-func NewWebAuthnService(repo *database.WebAuthnRepository, rpid, displayName string, origins []string) (*WebAuthnService, error) {
+func NewWebAuthnService(repo WebAuthnStore, rpid, displayName string, origins []string) (*WebAuthnService, error) {
 	if rpid == "" {
 		return nil, fmt.Errorf("WebAuthn RPID must not be empty")
 	}
