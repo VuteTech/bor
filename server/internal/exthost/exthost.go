@@ -8,10 +8,12 @@ package exthost
 
 import (
 	"context"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -32,6 +35,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/api"
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
+	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/ext"
 	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
@@ -56,6 +60,13 @@ type Deps struct {
 	AnonymizeIPs bool
 	// SecretRoot is the server secret module SecretBox keys derive from.
 	SecretRoot string
+
+	// Reports receives the report signer and renderers modules register.
+	Reports ext.ReportRegistry
+	// CACert and CAKey are the server's certificate authority, for
+	// certificates modules ask for through Host.PKI().
+	CACert *x509.Certificate
+	CAKey  crypto.Signer
 }
 
 var moduleName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -162,6 +173,60 @@ func (h *host) RequestUser(r *http.Request) (userID, username string) {
 func (h *host) Identity() ext.Identity    { return &identity{deps: h.deps, module: h.name} }
 func (h *host) Logins() ext.LoginRegistry { return &logins{reg: h.reg, prefix: h.prefix()} }
 func (h *host) Audit() ext.Auditor        { return &auditor{deps: h.deps} }
+
+func (h *host) Reports() ext.ReportRegistry {
+	if h.deps.Reports == nil {
+		return noReports{}
+	}
+	return h.deps.Reports
+}
+
+// noReports refuses registrations when the server runs without a report
+// registry (tests).
+type noReports struct{}
+
+func (noReports) RegisterSigner(ext.ReportSigner) error {
+	return errors.New("ext: compliance reports are not available")
+}
+
+func (noReports) RegisterRenderer(ext.ReportRenderer) error {
+	return errors.New("ext: compliance reports are not available")
+}
+
+func (h *host) PKI() ext.PKI { return &pkiHost{deps: h.deps, module: h.name} }
+
+// pkiHost issues certificates from the server CA for one module.
+type pkiHost struct {
+	deps   *Deps
+	module string
+}
+
+func (p *pkiHost) CACertificatePEM() []byte {
+	if p.deps.CACert == nil {
+		return nil
+	}
+	return pki.EncodeCertPEM(p.deps.CACert)
+}
+
+func (p *pkiHost) IssueCertificate(_ context.Context, req ext.CertificateRequest) ([]byte, error) {
+	if p.deps.CACert == nil || p.deps.CAKey == nil {
+		return nil, errors.New("ext: the certificate authority is not available")
+	}
+	if req.PublicKey == nil {
+		return nil, errors.New("ext: a public key is required")
+	}
+	switch req.Usage {
+	case ext.CertificateUsageDocumentSigning:
+		certPEM, err := pki.IssueDocumentSigningCert(req.PublicKey, p.deps.CACert, p.deps.CAKey, req.CommonName, req.Validity)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("ext: module %q was issued a document signing certificate for %q", p.module, req.CommonName)
+		return certPEM, nil
+	default:
+		return nil, fmt.Errorf("ext: unsupported certificate usage %q", req.Usage)
+	}
+}
 
 func (h *host) Secrets() ext.SecretBox {
 	r := hkdf.New(sha256.New, []byte(h.deps.SecretRoot), []byte("bor-ext-secretbox-v1"), []byte("ext:"+h.name))

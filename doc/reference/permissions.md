@@ -115,6 +115,14 @@ hold yourself.
 |---|---|
 | `updates:operate` | Run a Software updates action on one node from the **Software updates** section of the node details: refresh the package metadata, run the update engine once with the policy's mode, or reboot the node (forced reboots warn logged-in users first). The action runs on the node at once and is audit-logged (`updates.action`) with the outcome. Can be delegated per node group. |
 
+### Compliance reports
+
+| Permission | Allows |
+|---|---|
+| `report:view` | List, open and download compliance reports (the **Reports** page). Downloads are audit-logged (`report.download`). Can be delegated per node group: a scoped holder sees only reports whose scope lies inside their groups. |
+| `report:create` | Generate a compliance report. Audit-logged (`report.generate`) with the report's hash. Can be delegated per node group: a scoped holder generates reports over their groups only. |
+| `report:manage` | Delete compliance reports (`report.delete`). Global only. |
+
 ## Built-in roles
 
 `Y` means the role holds the permission on a new installation.
@@ -130,6 +138,9 @@ hold yourself.
 | `binding:create` | Y | Y | | | | |
 | `binding:toggle` | Y | Y | | | | |
 | `compliance:view` | Y | Y | | | Y | Y |
+| `report:view` | Y | Y | | | Y | Y |
+| `report:create` | Y | Y | | | | Y |
+| `report:manage` | Y | | | | | |
 | `node:view` | Y | Y | | | | Y |
 | `node:create` | Y | Y | | | | |
 | `node:edit` | Y | Y | | | | |
@@ -181,6 +192,7 @@ checked, the **Policy Editor** role can release policies (it holds
 ## Navigation and permissions
 
 The sidebar hides **Disk Encryption** without `disk_encryption:view`,
+**Reports** without `report:view`,
 **Audit Logs** without `audit_log:view`, and **Settings** unless you hold
 at least one of `user:view`, `role:view`, `user_group:view`,
 `settings:manage` or `flatpak_repo:view`. Other pages are always listed

@@ -56,10 +56,11 @@ import { PolicyBindingsPage } from "./views/PolicyBindings";
 import { SettingsPage } from "./views/Settings";
 import { AuditLogsPage } from "./views/AuditLogs";
 import { CompliancePage } from "./views/Compliance";
+import { ReportsPage, ReportDetailPage } from "./views/Reports";
 import { DiskEncryptionPage } from "./views/DiskEncryption";
 import logoWhite from "./assets/logo-white.svg";
 
-type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "disk-encryption" | "audit-logs" | "settings";
+type ScreenKey = "dashboard" | "policies" | "nodes" | "node-groups" | "policy-bindings" | "compliance" | "reports" | "disk-encryption" | "audit-logs" | "settings";
 type ThemeMode = "light" | "dark" | "system";
 
 const PAGE_NAMES: Record<ScreenKey, string> = {
@@ -69,6 +70,7 @@ const PAGE_NAMES: Record<ScreenKey, string> = {
   "node-groups":     "Node Groups",
   "policy-bindings": "Policy Bindings",
   compliance:        "Compliance",
+  reports:           "Reports",
   "disk-encryption": "Disk Encryption",
   "audit-logs":      "Audit Logs",
   settings:          "Settings",
@@ -81,6 +83,7 @@ const PAGE_SUBTITLES: Record<ScreenKey, string> = {
   "node-groups":      "Manage node groups and generate enrollment tokens for agent registration.",
   "policy-bindings":  "Bind policies to node groups. Nodes inherit policies through group membership.",
   compliance:         "Track policy enforcement status across your fleet.",
+  reports:            "Point-in-time compliance reports: immutable evidence of what the fleet looked like when they were generated.",
   "disk-encryption":  "The fleet's LUKS volumes and escrowed recovery keys - reveal or rotate a key when a device needs recovery.",
   "audit-logs":       "Track system changes and security events.",
   settings:           "Manage users, roles, and system configuration.",
@@ -94,6 +97,7 @@ const SCREEN_PATH: Record<ScreenKey, string> = {
   "node-groups":     "/node-groups",
   "policy-bindings": "/policy-bindings",
   compliance:        "/compliance",
+  reports:           "/reports",
   "disk-encryption": "/disk-encryption",
   "audit-logs":      "/audit-logs",
   settings:          "/settings",
@@ -447,6 +451,7 @@ export const Shell: React.FC = () => {
             {navItem("nodes", "Nodes")}
             {navItem("node-groups", "Node Groups")}
             {navItem("compliance", "Compliance")}
+            {hasPermission("report:view") && navItem("reports", "Reports")}
             {hasPermission("disk_encryption:view") && navItem("disk-encryption", "Disk Encryption")}
           </NavGroup>
           <NavGroup title="Policy">
@@ -550,6 +555,8 @@ export const Shell: React.FC = () => {
           <Route path="/node-groups" element={<NodeGroupsPage />} />
           <Route path="/policy-bindings" element={<PolicyBindingsPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/:id" element={<ReportDetailPage />} />
           <Route path="/disk-encryption" element={<DiskEncryptionPage />} />
           <Route path="/audit-logs" element={<AuditLogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -14,11 +14,13 @@ package ext
 
 import (
 	"context"
+	"crypto"
 	"database/sql"
 	"errors"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // Module is an optional server component.
@@ -62,6 +64,11 @@ type Host interface {
 	// Secrets encrypts and decrypts data at rest with a key derived for this
 	// module from the server's secret.
 	Secrets() SecretBox
+	// Reports lets the module sign compliance reports and add document
+	// formats to them.
+	Reports() ReportRegistry
+	// PKI issues certificates from the server's certificate authority.
+	PKI() PKI
 }
 
 // User is a Bor user as seen by modules.
@@ -401,4 +408,84 @@ type PanelAction struct {
 	// shown once with a copy control), "message" (the "message" member) or
 	// "" (nothing).
 	Result string `json:"result,omitempty"`
+}
+
+// ─── Compliance reports ──────────────────────────────────────────────────
+
+// ReportSignature is a detached signature over a report bundle's canonical
+// bytes, produced by a ReportSigner and stored by the server next to the
+// bundle's hash.
+type ReportSignature struct {
+	// Format names the signature encoding; "jws" is a compact detached JWS.
+	Format string
+	// Value is the signature in that encoding.
+	Value string
+	// KeyID identifies the signing key, for example the SHA-256 fingerprint
+	// of the signing certificate.
+	KeyID string
+}
+
+// ReportSigner signs report bundles. A module registers one through
+// Host.Reports(); without a signer, reports are stored unsigned.
+type ReportSigner interface {
+	// Sign signs the canonical bundle bytes. It returns nil and no error
+	// when the module is not entitled to sign at the moment (the report is
+	// then stored unsigned).
+	Sign(ctx context.Context, canonical []byte) (*ReportSignature, error)
+	// Verify checks a signature made for canonical. It returns nil when
+	// the signature is valid.
+	Verify(ctx context.Context, canonical []byte, sig *ReportSignature) error
+}
+
+// ReportRenderer renders a report bundle in a document format offered for
+// download next to the built-in JSON and CSV.
+type ReportRenderer interface {
+	// Format is the download format name, for example "html" or "pdf".
+	Format() string
+	// ContentType is the media type of the rendered document.
+	ContentType() string
+	// FileExtension is the extension of the downloaded file, without the dot.
+	FileExtension() string
+	// Render produces the document from the canonical bundle bytes. sig is
+	// the bundle's signature, or nil when it is unsigned.
+	Render(ctx context.Context, canonical []byte, sig *ReportSignature) ([]byte, error)
+}
+
+// ReportRegistry lets modules add signing and document formats to
+// compliance reports.
+type ReportRegistry interface {
+	// RegisterSigner installs the signer. Only one signer can be
+	// registered.
+	RegisterSigner(s ReportSigner) error
+	// RegisterRenderer adds a download format. Formats must be unique and
+	// may not shadow the built-in ones (json, csv, jws).
+	RegisterRenderer(r ReportRenderer) error
+}
+
+// CertificateRequest asks the server's certificate authority for a
+// certificate.
+type CertificateRequest struct {
+	// CommonName is the subject's common name.
+	CommonName string
+	// PublicKey is the key to certify: ECDSA P-256 or stronger, RSA-3072 or
+	// stronger, or Ed25519.
+	PublicKey crypto.PublicKey
+	// Usage selects the certificate profile. "document-signing" (extended
+	// key usage id-kp-documentSigning) is the only profile today.
+	Usage string
+	// Validity is how long the certificate is valid; zero means one year.
+	Validity time.Duration
+}
+
+// Certificate usage profiles for CertificateRequest.Usage.
+const (
+	CertificateUsageDocumentSigning = "document-signing"
+)
+
+// PKI is the server's certificate authority as seen by modules.
+type PKI interface {
+	// CACertificatePEM returns the CA certificate the agents trust.
+	CACertificatePEM() []byte
+	// IssueCertificate signs a certificate for req and returns it in PEM.
+	IssueCertificate(ctx context.Context, req CertificateRequest) (certPEM []byte, err error)
 }

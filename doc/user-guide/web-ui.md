@@ -94,6 +94,7 @@ hidden.
 | **Fleet** | **Nodes** | Enrolled machines and their status. See [Nodes](nodes.md). | always |
 | | **Node Groups** | Groups of nodes and enrollment tokens. See [Node groups](node-groups.md). | always |
 | | **Compliance** | Per-node, per-policy enforcement results. See [Compliance](compliance.md). | always |
+| | **Reports** | Point-in-time compliance reports kept as evidence. See [Compliance reports](reports.md). | `report:view` |
 | | **Disk Encryption** | LUKS volumes and escrowed recovery keys. See [Disk encryption](../policy-types/disk-encryption.md). | `disk_encryption:view` |
 | **Policy** | **Policies** | Create and manage policies. See [Policies](policies.md). | always |
 | | **Policy Bindings** | Attach policies to node groups. See [Bindings](bindings.md). | always |
