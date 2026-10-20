@@ -24,6 +24,7 @@ import KeyIcon from "@patternfly/react-icons/dist/esm/icons/key-icon";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import ShieldAltIcon from "@patternfly/react-icons/dist/esm/icons/shield-alt-icon";
 import FingerprintIcon from "@patternfly/react-icons/dist/esm/icons/fingerprint-icon";
+import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 import UserClockIcon from "@patternfly/react-icons/dist/esm/icons/user-clock-icon";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
 import CogIcon from "@patternfly/react-icons/dist/esm/icons/cog-icon";
@@ -38,6 +39,7 @@ import { hasAnyKConfigContent, parseKConfigContent } from "../views/Policies/edi
 import { parseSystemdContent, validateSystemdContent } from "../views/Policies/systemdModel";
 import { parseSelinuxContent, validateSelinuxContent } from "../views/Policies/selinuxModel";
 import { parseApparmorContent, validateApparmorContent } from "../views/Policies/apparmorModel";
+import { parseUpdatesContent, validateUpdatesContent } from "../views/Policies/updatesModel";
 
 export type PolicyTypeId =
   | "Firefox"
@@ -51,6 +53,7 @@ export type PolicyTypeId =
   | "Systemd"
   | "Selinux"
   | "Apparmor"
+  | "Updates"
   | "SessionAccess"
   | "Package"
   | "Flatpak"
@@ -424,6 +427,33 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
       return validateApparmorContent(parseApparmorContent(content));
     },
   },
+  Updates: {
+    id: "Updates",
+    label: "Software updates",
+    category: "system",
+    tagline: "Unattended updates, schedule, holds and the reboot",
+    description:
+      "Configure the distribution's unattended update engine (dnf-automatic, unattended-upgrades, os-update, rpm-ostree): what is installed without a person, when, which packages are held back, and when the node reboots afterwards. Every node reports its pending updates and whether it needs a reboot.",
+    manages: [
+      "The engine configuration (/etc/dnf/automatic.conf, /etc/apt/apt.conf.d/90bor-updates, /etc/os-update.conf, /etc/rpm-ostreed.conf)",
+      "The engine timer and a schedule drop-in (90-bor.conf)",
+      "Holds (dnf excludepkgs, apt Package-Blacklist, zypper locks)",
+      "The reboot after updates: window, logged-in users, forced reboots with a warning",
+      "/var/lib/bor/agent/updates-state.json (original states, restored on removal)",
+    ],
+    appliesTo: ["Every node with dnf, apt, zypper or rpm-ostree; the engine package is installed when missing"],
+    examples: [
+      "Workstations install security updates nightly and reboot between 03:00 and 05:00 when nobody is logged in",
+      "Servers install everything and never reboot on their own",
+      "A pilot group with a tighter schedule before the fleet",
+    ],
+    Icon: SyncAltIcon,
+    defaultContent: () => "{}",
+    validateContent: (content) => {
+      if (!parseObject(content)) return "Software updates policy content is not valid JSON";
+      return validateUpdatesContent(parseUpdatesContent(content));
+    },
+  },
   SessionAccess: {
     id: "SessionAccess",
     label: "Session Access",
@@ -582,6 +612,7 @@ export const POLICY_TYPE_ORDER: PolicyTypeId[] = [
   "Systemd",
   "Selinux",
   "Apparmor",
+  "Updates",
   "SessionAccess",
   "Package",
   "Flatpak",

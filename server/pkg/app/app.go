@@ -199,6 +199,7 @@ func Run(opts Options) {
 	go seedKConfigBuiltinCatalogue(context.Background(), kconfigRepo)
 	systemdRepo := database.NewSystemdRepository(db)
 	macRepo := database.NewMacRepository(db)
+	updatesRepo := database.NewUpdatesRepository(db)
 	polkitRepo := database.NewPolkitRepository(db)
 	go seedPolkitBuiltinActions(context.Background(), polkitRepo)
 	settingsRepo := database.NewSettingsRepository(db)
@@ -399,6 +400,7 @@ func Run(opts Options) {
 	macHandler := api.NewMacHandler(macRepo)
 	macActions := services.NewMacActionBroker()
 	macNodeHandler := api.NewMacNodeHandler(nodeSvc, macRepo, policyHub, macActions, auditSvc, cfg.Audit.AnonymizeIPs)
+	updatesNodeHandler := api.NewUpdatesNodeHandler(nodeSvc, updatesRepo)
 	complianceHandler := api.NewComplianceHandler(dconfRepo)
 	polkitHandler := api.NewPolkitHandler(polkitRepo)
 	ppaHandler := api.NewPPAInfoHandler()
@@ -611,6 +613,9 @@ func Run(opts Options) {
 	mux.Handle("GET /api/v1/nodes/{id}/mac", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(macNodeHandler.Get))))
 	mux.Handle("GET /api/v1/nodes/{id}/mac/items", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(macNodeHandler.ListItems))))
 	mux.Handle("POST /api/v1/nodes/{id}/mac/actions", authMiddleware(gate.RequireScoped("mac", "operate")(http.HandlerFunc(macNodeHandler.Action))))
+	// Software updates state of a node.
+	mux.Handle("GET /api/v1/nodes/{id}/updates", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.Get))))
+	mux.Handle("GET /api/v1/nodes/{id}/updates/pending", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.ListPending))))
 
 	// Node group routes — method-based permission checking
 	groupPerms := gate.RequireScopedMethod([]api.MethodPermission{
@@ -918,6 +923,7 @@ func Run(opts Options) {
 			WithSystemdRepository(systemdRepo).
 			WithSystemdActions(systemdActions).
 			WithMacRepository(macRepo).
+			WithUpdatesRepository(updatesRepo).
 			WithMacActions(macActions))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────

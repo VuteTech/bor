@@ -27,6 +27,7 @@ import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatal
 import { describeTaskEntry, describeUnitEntry, parseSystemdContent } from "./systemdModel";
 import { parseSelinuxContent } from "./selinuxModel";
 import { apparmorModeLabel, parseApparmorContent } from "./apparmorModel";
+import { parseUpdatesContent, updatesModeLabel, updatesRebootLabel } from "./updatesModel";
 
 export interface SettingsRow {
   setting: string;
@@ -354,6 +355,26 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     for (const c of aa.customProfiles) rows.push({ setting: `Custom profile bor-${c.name}`, value: c.description || `${c.text.split("\n").length} lines`, locked: null });
     for (const o of aa.localOverrides) rows.push({ setting: `Local override ${o.profileFile}`, value: `${o.text.split("\n").filter((l) => l.trim()).length} rules`, locked: null });
     if (aa.extraHomeDirs.length) rows.push({ setting: "Extra home directories", value: aa.extraHomeDirs.join(" "), locked: null });
+    return rows;
+  }
+
+  if (policyType === "Updates") {
+    const up = parseUpdatesContent(content);
+    if (up.mode !== "UPDATES_MODE_UNSPECIFIED") rows.push({ setting: "Mode", value: updatesModeLabel(up.mode), locked: null });
+    if (up.schedule.onCalendar) rows.push({ setting: "Schedule", value: `${up.schedule.onCalendar}${up.schedule.randomizedDelay ? ` (random delay up to ${up.schedule.randomizedDelay})` : ""}`, locked: null });
+    if (up.reboot.policy !== "UPDATES_REBOOT_UNSPECIFIED") {
+      const parts = [updatesRebootLabel(up.reboot.policy)];
+      if (up.reboot.window) parts.push(`window ${up.reboot.window}`);
+      if (up.reboot.policy !== "UPDATES_REBOOT_NEVER") {
+        parts.push(up.reboot.onlyWithoutSessions ? "only without logged-in users" : "even with users logged in");
+        if (up.reboot.forceAfterDays > 0) parts.push(`forced after ${up.reboot.forceAfterDays} days with a ${up.reboot.warnMinutes}-minute warning`);
+      }
+      rows.push({ setting: "Reboot", value: parts.join(", "), locked: null });
+    }
+    for (const h of up.hold) rows.push({ setting: `Hold ${h}`, value: "held back from updates", locked: null });
+    if (up.removeUnusedDependencies) rows.push({ setting: "Unused dependencies", value: "removed after updates", locked: null });
+    if (!up.installEngine) rows.push({ setting: "Engine", value: "not installed by the policy", locked: null });
+    if (up.requireEngine) rows.push({ setting: "Engine required", value: "nodes without an engine are non-compliant", locked: null });
     return rows;
   }
 

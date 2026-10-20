@@ -80,6 +80,7 @@ import { hasPermission } from "../../apiClient/permissions";
 import { NodeDiskEncryptionSection } from "../DiskEncryption/NodeDiskEncryptionSection";
 import { NodeSystemdSection } from "./NodeSystemdSection";
 import { NodeMacSection } from "./NodeMacSection";
+import { NodeUpdatesSection } from "./NodeUpdatesSection";
 import { macLsmLabel } from "../../apiClient/macApi";
 
 /* ── Helpers ── */
@@ -744,6 +745,8 @@ export const NodesPage: React.FC = () => {
           <NodeSystemdSection nodeId={selectedNode.id} nodeName={selectedNode.name} online={selectedNode.status === "online"} />
 
           <NodeMacSection nodeId={selectedNode.id} nodeName={selectedNode.name} online={selectedNode.status === "online"} />
+
+          <NodeUpdatesSection nodeId={selectedNode.id} />
 
           <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}>
             Actions

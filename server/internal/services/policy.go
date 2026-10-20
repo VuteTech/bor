@@ -302,6 +302,8 @@ func validatePolicyContent(policyType, content string) error {
 		return ValidateSelinuxContent(content)
 	case "Apparmor":
 		return ValidateApparmorContent(content)
+	case "Updates":
+		return ValidateUpdatesContent(content)
 	}
 	return nil
 }

@@ -1,0 +1,180 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+/**
+ * NodeUpdatesSection - the "Software updates" block of the node drawer:
+ * the engine and its mode, the last check and run, the pending updates
+ * with their advisories, and whether a reboot is pending and why.
+ * Self-contained: fetches its own data.
+ */
+
+import React, { useCallback, useEffect, useId, useState } from "react";
+import { Button, Checkbox, Label, SearchInput, Spinner, Title, Tooltip } from "@patternfly/react-core";
+import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
+
+import { LiveAlert } from "../../components/LiveAlert";
+import {
+  fetchNodeUpdates,
+  fetchNodeUpdatesPending,
+  updatesEngineLabel,
+  updatesModeLabel,
+  type UpdatesNodeStatus,
+  type UpdatesPendingRow,
+} from "../../apiClient/updatesApi";
+
+type LabelColor = React.ComponentProps<typeof Label>["color"];
+
+function timeAgo(dateStr?: string): string {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (Number.isNaN(diff)) return "";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} d ago`;
+}
+
+function severityColor(s: string): LabelColor {
+  switch (s) {
+    case "critical": return "red";
+    case "important": return "orange";
+    case "moderate": return "yellow";
+    case "low": return "blue";
+    default: return "grey";
+  }
+}
+
+function modeColor(mode: string): LabelColor {
+  switch (mode) {
+    case "security":
+    case "all": return "green";
+    case "check": return "blue";
+    case "off": return "orange";
+    default: return "grey";
+  }
+}
+
+const subtle: React.CSSProperties = { color: "var(--pf-t--global--text--color--subtle)", fontSize: "0.85rem" };
+
+interface Props {
+  nodeId: string;
+}
+
+export const NodeUpdatesSection: React.FC<Props> = ({ nodeId }) => {
+  const idp = useId();
+  const [status, setStatus] = useState<UpdatesNodeStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [securityOnly, setSecurityOnly] = useState(false);
+  const [pending, setPending] = useState<UpdatesPendingRow[] | null>(null);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setStatus(await fetchNodeUpdates(nodeId));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load the update state");
+    } finally {
+      setLoading(false);
+    }
+  }, [nodeId]);
+
+  useEffect(() => { setStatus(null); void load(); }, [load]);
+
+  const inv = status?.inventory;
+  const hasPending = (inv?.pendingTotal ?? 0) > 0;
+
+  useEffect(() => {
+    if (!hasPending) { setPending([]); return; }
+    let cancelled = false;
+    setPending(null);
+    const handle = window.setTimeout(() => {
+      fetchNodeUpdatesPending(nodeId, { q: query.trim(), security: securityOnly, limit: 200 })
+        .then((rows) => { if (!cancelled) { setPending(rows); setPendingError(null); } })
+        .catch((e: unknown) => { if (!cancelled) setPendingError(e instanceof Error ? e.message : "Failed to load the pending updates"); });
+    }, query ? 250 : 0);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+  }, [nodeId, hasPending, query, securityOnly, status?.reportedAt]);
+
+  return (
+    <section aria-labelledby={`${idp}-title`} style={{ marginTop: "1.5rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <Title headingLevel="h3" size="md" id={`${idp}-title`}>Software updates</Title>
+        <Tooltip content="Reload">
+          <Button variant="plain" aria-label="Reload the update state" onClick={() => void load()} isDisabled={loading}><SyncAltIcon /></Button>
+        </Tooltip>
+      </div>
+      <LiveAlert id={`${idp}-error`} variant="danger" isInline message={error} />
+      {loading && !status && <Spinner size="md" aria-label="Loading" />}
+      {status && !inv && <p style={subtle}>Not reported: the node has not sent its update state yet.</p>}
+      {inv && (
+        <>
+          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
+            <Label isCompact color={inv.engine && inv.engine !== "none" ? (inv.engineInstalled ? "green" : "orange") : "grey"}>
+              {updatesEngineLabel(inv.engine ?? "")}{inv.engine && inv.engine !== "none" && !inv.engineInstalled ? " · not installed" : ""}
+            </Label>
+            <Label isCompact color={modeColor(inv.effectiveMode ?? "")}>{updatesModeLabel(inv.effectiveMode ?? "")}</Label>
+            {inv.engineManagedBy && <Label isCompact variant="outline">{inv.engineManagedBy === "bor" ? "configured by Bor" : inv.engineManagedBy === "foreign" ? "configured locally" : "vendor defaults"}</Label>}
+            {inv.engine && inv.engine !== "none" && <Label isCompact variant="outline">timer {inv.engineTimerEnabled ? "enabled" : "disabled"}</Label>}
+            {inv.reboot?.required
+              ? <Label isCompact color="orange">reboot pending{inv.reboot.since ? ` since ${new Date(inv.reboot.since).toLocaleString()}` : ""}</Label>
+              : <Label isCompact color="green">no reboot pending</Label>}
+          </div>
+          <p style={{ ...subtle, marginTop: "0.5rem" }}>
+            Reported {timeAgo(status?.reportedAt)}.
+            {inv.lastCheck ? ` Last check ${timeAgo(inv.lastCheck)}.` : ""}
+            {inv.lastRun?.time ? ` Last run ${timeAgo(inv.lastRun.time)}${inv.lastRun.success ? "" : " failed"}: ${inv.lastRun.message || `${inv.lastRun.packages} packages`}.` : " No engine run found."}
+            {inv.runningKernel ? ` Kernel ${inv.runningKernel}${inv.newestKernel && inv.newestKernel !== inv.runningKernel ? ` (newest installed ${inv.newestKernel})` : ""}.` : ""}
+            {inv.bootTime ? ` Up since ${new Date(inv.bootTime).toLocaleString()}.` : ""}
+          </p>
+          {inv.reboot?.required && inv.reboot.reasons?.length ? (
+            <p style={{ ...subtle, marginTop: "0.25rem" }}>Reboot needed: {inv.reboot.reasons.join("; ")}{inv.reboot.staged ? " (a deployment is staged)" : ""}.</p>
+          ) : null}
+          {inv.lastPolicyReboot ? <p style={{ ...subtle, marginTop: "0.25rem" }}>Last reboot by policy {new Date(inv.lastPolicyReboot).toLocaleString()}.</p> : null}
+          {inv.foreignMechanisms?.length ? <p style={{ ...subtle, marginTop: "0.25rem" }}>Other update mechanisms on this node: {inv.foreignMechanisms.join(", ")}.</p> : null}
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.75rem", flexWrap: "wrap" }}>
+            <strong>{inv.pendingTotal ?? 0} pending update{(inv.pendingTotal ?? 0) === 1 ? "" : "s"}</strong>
+            {(inv.pendingSecurity ?? 0) > 0 && <Label isCompact color="red">{inv.pendingSecurity} security</Label>}
+          </div>
+          {hasPending && (
+            <>
+              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                <SearchInput aria-label="Search pending updates" placeholder="Search by package, advisory or CVE" value={query} onChange={(_ev, v) => setQuery(v)} onClear={() => setQuery("")} style={{ maxWidth: "20rem" }} />
+                <Checkbox id={`${idp}-security`} label="Security only" isChecked={securityOnly} onChange={(_ev, v) => setSecurityOnly(v)} />
+              </div>
+              <LiveAlert id={`${idp}-pending-error`} variant="danger" isInline message={pendingError} />
+              {pending === null && !pendingError && <Spinner size="md" aria-label="Loading" />}
+              {pending && pending.length === 0 && <p style={subtle}>No pending update matches.</p>}
+              {pending && pending.length > 0 && (
+                <ul style={{ listStyle: "none", padding: 0, margin: "0.5rem 0 0", maxHeight: "22rem", overflowY: "auto" }}>
+                  {pending.map((p) => (
+                    <li key={`${p.kind}-${p.name}`} style={{ padding: "0.3rem 0", borderBottom: "1px solid var(--pf-t--global--border--color--default)" }}>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <code style={{ fontSize: "0.85rem" }}>{p.name}</code>
+                        <span style={subtle}>{p.version}</span>
+                        {p.security && <Label isCompact color={severityColor(p.severity)}>{p.severity ? `security · ${p.severity}` : "security"}</Label>}
+                        {p.kind === "firmware" && <Label isCompact variant="outline">firmware</Label>}
+                      </div>
+                      {(p.advisory || p.cves.length > 0) && (
+                        <div style={{ ...subtle, marginTop: "0.15rem" }}>
+                          {p.advisory}{p.advisory && p.cves.length ? " · " : ""}{p.cves.join(", ")}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+};

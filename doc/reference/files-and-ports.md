@@ -145,6 +145,9 @@ or the file deleted.
 | AppArmor | Symlinks `/etc/apparmor.d/disable/<file>` and `/etc/apparmor.d/force-complain/<file>`, profiles `/etc/apparmor.d/bor-<name>`, the Bor block in `/etc/apparmor.d/local/<file>`, `/etc/apparmor.d/tunables/home.d/bor`; with vendor flag edits, the complain flag of a vendor profile file | Yes | `apparmor.profiles_dir` |
 | AppArmor | `/etc/sysctl.d/zz-bor-apparmor.conf` (user namespace switches) | Yes | `apparmor.sysctl_path` |
 | AppArmor | `/var/lib/bor/agent/apparmor-state.json` and backups of edited vendor files under `/var/lib/bor/agent/apparmor-backups/` | Yes | `apparmor.state_path`, `apparmor.backup_dir` |
+| Software updates | The engine configuration: `/etc/dnf/automatic.conf`, `/etc/apt/apt.conf.d/90bor-updates`, `/etc/os-update.conf` or the `AutomaticUpdatePolicy` line of `/etc/rpm-ostreed.conf` (originals backed up) | Yes | engine specific |
+| Software updates | `/etc/systemd/system/<engine timer>.d/90-bor.conf` (the schedule) | Yes | `systemd.system_dir` |
+| Software updates | `/var/lib/bor/agent/updates-state.json` and `/var/lib/bor/agent/updates-backups/` | Yes | `updates.state_path`, `updates.backup_dir` |
 | Services & timers | Drop-ins `/etc/systemd/user/<unit>.d/90-bor.conf`, task units `/etc/systemd/user/bor-<task>.service` and `.timer`, and the enablement symlinks and masks of entries scoped to all users | Yes (files Bor writes) | `systemd.user_dir` |
 | Services & timers | `/etc/systemd/user-preset/10-bor.preset` (optional, policies with the preset switch and units scoped to all users) | Yes | `systemd.user_preset_dir` |
 | Package (apt) | `/etc/apt/sources.list.d/bor-<id>.sources`, `/etc/apt/trusted.gpg.d/bor-<id>.gpg` | Yes | - |

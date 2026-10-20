@@ -140,6 +140,31 @@ func (h *PolicyHandler) auditSystemdExec(r *http.Request, policyID, verb, conten
 	})
 }
 
+// auditUpdatesHolds records that a Software updates policy holding
+// packages back was created, saved, released or imported, with the
+// patterns: a hold keeps a vulnerable package on every node of a group.
+func (h *PolicyHandler) auditUpdatesHolds(r *http.Request, policyID, verb, policyType, content string) {
+	if h.auditSvc == nil || !services.UpdatesContentHasHolds(policyType, content) {
+		return
+	}
+	username := ""
+	if claims := GetUserFromContext(r.Context()); claims != nil {
+		username = claims.Username
+	}
+	details, _ := json.Marshal(map[string]json.RawMessage{
+		"verb":  json.RawMessage(`"` + verb + `"`),
+		"holds": json.RawMessage(services.UpdatesHoldSummary(content)),
+	})
+	h.auditSvc.LogEvent(r.Context(), &models.AuditLog{
+		Username:     username,
+		Action:       "policy.updates_hold",
+		ResourceType: "policy",
+		ResourceID:   policyID,
+		Details:      string(details),
+		IPAddress:    auditSrcIP(r),
+	})
+}
+
 // auditMacCustom records that an SELinux or AppArmor policy carrying
 // administrator-authored policy text (custom modules or profiles, local
 // overrides, file contexts, login mappings, permissive domains) was
@@ -324,6 +349,7 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.auditSystemdExec(r, policy.ID, "create", req.Content)
 	}
 	h.auditMacCustom(r, policy.ID, "create", req.Type, req.Content)
+	h.auditUpdatesHolds(r, policy.ID, "create", req.Type, req.Content)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -415,6 +441,7 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Type != nil || req.Content != nil {
 		h.auditMacCustom(r, policy.ID, "save", nextType, nextContent)
+		h.auditUpdatesHolds(r, policy.ID, "save", nextType, nextContent)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -510,6 +537,7 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 	}
 	if req.State == string(models.PolicyStateReleased) {
 		h.auditMacCustom(r, policy.ID, "release", existing.Type, existing.Content)
+		h.auditUpdatesHolds(r, policy.ID, "release", existing.Type, existing.Content)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

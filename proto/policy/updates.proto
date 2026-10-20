@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+import "google/protobuf/timestamp.proto";
+
+// UpdatesPolicy manages the distribution's unattended update mechanism
+// (dnf-automatic, unattended-upgrades, os-update, rpm-ostree) and the
+// reboot that follows updates. Several bound policies merge per key by
+// binding priority; on equal priority the value that installs more, and
+// the reboot policy that reboots more, win.
+message UpdatesPolicy {
+  // What the node installs on its own.
+  UpdatesMode mode = 1;
+  // When the engine runs; empty keeps the distribution's default timer.
+  UpdatesSchedule schedule = 2;
+  // The reboot after updates. Every engine's own reboot is switched off;
+  // the agent decides reboots with these rules.
+  UpdatesReboot reboot = 3;
+  // Packages the engine must not upgrade: names or shell-style patterns
+  // (dnf excludepkgs, apt Package-Blacklist, zypper locks).
+  repeated string hold = 4;
+  // Remove dependencies that updates left unused (apt
+  // Remove-Unused-Dependencies; dnf and zypper do this on their own).
+  bool remove_unused_dependencies = 5;
+  // Install the engine package when it is missing (dnf5-plugin-automatic,
+  // dnf-automatic, unattended-upgrades, os-update). Unset means on.
+  optional bool install_engine = 6;
+  // A node without a usable engine is non-compliant instead of
+  // inapplicable.
+  bool require_engine = 7;
+}
+
+// UpdatesMode is what the node installs without a person.
+enum UpdatesMode {
+  // Keep the node's configuration.
+  UPDATES_MODE_UNSPECIFIED = 0;
+  // No unattended updates: the engine's timer is disabled.
+  UPDATES_MODE_OFF = 1;
+  // Download and report, install nothing.
+  UPDATES_MODE_CHECK = 2;
+  // Install security updates only. Image-based systems (rpm-ostree)
+  // cannot select updates and report this as inapplicable.
+  UPDATES_MODE_SECURITY = 3;
+  // Install every update.
+  UPDATES_MODE_ALL = 4;
+}
+
+// UpdatesSchedule is the engine timer's schedule, written as a drop-in
+// of the distribution's timer unit.
+message UpdatesSchedule {
+  // systemd calendar expression, e.g. "*-*-* 02:00" or "Sat *-*-* 03:00".
+  string on_calendar = 1;
+  // Random delay added to every run to spread a fleet, e.g. "1h".
+  string randomized_delay = 2;
+  // Catch up a run missed while the node was off. Unset means on.
+  optional bool persistent = 3;
+}
+
+// UpdatesRebootPolicy says when the agent reboots after updates.
+enum UpdatesRebootPolicy {
+  // Keep the node as it is: never reboot, report a pending reboot.
+  UPDATES_REBOOT_UNSPECIFIED = 0;
+  UPDATES_REBOOT_NEVER = 1;
+  // Reboot when a kernel, systemd or library update needs one.
+  UPDATES_REBOOT_WHEN_NEEDED = 2;
+  // Reboot after every run that installed something.
+  UPDATES_REBOOT_ALWAYS = 3;
+}
+
+// UpdatesReboot is the agent's reboot rule.
+message UpdatesReboot {
+  UpdatesRebootPolicy policy = 1;
+  // Daily window in which the agent may reboot, "HH:MM-HH:MM" (a window
+  // past midnight wraps). Empty: any time once a reboot is needed.
+  string window = 2;
+  // Do not reboot while a user is logged in (graphical or SSH). Unset
+  // means on.
+  optional bool only_without_sessions = 3;
+  // Reboot despite logged-in users once the reboot has been pending for
+  // this many days; 0 never forces.
+  int32 force_after_days = 4;
+  // Warn logged-in users this many minutes before a forced reboot.
+  int32 warn_minutes = 5;
+  // The warning shown to users; a default is used when empty.
+  string message = 6;
+}
+
+// UpdatesPending is one update a node can install.
+message UpdatesPending {
+  string name = 1;
+  string version = 2;
+  // Advisory id (FEDORA-2026-..., USN-..., DSA-...) when known.
+  string advisory = 3;
+  // critical | important | moderate | low | "" when unknown.
+  string severity = 4;
+  repeated string cves = 5;
+  bool security = 6;
+  // package | firmware
+  string kind = 7;
+}
+
+// UpdatesRun is the last run of the engine the node could find.
+message UpdatesRun {
+  google.protobuf.Timestamp time = 1;
+  bool success = 2;
+  int32 packages = 3;
+  // The engine's own summary line or error.
+  string message = 4;
+}
+
+// UpdatesRebootState says whether a reboot is pending and why.
+message UpdatesRebootState {
+  bool required = 1;
+  // When the agent first saw the reboot pending.
+  google.protobuf.Timestamp since = 2;
+  // "kernel 7.2.11 installed, 6.17.1 running", "needs-restarting", ...
+  repeated string reasons = 3;
+  // An rpm-ostree deployment is staged for the next boot.
+  bool staged = 4;
+}
+
+// UpdatesInventory is what a node reports about its update state.
+message UpdatesInventory {
+  // dnf-automatic | unattended-upgrades | os-update | rpm-ostree | none
+  string engine = 1;
+  bool engine_installed = 2;
+  bool engine_timer_enabled = 3;
+  // bor | vendor | foreign (configured by someone else) | ""
+  string engine_managed_by = 4;
+  // off | check | security | all | "" when unknown
+  string effective_mode = 5;
+  // Last metadata refresh the node could find.
+  google.protobuf.Timestamp last_check = 6;
+  UpdatesRun last_run = 7;
+  int32 pending_total = 8;
+  int32 pending_security = 9;
+  // At most 200 entries; the counts above cover the rest.
+  repeated UpdatesPending pending = 10;
+  UpdatesRebootState reboot = 11;
+  google.protobuf.Timestamp boot_time = 12;
+  string running_kernel = 13;
+  string newest_kernel = 14;
+  // Other update mechanisms the node runs that Bor does not manage.
+  repeated string foreign_mechanisms = 15;
+  // The engine's own last reboot requested by a policy, when any.
+  google.protobuf.Timestamp last_policy_reboot = 16;
+}
+
+// ReportUpdatesInventoryRequest carries the update state of a node.
+message ReportUpdatesInventoryRequest {
+  string client_id = 1;
+  UpdatesInventory inventory = 2;
+}
+
+message ReportUpdatesInventoryResponse {}

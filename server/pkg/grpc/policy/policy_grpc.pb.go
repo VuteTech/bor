@@ -33,6 +33,7 @@ const (
 	PolicyService_ReportSystemdCatalogue_FullMethodName        = "/bor.policy.v1.PolicyService/ReportSystemdCatalogue"
 	PolicyService_ReportSystemdUnitActionResult_FullMethodName = "/bor.policy.v1.PolicyService/ReportSystemdUnitActionResult"
 	PolicyService_ReportMacInventory_FullMethodName            = "/bor.policy.v1.PolicyService/ReportMacInventory"
+	PolicyService_ReportUpdatesInventory_FullMethodName        = "/bor.policy.v1.PolicyService/ReportUpdatesInventory"
 	PolicyService_ReportMacActionResult_FullMethodName         = "/bor.policy.v1.PolicyService/ReportMacActionResult"
 	PolicyService_ReportDiskEncryptionState_FullMethodName     = "/bor.policy.v1.PolicyService/ReportDiskEncryptionState"
 	PolicyService_GetDiskEncryptionTasks_FullMethodName        = "/bor.policy.v1.PolicyService/GetDiskEncryptionTasks"
@@ -83,6 +84,9 @@ type PolicyServiceClient interface {
 	// ReportMacInventory sends the SELinux or AppArmor status, booleans,
 	// modules or profiles and the denial summary of a node.
 	ReportMacInventory(ctx context.Context, in *ReportMacInventoryRequest, opts ...grpc.CallOption) (*ReportMacInventoryResponse, error)
+	// ReportUpdatesInventory carries the update state of a node: engine,
+	// pending updates, reboot state.
+	ReportUpdatesInventory(ctx context.Context, in *ReportUpdatesInventoryRequest, opts ...grpc.CallOption) (*ReportUpdatesInventoryResponse, error)
 	// ReportMacActionResult answers a MAC_ACTION command.
 	ReportMacActionResult(ctx context.Context, in *ReportMacActionResultRequest, opts ...grpc.CallOption) (*ReportMacActionResultResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
@@ -257,6 +261,16 @@ func (c *policyServiceClient) ReportMacInventory(ctx context.Context, in *Report
 	return out, nil
 }
 
+func (c *policyServiceClient) ReportUpdatesInventory(ctx context.Context, in *ReportUpdatesInventoryRequest, opts ...grpc.CallOption) (*ReportUpdatesInventoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportUpdatesInventoryResponse)
+	err := c.cc.Invoke(ctx, PolicyService_ReportUpdatesInventory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *policyServiceClient) ReportMacActionResult(ctx context.Context, in *ReportMacActionResultRequest, opts ...grpc.CallOption) (*ReportMacActionResultResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReportMacActionResultResponse)
@@ -359,6 +373,9 @@ type PolicyServiceServer interface {
 	// ReportMacInventory sends the SELinux or AppArmor status, booleans,
 	// modules or profiles and the denial summary of a node.
 	ReportMacInventory(context.Context, *ReportMacInventoryRequest) (*ReportMacInventoryResponse, error)
+	// ReportUpdatesInventory carries the update state of a node: engine,
+	// pending updates, reboot state.
+	ReportUpdatesInventory(context.Context, *ReportUpdatesInventoryRequest) (*ReportUpdatesInventoryResponse, error)
 	// ReportMacActionResult answers a MAC_ACTION command.
 	ReportMacActionResult(context.Context, *ReportMacActionResultRequest) (*ReportMacActionResultResponse, error)
 	// ReportDiskEncryptionState publishes the node's LUKS volume inventory
@@ -425,6 +442,9 @@ func (UnimplementedPolicyServiceServer) ReportSystemdUnitActionResult(context.Co
 }
 func (UnimplementedPolicyServiceServer) ReportMacInventory(context.Context, *ReportMacInventoryRequest) (*ReportMacInventoryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportMacInventory not implemented")
+}
+func (UnimplementedPolicyServiceServer) ReportUpdatesInventory(context.Context, *ReportUpdatesInventoryRequest) (*ReportUpdatesInventoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportUpdatesInventory not implemented")
 }
 func (UnimplementedPolicyServiceServer) ReportMacActionResult(context.Context, *ReportMacActionResultRequest) (*ReportMacActionResultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportMacActionResult not implemented")
@@ -710,6 +730,24 @@ func _PolicyService_ReportMacInventory_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PolicyService_ReportUpdatesInventory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportUpdatesInventoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PolicyServiceServer).ReportUpdatesInventory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PolicyService_ReportUpdatesInventory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PolicyServiceServer).ReportUpdatesInventory(ctx, req.(*ReportUpdatesInventoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PolicyService_ReportMacActionResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReportMacActionResultRequest)
 	if err := dec(in); err != nil {
@@ -876,6 +914,10 @@ var PolicyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportMacInventory",
 			Handler:    _PolicyService_ReportMacInventory_Handler,
+		},
+		{
+			MethodName: "ReportUpdatesInventory",
+			Handler:    _PolicyService_ReportUpdatesInventory_Handler,
 		},
 		{
 			MethodName: "ReportMacActionResult",

@@ -21,6 +21,7 @@ import type { SelinuxPolicy } from "./selinux";
 import type { SessionAccessPolicy } from "./session_access";
 import type { SystemdPolicy, SystemdUnitAction } from "./systemd";
 import type { ThunderbirdPolicy } from "./thunderbird";
+import type { UpdatesPolicy } from "./updates";
 
 export const protobufPackage = "bor.policy.v1";
 
@@ -77,8 +78,9 @@ export interface Policy {
   disk_encryption_policy?: DiskEncryptionPolicy | undefined;
   systemd_policy?: SystemdPolicy | undefined;
   selinux_policy?: SelinuxPolicy | undefined;
-  apparmor_policy?:
-    | ApparmorPolicy
+  apparmor_policy?: ApparmorPolicy | undefined;
+  updates_policy?:
+    | UpdatesPolicy
     | undefined;
   /**
    * Binding priority delivered to the agent. Equals the maximum priority

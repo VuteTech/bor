@@ -21,6 +21,7 @@ import "selinux.proto";
 import "session_access.proto";
 import "systemd.proto";
 import "thunderbird.proto";
+import "updates.proto";
 
 // PolicyService manages desktop policies
 service PolicyService {
@@ -80,6 +81,10 @@ service PolicyService {
   rpc ReportMacInventory(ReportMacInventoryRequest)
       returns (ReportMacInventoryResponse);
 
+  // ReportUpdatesInventory carries the update state of a node: engine,
+  // pending updates, reboot state.
+  rpc ReportUpdatesInventory(ReportUpdatesInventoryRequest)
+      returns (ReportUpdatesInventoryResponse);
   // ReportMacActionResult answers a MAC_ACTION command.
   rpc ReportMacActionResult(ReportMacActionResultRequest)
       returns (ReportMacActionResultResponse);
@@ -159,6 +164,7 @@ message Policy {
     SystemdPolicy        systemd_policy        = 23;
     SelinuxPolicy        selinux_policy        = 24;
     ApparmorPolicy       apparmor_policy       = 25;
+    UpdatesPolicy        updates_policy        = 26;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority

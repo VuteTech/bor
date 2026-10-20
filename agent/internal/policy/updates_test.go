@@ -1,0 +1,304 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+package policy
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/VuteTech/Bor/agent/internal/logind"
+	"github.com/VuteTech/Bor/agent/internal/systemd"
+	"github.com/VuteTech/Bor/agent/internal/updates"
+	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
+)
+
+func bptr(b bool) *bool { return &b }
+
+func updEntry(id string, prio int32, p *pb.UpdatesPolicy) UpdatesEntry {
+	return UpdatesEntry{ID: id, Name: "policy " + id, Priority: prio, Policy: p}
+}
+
+func TestMergeUpdatesPolicies(t *testing.T) {
+	a := updEntry("a", 10, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_SECURITY, Hold: []string{"kernel*"},
+		Reboot: &pb.UpdatesReboot{Policy: pb.UpdatesRebootPolicy_UPDATES_REBOOT_NEVER}, Schedule: &pb.UpdatesSchedule{OnCalendar: "*-*-* 02:00"}})
+	b := updEntry("b", 10, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_ALL, Hold: []string{"firefox"},
+		Reboot: &pb.UpdatesReboot{Policy: pb.UpdatesRebootPolicy_UPDATES_REBOOT_WHEN_NEEDED, Window: "02:00-04:00"}, Schedule: &pb.UpdatesSchedule{OnCalendar: "*-*-* 03:00"}, RequireEngine: true})
+	c := updEntry("c", 5, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_OFF, InstallEngine: bptr(false)})
+	d := MergeUpdatesPolicies([]UpdatesEntry{a, b, c})
+	if d.Mode != pb.UpdatesMode_UPDATES_MODE_ALL || d.ModeBy.ID != "b" {
+		t.Errorf("equal priority: the mode that installs more must win, got %v by %s", d.Mode, d.ModeBy.ID)
+	}
+	if d.Reboot.GetPolicy() != pb.UpdatesRebootPolicy_UPDATES_REBOOT_WHEN_NEEDED || d.RebootBy.ID != "b" || d.Reboot.GetWindow() != "02:00-04:00" {
+		t.Errorf("the reboot rule that reboots more must win as a block, got %+v by %s", d.Reboot, d.RebootBy.ID)
+	}
+	if len(d.Holds) != 2 || d.Holds["kernel*"].ID != "a" || d.Holds["firefox"].ID != "b" {
+		t.Errorf("holds must be a union: %+v", d.Holds)
+	}
+	if d.ScheduleConflict == nil || d.ScheduleBy.ID != "a" || d.ScheduleConflict.ID != "b" {
+		t.Errorf("two schedules at equal priority are a conflict: by=%s conflict=%+v", d.ScheduleBy.ID, d.ScheduleConflict)
+	}
+	if d.InstallEngine {
+		t.Error("a policy switching the engine install off must win")
+	}
+	if !d.RequireEngine {
+		t.Error("require_engine is any")
+	}
+	high := updEntry("h", 20, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_CHECK})
+	d2 := MergeUpdatesPolicies([]UpdatesEntry{a, b, high})
+	if d2.Mode != pb.UpdatesMode_UPDATES_MODE_CHECK || d2.ModeBy.ID != "h" {
+		t.Error("higher priority must win over the install-more rule")
+	}
+}
+
+// fakeRunner answers the commands the apt driver and the kernel check run.
+func fakeRunner(t *testing.T, calls *[]string) updates.Runner {
+	return func(_ context.Context, name string, args ...string) ([]byte, error) {
+		line := name + " " + strings.Join(args, " ")
+		*calls = append(*calls, line)
+		switch {
+		case strings.HasSuffix(name, "apt") && len(args) > 0 && args[0] == "list":
+			return []byte("Listing...\nbind9-host/resolute-security 1:9.20.29-1 amd64 [upgradable from: 1:9.20.26-1]\nvim/resolute-updates 2:9.1 amd64 [upgradable from: 2:9.0]\n"), nil
+		case strings.HasSuffix(name, "dpkg-query"):
+			return []byte("linux-image-7.0.0-38-generic\tinstall ok installed\nlinux-image-7.0.0-34-generic\tinstall ok installed\n"), nil
+		case strings.HasSuffix(name, "needrestart"):
+			return []byte("NEEDRESTART-VER: 3.11\nNEEDRESTART-KCUR: 7.0.0-34-generic\nNEEDRESTART-KEXP: 7.0.0-38-generic\nNEEDRESTART-KSTA: 3\n"), nil
+		}
+		t.Logf("unexpected command %s", line)
+		return nil, nil
+	}
+}
+
+func aptPlatform(root string) *updates.Platform {
+	return &updates.Platform{Engine: updates.EngineApt, OSID: "ubuntu", Codename: "resolute", Installed: true, Package: "unattended-upgrades",
+		ConfigPath: "/etc/apt/apt.conf.d/90bor-updates", TimerUnit: "apt-daily-upgrade.timer", ServiceUnit: "apt-daily-upgrade.service",
+		AptGetBin: "/usr/bin/apt-get", DpkgQueryBin: "/usr/bin/dpkg-query", NeedrestartBin: "/usr/sbin/needrestart", Root: root}
+}
+
+func TestSyncUpdatesApt(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"etc/apt/apt.conf.d", "proc/sys/kernel", "run", "boot"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "proc", "sys", "kernel", "osrelease"), []byte("7.0.0-34-generic\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"vmlinuz-7.0.0-34-generic", "vmlinuz-7.0.0-38-generic"} {
+		if err := os.WriteFile(filepath.Join(root, "boot", k), []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fake := systemd.NewFake()
+	fake.AddUnit(systemd.UnitStatus{Name: "apt-daily-upgrade.timer", LoadState: "loaded", ActiveState: "active", UnitFileState: "enabled"})
+	fake.AddUnit(systemd.UnitStatus{Name: "apt-daily.timer", LoadState: "loaded", ActiveState: "active", UnitFileState: "enabled"})
+	var calls []string
+	deps := &UpdatesDeps{Platform: aptPlatform(root), Run: fakeRunner(t, &calls), Systemd: fake, Now: func() time.Time { return time.Date(2026, 10, 20, 3, 0, 0, 0, time.Local) }}
+	systemDir := filepath.Join(root, "etc", "systemd", "system")
+	opts := UpdatesSyncOptions{StatePath: filepath.Join(root, "state.json"), BackupDir: filepath.Join(root, "backups"), SystemDir: systemDir, AllowInstall: true, AllowReboot: true}
+
+	pol := &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_SECURITY, Hold: []string{"vim"},
+		Schedule: &pb.UpdatesSchedule{OnCalendar: "*-*-* 02:00", RandomizedDelay: "30m"},
+		Reboot:   &pb.UpdatesReboot{Policy: pb.UpdatesRebootPolicy_UPDATES_REBOOT_WHEN_NEEDED, Window: "01:00-05:00"}}
+	entries := []UpdatesEntry{updEntry("p", 10, pol)}
+	res := SyncUpdates(context.Background(), deps, entries, opts)
+	r := res.Policies["p"]
+	if r.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+		t.Fatalf("expected compliant, got %s: %s (%v)", r.Status, r.Message, r.Items)
+	}
+	conf, err := os.ReadFile(filepath.Join(root, "etc", "apt", "apt.conf.d", "90bor-updates"))
+	if err != nil || !strings.Contains(string(conf), `"^vim$";`) || !strings.Contains(string(conf), "resolute") && !strings.Contains(string(conf), "${distro_codename}-security") {
+		t.Errorf("apt configuration not written as expected: %v\n%s", err, conf)
+	}
+	dropIn, err := os.ReadFile(updates.TimerDropInPath(systemDir, "apt-daily-upgrade.timer"))
+	if err != nil || !strings.Contains(string(dropIn), "OnCalendar=*-*-* 02:00") {
+		t.Errorf("timer drop-in missing: %v", err)
+	}
+	if !res.Changed {
+		t.Error("first sync must report a change")
+	}
+	keys := map[string]string{}
+	for _, it := range r.Items {
+		keys[it.SchemaId+"/"+it.Key] = it.Status.String()
+	}
+	for _, k := range []string{"updates:engine/unattended-upgrades", "updates:mode/mode", "updates:schedule/schedule", "updates:reboot/reboot", "updates:hold/vim"} {
+		if keys[k] != "COMPLIANCE_STATUS_COMPLIANT" {
+			t.Errorf("item %s = %s, want compliant (%v)", k, keys[k], r.Items)
+		}
+	}
+
+	// Second sync changes nothing.
+	res2 := SyncUpdates(context.Background(), deps, entries, opts)
+	if res2.Changed {
+		t.Error("an unchanged policy must not report a change")
+	}
+
+	// Someone disables the timer: the reconcile pass turns it on and reports drift.
+	_ = fake.Disable(context.Background(), []string{"apt-daily-upgrade.timer"})
+	opts.Reconcile = true
+	res3 := SyncUpdates(context.Background(), deps, entries, opts)
+	if len(res3.Drifts) != 1 || !strings.Contains(res3.Drifts[0].Resource, "apt-daily-upgrade.timer") {
+		t.Errorf("drift not reported: %+v", res3.Drifts)
+	}
+	if st, _ := fake.Status(context.Background(), "apt-daily-upgrade.timer"); st.UnitFileState != "enabled" {
+		t.Error("timer not re-enabled")
+	}
+	opts.Reconcile = false
+
+	// Mode OFF disables the timer and keeps the configuration with the
+	// upgrade switched off.
+	off := []UpdatesEntry{updEntry("p", 10, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_OFF})}
+	SyncUpdates(context.Background(), deps, off, opts)
+	if st, _ := fake.Status(context.Background(), "apt-daily-upgrade.timer"); st.UnitFileState != "disabled" {
+		t.Error("OFF must disable the upgrade timer")
+	}
+	if _, err := os.Stat(updates.TimerDropInPath(systemDir, "apt-daily-upgrade.timer")); err == nil {
+		t.Error("OFF must remove the schedule drop-in")
+	}
+
+	// Unbinding restores the timer and removes the file.
+	SyncUpdates(context.Background(), deps, nil, opts)
+	if st, _ := fake.Status(context.Background(), "apt-daily-upgrade.timer"); st.UnitFileState != "enabled" {
+		t.Error("restore must re-enable the timer as it was")
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc", "apt", "apt.conf.d", "90bor-updates")); err == nil {
+		t.Error("restore must remove Bor's apt file")
+	}
+	if _, err := os.Stat(opts.StatePath); err == nil {
+		t.Error("state file must be removed when nothing is recorded")
+	}
+}
+
+func TestSyncUpdatesNoEngineAndRequire(t *testing.T) {
+	root := t.TempDir()
+	deps := &UpdatesDeps{Platform: &updates.Platform{Engine: updates.EngineNone, Root: root}}
+	opts := UpdatesSyncOptions{StatePath: filepath.Join(root, "state.json"), BackupDir: root}
+	res := SyncUpdates(context.Background(), deps, []UpdatesEntry{updEntry("a", 1, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_ALL})}, opts)
+	if res.Policies["a"].Status != pb.ComplianceStatus_COMPLIANCE_STATUS_INAPPLICABLE {
+		t.Errorf("no engine: expected inapplicable, got %s", res.Policies["a"].Status)
+	}
+	res = SyncUpdates(context.Background(), deps, []UpdatesEntry{updEntry("a", 1, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_ALL, RequireEngine: true})}, opts)
+	if res.Policies["a"].Status != pb.ComplianceStatus_COMPLIANCE_STATUS_NON_COMPLIANT {
+		t.Errorf("required engine: expected non-compliant, got %s", res.Policies["a"].Status)
+	}
+}
+
+type fakeLogind struct{ sessions []logind.Session }
+
+func (f *fakeLogind) ListSessions() ([]logind.Session, error) { return f.sessions, nil }
+func (f *fakeLogind) Lock(string) error                       { return nil }
+func (f *fakeLogind) Terminate(string) error                  { return nil }
+
+func TestEvaluateReboot(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"proc/sys/kernel", "run", "boot"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "proc", "sys", "kernel", "osrelease"), []byte("7.0.0-34-generic\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"vmlinuz-7.0.0-34-generic", "vmlinuz-7.0.0-38-generic"} {
+		if err := os.WriteFile(filepath.Join(root, "boot", k), []byte("k"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var calls []string
+	now := time.Date(2026, 10, 20, 3, 0, 0, 0, time.Local)
+	rebooted, warned := 0, 0
+	p := aptPlatform(root)
+	p.NeedrestartBin = ""
+	deps := &UpdatesDeps{Platform: p, Run: fakeRunner(t, &calls), Now: func() time.Time { return now },
+		Reboot: func(context.Context) error { rebooted++; return nil },
+		Notify: func(updates.UserSession, string, string) error { warned++; return nil },
+		Logind: &fakeLogind{sessions: []logind.Session{{ID: "2", Name: "blago", UID: 1000, Seat: "seat0", Type: "wayland", Class: "user", Active: true}}}}
+	opts := UpdatesSyncOptions{AllowReboot: true}
+	state := newUpdatesState()
+	rule := &UpdatesDesired{Reboot: &pb.UpdatesReboot{Policy: pb.UpdatesRebootPolicy_UPDATES_REBOOT_WHEN_NEEDED, Window: "02:00-05:00", ForceAfterDays: 2, WarnMinutes: 10}}
+
+	dec := EvaluateReboot(context.Background(), deps, rule, state, opts)
+	if !dec.Required || dec.Rebooted || !strings.Contains(dec.Blocked, "session") || state.RebootPendingSince == nil {
+		t.Fatalf("with a user logged in the reboot must wait: %+v", dec)
+	}
+	// Two days later the reboot is forced: first the warning, then the reboot.
+	now = now.Add(49 * time.Hour)
+	dec = EvaluateReboot(context.Background(), deps, rule, state, opts)
+	if !dec.Warned || warned != 1 || rebooted != 0 {
+		t.Fatalf("expected a warning first: %+v warned=%d rebooted=%d", dec, warned, rebooted)
+	}
+	now = now.Add(5 * time.Minute)
+	dec = EvaluateReboot(context.Background(), deps, rule, state, opts)
+	if dec.Rebooted || rebooted != 0 {
+		t.Fatalf("must wait for the warning period: %+v", dec)
+	}
+	now = now.Add(6 * time.Minute)
+	dec = EvaluateReboot(context.Background(), deps, rule, state, opts)
+	if !dec.Rebooted || rebooted != 1 || state.LastPolicyReboot == nil || !strings.Contains(state.LastPolicyRebootReason, "forced") {
+		t.Fatalf("expected the forced reboot: %+v", dec)
+	}
+	// Outside the window nothing happens even without sessions.
+	deps.Logind = &fakeLogind{}
+	state = newUpdatesState()
+	now = time.Date(2026, 10, 20, 12, 0, 0, 0, time.Local)
+	dec = EvaluateReboot(context.Background(), deps, rule, state, opts)
+	if dec.Rebooted || !strings.Contains(dec.Blocked, "window") {
+		t.Errorf("outside the window: %+v", dec)
+	}
+	// Inside the window and nobody logged in: reboot at once, no warning.
+	now = time.Date(2026, 10, 20, 3, 0, 0, 0, time.Local)
+	dec = EvaluateReboot(context.Background(), deps, rule, state, opts)
+	if !dec.Rebooted || rebooted != 2 || warned != 1 {
+		t.Errorf("empty node must reboot without warning: %+v", dec)
+	}
+	// NEVER reports but does nothing.
+	never := &UpdatesDesired{Reboot: &pb.UpdatesReboot{Policy: pb.UpdatesRebootPolicy_UPDATES_REBOOT_NEVER}}
+	state = newUpdatesState()
+	dec = EvaluateReboot(context.Background(), deps, never, state, opts)
+	if dec.Rebooted || !dec.Required || state.RebootPendingSince == nil {
+		t.Errorf("NEVER must only track the pending reboot: %+v", dec)
+	}
+}
+
+func TestEffectiveModeAndInventory(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"etc/apt/apt.conf.d", "proc/sys/kernel", "boot", "var/log/unattended-upgrades"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(root, "proc", "sys", "kernel", "osrelease"), []byte("7.0.0-38-generic\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "proc", "stat"), []byte("cpu 1 2 3\nbtime 1792400000\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "boot", "vmlinuz-7.0.0-38-generic"), []byte("k"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "etc", "apt", "apt.conf.d", "90bor-updates"), updates.RenderAptConf(updates.ModeSecurity, "ubuntu", nil, false), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "var", "log", "unattended-upgrades", "unattended-upgrades.log"), []byte("2026-10-20 12:52:47,100 INFO Starting unattended upgrades script\n2026-10-20 12:55:09,400 INFO All upgrades installed\n"), 0o600)
+	fake := systemd.NewFake()
+	fake.AddUnit(systemd.UnitStatus{Name: "apt-daily-upgrade.timer", LoadState: "loaded", ActiveState: "active", UnitFileState: "enabled", LastTrigger: time.Date(2026, 10, 20, 6, 31, 0, 0, time.Local)})
+	var calls []string
+	p := aptPlatform(root)
+	p.NeedrestartBin = ""
+	deps := &UpdatesDeps{Platform: p, Run: fakeRunner(t, &calls), Systemd: fake}
+	state := newUpdatesState()
+	inv := ScanUpdatesInventory(context.Background(), deps, state, filepath.Join(root, "etc", "systemd", "system"))
+	if inv.Engine != "unattended-upgrades" || !inv.EngineInstalled || inv.EngineManagedBy != "bor" || inv.EffectiveMode != "security" || !inv.EngineTimerEnabled {
+		t.Errorf("inventory engine fields wrong: %+v", inv)
+	}
+	if inv.PendingTotal != 2 || inv.PendingSecurity != 1 || len(inv.Pending) != 2 || inv.Pending[0].Name != "bind9-host" || !inv.Pending[0].Security {
+		t.Errorf("pending wrong: %+v", inv.Pending)
+	}
+	if inv.LastRun == nil || !inv.LastRun.Success || inv.LastCheck == nil {
+		t.Errorf("last run/check missing: %+v %+v", inv.LastRun, inv.LastCheck)
+	}
+	if inv.Reboot == nil || inv.Reboot.Required {
+		t.Errorf("no reboot expected with the newest kernel running: %+v", inv.Reboot)
+	}
+	if inv.RunningKernel != "7.0.0-38-generic" || inv.NewestKernel != "7.0.0-38-generic" || inv.BootTime == nil {
+		t.Errorf("kernel/boot fields wrong: %+v", inv)
+	}
+}

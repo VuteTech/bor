@@ -2,7 +2,7 @@
 
 A Bor policy always has exactly one **type**. The type decides which editor
 the web UI shows, which settings you can configure and what the agent
-changes on the endpoint. This page lists all fifteen types, explains where
+changes on the endpoint. This page lists all sixteen types, explains where
 each one writes on a node and what the node needs, and then describes the
 behavior that all types share: how several policies of the same type are
 combined, tamper protection, compliance reporting and what happens when a
@@ -26,6 +26,7 @@ The **Type** column shows the label used in the create wizard
 | [Firewall](firewalld.md) (firewalld) | firewalld zone services, ports, rich rules and target | `/etc/firewalld/zones/<zone>.xml`, then a firewalld reload | firewalld installed and running |
 | [SELinux](selinux.md) | Enforcement mode, booleans, per-domain permissive exceptions, policy modules, Bor-deployed CIL modules, file contexts and login mappings | The runtime mode and `/etc/selinux/config`; booleans through `setsebool -P`; modules `bor-*` at semodule priority 450 with sources in `/etc/bor/selinux`; `/var/lib/bor/agent/selinux-state.json` | SELinux active (Fedora, RHEL, SLES 16); `semodule`, `setsebool`, `restorecon`; `semanage` for login mappings |
 | [AppArmor](apparmor.md) | Enabled state and service, the user namespace restriction, profile modes by name or pattern, Bor-deployed profiles, local overrides of vendor profiles, extra home directories | `disable/` and `force-complain/` links, `bor-<name>` profiles, a managed block in `local/<file>` and `tunables/home.d/bor` under `/etc/apparmor.d`; `/etc/sysctl.d/zz-bor-apparmor.conf`; `/var/lib/bor/agent/apparmor-state.json` | AppArmor enabled (Ubuntu, Debian, SLES 15); `apparmor_parser` |
+| [Software updates](updates.md) | What the node installs unattended (nothing, check only, security, all), the schedule, holds, and the reboot after updates with a window, a logged-in users rule and a warning | The engine configuration (`/etc/dnf/automatic.conf`, `/etc/apt/apt.conf.d/90bor-updates`, `/etc/os-update.conf`, `/etc/rpm-ostreed.conf`), a `90-bor.conf` drop-in of the engine timer, zypper locks; `/var/lib/bor/agent/updates-state.json` | dnf, apt, zypper or rpm-ostree; the engine package is installed when missing; `needrestart` or the dnf plugins for the reboot signal |
 | [Services & timers](systemd.md) (systemd) | Enablement (enabled, disabled, masked) and activity (running, stopped) of existing systemd units; timer schedule and service overrides | Enablement symlinks and masks through systemd; `/etc/systemd/system/<unit>.d/90-bor.conf` drop-ins; `/var/lib/bor/agent/systemd-state.json` | systemd as the init system, the D-Bus system bus; `systemd-analyze` for calendar checks |
 | [Flatpak apps](flatpak.md) | Flatpak remotes, required, updated or removed applications, periodic updates | `/etc/bor/flatpak/*.flatpakrepo`, `*.filter`, `*.gpg`; the system Flatpak installation | `flatpak` |
 | [Package](packages.md) | Software repositories and packages to install or remove | `bor-*` repository and key files in `/etc/apt/sources.list.d`, `/etc/apt/trusted.gpg.d`, `/etc/yum.repos.d`, `/etc/pki/rpm-gpg` or `/etc/zypp/repos.d`; packages through PackageKit | PackageKit for package installs and removals |
@@ -77,6 +78,7 @@ type**:
 | Polkit | Not merged: every policy gets its own rules file. | Files are evaluated in file-name order, and the file name starts with the binding priority, so the **lower** priority number is evaluated first. The first rule that returns a result wins. |
 | Firewall | Policies targeting the same zone are merged; services, ports and rich rules are combined. | The zone target comes from the policy with the **higher** binding priority. |
 | Services & timers | Units are merged by name; enablement, activity, the timer block and each service directive are resolved separately. | **Higher** binding priority wins; on equal priority the more restrictive value wins (masked over disabled over enabled, stopped over running). The losing policy reports the unit as Inapplicable with the message "overridden: ... by <policy> (priority N)". |
+| Software updates | Merged per key: the mode, the schedule, the reboot rule as a whole; holds are a union. | **Higher** binding priority wins. On equal priority the mode that installs more and the reboot rule that reboots more win; two schedules are an Error for both policies. |
 | SELinux | Merged per key: the mode, each boolean, each module, each custom module, file context and login mapping. Permissive domains are a union. | **Higher** binding priority wins. On equal priority enforcing beats permissive; booleans, modules and custom text with different values are a conflict reported as an Error for both policies. |
 | AppArmor | Merged per profile file, custom profile, local override and switch; home directories are a union. | For a profile file an exact entry beats a pattern, then the **higher** binding priority, then the more specific pattern, then the stricter mode. Switches take the stricter value on equal priority; custom texts with different content at equal priority are an Error. |
 | Flatpak apps | Remotes merged by name, applications by ID. | **Higher** binding priority wins. *Auto update* is on if any policy enables it. |
@@ -119,6 +121,7 @@ Watched files per type:
 | Polkit | Every Bor-generated file in `/etc/polkit-1/rules.d` |
 | Firewall | Bor-managed zone files in the zones directory |
 | Services & timers | The `90-bor.conf` drop-ins and the state file `/var/lib/bor/agent/systemd-state.json` (unit states changed by hand are undone by the periodic reconcile pass, not reported as tamper events) |
+| Software updates | The engine configuration file, the `90-bor.conf` timer drop-in and the state file; the timer's enabled state is re-asserted by the reconcile pass |
 | SELinux | The `SELINUX=` line of `/etc/selinux/config`, the module sources in `/etc/bor/selinux` and the state file `/var/lib/bor/agent/selinux-state.json`; the runtime mode, booleans and module states are re-asserted by the reconcile pass and, when audit following is on, within seconds of a manual change, each reported as a tamper event |
 | AppArmor | The `disable/` and `force-complain/` links, `bor-*` profiles, the managed blocks in `local/` files and the home tunable under `/etc/apparmor.d`, the sysctl file and the state file; loaded profile modes and sysctls are re-asserted by the reconcile pass and on the kernel's profile-change records |
 | Flatpak apps | The rendered remote files in `/etc/bor/flatpak` (not Flatpak's own `/var/lib/flatpak/repo/config`) |
@@ -159,12 +162,13 @@ What "compliant" means depends on the type:
   the policy value. Per-key results are shown in the expandable row.
 - **Polkit**: the rules file on disk is compared with the expected content,
   rule by rule.
-- **Firewall, Services & timers, SELinux, AppArmor, Flatpak apps, Package,
-  Session Access, Disk encryption**: the agent checks the live state (zone
-  configuration, unit states reported by systemd, the enforcement mode,
-  booleans and loaded profiles of the kernel's security module, installed
-  applications and packages, PAM and logind tooling, LUKS headers). See
-  each type's page.
+- **Firewall, Services & timers, SELinux, AppArmor, Software updates,
+  Flatpak apps, Package, Session Access, Disk encryption**: the agent
+  checks the live state (zone configuration, unit states reported by
+  systemd, the enforcement mode, booleans and loaded profiles of the
+  kernel's security module, the update engine's timer and last run,
+  installed applications and packages, PAM and logind tooling, LUKS
+  headers). See each type's page.
 
 ## When a policy stops applying
 
@@ -182,6 +186,7 @@ that type. If none remain, it cleans up:
 | Polkit | The policy's rules file is deleted. |
 | Firewall | Managed zone files are restored from their backups and firewalld is reloaded. |
 | Services & timers | Every drop-in is removed, systemd is reloaded, and each unit returns to the enablement and activity recorded when Bor first touched it (a service Bor stopped is started again if it was running before). |
+| Software updates | The engine configuration is restored from its backup (or Bor's file removed), the timer drop-in removed, the timer returned to its recorded state and zypper locks removed. The engine package stays installed. |
 | SELinux | The mode, each boolean, each module's enabled flag and each login mapping return to what was recorded when Bor first touched them; Bor's modules and their sources are removed and the paths of its file contexts relabelled. |
 | AppArmor | Bor's profiles are unloaded and removed, its blocks leave the local files, the home tunable and the sysctl file are removed, the sysctls restored, every link put back as it was and the profiles reloaded, and vendor files Bor edited are restored from their backups. |
 | Flatpak apps | Remotes Bor created are removed (unless installed applications still depend on them), adopted remotes get their original settings back and the managed files are deleted. Installed applications stay. |

@@ -41,8 +41,10 @@ type PolicyServer struct {
 	macRepo        macRepository
 	// macActions receives on-demand mandatory access control action results.
 	macActions macActionSink
-	hub        *PolicyHub
-	diskEncSvc *services.DiskEncryptionService
+	// updatesRepo stores the Software updates inventory.
+	updatesRepo updatesRepository
+	hub         *PolicyHub
+	diskEncSvc  *services.DiskEncryptionService
 }
 
 // dconfRepository is the subset of database.DConfRepository used by PolicyServer.
@@ -671,6 +673,13 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal Apparmor typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_ApparmorPolicy{ApparmorPolicy: &aaPol}
+		}
+	case "Updates":
+		var upPol pb.UpdatesPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &upPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Updates typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_UpdatesPolicy{UpdatesPolicy: &upPol}
 		}
 	}
 

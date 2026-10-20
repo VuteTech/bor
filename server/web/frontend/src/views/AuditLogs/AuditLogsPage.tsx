@@ -51,10 +51,11 @@ import {
 // ─── Known filter values ──────────────────────────────────────────────────────
 
 const KNOWN_ACTIONS = ["create", "update", "delete", "revoke_role", "access_denied", "tamper_detected", "systemd.unit_action", "mac.action"];
+// policy.updates_hold is listed with the other policy audit actions in the type-specific filters below.
 const KNOWN_RESOURCE_TYPES = [
   "policies", "nodes", "node-groups", "users", "roles",
   "user-groups", "user-role-bindings", "user_role_binding",
-  "user_group_role_binding", "policy-bindings", "managed_file", "systemd_unit", "managed_selinux", "managed_apparmor", "settings",
+  "user_group_role_binding", "policy-bindings", "managed_file", "systemd_unit", "managed_selinux", "managed_apparmor", "managed_updates", "settings",
   // Permission resources, used by access_denied events.
   "user_group", "user", "role", "policy", "node", "node_group", "binding",
 ];
@@ -138,6 +139,7 @@ function tamperResourceName(d: TamperDetailsData): string {
   const r = d.resource ?? "";
   if (r.startsWith("unit:")) return r.slice("unit:".length);
   if (r.startsWith("selinux:") || r.startsWith("apparmor:")) return r.replace(/^(selinux|apparmor):/, (_m, k: string) => `${k === "selinux" ? "SELinux" : "AppArmor"} `).replace(/:/g, " ");
+  if (r.startsWith("updates:")) return r.replace(/^updates:/, "Software updates ").replace(/:/g, " ");
   return r;
 }
 

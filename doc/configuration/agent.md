@@ -231,6 +231,19 @@ Settings shared by the SELinux and AppArmor types.
 | `mac.collect_denials` | `true` | Read the journal's audit records for the denial summary. Records are aggregated and redacted on the node. |
 | `mac.allow_actions` | `true` | Answer proposal requests (`audit2allow`, AppArmor rules from denials) from the node page, for holders of `mac:operate`. |
 
+## updates
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `updates.state_path` | `/var/lib/bor/agent/updates-state.json` | Record of every original state (engine configuration, timer state, locks, the pending reboot), restored when the node leaves every policy. |
+| `updates.backup_dir` | `/var/lib/bor/agent/updates-backups` | Backups of the engine configuration files Bor replaced. |
+| `updates.reconcile_interval` | `10m` | Interval of the pass that re-asserts the timer and the configuration; `0` disables it. |
+| `updates.inventory_interval` | `1h` | How often the node re-sends its update state (engine, pending updates, reboot) while connected. |
+| `updates.reboot_check_interval` | `1m` | How often the reboot rule runs while a policy applies. |
+| `updates.tool_timeout` | `10m` | Maximum run time of one engine or package manager call. |
+| `updates.allow_install` | `true` | Let policies install the engine package. |
+| `updates.allow_reboot` | `true` | Let policies reboot the node. With `false` the node reports pending reboots but never restarts on its own. |
+
 ## flatpak
 
 | Key | Default | Description |

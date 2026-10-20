@@ -28,6 +28,7 @@ type Config struct {
 	Selinux     SelinuxConfig     `yaml:"selinux"`
 	Apparmor    ApparmorConfig    `yaml:"apparmor"`
 	Mac         MacConfig         `yaml:"mac"`
+	Updates     UpdatesConfig     `yaml:"updates"`
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
@@ -162,6 +163,21 @@ type MacConfig struct {
 	DenialWindow      time.Duration `yaml:"denial_window"`      // how far back denials are summarised (default 24h)
 	CollectDenials    bool          `yaml:"collect_denials"`    // read the audit records of the journal for the denial summary (default true)
 	AllowActions      bool          `yaml:"allow_actions"`      // answer proposal requests from the node page (default true)
+}
+
+// UpdatesConfig holds the settings of the Software updates policy. The
+// agent configures the distribution's update engine (dnf-automatic,
+// unattended-upgrades, os-update, rpm-ostree), keeps its timer in step
+// with the policy, decides reboots and reports the update state.
+type UpdatesConfig struct {
+	StatePath           string        `yaml:"state_path"`            // record of original states (default /var/lib/bor/agent/updates-state.json)
+	BackupDir           string        `yaml:"backup_dir"`            // backups of engine configuration files Bor replaced (default /var/lib/bor/agent/updates-backups)
+	ReconcileInterval   time.Duration `yaml:"reconcile_interval"`    // re-assert the engine state this often while policies apply; 0 disables (default 10m)
+	InventoryInterval   time.Duration `yaml:"inventory_interval"`    // how often the update state is re-sent while connected (default 1h)
+	RebootCheckInterval time.Duration `yaml:"reboot_check_interval"` // how often the reboot rule runs while a policy applies (default 1m)
+	ToolTimeout         time.Duration `yaml:"tool_timeout"`          // maximum run time of one engine or package manager call (default 10m)
+	AllowInstall        bool          `yaml:"allow_install"`         // let policies install the engine package and unattended updates (default true)
+	AllowReboot         bool          `yaml:"allow_reboot"`          // let policies reboot the node (default true)
 }
 
 // FlatpakConfig holds Flatpak enforcement settings. The agent renders the
@@ -326,6 +342,16 @@ func DefaultConfig() *Config {
 			DenialWindow:      24 * time.Hour,
 			CollectDenials:    true,
 			AllowActions:      true,
+		},
+		Updates: UpdatesConfig{
+			StatePath:           "/var/lib/bor/agent/updates-state.json",
+			BackupDir:           "/var/lib/bor/agent/updates-backups",
+			ReconcileInterval:   10 * time.Minute,
+			InventoryInterval:   time.Hour,
+			RebootCheckInterval: time.Minute,
+			ToolTimeout:         10 * time.Minute,
+			AllowInstall:        true,
+			AllowReboot:         true,
 		},
 		KConfig: KConfigConfig{
 			ConfigPath:      "/etc/bor/xdg",
