@@ -1091,20 +1091,20 @@ func ScanSelinuxInventory(ctx context.Context, deps *SelinuxDeps) *SelinuxInvent
 	}
 	enforcing, _ := p.Enforcing()
 	st.Mode = modeWord(enforcing)
-	st.PolicyVersion = int32(min(p.PolicyVersion(), 1<<30)) //nolint:gosec // G115: bounded
+	st.PolicyVersion = clampInt32(p.PolicyVersion())
 	st.PolicyloadLocked = p.PolicyloadLocked()
 	if bools, err := p.Booleans(); err == nil {
 		for _, name := range sortedKeysBool(bools) {
 			b := bools[name]
 			inv.Booleans = append(inv.Booleans, &pb.SelinuxBooleanInfo{Name: name, Current: b.Current, Persistent: b.Pending})
 		}
-		st.BooleanCount = int32(min(len(inv.Booleans), 1<<30)) //nolint:gosec // G115: bounded
+		st.BooleanCount = clampInt32(len(inv.Booleans))
 	}
 	if mods, err := deps.Tools.ListModules(ctx); err == nil {
 		for _, m := range mods {
-			inv.Modules = append(inv.Modules, &pb.SelinuxModuleInfo{Name: m.Name, Priority: int32(min(m.Priority, 999)), Enabled: m.Enabled, Lang: m.Lang}) //nolint:gosec // G115: bounded
+			inv.Modules = append(inv.Modules, &pb.SelinuxModuleInfo{Name: m.Name, Priority: clampInt32(m.Priority), Enabled: m.Enabled, Lang: m.Lang})
 		}
-		st.ModuleCount = int32(min(len(inv.Modules), 1<<30)) //nolint:gosec // G115: bounded
+		st.ModuleCount = clampInt32(len(inv.Modules))
 	}
 	return inv
 }

@@ -1188,10 +1188,10 @@ func ScanApparmorInventory(ctx context.Context, deps *ApparmorDeps, state *Appar
 	st.BootFlags = mac.ReadBootFlags(deps.Mac)
 	st.RestrictUserns, st.RestrictUnconfined = -1, -1
 	if v, ok := p.Sysctl(apparmor.SysctlRestrictUserns); ok {
-		st.RestrictUserns = int32(min(max(v, 0), 1)) //nolint:gosec // G115: bounded
+		st.RestrictUserns = clampInt32(min(max(v, 0), 1))
 	}
 	if v, ok := p.Sysctl(apparmor.SysctlRestrictUnconfined); ok {
-		st.RestrictUnconfined = int32(min(max(v, 0), 1)) //nolint:gosec // G115: bounded
+		st.RestrictUnconfined = clampInt32(min(max(v, 0), 1))
 	}
 	if deps.Parser != nil && deps.Parser.Available() {
 		st.ParserVersion = deps.Parser.Version(ctx)
@@ -1203,7 +1203,7 @@ func ScanApparmorInventory(ctx context.Context, deps *ApparmorDeps, state *Appar
 		}
 	}
 	files, _ := apparmor.ScanProfiles(p.ProfilesDir)
-	st.ProfileFileCount = int32(min(len(files), 1<<30)) //nolint:gosec // G115: bounded
+	st.ProfileFileCount = clampInt32(len(files))
 	loaded := map[string]string{}
 	if st.Enabled {
 		st.UsernsMediation = p.UsernsMediation()

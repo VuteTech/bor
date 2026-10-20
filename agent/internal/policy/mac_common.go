@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -96,6 +97,18 @@ func conflictMessage(a, b macSource) string {
 }
 
 // sortedKeys returns map keys in order.
+// clampInt32 converts an int to int32 with explicit bounds, for counts
+// and small values read from the system that end up in proto fields.
+func clampInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
