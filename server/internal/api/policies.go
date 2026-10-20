@@ -62,6 +62,37 @@ func systemdExecRequired(policyType, content string) bool {
 	return policyType == "Systemd" && services.SystemdContentRunsCommands(content)
 }
 
+// macAuthorRequired reports whether an SELinux or AppArmor policy carries
+// administrator-authored policy text (custom modules or profiles, local
+// overrides, file contexts, login mappings, permissive domains) and
+// therefore needs mac:author.
+func macAuthorRequired(policyType, content string) bool {
+	return services.MacContentHasCustom(policyType, content)
+}
+
+// allowMacAuthor answers whether the caller may create, save, release or
+// import a policy that carries custom SELinux or AppArmor policy text. On
+// refusal it writes the 403 response and records an access_denied audit
+// event, and returns false.
+func (h *PolicyHandler) allowMacAuthor(w http.ResponseWriter, r *http.Request, policyID, verb string) bool {
+	claims := GetUserFromContext(r.Context())
+	allowed := false
+	if claims != nil && h.az != nil {
+		ok, err := h.az.HasPermission(r.Context(), claims.UserID, "mac", "author")
+		if err != nil {
+			log.Printf("Failed to check mac:author for %s: %v", claims.Username, err)
+		}
+		allowed = ok && err == nil
+	}
+	if allowed {
+		return true
+	}
+	reason := "this policy carries custom SELinux or AppArmor policy text; the mac:author permission is required to " + verb + " it"
+	auditDenial(r, "mac", "author", policyID, reason)
+	writeJSONError(w, http.StatusForbidden, reason)
+	return false
+}
+
 // allowSystemdExec answers whether the caller may create, save, release or
 // import a command-running Systemd policy. On refusal it writes the 403
 // response and records an access_denied audit event, and returns false.
@@ -273,6 +304,9 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if runsCommands && !h.allowSystemdExec(w, r, "", "create") {
 		return
 	}
+	if macAuthorRequired(req.Type, req.Content) && !h.allowMacAuthor(w, r, "", "create") {
+		return
+	}
 
 	policy, err := h.policySvc.CreatePolicy(r.Context(), &req, createdBy)
 	if err != nil {
@@ -358,6 +392,9 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	runsCommands := (req.Type != nil || req.Content != nil) && systemdExecRequired(nextType, nextContent)
 	if runsCommands && !h.allowSystemdExec(w, r, id, "save") {
+		return
+	}
+	if (req.Type != nil || req.Content != nil) && macAuthorRequired(nextType, nextContent) && !h.allowMacAuthor(w, r, id, "save") {
 		return
 	}
 
@@ -450,6 +487,9 @@ func (h *PolicyHandler) SetState(w http.ResponseWriter, r *http.Request, id stri
 	// release of a command-running policy needs systemd:exec too.
 	releasingCommands := req.State == string(models.PolicyStateReleased) && systemdExecRequired(existing.Type, existing.Content)
 	if releasingCommands && !h.allowSystemdExec(w, r, id, "release") {
+		return
+	}
+	if req.State == string(models.PolicyStateReleased) && macAuthorRequired(existing.Type, existing.Content) && !h.allowMacAuthor(w, r, id, "release") {
 		return
 	}
 

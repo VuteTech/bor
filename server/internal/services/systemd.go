@@ -411,6 +411,16 @@ func validateSystemdTask(t *pb.SystemdTask) error {
 			return fmt.Errorf("TimeoutStartSec: %w", err)
 		}
 	}
+	if p := t.GetApparmorProfile(); p != "" {
+		if err := systemdunits.ValidateAppArmorProfile(p); err != nil {
+			return fmt.Errorf("AppArmorProfile: %w", err)
+		}
+	}
+	if c := t.GetSelinuxContext(); c != "" {
+		if err := systemdunits.ValidateSELinuxContext(c); err != nil {
+			return fmt.Errorf("SELinuxContext: %w", err)
+		}
+	}
 	return nil
 }
 

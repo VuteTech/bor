@@ -122,6 +122,12 @@ func systemdTaskWellFormed(t *pb.SystemdTask) bool {
 	if v := t.GetTimeoutStartSec(); v != "" && systemdunits.ValidateTimeSpan(v) != nil {
 		return false
 	}
+	if p := t.GetApparmorProfile(); p != "" && systemdunits.ValidateAppArmorProfile(p) != nil {
+		return false
+	}
+	if c := t.GetSelinuxContext(); c != "" && systemdunits.ValidateSELinuxContext(c) != nil {
+		return false
+	}
 	return true
 }
 
@@ -191,6 +197,12 @@ func RenderSystemdTaskService(t *pb.SystemdTask, scriptPath string) []byte {
 	}
 	if wd := t.GetWorkingDirectory(); wd != "" {
 		b.WriteString("WorkingDirectory=" + wd + "\n")
+	}
+	if p := t.GetApparmorProfile(); p != "" {
+		b.WriteString("AppArmorProfile=" + p + "\n")
+	}
+	if c := t.GetSelinuxContext(); c != "" {
+		b.WriteString("SELinuxContext=" + c + "\n")
 	}
 	env := append([]string(nil), t.GetEnvironment()...)
 	sort.Strings(env)

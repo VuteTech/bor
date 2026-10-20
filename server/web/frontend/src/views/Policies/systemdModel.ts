@@ -113,6 +113,10 @@ export interface SystemdTaskEntry {
   hardened: boolean;
   requireLastRunSuccess: boolean;
   enabled: boolean;
+  /** AppArmorProfile= of the service: the loaded name of the profile the task runs under. */
+  apparmorProfile: string;
+  /** SELinuxContext= of the service: user:role:type[:level]. */
+  selinuxContext: string;
 }
 
 export interface SystemdContent {
@@ -491,6 +495,8 @@ export function newTaskEntry(partial: Partial<SystemdTaskEntry> = {}): SystemdTa
     environment: [],
     timeoutStartSec: "",
     hardened: true,
+    apparmorProfile: "",
+    selinuxContext: "",
     requireLastRunSuccess: true,
     enabled: true,
     ...partial,
@@ -640,6 +646,8 @@ function parseTask(t: unknown): SystemdTaskEntry {
     environment: strList(e.environment),
     timeoutStartSec: str(e.timeoutStartSec),
     hardened: e.hardened !== false,
+    apparmorProfile: str(e.apparmorProfile),
+    selinuxContext: str(e.selinuxContext),
     requireLastRunSuccess: e.requireLastRunSuccess === true,
     enabled: e.enabled !== false,
   });
@@ -733,6 +741,8 @@ function compactTask(t: SystemdTaskEntry): Record<string, unknown> {
   if (t.workingDirectory) out.workingDirectory = t.workingDirectory;
   if (t.environment.length) out.environment = t.environment;
   if (t.timeoutStartSec) out.timeoutStartSec = t.timeoutStartSec;
+  if (t.apparmorProfile) out.apparmorProfile = t.apparmorProfile;
+  if (t.selinuxContext) out.selinuxContext = t.selinuxContext;
   if (!t.hardened) out.hardened = false;
   if (t.requireLastRunSuccess) out.requireLastRunSuccess = true;
   if (!t.enabled) out.enabled = false;
@@ -890,6 +900,14 @@ export function taskEntryProblem(t: SystemdTaskEntry): string | null {
     const p = timeSpanProblem(t.timeoutStartSec);
     if (p) return `TimeoutStartSec: ${p}`;
   }
+  if (t.apparmorProfile) {
+    const p = apparmorProfileProblem(t.apparmorProfile);
+    if (p) return `AppArmorProfile: ${p}`;
+  }
+  if (t.selinuxContext) {
+    const p = selinuxContextProblem(t.selinuxContext);
+    if (p) return `SELinuxContext: ${p}`;
+  }
   return null;
 }
 
@@ -939,6 +957,20 @@ export function unitEntryProblem(u: SystemdUnitEntry): string | null {
 }
 
 /** Why the whole policy cannot be saved, or null. */
+/** AppArmorProfile= value: a loaded profile name, optionally prefixed with "-" (tolerate a missing profile). */
+export function apparmorProfileProblem(v: string): string | null {
+  return /^-?[A-Za-z0-9_][A-Za-z0-9_.:/+-]{0,254}$/.test(v)
+    ? null
+    : "Use the name the profile is loaded with (letters, digits, _ . : / + -), optionally prefixed with -";
+}
+
+/** SELinuxContext= value: user:role:type with an optional level, optionally prefixed with "-". */
+export function selinuxContextProblem(v: string): string | null {
+  return /^-?[a-z0-9_]{1,64}:[a-z0-9_]{1,64}:[a-z0-9_]{1,128}(:[a-z0-9_.,:-]{1,128})?$/.test(v)
+    ? null
+    : "Use user:role:type or user:role:type:level, optionally prefixed with -";
+}
+
 export function validateSystemdContent(c: SystemdContent): string | null {
   if (c.units.length === 0 && c.tasks.length === 0) return "Add at least one unit or task before saving";
   if (c.units.length > 200) return "A policy can manage at most 200 units";

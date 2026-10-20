@@ -131,7 +131,9 @@ stock Debian desktop does not ship them.
     parser checks the syntax before the file is installed. A profile whose
     attachment path is already used by another profile on the node is
     refused (two profiles for one executable make the kernel run it
-    unconfined).
+    unconfined). A Bor scheduled task can run under a profile deployed
+    here: set `AppArmorProfile` to `bor-<name>` on the task in a
+    [Services & timers](systemd.md) policy.
 
 **Local overrides**
 :   The vendor profile file (only files that include `local/<file>` are
@@ -315,8 +317,10 @@ exists on Ubuntu kernels since 23.10 only.
 ## Security considerations
 
 - Custom profiles and local overrides are administrator-authored policy
-  text. Saving, releasing or importing a policy that carries them is
-  audited as `policy.mac_custom` with the file names and a SHA-256 of
+  text. Creating, saving, releasing or importing a policy that carries
+  them requires the `mac:author` permission on top of the policy
+  permissions, and is audited as `policy.mac_custom` with the file names
+  and a SHA-256 of
   each text; a node can refuse them with
   `apparmor.allow_custom_profiles: false`.
 - A custom profile can never replace a vendor file: its file and profile

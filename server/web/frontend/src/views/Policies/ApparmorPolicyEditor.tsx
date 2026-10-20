@@ -40,6 +40,7 @@ import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { hasPermission } from "../../apiClient/permissions";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { ListEditor } from "./ListEditor";
 import { MacCatalogueSearch, MacNodePicker, subtle } from "./macPickers";
@@ -102,7 +103,10 @@ export const ApparmorPolicyEditor: React.FC<ApparmorPolicyEditorProps> = ({ cont
   }, [onChange]);
 
   const problem = useMemo(() => validateApparmorContent(model), [model]);
-  useEffect(() => { onValidityChange?.(problem === null); }, [problem, onValidityChange]);
+  // Custom policy text needs mac:author on the server; say so before the save fails.
+  const needsAuthor = model.customProfiles.length > 0 || model.localOverrides.length > 0;
+  const authorBlocked = needsAuthor && !hasPermission("mac:author");
+  useEffect(() => { onValidityChange?.(problem === null && !authorBlocked); }, [problem, authorBlocked, onValidityChange]);
 
   const profileMatches = useMemo(() => new Set(model.profiles.map((p) => p.match)), [model.profiles]);
   const overrideFiles = useMemo(() => new Set(model.localOverrides.map((o) => o.profileFile)), [model.localOverrides]);
@@ -151,6 +155,7 @@ export const ApparmorPolicyEditor: React.FC<ApparmorPolicyEditorProps> = ({ cont
   return (
     <div>
       <LiveAlert id={`${idp}-problem`} variant="warning" isInline message={problem} style={{ marginBottom: "0.75rem" }} />
+      <LiveAlert id={`${idp}-author`} variant="danger" isInline message={authorBlocked ? "This policy carries custom policy text (custom profiles or local overrides). Saving or releasing it needs the mac:author permission, which your account does not hold." : null} style={{ marginBottom: "0.75rem" }} />
       <div style={{ marginBottom: "0.75rem" }}>
         <MacNodePicker lsm="apparmor" value={nodeId} onChange={setNodeId} />
       </div>
@@ -241,7 +246,7 @@ export const ApparmorPolicyEditor: React.FC<ApparmorPolicyEditorProps> = ({ cont
         <Tab eventKey="custom" title={<TabTitleText>Custom profiles{model.customProfiles.length ? ` (${model.customProfiles.length})` : ""}</TabTitleText>}>
           <div style={{ padding: "1rem 0" }}>
             <p style={{ ...subtle, fontSize: "0.85rem", marginBottom: "0.5rem" }}>
-              Profiles Bor writes to <code>/etc/apparmor.d/bor-&lt;name&gt;</code>, checked with <code>apparmor_parser</code> before they are loaded. The templates use ABI 4.0, which loads on AppArmor 4.0, 4.1 and 5.0. Saving or releasing a policy with custom profiles is audited.
+              Profiles Bor writes to <code>/etc/apparmor.d/bor-&lt;name&gt;</code>, checked with <code>apparmor_parser</code> before they are loaded. A Bor scheduled task can run under a profile deployed here: set AppArmorProfile on the task in a Services &amp; timers policy. The templates use ABI 4.0, which loads on AppArmor 4.0, 4.1 and 5.0. Saving or releasing a policy with custom profiles is audited.
             </p>
             {model.customProfiles.map((c, i) => {
               const nameProblem = customNameProblem(c.name);

@@ -99,6 +99,8 @@ import {
   unitType,
   userNameProblem,
   validateSystemdContent,
+  apparmorProfileProblem,
+  selinuxContextProblem,
 } from "./systemdModel";
 
 export interface SystemdPolicyEditorProps {
@@ -798,6 +800,10 @@ const TaskRow: React.FC<{
           <ValidatedTextInput id={`${idp}-t${index}-group`} label="Group" value={task.group} onChange={(v) => onChange({ ...task, group: v })} placeholder={global ? "the user's group" : "(user's group)"} problem={(v) => userNameProblem(v)} isDisabled={isDisabled || global} style={narrow} />
           <ValidatedTextInput id={`${idp}-t${index}-wd`} label="Working directory" value={task.workingDirectory} onChange={(v) => onChange({ ...task, workingDirectory: v })} placeholder="/" problem={(v) => (v.startsWith("/") ? null : "Use an absolute path")} isDisabled={isDisabled} style={narrow} />
           <ValidatedTextInput id={`${idp}-t${index}-timeout`} label="TimeoutStartSec" value={task.timeoutStartSec} onChange={(v) => onChange({ ...task, timeoutStartSec: v })} placeholder="1h" problem={timeSpanProblem} helper="The run is killed after this long." isDisabled={isDisabled} style={narrow} />
+        </div>
+        <div style={{ ...row, marginTop: "0.75rem" }}>
+          <ValidatedTextInput id={`${idp}-t${index}-aa`} label="AppArmorProfile" value={task.apparmorProfile} onChange={(v) => onChange({ ...task, apparmorProfile: v })} placeholder="bor-corpapp" problem={apparmorProfileProblem} helper="Profile the task runs under, by its loaded name; a custom profile of an AppArmor policy is bor-<name>. A leading - tolerates a missing profile." isDisabled={isDisabled} style={narrow} />
+          <ValidatedTextInput id={`${idp}-t${index}-se`} label="SELinuxContext" value={task.selinuxContext} onChange={(v) => onChange({ ...task, selinuxContext: v })} placeholder="system_u:system_r:bor_task_t:s0" problem={selinuxContextProblem} helper="user:role:type the task runs as; the type can come from a custom module of an SELinux policy. A leading - tolerates a failed transition." isDisabled={isDisabled} style={narrow} />
         </div>
         <FormGroup label="Environment" fieldId={`${idp}-t${index}-env`} style={{ marginTop: "0.75rem" }}>
           <ListEditor

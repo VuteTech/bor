@@ -143,7 +143,9 @@ inapplicable item that names it.
     domain to read a directory, allow a connection to a port type, or
     silence a harmless denial. The server checks the source for balanced
     parentheses and a statement allowlist; `semodule` on the node reports
-    anything else.
+    anything else. A Bor scheduled task can run under a type declared in a
+    custom module: set `SELinuxContext` on the task in a
+    [Services & timers](systemd.md) policy.
 
 **File contexts**
 :   A path expression (`/opt/corpapp(/.*)?`), the SELinux type, the file
@@ -342,8 +344,10 @@ node reboots. Bor never sets it.
 ## Security considerations
 
 - Custom modules, file contexts, login mappings and exceptions are
-  administrator-authored policy text. Saving, releasing or importing a
-  policy that carries them is audited as `policy.mac_custom` with the
+  administrator-authored policy text. Creating, saving, releasing or
+  importing a policy that carries them requires the `mac:author`
+  permission on top of the policy permissions, and is audited as
+  `policy.mac_custom` with the
   module names and a SHA-256 of each source; a node can refuse them with
   `selinux.allow_custom_modules: false` and mode changes with
   `selinux.allow_mode_change: false`.

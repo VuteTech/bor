@@ -40,6 +40,7 @@ import TrashIcon from "@patternfly/react-icons/dist/esm/icons/trash-icon";
 import PlusCircleIcon from "@patternfly/react-icons/dist/esm/icons/plus-circle-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
+import { hasPermission } from "../../apiClient/permissions";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { ListEditor } from "./ListEditor";
 import { MacCatalogueSearch, MacNodePicker, subtle } from "./macPickers";
@@ -107,7 +108,10 @@ export const SelinuxPolicyEditor: React.FC<SelinuxPolicyEditorProps> = ({ conten
   }, [onChange]);
 
   const problem = useMemo(() => validateSelinuxContent(model), [model]);
-  useEffect(() => { onValidityChange?.(problem === null); }, [problem, onValidityChange]);
+  // Custom policy text needs mac:author on the server; say so before the save fails.
+  const needsAuthor = model.customModules.length > 0 || model.fileContexts.length > 0 || model.logins.length > 0 || model.permissiveDomains.length > 0;
+  const authorBlocked = needsAuthor && !hasPermission("mac:author");
+  useEffect(() => { onValidityChange?.(problem === null && !authorBlocked); }, [problem, authorBlocked, onValidityChange]);
 
   // Denials of the picked node feed the exceptions picker.
   useEffect(() => {
@@ -157,6 +161,7 @@ export const SelinuxPolicyEditor: React.FC<SelinuxPolicyEditorProps> = ({ conten
   return (
     <div>
       <LiveAlert id={`${idp}-problem`} variant="warning" isInline message={problem} style={{ marginBottom: "0.75rem" }} />
+      <LiveAlert id={`${idp}-author`} variant="danger" isInline message={authorBlocked ? "This policy carries custom policy text (custom modules, exceptions, file contexts or login mappings). Saving or releasing it needs the mac:author permission, which your account does not hold." : null} style={{ marginBottom: "0.75rem" }} />
       <div style={{ marginBottom: "0.75rem" }}>
         <MacNodePicker lsm="selinux" value={nodeId} onChange={setNodeId} />
       </div>
@@ -310,7 +315,7 @@ export const SelinuxPolicyEditor: React.FC<SelinuxPolicyEditorProps> = ({ conten
             />
             <Title headingLevel="h4" size="md" style={{ marginTop: "1.5rem" }}>Custom modules</Title>
             <p style={{ ...subtle, fontSize: "0.85rem", margin: "0.25rem 0 0.5rem" }}>
-              Policy written in CIL, installed as <code>bor-&lt;name&gt;</code>. The node page can propose one from an application's denials. Saving or releasing a policy with custom modules is audited.
+              Policy written in CIL, installed as <code>bor-&lt;name&gt;</code>. A Bor scheduled task can run under a type declared here: set SELinuxContext on the task in a Services &amp; timers policy. The node page can propose one from an application's denials. Saving or releasing a policy with custom modules is audited.
             </p>
             {model.customModules.map((c, i) => {
               const nameProblem = customNameProblem(c.name);

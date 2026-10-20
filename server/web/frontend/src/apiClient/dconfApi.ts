@@ -48,11 +48,21 @@ export interface DConfSchema {
 
 export type ComplianceStatus = "unknown" | "compliant" | "non_compliant" | "inapplicable" | "error";
 
+/** A benchmark control a compliance item contributes to (CIS section numbers of the named benchmark version). */
+export interface ComplianceControl {
+  framework: string;
+  id: string;
+  title: string;
+  /** Label text, e.g. "CIS RHEL 9 1.3.1.5". */
+  short: string;
+}
+
 export interface ComplianceItem {
   schema_id: string;
   key: string;
   status: ComplianceStatus;
   message?: string;
+  controls?: ComplianceControl[];
 }
 
 export interface ComplianceResult {

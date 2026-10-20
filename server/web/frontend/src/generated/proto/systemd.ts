@@ -210,6 +210,18 @@ export interface SystemdTask {
    * group must be empty) and is wanted by default.target at login.
    */
   scope: SystemdScope;
+  /**
+   * AppArmorProfile= of the service: the profile the task runs under, by
+   * the name it is loaded with on the node (for example bor-<name> from an
+   * AppArmor policy). A leading "-" lets the task start when the profile
+   * is missing.
+   */
+  apparmor_profile: string;
+  /**
+   * SELinuxContext= of the service: the user:role:type[:level] the task
+   * runs as. A leading "-" lets the task start when the transition fails.
+   */
+  selinux_context: string;
 }
 
 /**

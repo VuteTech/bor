@@ -122,6 +122,7 @@ func TestValidateSystemdTasksAndRaw(t *testing.T) {
 		"tasks and units": `{"units":[{"name":"bluetooth.service","enablement":"SYSTEMD_ENABLEMENT_DISABLED"}],"tasks":[{"name":"t","trigger":"SYSTEMD_TASK_TRIGGER_TIMER","schedule":{"onBootSec":"5min","onUnitActiveSec":"1h"},"execStart":["/bin/true"]}],"writePresets":true}`,
 		"raw directives":  `{"units":[{"name":"cups.service","dropIn":{"raw":[{"section":"Service","key":"IPAddressDeny","values":["any"]},{"section":"Unit","key":"StartLimitBurst","values":["3"]},{"section":"Service","key":"ReadWritePaths","values":[]}]}}]}`,
 		"raw exec":        `{"units":[{"name":"cups.service","dropIn":{"raw":[{"section":"Service","key":"ExecStartPre","values":["/usr/bin/true"]}]}}]}`,
+		"confined task":   `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"],"apparmorProfile":"-bor-corpapp","selinuxContext":"system_u:system_r:bor_task_t:s0"}]}`,
 	}
 	for name, content := range valid {
 		if err := ValidateSystemdContent(content); err != nil {
@@ -145,6 +146,8 @@ func TestValidateSystemdTasksAndRaw(t *testing.T) {
 		"relative workdir":       `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"],"workingDirectory":"srv"}]}`,
 		"bad env":                `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"],"environment":["1BAD=x"]}]}`,
 		"bad timeout":            `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"],"timeoutStartSec":"soon"}]}`,
+		"bad apparmor profile":   `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"],"apparmorProfile":"bor corpapp"}]}`,
+		"bad selinux context":    `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"],"selinuxContext":"bor_task_t"}]}`,
 		"duplicate task":         `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"]},{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/false"]}]}`,
 		"presets without unit":   `{"tasks":[{"name":"x","trigger":"SYSTEMD_TASK_TRIGGER_BOOT","execStart":["/bin/true"]}],"writePresets":true}`,
 		"presets without enable": `{"units":[{"name":"cups.service","activity":"SYSTEMD_ACTIVITY_STOPPED"}],"writePresets":true}`,
