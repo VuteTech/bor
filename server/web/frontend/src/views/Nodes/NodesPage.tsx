@@ -80,7 +80,10 @@ import { hasPermission } from "../../apiClient/permissions";
 import { NodeDiskEncryptionSection } from "../DiskEncryption/NodeDiskEncryptionSection";
 import { NodeSystemdSection } from "./NodeSystemdSection";
 import { NodeMacSection } from "./NodeMacSection";
+import { NodeUpdatesSection } from "./NodeUpdatesSection";
 import { macLsmLabel } from "../../apiClient/macApi";
+import { NODE_UPDATES_FILTERS } from "../../apiClient/nodesApi";
+import { downloadUpdatesExport } from "../../apiClient/updatesApi";
 
 /* ── Helpers ── */
 
@@ -114,6 +117,29 @@ const macDisplay = (node: Node): string => {
   if (!label) return "";
   return node.lsm_mode ? `${label} (${node.lsm_mode})` : label;
 };
+
+/** The Updates column: security count, reboot flag, engine state; "" when not reported. */
+const updatesCell = (node: Node): React.ReactNode => {
+  const u = node.updates;
+  if (!u) return "";
+  const parts: React.ReactNode[] = [];
+  if (u.engine === "none" || !u.engine_installed) {
+    parts.push(<Label key="engine" isCompact color="grey">no engine</Label>);
+  }
+  if (u.pending_security > 0) {
+    parts.push(<Label key="sec" isCompact color="red">{u.pending_security} security</Label>);
+  } else if (u.pending_total > 0) {
+    parts.push(<Label key="pending" isCompact color="blue">{u.pending_total} pending</Label>);
+  } else if (u.engine !== "none" && u.engine_installed) {
+    parts.push(<Label key="ok" isCompact color="green">up to date</Label>);
+  }
+  if (u.reboot_required) {
+    parts.push(<Label key="reboot" isCompact color="orange">reboot pending</Label>);
+  }
+  return <span style={{ display: "inline-flex", gap: "0.25rem", flexWrap: "wrap" }}>{parts}</span>;
+};
+
+const updatesFilterLabel = (v: string): string => NODE_UPDATES_FILTERS.find((f) => f.value === v)?.label ?? v;
 
 const timeAgo = (dateStr?: string): string => {
   if (!dateStr) return "Never";
@@ -154,6 +180,11 @@ export const NodesPage: React.FC = () => {
   const [osFilter, setOsFilter] = useState<string>("All");
   const [desktopFilter, setDesktopFilter] = useState<string>("All");
   const [lsmFilter, setLsmFilter] = useState<string>("All");
+  // Updates filter, seeded from ?updates= for the dashboard cards.
+  const [updatesFilter, setUpdatesFilter] = useState<string>(() => {
+    const u = searchParams.get("updates");
+    return u && NODE_UPDATES_FILTERS.some((f) => f.value === u) ? u : "All";
+  });
   const [agentVersionFilter, setAgentVersionFilter] = useState<string>("All");
 
   // Sort
@@ -237,12 +268,13 @@ export const NodesPage: React.FC = () => {
       os: osFilter !== "All" ? osFilter : undefined,
       desktop: desktopFilter !== "All" ? desktopFilter : undefined,
       lsm: lsmFilter !== "All" ? lsmFilter : undefined,
+      updates: updatesFilter !== "All" ? updatesFilter : undefined,
       agent_version: agentVersionFilter !== "All" ? agentVersionFilter : undefined,
       group: groupFilter !== "All" ? groupFilter : undefined,
       sort_field: sortField,
       sort_order: sortDirection,
     }),
-    [appliedSearch, statusFilter, osFilter, desktopFilter, lsmFilter, agentVersionFilter, groupFilter, sortField, sortDirection],
+    [appliedSearch, statusFilter, osFilter, desktopFilter, lsmFilter, updatesFilter, agentVersionFilter, groupFilter, sortField, sortDirection],
   );
 
   /* ── Load a page of data (all filtering/sorting is server-side) ── */
@@ -272,7 +304,7 @@ export const NodesPage: React.FC = () => {
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedSearch, statusFilter, osFilter, desktopFilter, lsmFilter, agentVersionFilter, groupFilter, sortField, sortDirection]);
+  }, [appliedSearch, statusFilter, osFilter, desktopFilter, lsmFilter, updatesFilter, agentVersionFilter, groupFilter, sortField, sortDirection]);
 
   /* ── Filter dropdown options (distinct values, fetched once) ── */
   useEffect(() => {
@@ -373,6 +405,20 @@ export const NodesPage: React.FC = () => {
       variant: "success",
       title: `Exported ${rows.length} node${rows.length === 1 ? "" : "s"} to CSV`,
     });
+  };
+
+  /* ── Pending updates export ── */
+  const exportPendingUpdates = async (securityOnly: boolean) => {
+    try {
+      const n = await downloadUpdatesExport({
+        security: securityOnly,
+        group: groupFilter !== "All" && groupFilter !== "none" ? groupFilter : undefined,
+        q: appliedSearch || undefined,
+      });
+      addToast({ variant: "success", title: `Exported ${n} pending update${n === 1 ? "" : "s"} to CSV` });
+    } catch (e: unknown) {
+      addToast({ variant: "danger", title: e instanceof Error ? e.message : "The export failed" });
+    }
   };
 
   /* ── Metadata refresh ── */
@@ -745,6 +791,8 @@ export const NodesPage: React.FC = () => {
 
           <NodeMacSection nodeId={selectedNode.id} nodeName={selectedNode.name} online={selectedNode.status === "online"} />
 
+          <NodeUpdatesSection nodeId={selectedNode.id} nodeName={selectedNode.name} />
+
           <Title headingLevel="h3" size="md" style={{ marginTop: "1.5rem", marginBottom: "0.5rem" }}>
             Actions
           </Title>
@@ -855,6 +903,7 @@ export const NodesPage: React.FC = () => {
   if (osFilter !== "All") activeFilters.push(`OS: ${osFilter}`);
   if (desktopFilter !== "All") activeFilters.push(`Desktop: ${desktopFilter}`);
   if (lsmFilter !== "All") activeFilters.push(`MAC: ${macLsmLabel(lsmFilter as "selinux" | "apparmor" | "none") || lsmFilter}`);
+  if (updatesFilter !== "All") activeFilters.push(`Updates: ${updatesFilterLabel(updatesFilter)}`);
   if (agentVersionFilter !== "All") activeFilters.push(`Agent: ${agentVersionFilter}`);
   if (groupFilter !== "All") activeFilters.push(`Group: ${groupLabel(groupFilter)}`);
 
@@ -987,6 +1036,21 @@ export const NodesPage: React.FC = () => {
                   </ToolbarFilter>
 
                   <ToolbarFilter
+                    labels={updatesFilter !== "All" ? [updatesFilterLabel(updatesFilter)] : []}
+                    deleteLabel={() => setUpdatesFilter("All")}
+                    categoryName="Updates"
+                  >
+                    <SearchableSelect
+                      ariaLabel="Filter by software updates state"
+                      placeholder="Filter by updates"
+                      emptyValue="All"
+                      selected={updatesFilter}
+                      onSelect={setUpdatesFilter}
+                      options={[{ value: "All", label: "All" }, ...NODE_UPDATES_FILTERS]}
+                    />
+                  </ToolbarFilter>
+
+                  <ToolbarFilter
                     labels={agentVersionFilter !== "All" ? [agentVersionFilter] : []}
                     deleteLabel={() => setAgentVersionFilter("All")}
                     categoryName="Agent Version"
@@ -1064,6 +1128,16 @@ export const NodesPage: React.FC = () => {
                     <Button variant="link" onClick={exportCSV}>
                       Export CSV
                     </Button>
+                    <Tooltip content="Every pending update of the listed nodes, one row per node and package, with advisory and CVE ids">
+                      <Button variant="link" onClick={() => void exportPendingUpdates(false)}>
+                        Export pending updates
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="Only the pending security updates">
+                      <Button variant="link" onClick={() => void exportPendingUpdates(true)}>
+                        Security only
+                      </Button>
+                    </Tooltip>
                   </ToolbarItem>
               </BorToolbar>
 
@@ -1115,6 +1189,7 @@ export const NodesPage: React.FC = () => {
                       <Th>Node Group</Th>
                       <Th>OS</Th>
                       <Th>MAC</Th>
+                      <Th>Updates</Th>
                       <Th sort={getSortParams("last_seen")}>Last Seen</Th>
                       <Th>Agent</Th>
                       <Th>Notes</Th>
@@ -1149,6 +1224,7 @@ export const NodesPage: React.FC = () => {
                         <Td dataLabel="Groups">{node.node_group_names?.join(", ") || "—"}</Td>
                         <Td dataLabel="OS">{osDisplay(node) || "—"}</Td>
                         <Td dataLabel="MAC">{macDisplay(node) || "—"}</Td>
+                        <Td dataLabel="Updates">{updatesCell(node) || "—"}</Td>
                         <Td dataLabel="Last Seen">{timeAgo(node.last_seen)}</Td>
                         <Td dataLabel="Agent">{node.agent_version || "—"}</Td>
                         <Td dataLabel="Notes">

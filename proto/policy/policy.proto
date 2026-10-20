@@ -21,6 +21,7 @@ import "selinux.proto";
 import "session_access.proto";
 import "systemd.proto";
 import "thunderbird.proto";
+import "updates.proto";
 
 // PolicyService manages desktop policies
 service PolicyService {
@@ -80,9 +81,17 @@ service PolicyService {
   rpc ReportMacInventory(ReportMacInventoryRequest)
       returns (ReportMacInventoryResponse);
 
+  // ReportUpdatesInventory carries the update state of a node: engine,
+  // pending updates, reboot state.
+  rpc ReportUpdatesInventory(ReportUpdatesInventoryRequest)
+      returns (ReportUpdatesInventoryResponse);
   // ReportMacActionResult answers a MAC_ACTION command.
   rpc ReportMacActionResult(ReportMacActionResultRequest)
       returns (ReportMacActionResultResponse);
+
+  // ReportUpdatesActionResult answers an UPDATES_ACTION command.
+  rpc ReportUpdatesActionResult(ReportUpdatesActionResultRequest)
+      returns (ReportUpdatesActionResultResponse);
 
   // ─── Disk encryption ─────────────
   // All five RPCs run on the mTLS policy port; the node identity is the
@@ -159,6 +168,7 @@ message Policy {
     SystemdPolicy        systemd_policy        = 23;
     SelinuxPolicy        selinux_policy        = 24;
     ApparmorPolicy       apparmor_policy       = 25;
+    UpdatesPolicy        updates_policy        = 26;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority
@@ -242,6 +252,11 @@ message PolicyUpdate {
     // mandatory access control proposal; the command is in mac_action and
     // the agent answers with ReportMacActionResult.
     MAC_ACTION = 8;
+    // UPDATES_ACTION is a server-to-agent command asking the agent to
+    // check, install or reboot for Software updates; the command is in
+    // updates_action and the agent answers with
+    // ReportUpdatesActionResult.
+    UPDATES_ACTION = 9;
   }
 
   UpdateType type = 1;
@@ -261,6 +276,9 @@ message PolicyUpdate {
 
   // The command of a MAC_ACTION update; unset otherwise.
   MacAction mac_action = 6;
+
+  // The command of an UPDATES_ACTION update; unset otherwise.
+  UpdatesAction updates_action = 7;
 }
 
 // ComplianceItemResult is the compliance result for a single DConf key.

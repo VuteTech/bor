@@ -120,11 +120,14 @@ type PolicyInfo struct {
 	SystemdPolicy        *pb.SystemdPolicy        // populated from typed_content for Systemd type
 	SelinuxPolicy        *pb.SelinuxPolicy        // populated from typed_content for Selinux type
 	ApparmorPolicy       *pb.ApparmorPolicy       // populated from typed_content for Apparmor type
+	UpdatesPolicy        *pb.UpdatesPolicy        // populated from typed_content for Updates type
 	// UnitAction carries the command of a SYSTEMD_UNIT_ACTION update; the
 	// other fields are empty then.
 	UnitAction *pb.SystemdUnitAction
 	// MacAction carries the command of a MAC_ACTION update.
 	MacAction *pb.MacAction
+	// UpdatesAction carries the command of an UPDATES_ACTION update.
+	UpdatesAction *pb.UpdatesAction
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -404,6 +407,9 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if aap := p.GetApparmorPolicy(); aap != nil {
 				pi.ApparmorPolicy = aap
 			}
+			if up := p.GetUpdatesPolicy(); up != nil {
+				pi.UpdatesPolicy = up
+			}
 		}
 		if ua := update.GetSystemdUnitAction(); ua != nil {
 			if pi == nil {
@@ -416,6 +422,12 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 				pi = &PolicyInfo{}
 			}
 			pi.MacAction = ma
+		}
+		if ua := update.GetUpdatesAction(); ua != nil {
+			if pi == nil {
+				pi = &PolicyInfo{}
+			}
+			pi.UpdatesAction = ua
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
@@ -538,6 +550,16 @@ func (c *Client) ReportMacInventory(ctx context.Context, req *pb.ReportMacInvent
 	return nil
 }
 
+// ReportUpdatesInventory sends the Software updates state of the node.
+func (c *Client) ReportUpdatesInventory(ctx context.Context, inv *pb.UpdatesInventory) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	if _, err := c.client.ReportUpdatesInventory(ctx, &pb.ReportUpdatesInventoryRequest{ClientId: c.clientID, Inventory: inv}); err != nil {
+		return fmt.Errorf("ReportUpdatesInventory RPC failed: %w", err)
+	}
+	return nil
+}
+
 // ReportMacActionResult answers a MAC_ACTION command with the proposal
 // text or the error.
 func (c *Client) ReportMacActionResult(ctx context.Context, actionID string, success bool, message, text string) error {
@@ -552,6 +574,24 @@ func (c *Client) ReportMacActionResult(ctx context.Context, actionID string, suc
 	})
 	if err != nil {
 		return fmt.Errorf("ReportMacActionResult RPC failed: %w", err)
+	}
+	return nil
+}
+
+// ReportUpdatesActionResult answers an UPDATES_ACTION command with the
+// outcome and the engine's output.
+func (c *Client) ReportUpdatesActionResult(ctx context.Context, actionID string, success bool, message, text string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := c.client.ReportUpdatesActionResult(ctx, &pb.ReportUpdatesActionResultRequest{
+		ClientId: c.clientID,
+		ActionId: actionID,
+		Success:  success,
+		Message:  message,
+		Text:     text,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportUpdatesActionResult RPC failed: %w", err)
 	}
 	return nil
 }

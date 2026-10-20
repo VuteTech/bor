@@ -47,7 +47,27 @@ export interface Node {
   cert_not_after?: string;
   created_at: string;
   updated_at: string;
+  /** The node's last Software updates report; absent until it reports. */
+  updates?: NodeUpdatesSummary;
 }
+
+export interface NodeUpdatesSummary {
+  engine: string;
+  engine_installed: boolean;
+  pending_total: number;
+  pending_security: number;
+  reboot_required: boolean;
+  reboot_since?: string;
+  reported_at: string;
+}
+
+/** Values of the nodes list's Software updates filter. */
+export const NODE_UPDATES_FILTERS: { value: string; label: string }[] = [
+  { value: "security", label: "Security updates pending" },
+  { value: "reboot", label: "Reboot pending" },
+  { value: "engine-missing", label: "No update engine" },
+  { value: "not-reported", label: "Not reported" },
+];
 
 export interface UpdateNodeRequest {
   name?: string;
@@ -70,6 +90,7 @@ export interface NodeListParams {
   desktop?: string;
   agent_version?: string;
   lsm?: string;
+  updates?: string;
   group?: string;
   sort_field?: string;
   sort_order?: "asc" | "desc";

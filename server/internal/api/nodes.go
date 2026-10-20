@@ -58,6 +58,7 @@ func (h *NodeHandler) List(w http.ResponseWriter, r *http.Request) {
 		Desktop:      q.Get("desktop"),
 		AgentVersion: q.Get("agent_version"),
 		LSM:          q.Get("lsm"),
+		Updates:      q.Get("updates"),
 		Group:        q.Get("group"),
 		SortField:    q.Get("sort_field"),
 		SortOrder:    q.Get("sort_order"),

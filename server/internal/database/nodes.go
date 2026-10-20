@@ -299,6 +299,9 @@ func buildNodeFilter(req *models.NodeListRequest) (where string, args []interfac
 		args = append(args, req.LSM)
 		conds = append(conds, fmt.Sprintf("n.lsm = $%d", len(args)))
 	}
+	if cond := nodeUpdatesCondition(req.Updates); cond != "" {
+		conds = append(conds, cond)
+	}
 	if req.Group == "none" {
 		// Nodes not a member of any group (unassigned).
 		conds = append(conds, "NOT EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id)")
@@ -323,6 +326,23 @@ func buildNodeFilter(req *models.NodeListRequest) (where string, args []interfac
 		return "", args
 	}
 	return "WHERE " + strings.Join(conds, " AND "), args
+}
+
+// nodeUpdatesCondition returns the condition of a Software updates filter
+// value, or "" for a value it does not know. The values are fixed, never
+// request input.
+func nodeUpdatesCondition(value string) string {
+	switch value {
+	case "security":
+		return "EXISTS (SELECT 1 FROM node_updates_status us WHERE us.node_id = n.id AND us.pending_security > 0)"
+	case "reboot":
+		return "EXISTS (SELECT 1 FROM node_updates_status us WHERE us.node_id = n.id AND us.reboot_required)"
+	case "engine-missing":
+		return "EXISTS (SELECT 1 FROM node_updates_status us WHERE us.node_id = n.id AND (us.engine = 'none' OR NOT COALESCE((us.info_json->>'engineInstalled')::boolean, FALSE)))"
+	case "not-reported":
+		return "NOT EXISTS (SELECT 1 FROM node_updates_status us WHERE us.node_id = n.id)"
+	}
+	return ""
 }
 
 // nodeScopeCondition returns a condition matching nodes that belong to at

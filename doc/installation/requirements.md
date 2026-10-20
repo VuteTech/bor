@@ -90,6 +90,7 @@ agent log explains which tool was not found.
 | Firewall | firewalld installed and running (`firewall-cmd`). Without it the policy is Inapplicable. |
 | SELinux | SELinux active (`/sys/fs/selinux` mounted) and the C tools of every SELinux installation: `setsebool`, `semodule`, `restorecon`. `semanage` (`policycoreutils-python-utils`) for login mappings; `audit2allow` and `checkmodule` for module proposals. Without SELinux the policy is Inapplicable unless it requires SELinux. |
 | AppArmor | AppArmor enabled in the kernel and `apparmor_parser` (package `apparmor`). Without AppArmor the policy is Inapplicable unless it requires AppArmor. |
+| Software updates | dnf, apt, zypper or rpm-ostree, and systemd on the system bus. The engine package (`dnf5-plugin-automatic`, `dnf-automatic`, `unattended-upgrades`, `os-update`) is installed through PackageKit when missing. `needrestart` (a dependency of the agent's deb package) or the dnf plugins give the reboot signal. Without a known package manager the policy is Inapplicable unless it requires an engine. |
 | Session Access | `loginctl` (systemd-logind). Login-time enforcement uses `pam_time` through `pam-auth-update` (Debian/Ubuntu) or authselect (Fedora/RHEL). |
 | Package | PackageKit on the system D-Bus, and one of `apt`, `dnf`/`yum` or `zypper`. Other package managers make the policy Inapplicable. |
 | Flatpak apps | `flatpak` installed. Without it the policy is Inapplicable. |

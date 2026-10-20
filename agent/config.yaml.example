@@ -232,3 +232,18 @@ chrome:
 #  # Answer proposal requests (audit2allow, AppArmor rules from denials)
 #  # from the node page of the console (holders of mac:operate).
 #  allow_actions: true
+
+# Software updates (Updates policy type). The agent configures the
+# distribution's update engine, keeps its timer in step with the policy,
+# decides reboots and reports the update state.
+updates:
+  engine: auto          # detected; force dnf-automatic, unattended-upgrades, os-update, transactional-update or rpm-ostree
+  state_path: /var/lib/bor/agent/updates-state.json
+  backup_dir: /var/lib/bor/agent/updates-backups
+  reconcile_interval: 10m
+  inventory_interval: 1h
+  reboot_check_interval: 1m
+  tool_timeout: 10m
+  allow_install: true   # install the engine package when a policy asks
+  allow_reboot: true    # let policies reboot the node
+

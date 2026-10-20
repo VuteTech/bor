@@ -114,6 +114,7 @@ nav:
       - Services and timers (systemd): policy-types/systemd.md
       - SELinux: policy-types/selinux.md
       - AppArmor: policy-types/apparmor.md
+      - Software updates: policy-types/updates.md
       - Flatpak: policy-types/flatpak.md
       - Packages and repositories: policy-types/packages.md
       - Session access: policy-types/session-access.md

@@ -58,6 +58,8 @@ func newContentMessage(policyType string) proto.Message {
 		return &pb.SelinuxPolicy{}
 	case "Apparmor":
 		return &pb.ApparmorPolicy{}
+	case "Updates":
+		return &pb.UpdatesPolicy{}
 	}
 	return nil
 }

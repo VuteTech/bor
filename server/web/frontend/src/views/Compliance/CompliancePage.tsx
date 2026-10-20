@@ -81,6 +81,17 @@ const SYSTEMD_ITEM_LABELS: Record<string, string> = {
   "apparmor:custom": "Custom profile",
   "apparmor:local": "Local override",
   "apparmor:homedirs": "Home directories",
+  "updates:engine": "Update engine",
+  "updates:mode": "Update mode",
+  "updates:schedule": "Update schedule",
+  "updates:reboot": "Reboot rule",
+  "updates:hold": "Hold",
+  "updates:last-run": "Last update run",
+  "updates:security-age": "Security update age",
+  "updates:reboot-age": "Reboot age",
+  "updates:check-age": "Metadata age",
+  "updates:firmware": "Firmware",
+  "updates:offline": "Offline install",
 };
 
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {

@@ -246,6 +246,16 @@ func (h *PolicyHub) SendMacAction(clientID string, action *pb.MacAction) bool {
 	})
 }
 
+// SendUpdatesAction sends an UPDATES_ACTION command (a check, install or
+// reboot) directly to the named client's stream. Returns false if the
+// client is not connected.
+func (h *PolicyHub) SendUpdatesAction(clientID string, action *pb.UpdatesAction) bool {
+	return h.sendNodeUpdate(clientID, &pb.PolicyUpdate{
+		Type:          pb.PolicyUpdate_UPDATES_ACTION,
+		UpdatesAction: action,
+	})
+}
+
 // SendResync asks one connected agent to take a fresh snapshot, for a
 // change that concerns that node alone (its node group membership).
 // Returns false if the client is not connected.

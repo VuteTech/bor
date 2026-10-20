@@ -159,6 +159,7 @@ const EDITOR_SHOTS = {
   Systemd: "policy-editor-systemd",
   Selinux: "policy-editor-selinux",
   Apparmor: "policy-editor-apparmor",
+  Updates: "policy-editor-updates",
 };
 
 const ONLY = process.env.SHOTS ? new Set(process.env.SHOTS.split(",")) : null;

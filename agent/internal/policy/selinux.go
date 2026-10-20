@@ -812,6 +812,9 @@ func enabledWord(v bool) string {
 	return "disabled"
 }
 
+// UniqueStrings returns the distinct entries of in, in order.
+func UniqueStrings(in []string) []string { return uniqueStrings(in) }
+
 func uniqueStrings(in []string) []string {
 	out := in[:0]
 	for i, v := range in {

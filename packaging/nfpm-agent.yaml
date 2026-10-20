@@ -57,6 +57,36 @@ suggests:
   - clevis-dracut
   - tpm2-tools
 
+# Per-format lists replace the ones above, so they repeat them. The reboot
+# signal of the Software updates type comes from needrestart on Debian and
+# Ubuntu (Debian does not write /run/reboot-required on its own) and from
+# the needs-restarting plugin on Fedora (dnf5-plugins) and RHEL
+# (python3-dnf-plugins-core); a weak dependency on a package the
+# distribution does not carry is ignored.
+overrides:
+  deb:
+    depends:
+      - needrestart
+    recommends:
+      - cryptsetup
+    suggests:
+      - clevis-luks
+      - clevis-dracut
+      - tpm2-tools
+  rpm:
+    recommends:
+      - cryptsetup
+      - dnf5-plugins
+      - python3-dnf-plugins-core
+    suggests:
+      - clevis-luks
+      - clevis-dracut
+      - tpm2-tools
+
 scripts:
   postinstall: packaging/scripts/postinstall-agent.sh
   preremove: packaging/scripts/preremove-agent.sh
+
+rpm:
+  scripts:
+    posttrans: packaging/scripts/posttrans-agent.sh

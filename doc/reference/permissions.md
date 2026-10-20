@@ -109,6 +109,12 @@ hold yourself.
 | `mac:author` | Create, save, import or release an SELinux or AppArmor policy that carries administrator-authored policy text: custom modules or profiles, local overrides, file contexts, login mappings or permissive domains. Checked on top of `policy:create` / `policy:edit`; every such save and release is audit-logged (`policy.mac_custom`) with the names and a SHA-256 of each text. A policy that only sets the mode, booleans, module switches or profile modes needs no extra permission. |
 | `mac:operate` | Ask one node for a policy proposal from the **Mandatory access control** section of the node details: `audit2allow` over the node's recent denials, or AppArmor rules derived from them. The proposal runs a tool on the node, reads its audit records and is audit-logged (`mac.action`); nothing is applied. Can be delegated per node group. |
 
+### Software updates
+
+| Permission | Allows |
+|---|---|
+| `updates:operate` | Run a Software updates action on one node from the **Software updates** section of the node details: refresh the package metadata, run the update engine once with the policy's mode, or reboot the node (forced reboots warn logged-in users first). The action runs on the node at once and is audit-logged (`updates.action`) with the outcome. Can be delegated per node group. |
+
 ## Built-in roles
 
 `Y` means the role holds the permission on a new installation.
@@ -165,6 +171,7 @@ hold yourself.
 | `systemd:operate` | Y | | | | | |
 | `mac:author` | Y | | | | | |
 | `mac:operate` | Y | | | | | |
+| `updates:operate` | Y | | | | | |
 
 Built-in roles cannot be modified or deleted. To grant a different
 combination, create a custom role. Because `policy:release` is not

@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import { authHeaders } from "./authApi";
+import { fetchUpdatesSummary, type UpdatesFleetSummary } from "./updatesApi";
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { credentials: "same-origin", ...init });
@@ -84,6 +85,8 @@ export interface FleetOverview {
   desktopEnvironment: Record<string, number>;
   certsExpiringSoon: CertExpiryEntry[];   // expiring within 60 days
   certsExpired: CertExpiryEntry[];        // already expired
+  /** Software updates counts; absent when the summary could not be loaded. */
+  updates?: UpdatesFleetSummary;
 }
 
 export interface GroupSummary {
@@ -158,12 +161,14 @@ async function fetchAllNodes(): Promise<RawNode[]> {
 export async function fetchDashboardData(): Promise<DashboardData> {
   const hdrs = { headers: authHeaders() };
 
-  const [nodesRes, groupsRes, policiesRes, bindingsRes] = await Promise.allSettled([
+  const [nodesRes, groupsRes, policiesRes, bindingsRes, updatesRes] = await Promise.allSettled([
     fetchAllNodes(),
     apiRequest<RawNodeGroup[]>("/api/v1/node-groups", hdrs),
     apiRequest<RawPolicy[]>("/api/v1/policies/all", hdrs),
     apiRequest<RawBinding[]>("/api/v1/policy-bindings", hdrs),
+    fetchUpdatesSummary(),
   ]);
+  const updates: UpdatesFleetSummary | undefined = updatesRes.status === "fulfilled" ? updatesRes.value : undefined;
 
   const rawNodes: RawNode[] = nodesRes.status === "fulfilled" ? nodesRes.value : [];
   const rawGroups: RawNodeGroup[] = groupsRes.status === "fulfilled" ? groupsRes.value : [];
@@ -284,7 +289,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
     }));
 
   return {
-    fleet: { totalNodes, online, offline, unknown, agentVersions, osDistribution, desktopEnvironment, certsExpiringSoon, certsExpired },
+    fleet: { totalNodes, online, offline, unknown, agentVersions, osDistribution, desktopEnvironment, certsExpiringSoon, certsExpired, updates },
     nodesGroups: { totalGroups: rawGroups.length, nodesWithoutGroup, groups },
     policies: { totalPolicies: rawPolicies.length, released, draft, archived, byType },
     bindings: {
