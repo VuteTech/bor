@@ -91,6 +91,7 @@ const SYSTEMD_ITEM_LABELS: Record<string, string> = {
   "updates:reboot-age": "Reboot age",
   "updates:check-age": "Metadata age",
   "updates:firmware": "Firmware",
+  "updates:offline": "Offline install",
 };
 
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {

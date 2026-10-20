@@ -36,6 +36,7 @@ const (
 	updatesItemRebootAge   = "updates:reboot-age"
 	updatesItemCheckAge    = "updates:check-age"
 	updatesItemFirmware    = "updates:firmware"
+	updatesItemOffline     = "updates:offline"
 )
 
 // UpdatesEntry is one bound Software updates policy with its binding
@@ -73,6 +74,9 @@ type UpdatesDesired struct {
 	FirmwareRefreshBy macSource
 	// FirmwareReport is true when any policy reports pending firmware.
 	FirmwareReport bool
+	// Offline is true when any policy installs updates offline at the
+	// reboot (dnf5 systems).
+	Offline bool
 }
 
 func updatesModeRank(m pb.UpdatesMode) int {
@@ -177,6 +181,9 @@ func MergeUpdatesPolicies(entries []UpdatesEntry) *UpdatesDesired {
 		if p.GetRequireEngine() {
 			d.RequireEngine = true
 		}
+		if p.GetOffline() {
+			d.Offline = true
+		}
 		if fw := p.GetFirmware(); fw != nil {
 			if fw.RefreshMetadata != nil && d.FirmwareRefresh == nil {
 				v := fw.GetRefreshMetadata()
@@ -260,6 +267,8 @@ type updatesSyncer struct {
 	configErr    string
 	timerErr     string
 	firmwareErr  string
+	offlineErr   string
+	offline      updates.OfflineStatus
 	dropInErr    string
 	lockErr      map[string]string
 	timerEnabled map[string]bool
@@ -314,6 +323,7 @@ func SyncUpdates(ctx context.Context, deps *UpdatesDeps, entries []UpdatesEntry,
 	s.applyFirmwareTimer()
 	s.applyDropIn()
 	s.applyLocks()
+	s.applyOffline()
 	s.lastRun = s.readLastRun()
 	_ = SaveUpdatesState(opts.StatePath, state)
 	for _, e := range entries {
@@ -385,6 +395,7 @@ func (s *updatesSyncer) writeOwnedFile(path string, data []byte) error {
 	}
 	if err == nil && bytes.Equal(existing, data) {
 		s.state.ConfigWritten = true
+		s.state.ConfigPath = s.p.ConfigPath
 		return nil
 	}
 	if err == nil && updates.HasHeader(existing) && s.state.ConfigWritten {
@@ -397,6 +408,7 @@ func (s *updatesSyncer) writeOwnedFile(path string, data []byte) error {
 		return werr
 	}
 	s.state.ConfigWritten = true
+	s.state.ConfigPath = s.p.ConfigPath
 	s.changed()
 	return nil
 }
@@ -430,7 +442,7 @@ func (s *updatesSyncer) applyConfig() {
 	case updates.EngineDnf:
 		switch mode {
 		case updates.ModeCheck, updates.ModeSecurity, updates.ModeAll:
-			if err := s.writeOwnedFile(s.p.Path(s.p.ConfigPath), updates.RenderDnfAutomaticConf(mode, holds)); err != nil {
+			if err := s.writeOwnedFile(s.p.Path(s.p.ConfigPath), updates.RenderDnfAutomaticConf(mode, holds, s.offlineWanted())); err != nil {
 				s.configErr = err.Error()
 			}
 			s.effective = mode
@@ -473,10 +485,14 @@ func (s *updatesSyncer) applyConfig() {
 			s.configErr = "rpm-ostree reload: " + err.Error()
 		}
 		s.effective = s.rpmOstreeEffective(want)
-	case updates.EngineOsUpdate:
+	case updates.EngineOsUpdate, updates.EngineTransactional:
 		switch mode {
 		case updates.ModeSecurity, updates.ModeAll:
-			if err := s.writeOwnedFile(s.p.Path(s.p.ConfigPath), updates.RenderOsUpdateConf(mode)); err != nil {
+			data := updates.RenderOsUpdateConf(mode)
+			if s.p.Engine == updates.EngineTransactional {
+				data = updates.RenderTransactionalUpdateConf(mode, s.p.OSID, s.p.Variant)
+			}
+			if err := s.writeOwnedFile(s.p.Path(s.p.ConfigPath), data); err != nil {
 				s.configErr = err.Error()
 			}
 			s.effective = mode
@@ -487,6 +503,55 @@ func (s *updatesSyncer) applyConfig() {
 			}
 		}
 	}
+}
+
+// offlineWanted says the updates are to be stored as an offline
+// transaction and installed at the reboot: a policy asks, the engine is
+// dnf5 and the mode installs something.
+func (s *updatesSyncer) offlineWanted() bool {
+	mode := s.mode()
+	return s.desired.Offline && s.p.Engine == updates.EngineDnf && s.p.DNF5 && (mode == updates.ModeSecurity || mode == updates.ModeAll)
+}
+
+// applyOffline stores the pending upgrade as a dnf5 offline transaction
+// when the policy asks and nothing is stored yet, and removes a
+// transaction Bor stored when the policy no longer asks.
+func (s *updatesSyncer) applyOffline() {
+	if s.p.Engine != updates.EngineDnf || !s.p.DNF5 || s.p.DnfBin == "" {
+		return
+	}
+	s.offline = updates.DnfOfflineStatus(s.ctx, s.deps.Run, s.p)
+	if !s.offlineWanted() {
+		if s.state.OfflineStaged && s.offline.Staged {
+			if err := updates.DnfOfflineClean(s.ctx, s.deps.Run, s.p); err == nil {
+				s.offline = updates.OfflineStatus{}
+				s.changed()
+			}
+		}
+		s.state.OfflineStaged = false
+		return
+	}
+	if !s.opts.AllowInstall || s.offline.Staged {
+		return
+	}
+	if !updates.DnfHasUpgrades(s.ctx, s.deps.Run, s.p, s.mode()) {
+		return
+	}
+	out, err := updates.DnfOfflineStage(s.ctx, s.deps.Run, s.p, s.mode())
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
+			msg = msg[i+1:]
+		}
+		s.offlineErr = "storing the offline transaction: " + err.Error()
+		if msg != "" {
+			s.offlineErr += " (" + msg + ")"
+		}
+		return
+	}
+	s.offline = updates.DnfOfflineStatus(s.ctx, s.deps.Run, s.p)
+	s.state.OfflineStaged = true
+	s.changed()
 }
 
 func (s *updatesSyncer) rpmOstreeEffective(policy string) updates.Mode {
@@ -510,8 +575,8 @@ func (s *updatesSyncer) timersWanted() (timers []string, enabled bool, reason st
 	case updates.ModeOff:
 		return timers, false, ""
 	case updates.ModeCheck:
-		if s.p.Engine == updates.EngineOsUpdate {
-			return timers, false, "os-update has no check-only mode; the timer stays off and Bor reports the pending updates"
+		if s.p.Engine == updates.EngineOsUpdate || s.p.Engine == updates.EngineTransactional {
+			return timers, false, string(s.p.Engine) + " has no check-only mode; the timer stays off and Bor reports the pending updates"
 		}
 	case updates.ModeSecurity:
 		if s.p.Engine == updates.EngineRpmOstree {
@@ -618,6 +683,12 @@ func (s *updatesSyncer) applyDropIn() {
 		s.removeDropIn(path)
 		return
 	}
+	// A drop-in an earlier agent wrote under the old name is replaced.
+	for _, old := range append([]string(nil), s.state.DropIns...) {
+		if old != path && filepath.Dir(old) == filepath.Dir(path) {
+			s.removeDropIn(old)
+		}
+	}
 	data := updates.RenderTimerDropIn(want.GetOnCalendar(), want.GetRandomizedDelay(), want.Persistent)
 	existing, err := os.ReadFile(path) //nolint:gosec // G304: path built from the agent configuration
 	if err == nil && bytes.Equal(existing, data) {
@@ -662,7 +733,7 @@ func (s *updatesSyncer) removeDropIn(path string) {
 // applyLocks keeps zypper's package locks in step with the holds (dnf and
 // apt carry holds in their configuration files).
 func (s *updatesSyncer) applyLocks() {
-	if s.p.Engine != updates.EngineOsUpdate {
+	if s.p.Engine != updates.EngineOsUpdate && s.p.Engine != updates.EngineTransactional || s.p.ZypperBin == "" {
 		return
 	}
 	holds := s.desired.SortedHolds()
@@ -721,12 +792,19 @@ func ReadUpdatesLastRun(ctx context.Context, deps *UpdatesDeps) *updates.Run {
 // restoreAll undoes everything the state records.
 func (s *updatesSyncer) restoreAll() {
 	st := s.state
-	if s.p.ConfigPath != "" {
-		s.restoreOwnedFile(s.p.Path(s.p.ConfigPath))
+	// The recorded engine may differ from the current one (an engine
+	// change under the agent): restore the file the record names.
+	configPath := s.p.ConfigPath
+	if st.ConfigPath != "" {
+		configPath = st.ConfigPath
+	}
+	if configPath != "" {
+		s.restoreOwnedFile(s.p.Path(configPath))
 		if s.p.Engine == updates.EngineRpmOstree && s.p.RpmOstreeBin != "" {
 			_, _ = s.deps.Run(s.ctx, s.p.RpmOstreeBin, "reload")
 		}
 	}
+	st.ConfigPath = ""
 	for _, path := range append([]string(nil), st.DropIns...) {
 		s.removeDropIn(path)
 	}
@@ -752,6 +830,12 @@ func (s *updatesSyncer) restoreAll() {
 		}
 	}
 	st.Locks = nil
+	if st.OfflineStaged && s.p.DNF5 && s.p.DnfBin != "" {
+		if err := updates.DnfOfflineClean(s.ctx, s.deps.Run, s.p); err == nil {
+			s.changed()
+		}
+	}
+	st.OfflineStaged = false
 	st.Engine = ""
 	st.RebootWarnedAt = nil
 }
@@ -860,6 +944,24 @@ func (s *updatesSyncer) compliance(e UpdatesEntry) UpdatesPolicyResult {
 			items = append(items, macItem(updatesItemHold, h, errSt, s.configErr))
 		default:
 			items = append(items, macItem(updatesItemHold, h, ok, "held back"))
+		}
+	}
+
+	// Offline installs.
+	if p.GetOffline() {
+		switch {
+		case s.p.Engine != updates.EngineDnf || !s.p.DNF5:
+			items = append(items, macItem(updatesItemOffline, "offline", na, "offline transactions need dnf5 (Fedora 41 and later)"))
+		case s.mode() != updates.ModeSecurity && s.mode() != updates.ModeAll:
+			items = append(items, macItem(updatesItemOffline, "offline", na, "offline installs apply with the security or all mode"))
+		case !s.opts.AllowInstall:
+			items = append(items, macItem(updatesItemOffline, "offline", na, "installing updates is disabled in the agent configuration (updates.allow_install)"))
+		case s.offlineErr != "":
+			items = append(items, macItem(updatesItemOffline, "offline", errSt, s.offlineErr))
+		case s.offline.Staged:
+			items = append(items, macItem(updatesItemOffline, "offline", ok, fmt.Sprintf("%d package(s) staged for the next boot", s.offline.Packages)))
+		default:
+			items = append(items, macItem(updatesItemOffline, "offline", ok, "nothing to stage"))
 		}
 	}
 
@@ -1038,9 +1140,18 @@ func RebootSignals(ctx context.Context, deps *UpdatesDeps, quick bool) (required
 				reasons = append(reasons, reason)
 			}
 		}
+		if st := updates.DnfOfflineStatus(ctx, run, p); st.Staged {
+			staged = true
+			reasons = append(reasons, fmt.Sprintf("offline update transaction staged (%d packages)", st.Packages))
+		}
 	case updates.EngineOsUpdate:
 		if p.ZypperBin != "" && updates.ZypperNeedsRebooting(ctx, run, p) {
 			reasons = append(reasons, "zypper needs-rebooting")
+		}
+	case updates.EngineTransactional:
+		if updates.TransactionalRebootNeeded(p.Root) {
+			staged = true
+			reasons = append(reasons, "transactional-update: a new snapshot waits for the reboot")
 		}
 	case updates.EngineRpmOstree:
 		if st, err := updates.RpmOstreeReadStatus(ctx, run, p); err == nil && st.Staged != "" {
@@ -1252,7 +1363,7 @@ func ScanUpdatesInventory(ctx context.Context, deps *UpdatesDeps, state *Updates
 	case updates.EngineApt:
 		pending, _ = updates.AptPending(ctx, run, p)
 		lastRun = updates.AptLastRun(p.Path(updates.AptLogPath))
-	case updates.EngineOsUpdate:
+	case updates.EngineOsUpdate, updates.EngineTransactional:
 		if p.ZypperBin != "" {
 			pending, _ = updates.ZypperPending(ctx, run, p)
 		}
@@ -1363,6 +1474,9 @@ func effectiveMode(p *updates.Platform, cfg []byte, cfgExists, timerEnabled bool
 				security = v == "security"
 			}
 		}
+		if strings.Contains(string(cfg), updates.DnfOfflineMarker) {
+			apply = true
+		}
 		switch {
 		case apply && security:
 			return updates.ModeSecurity
@@ -1397,6 +1511,11 @@ func effectiveMode(p *updates.Platform, cfg []byte, cfgExists, timerEnabled bool
 			return updates.ModeOff
 		}
 		return updates.OsUpdateMode(cfg)
+	case updates.EngineTransactional:
+		if !timerEnabled {
+			return updates.ModeOff
+		}
+		return updates.TransactionalUpdateMode(cfg)
 	}
 	return updates.ModeKeep
 }

@@ -25,12 +25,16 @@ type Engine string
 
 // The engines Bor knows.
 const (
-	EngineNone      Engine = "none"
-	EngineDnf       Engine = "dnf-automatic"
-	EngineApt       Engine = "unattended-upgrades"
-	EngineOsUpdate  Engine = "os-update"
-	EngineRpmOstree Engine = "rpm-ostree"
+	EngineNone          Engine = "none"
+	EngineDnf           Engine = "dnf-automatic"
+	EngineApt           Engine = "unattended-upgrades"
+	EngineOsUpdate      Engine = "os-update"
+	EngineTransactional Engine = "transactional-update"
+	EngineRpmOstree     Engine = "rpm-ostree"
 )
+
+// KnownEngines lists the engines an agent configuration may force.
+var KnownEngines = []Engine{EngineDnf, EngineApt, EngineOsUpdate, EngineTransactional, EngineRpmOstree}
 
 // Mode is the effective update mode of a policy or a node.
 type Mode string
@@ -100,8 +104,10 @@ func ExitCode(err error) int {
 // files live and which units drive it.
 type Platform struct {
 	Engine Engine
-	// OS id and codename from os-release ("ubuntu", "resolute").
+	// OS id, variant and codename from os-release ("ubuntu", "resolute";
+	// VARIANT_ID "microos").
 	OSID     string
+	Variant  string
 	Codename string
 	// DNF5 says the dnf-automatic engine is the dnf5 plugin.
 	DNF5 bool
@@ -143,10 +149,16 @@ func (p *Platform) Path(abs string) string {
 }
 
 // Detect reads os-release and the installed tools to pick the engine.
-func Detect() *Platform {
+func Detect() *Platform { return DetectEngine("") }
+
+// DetectEngine picks the engine like Detect, or the named one when force
+// is a known engine (the agent's updates.engine setting), for systems the
+// detection gets wrong.
+func DetectEngine(force string) *Platform {
 	p := &Platform{Engine: EngineNone}
 	osr := readOSRelease("/etc/os-release")
 	p.OSID = strings.ToLower(osr["ID"])
+	p.Variant = strings.ToLower(osr["VARIANT_ID"])
 	p.Codename = osr["VERSION_CODENAME"]
 	if p.Codename == "" {
 		p.Codename = osr["UBUNTU_CODENAME"]
@@ -172,8 +184,9 @@ func Detect() *Platform {
 	// SUSE ships dnf as an alternative client of the same repositories;
 	// its update mechanism is zypper's.
 	suse := strings.Contains(p.OSID, "suse") || p.OSID == "sles" || strings.Contains(strings.ToLower(osr["ID_LIKE"]), "suse")
+	forced := Engine(force)
 	switch {
-	case fileExists("/run/ostree-booted") && look("rpm-ostree") != "":
+	case forced == EngineRpmOstree || forced == "" && fileExists("/run/ostree-booted") && look("rpm-ostree") != "":
 		p.Engine = EngineRpmOstree
 		p.RpmOstreeBin = look("rpm-ostree")
 		p.Installed = true
@@ -181,7 +194,18 @@ func Detect() *Platform {
 		p.TimerUnit = "rpm-ostreed-automatic.timer"
 		p.ServiceUnit = "rpm-ostreed-automatic.service"
 		p.EngineRunBin = p.RpmOstreeBin
-	case suse && look("zypper") != "":
+	case forced == EngineTransactional || forced == "" && look("transactional-update") != "" && rootReadOnly("/proc/self/mountinfo"):
+		// MicroOS, Aeon, Kalpa, SLE Micro: a read-only root updated through
+		// snapshots.
+		p.Engine = EngineTransactional
+		p.ZypperBin = look("zypper")
+		p.Package = "transactional-update"
+		p.ConfigPath = "/etc/transactional-update.conf"
+		p.TimerUnit = "transactional-update.timer"
+		p.ServiceUnit = "transactional-update.service"
+		p.EngineRunBin = look("transactional-update")
+		p.Installed = p.EngineRunBin != ""
+	case forced == EngineOsUpdate || forced == "" && suse && look("zypper") != "":
 		p.Engine = EngineOsUpdate
 		p.ZypperBin = look("zypper")
 		p.Package = "os-update"
@@ -192,7 +216,7 @@ func Detect() *Platform {
 		if fileExists("/usr/libexec/os-update") {
 			p.EngineRunBin = "/usr/libexec/os-update"
 		}
-	case look("dnf5") != "":
+	case forced == EngineDnf && look("dnf5") != "" || forced == "" && look("dnf5") != "":
 		p.Engine = EngineDnf
 		p.DNF5 = true
 		p.DnfBin = look("dnf5")
@@ -204,7 +228,7 @@ func Detect() *Platform {
 		if p.Installed {
 			p.EngineRunBin = p.DnfBin
 		}
-	case look("dnf") != "":
+	case forced == EngineDnf || forced == "" && look("dnf") != "":
 		p.Engine = EngineDnf
 		p.DnfBin = look("dnf")
 		p.Package = "dnf-automatic"
@@ -213,7 +237,7 @@ func Detect() *Platform {
 		p.ServiceUnit = "dnf-automatic.service"
 		p.Installed = look("dnf-automatic") != "" || fileExists("/usr/lib/systemd/system/dnf-automatic.timer")
 		p.EngineRunBin = look("dnf-automatic")
-	case look("apt-get") != "":
+	case forced == EngineApt || forced == "" && look("apt-get") != "":
 		p.Engine = EngineApt
 		p.AptGetBin = look("apt-get")
 		p.Package = "unattended-upgrades"
@@ -222,7 +246,7 @@ func Detect() *Platform {
 		p.ServiceUnit = "apt-daily-upgrade.service"
 		p.Installed = look("unattended-upgrade") != ""
 		p.EngineRunBin = look("unattended-upgrade")
-	case look("zypper") != "":
+	case forced == "" && look("zypper") != "":
 		p.Engine = EngineOsUpdate
 		p.ZypperBin = look("zypper")
 		p.Package = "os-update"
@@ -262,8 +286,20 @@ func fileExists(path string) bool {
 // Header is the first line of every file Bor writes for this type.
 const Header = "Managed by Bor - changes are overwritten"
 
-// DropInName is the drop-in file of the engine timer.
-const DropInName = "90-bor.conf"
+// DropInName is the drop-in file of the engine timer. It differs from the
+// Services & timers type's 90-bor.conf so that type does not treat it as
+// one of its own stale drop-ins; it sorts after it, so the schedule wins
+// when both manage the same timer.
+const DropInName = "90-bor-updates.conf"
+
+// legacyDropInName is the name earlier agents used; it is removed when
+// found next to the current one.
+const legacyDropInName = "90-bor.conf"
+
+// LegacyTimerDropInPath is the drop-in path earlier agents wrote.
+func LegacyTimerDropInPath(systemDir, timer string) string {
+	return filepath.Join(systemDir, timer+".d", legacyDropInName)
+}
 
 // RenderTimerDropIn renders the [Timer] drop-in of the engine's timer: the
 // calendar expression replaces the vendor triggers, so monotonic triggers
@@ -299,4 +335,27 @@ func TimerDropInPath(systemDir, timer string) string {
 func HasHeader(data []byte) bool {
 	first, _, _ := bytes.Cut(data, []byte("\n"))
 	return bytes.Contains(first, []byte(Header))
+}
+
+// rootReadOnly reports whether the root file system is mounted read-only
+// (a transactional system), from a mountinfo file.
+func rootReadOnly(mountinfo string) bool {
+	data, err := os.ReadFile(mountinfo) //nolint:gosec // G304: fixed proc path
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		// mount id, parent id, major:minor, root, mount point, options, ...
+		if len(f) < 6 || f[4] != "/" {
+			continue
+		}
+		for _, opt := range strings.Split(f[5], ",") {
+			if opt == "ro" {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }

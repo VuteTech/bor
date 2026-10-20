@@ -17,7 +17,7 @@ import (
 // RenderDnfAutomaticConf renders /etc/dnf/automatic.conf for the dnf5
 // automatic plugin and DNF 4's dnf-automatic alike. The engine never
 // reboots on its own; Bor does.
-func RenderDnfAutomaticConf(mode Mode, holds []string) []byte {
+func RenderDnfAutomaticConf(mode Mode, holds []string, offline bool) []byte {
 	apply := "no"
 	upgradeType := "default"
 	switch mode {
@@ -29,6 +29,12 @@ func RenderDnfAutomaticConf(mode Mode, holds []string) []byte {
 	}
 	var b strings.Builder
 	b.WriteString("# " + Header + "\n")
+	if offline && apply == "yes" {
+		// The engine downloads; Bor stores the offline transaction and the
+		// reboot installs it.
+		apply = "no"
+		b.WriteString(DnfOfflineMarker + "\n")
+	}
 	b.WriteString("[commands]\n")
 	b.WriteString("apply_updates = " + apply + "\n")
 	b.WriteString("download_updates = yes\n")
@@ -45,6 +51,11 @@ func RenderDnfAutomaticConf(mode Mode, holds []string) []byte {
 	}
 	return []byte(b.String())
 }
+
+// DnfOfflineMarker is the comment Bor writes into automatic.conf when the
+// updates are installed offline at the reboot, so the effective mode
+// reads as the policy's mode although apply_updates is off.
+const DnfOfflineMarker = "# offline_updates = yes"
 
 // Pending is one update a node can install.
 type Pending struct {
@@ -111,6 +122,10 @@ func DnfPending(ctx context.Context, run Runner, p *Platform) ([]Pending, error)
 	}
 	advisories, aerr := dnfSecurityAdvisories(ctx, run, p)
 	if aerr == nil {
+		cves := map[string][]string{}
+		if len(advisories) > 0 {
+			cves = dnfAdvisoryCVEs(ctx, run, p)
+		}
 		for _, a := range advisories {
 			name := nevraName(a.Nevra)
 			i, ok := seen[name]
@@ -124,10 +139,128 @@ func DnfPending(ctx context.Context, run Runner, p *Platform) ([]Pending, error)
 			if sev := dnfSeverityWords[strings.ToLower(a.Severity)]; sev != "" && severityRank(sev) > severityRank(pending[i].Severity) {
 				pending[i].Severity = sev
 			}
+			for _, c := range cves[a.Name] {
+				if !containsStr(pending[i].CVEs, c) {
+					pending[i].CVEs = append(pending[i].CVEs, c)
+				}
+			}
 		}
 	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].Name < pending[j].Name })
 	return pending, nil
+}
+
+func containsStr(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+var cveRE = regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
+
+// dnfAdvisoryCVEs maps security advisories to their CVE ids. dnf5's
+// advisory info lists references typed "cve" on RHEL and bugzilla entries
+// whose titles name the CVE on Fedora; dnf4's updateinfo info prints a
+// CVEs block per advisory.
+func dnfAdvisoryCVEs(ctx context.Context, run Runner, p *Platform) map[string][]string {
+	out := map[string][]string{}
+	add := func(name, cve string) {
+		if !containsStr(out[name], cve) {
+			out[name] = append(out[name], cve)
+		}
+	}
+	if p.DNF5 {
+		data, err := run(ctx, p.DnfBin, "-q", "-C", "advisory", "info", "--security", "--json")
+		if err != nil {
+			return out
+		}
+		for name, cves := range ParseDnf5AdvisoryInfo(data) {
+			for _, c := range cves {
+				add(name, c)
+			}
+		}
+		return out
+	}
+	data, err := run(ctx, p.DnfBin, "-q", "-C", "updateinfo", "info", "--security")
+	if err != nil {
+		return out
+	}
+	for name, cves := range ParseDnf4UpdateinfoInfo(data) {
+		for _, c := range cves {
+			add(name, c)
+		}
+	}
+	return out
+}
+
+// ParseDnf5AdvisoryInfo extracts the CVE ids of each advisory from
+// "dnf5 advisory info --json".
+func ParseDnf5AdvisoryInfo(data []byte) map[string][]string {
+	var doc map[string]struct {
+		Description string `json:"Description"`
+		References  []struct {
+			Title string `json:"Title"`
+			ID    string `json:"Id"`
+			Type  string `json:"Type"`
+		} `json:"references"`
+	}
+	out := map[string][]string{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return out
+	}
+	for name, adv := range doc {
+		seen := map[string]bool{}
+		add := func(c string) {
+			if c != "" && !seen[c] {
+				seen[c] = true
+				out[name] = append(out[name], c)
+			}
+		}
+		for _, r := range adv.References {
+			if strings.EqualFold(r.Type, "cve") {
+				add(cveRE.FindString(r.ID))
+				continue
+			}
+			for _, c := range cveRE.FindAllString(r.Title, -1) {
+				add(c)
+			}
+		}
+		for _, c := range cveRE.FindAllString(adv.Description, -1) {
+			add(c)
+		}
+		sort.Strings(out[name])
+	}
+	return out
+}
+
+// ParseDnf4UpdateinfoInfo extracts the CVE ids of each advisory from
+// "dnf updateinfo info" (Update ID and CVEs blocks).
+func ParseDnf4UpdateinfoInfo(data []byte) map[string][]string {
+	out := map[string][]string{}
+	current := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if k == "Update ID" {
+			current = v
+			continue
+		}
+		if current == "" || (k != "CVEs" && k != "") {
+			continue
+		}
+		for _, c := range cveRE.FindAllString(v, -1) {
+			if !containsStr(out[current], c) {
+				out[current] = append(out[current], c)
+			}
+		}
+	}
+	return out
 }
 
 var dnf4UpdateinfoRE = regexp.MustCompile(`^(\S+)\s+(\S+)/Sec\.\s+(\S+)$`)

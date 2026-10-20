@@ -95,6 +95,9 @@ func ValidateUpdatesContent(content string) error {
 			return fmt.Errorf("the reboot message must be one line")
 		}
 	}
+	if pol.GetOffline() && pol.GetMode() != pb.UpdatesMode_UPDATES_MODE_SECURITY && pol.GetMode() != pb.UpdatesMode_UPDATES_MODE_ALL {
+		return fmt.Errorf("offline installs need the security or all mode")
+	}
 	if l := pol.GetLimits(); l != nil {
 		for name, v := range map[string]int32{"security": l.GetSecurityMaxAgeDays(), "reboot": l.GetRebootMaxAgeDays(), "check": l.GetCheckMaxAgeDays()} {
 			if v < 0 || v > maxUpdatesLimitDays {
@@ -122,7 +125,7 @@ func updatesPolicyHasSettings(p *pb.UpdatesPolicy) bool {
 	return p.GetMode() != pb.UpdatesMode_UPDATES_MODE_UNSPECIFIED ||
 		(p.GetSchedule() != nil && p.GetSchedule().GetOnCalendar() != "") ||
 		(p.GetReboot() != nil && p.GetReboot().GetPolicy() != pb.UpdatesRebootPolicy_UPDATES_REBOOT_UNSPECIFIED) ||
-		len(p.GetHold()) > 0 || p.GetRemoveUnusedDependencies() || p.GetRequireEngine() || p.InstallEngine != nil ||
+		len(p.GetHold()) > 0 || p.GetRemoveUnusedDependencies() || p.GetRequireEngine() || p.InstallEngine != nil || p.GetOffline() ||
 		updatesLimitsSet(p.GetLimits()) || (p.GetFirmware() != nil && (p.GetFirmware().RefreshMetadata != nil || p.GetFirmware().GetReportPending()))
 }
 

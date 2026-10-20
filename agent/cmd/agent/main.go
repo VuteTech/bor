@@ -597,6 +597,7 @@ To follow the agent logs:
 	defer stopSelinuxReconciler()
 	defer stopApparmorReconciler()
 	defer stopMacInventoryTicker()
+	setUpdatesEngineOverride(cfg.Updates.Engine)
 	if p := updatesPlatformCached(); p.Engine != "none" {
 		log.Printf("software updates: engine %s (installed=%v)", p.Engine, p.Installed)
 	} else {
@@ -2983,13 +2984,14 @@ func suppressManagedWritesFor(cfg *config.Config, d time.Duration, extra ...stri
 }
 
 // resetManagedWriteWindow ends a long suppression window opened with
-// suppressManagedWritesFor: the paths fall back to the usual two seconds
-// from now, so an edit after the sync is caught again.
-func resetManagedWriteWindow(cfg *config.Config, extra ...string) {
-	if fileWatcher == nil {
+// suppressManagedWritesFor: the caller's paths fall back to the usual two
+// seconds from now, so an edit after the sync is caught again. Only the
+// given paths are reset: another type's sync may still be inside its own
+// long window on its files, and that window must not be cut short.
+func resetManagedWriteWindow(_ *config.Config, paths ...string) {
+	if fileWatcher == nil || len(paths) == 0 {
 		return
 	}
-	paths := append(getManagedPaths(cfg), extra...)
 	fileWatcher.SuppressReset(paths, 2*time.Second)
 }
 

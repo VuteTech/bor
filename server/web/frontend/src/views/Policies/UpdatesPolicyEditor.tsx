@@ -227,6 +227,14 @@ export const UpdatesPolicyEditor: React.FC<UpdatesPolicyEditorProps> = ({ conten
               <Switch id={`${idp}-require`} label="Treat nodes without an engine as non-compliant" isChecked={model.requireEngine} onChange={(_ev, v) => update((m) => ({ ...m, requireEngine: v }))} isDisabled={isDisabled} />
               <Switch id={`${idp}-unused`} label="Remove dependencies updates left unused" isChecked={model.removeUnusedDependencies} onChange={(_ev, v) => update((m) => ({ ...m, removeUnusedDependencies: v }))} isDisabled={isDisabled} />
             </div>
+            {(model.mode === "UPDATES_MODE_SECURITY" || model.mode === "UPDATES_MODE_ALL") && (
+              <div style={{ marginTop: "0.75rem" }}>
+                <Switch id={`${idp}-offline`} label="Install offline at the reboot (Fedora 41 and later)" isChecked={model.offline} onChange={(_ev, v) => update((m) => ({ ...m, offline: v }))} isDisabled={isDisabled} />
+                <p style={{ ...subtle, marginTop: "0.25rem" }}>
+                  The engine only downloads; the agent stores a dnf5 offline transaction and the reboot of the Reboot tab installs it before the desktop comes up, so running programs never see half-applied updates. Other engines report this as inapplicable.
+                </p>
+              </div>
+            )}
           </div>
         </Tab>
 

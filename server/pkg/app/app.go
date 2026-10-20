@@ -619,6 +619,7 @@ func Run(opts Options) {
 	mux.Handle("GET /api/v1/nodes/{id}/updates/pending", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.ListPending))))
 	mux.Handle("POST /api/v1/nodes/{id}/updates/actions", authMiddleware(gate.RequireScoped("updates", "operate")(http.HandlerFunc(updatesNodeHandler.Action))))
 	mux.Handle("GET /api/v1/updates/summary", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.Summary))))
+	mux.Handle("GET /api/v1/updates/export", authMiddleware(gate.RequireScoped("node", "view")(http.HandlerFunc(updatesNodeHandler.Export))))
 
 	// Node group routes — method-based permission checking
 	groupPerms := gate.RequireScopedMethod([]api.MethodPermission{

@@ -23,7 +23,7 @@ func MetadataRefreshTime(p *Platform) time.Time {
 	case EngineDnf:
 		candidates = append(candidates, globAll(p.Path("/var/cache/libdnf5/*/repodata/*.xml*"))...)
 		candidates = append(candidates, globAll(p.Path("/var/cache/dnf/*/repodata/*.xml*"))...)
-	case EngineOsUpdate:
+	case EngineOsUpdate, EngineTransactional:
 		candidates = append(candidates, globAll(p.Path("/var/cache/zypp/raw/*/repodata/repomd.xml"))...)
 		candidates = append(candidates, globAll(p.Path("/var/cache/zypp/raw/*/*/repodata/repomd.xml"))...)
 	}

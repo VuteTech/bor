@@ -49,11 +49,18 @@ The engine per distribution:
 | RHEL 8 to 10, Rocky, AlmaLinux, CentOS Stream | `dnf-automatic` | `/etc/dnf/automatic.conf` | `dnf-automatic.timer` |
 | Debian, Ubuntu | `unattended-upgrades` | `/etc/apt/apt.conf.d/90bor-updates` | `apt-daily-upgrade.timer` |
 | openSUSE Leap 15.6 and 16, Tumbleweed, SLES 16 | `os-update` | `/etc/os-update.conf` and zypper locks | `os-update.timer` |
+| openSUSE MicroOS, Aeon, Kalpa, SLE Micro (read-only root) | `transactional-update` | `/etc/transactional-update.conf` and zypper locks | `transactional-update.timer` |
 | Fedora Kinoite, Silverblue, IoT (rpm-ostree) | rpm-ostree's automatic update policy | `/etc/rpm-ostreed.conf` | `rpm-ostreed-automatic.timer` |
 
 Image systems update as a whole: **security updates** reports as
 inapplicable there and the node stays in check mode, and holds do not
-apply.
+apply. On transactional systems **security updates** means
+`transactional-update patch` (every patch) and **all updates** `dup` on
+rolling systems or `up` on others; the update lands in a new snapshot
+that the reboot rule boots into.
+
+The agent picks the engine from the system; `updates.engine` in the
+agent configuration forces one when the detection is wrong for a node.
 
 Everything the agent changes is recorded in
 `/var/lib/bor/agent/updates-state.json` (the original configuration file
@@ -62,9 +69,10 @@ node leaves every policy.
 
 ## Endpoint prerequisites
 
-- **A package manager the agent knows**: dnf, apt, zypper or rpm-ostree.
-  Other nodes report the policy as inapplicable (or non-compliant with
-  **Treat nodes without an engine as non-compliant**).
+- **A package manager the agent knows**: dnf, apt, zypper,
+  transactional-update or rpm-ostree. Other nodes report the policy as
+  inapplicable (or non-compliant with **Treat nodes without an engine as
+  non-compliant**).
 - **The engine package** (`dnf5-plugin-automatic`, `dnf-automatic`,
   `unattended-upgrades`, `os-update`): installed through PackageKit when
   **Install the engine when it is missing** is on, which is the default.
@@ -108,7 +116,9 @@ node leaves every policy.
 **Mode**
 :   The five modes with one sentence each, and three switches: install
     the engine when missing, treat nodes without an engine as
-    non-compliant, remove dependencies updates left unused.
+    non-compliant, remove dependencies updates left unused. With the
+    security or all mode a fourth switch installs the updates **offline
+    at the reboot** (see below).
 
 **Schedule**
 :   A preset or a calendar expression, the random delay and whether a run
@@ -142,7 +152,7 @@ pending updates*.
 | Setting | Field | Values | What the agent does |
 |---|---|---|---|
 | Mode | `mode` | `UPDATES_MODE_OFF`, `_CHECK`, `_SECURITY`, `_ALL` | renders the engine configuration and enables or disables its timer |
-| Schedule | `schedule.onCalendar`, `.randomizedDelay`, `.persistent` | calendar expression, time span, bool | writes `<timer>.d/90-bor.conf` |
+| Schedule | `schedule.onCalendar`, `.randomizedDelay`, `.persistent` | calendar expression, time span, bool | writes `<timer>.d/90-bor-updates.conf` |
 | Reboot | `reboot.policy` | `UPDATES_REBOOT_NEVER`, `_WHEN_NEEDED`, `_ALWAYS` | runs the reboot rule every minute |
 | Reboot window | `reboot.window` | `HH:MM-HH:MM`, local time, wraps past midnight | reboots only inside the window |
 | Logged-in users | `reboot.onlyWithoutSessions` | bool, default on | no reboot while a graphical or SSH session exists |
@@ -151,6 +161,7 @@ pending updates*.
 | Hold | `hold[]` | name or pattern | `excludepkgs` (dnf), `Package-Blacklist` (apt), `zypper addlock` |
 | Unused dependencies | `removeUnusedDependencies` | bool | apt `Remove-Unused-Dependencies` |
 | Engine | `installEngine`, `requireEngine` | bool | installs the engine package; non-compliant without one |
+| Offline install | `offline` | bool, with the security or all mode | the engine only downloads; the agent stores a dnf5 offline transaction and the reboot installs it |
 | Limits | `limits.securityMaxAgeDays`, `.rebootMaxAgeDays`, `.checkMaxAgeDays` | 0 to 3650 days | evaluates the age items after every inventory scan |
 | Firmware | `firmware.refreshMetadata`, `firmware.reportPending` | bool | enables or disables `fwupd-refresh.timer` (its state is recorded for the restore); reports pending firmware |
 
@@ -164,6 +175,44 @@ pending updates*.
   "hold": ["linux-image-*"]
 }
 ```
+
+### Example: offline installs on Fedora workstations
+
+```json
+{
+  "mode": "UPDATES_MODE_SECURITY",
+  "offline": true,
+  "schedule": { "onCalendar": "*-*-* 02:00", "randomizedDelay": "1h" },
+  "reboot": { "policy": "UPDATES_REBOOT_WHEN_NEEDED", "window": "03:00-05:00", "forceAfterDays": 7, "warnMinutes": 10 }
+}
+```
+
+On Fedora 41 and later with dnf5 the engine's timer only downloads the
+security updates; the agent stores them as a dnf5 offline transaction
+(`dnf5 upgrade --offline --security`) and the reboot of the window runs
+`dnf5 offline reboot`, so the packages are installed before the desktop
+comes up and no running program sees a half-applied update. A stored
+transaction counts as a pending reboot. On every other engine the
+**Offline install** item reports inapplicable and the updates install
+live.
+
+### Example: a pilot ring
+
+Two policies, two groups. The pilot group gets every update a day after
+release and a tight limit; the fleet follows a week later:
+
+| | Pilot (group "Pilot workstations") | Fleet (group "Workstations") |
+|---|---|---|
+| Mode | all updates | security updates |
+| Schedule | `*-*-* 02:00`, delay `1h` | `Mon *-*-* 02:00`, delay `6h` |
+| Reboot | when needed, window `03:00-05:00`, force after 3 days | when needed, window `03:00-05:00`, force after 7 days |
+| Limits | security 3 days, reboot 3 days, check 2 days | security 14 days, reboot 10 days, check 3 days |
+
+A node in both groups gets the stricter of the two: the higher binding
+priority wins per key, and on equal priority the mode that installs more
+and the reboot rule that reboots more win, while each policy reports its
+own limits. Problems show up on the pilot's Compliance page days before
+the fleet installs.
 
 ### Example: servers
 
@@ -197,7 +246,9 @@ both report, each against its own.
 |---|---|---|
 | `/etc/dnf/automatic.conf`, `/etc/os-update.conf`, `/etc/rpm-ostreed.conf` (the original is backed up and restored) | the mode | yes |
 | `/etc/apt/apt.conf.d/90bor-updates` | the mode (apt lists are cleared and re-declared there) | yes |
-| `/etc/systemd/system/<timer>.d/90-bor.conf` | the schedule | yes |
+| `/etc/transactional-update.conf` (the original is backed up and restored) | the mode | yes |
+| the dnf5 offline transaction under `/usr/lib/sysimage/libdnf5/offline` | the offline switch (removed when the policy leaves) | no |
+| `/etc/systemd/system/<timer>.d/90-bor-updates.conf` | the schedule | yes |
 | the engine timer's enabled state | the mode | reconciled |
 | `fwupd-refresh.timer`'s enabled state | the firmware setting | reconciled |
 | zypper package locks | holds on SUSE | reconciled |
@@ -210,7 +261,8 @@ overwritten` (after the comment marker of its syntax).
 
 A reboot is **pending** when any signal says so: a newer kernel than the
 running one, `needs-restarting` or `needrestart`, `/run/reboot-required`,
-`zypper needs-rebooting`, or a staged rpm-ostree deployment. The agent
+`zypper needs-rebooting`, transactional-update's `/run/reboot-needed`, a
+stored dnf5 offline transaction, or a staged rpm-ostree deployment. The agent
 records when it first saw it, shows it on the node page and in the
 **Reboot rule** item, and with **Reboot when an update needs it**:
 
@@ -219,7 +271,8 @@ records when it first saw it, shows it on the node page and in the
    longer than **Force after days**;
 3. warns logged-in users through a desktop notification **Warning
    minutes** before a forced reboot;
-4. reboots through `rebootmgr` when SUSE's reboot manager runs, otherwise
+4. reboots through `dnf5 offline reboot` when an offline transaction is
+   stored, through `rebootmgr` when SUSE's reboot manager runs, otherwise
    `systemctl reboot`, and records the reboot as a tamper-style event with
    the resource `updates:reboot` and the reasons.
 
@@ -278,7 +331,14 @@ false`.
 
 The nodes list has an **Updates** column (security updates pending, a
 reboot pending, no engine, up to date) and a filter with the same values
-plus *Not reported*. The dashboard's fleet overview counts the nodes with
+plus *Not reported*. **Export pending updates** and **Security only**
+there download a CSV of every pending update of the listed nodes (one
+row per node and package: node, groups, engine, kind, package, version,
+advisory, severity, security, CVE ids, reported at) for the
+vulnerability-handling record; the node section has the same export for
+one node. The API is `GET /api/v1/updates/export?format=csv|json`
+with `security=1`, `group=`, `node=` and `q=` filters, within the
+caller's node scope. The dashboard's fleet overview counts the nodes with
 security updates pending, with a reboot pending and without an engine,
 each linking to the filtered list.
 
@@ -296,6 +356,7 @@ each linking to the filtered list.
 | `updates:reboot-age` | no reboot has been pending longer than the limit |
 | `updates:check-age` | the engine refreshed its metadata within the limit; non-compliant when no refresh is found |
 | `updates:firmware` | `refresh`: the fwupd timer is in the requested state; `pending`: no firmware update is pending (inapplicable without fwupd) |
+| `updates:offline` | the offline transaction is stored when updates are pending, or there is nothing to stage (inapplicable without dnf5 or outside the security and all modes) |
 
 The age items read what the inventory scan recorded (every
 `updates.inventory_interval`, after every sync and after every action),
@@ -311,7 +372,7 @@ and CIS Ubuntu Linux 24.04 LTS Benchmark v1.0.0).
 # The engine's configuration and timer
 cat /etc/dnf/automatic.conf /etc/apt/apt.conf.d/90bor-updates /etc/os-update.conf 2>/dev/null
 systemctl list-timers 'dnf*' 'apt-daily*' 'os-update*' 'rpm-ostreed*'
-cat /etc/systemd/system/*/90-bor.conf
+cat /etc/systemd/system/*/90-bor-updates.conf
 
 # Pending updates and the reboot signals
 dnf5 -C check-upgrade; dnf5 needs-restarting
@@ -339,6 +400,16 @@ Check the **Reboot rule** item and the node page: the policy may say
 never, the window may not have come, or a user is logged in and the force
 period has not passed. The agent also waits ten minutes after a reboot it
 started itself.
+
+**The offline item says "storing the offline transaction" failed.**
+The download failed or the repositories were unreachable; the next
+reconcile pass (every ten minutes) tries again. `dnf5 offline status` and
+`dnf5 offline log` on the node show the stored transaction and the
+outcome of the last one.
+
+**A transactional system reports os-update as its engine.**
+The detection needs a read-only root; on a read-write snapshot system
+set `updates.engine: transactional-update` in the agent configuration.
 
 **Security updates on Kinoite reports inapplicable.**
 Image systems cannot select updates; choose **all updates** for them, in

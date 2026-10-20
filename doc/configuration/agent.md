@@ -235,6 +235,7 @@ Settings shared by the SELinux and AppArmor types.
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `updates.engine` | `auto` | The update engine to drive: detected from the system, or one of `dnf-automatic`, `unattended-upgrades`, `os-update`, `transactional-update`, `rpm-ostree` when the detection is wrong for a node. |
 | `updates.state_path` | `/var/lib/bor/agent/updates-state.json` | Record of every original state (engine configuration, timer state, locks, the pending reboot), restored when the node leaves every policy. |
 | `updates.backup_dir` | `/var/lib/bor/agent/updates-backups` | Backups of the engine configuration files Bor replaced. |
 | `updates.reconcile_interval` | `10m` | Interval of the pass that re-asserts the timer and the configuration; `0` disables it. |

@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -25,6 +26,7 @@ type updatesStore interface {
 	GetNodeStatus(ctx context.Context, nodeID string) (*database.UpdatesNodeStatus, error)
 	ListPending(ctx context.Context, nodeID, q string, securityOnly bool, limit int) ([]database.UpdatesPendingRow, error)
 	FleetSummary(ctx context.Context, scope *models.GroupScopeFilter) (*models.UpdatesFleetSummary, error)
+	ListPendingFleet(ctx context.Context, f database.UpdatesExportFilter) ([]database.UpdatesPendingExportRow, error)
 }
 
 // updatesActionSender pushes an action to a connected agent (grpc.PolicyHub).
@@ -284,4 +286,75 @@ func (h *UpdatesNodeHandler) audit(r *http.Request, node *models.Node, actionID 
 		Details:      string(details),
 		IPAddress:    extractAuditIP(r, h.anonymizeIPs),
 	})
+}
+
+// csvSafe neutralises spreadsheet formula injection: a cell that starts
+// with = + - @ or a tab or carriage return gets a leading apostrophe.
+func csvSafe(v string) string {
+	if v != "" && strings.ContainsAny(v[:1], "=+-@\t\r") {
+		return "'" + v
+	}
+	return v
+}
+
+// Export handles GET /api/v1/updates/export?format=csv|json&security=1&group=&node=&q=:
+// the pending updates of every node in the caller's scope, one row per
+// node and package, for the vulnerability-handling record.
+func (h *UpdatesNodeHandler) Export(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	query := r.URL.Query()
+	q := strings.TrimSpace(query.Get("q"))
+	if len(q) > maxUpdatesQueryLength {
+		q = q[:maxUpdatesQueryLength]
+	}
+	nodeID := strings.TrimSpace(query.Get("node"))
+	if nodeID != "" {
+		node, ok := h.loadNode(w, r, nodeID)
+		if !ok {
+			return
+		}
+		nodeID = node.ID
+	}
+	limit, _ := strconv.Atoi(query.Get("limit"))
+	f := database.UpdatesExportFilter{
+		Scope:        requestScope(r, "node", "view").Filter(),
+		GroupID:      strings.TrimSpace(query.Get("group")),
+		NodeID:       nodeID,
+		Query:        q,
+		SecurityOnly: query.Get("security") == "1" || query.Get("security") == "true",
+		Limit:        limit,
+	}
+	rows, err := h.store.ListPendingFleet(r.Context(), f)
+	if err != nil {
+		log.Printf("Failed to export pending updates: %v", err)
+		http.Error(w, `{"error":"failed to export pending updates"}`, http.StatusInternalServerError)
+		return
+	}
+	stamp := time.Now().UTC().Format("20060102-1504")
+	if query.Get("format") == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=pending-updates-%s.json", stamp))
+		if err := json.NewEncoder(w).Encode(rows); err != nil {
+			log.Printf("Failed to encode pending updates export: %v", err)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=pending-updates-%s.csv", stamp))
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"node", "node_groups", "engine", "kind", "package", "version", "advisory", "severity", "security", "cves", "reported_at"})
+	for i := range rows {
+		row := &rows[i]
+		_ = cw.Write([]string{
+			csvSafe(row.NodeName), csvSafe(row.NodeGroups), row.Engine, row.Kind, csvSafe(row.Name), csvSafe(row.Version),
+			csvSafe(row.Advisory), row.Severity, strconv.FormatBool(row.Security), strings.Join(row.CVEs, " "), row.ReportedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		log.Printf("Failed to write pending updates export: %v", err)
+	}
 }

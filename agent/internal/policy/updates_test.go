@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -427,5 +428,147 @@ func TestSyncUpdatesLimitsAndFirmware(t *testing.T) {
 	SyncUpdates(context.Background(), deps, nil, opts)
 	if !fake.HasCall("Disable fwupd-refresh.timer") {
 		t.Errorf("restore must disable fwupd-refresh.timer again: %v", calls)
+	}
+}
+
+func TestSyncUpdatesOffline(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"etc/dnf", "proc/sys/kernel", "boot", "usr/lib/sysimage/libdnf5/offline"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(root, "proc", "sys", "kernel", "osrelease"), []byte("7.2.11-100.fc43.x86_64\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "boot", "vmlinuz-7.2.11-100.fc43.x86_64"), []byte("k"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "usr", "lib", "sysimage", "libdnf5", "offline", "transaction.json"), []byte(`{"rpms":[{"name":"gnupg2"},{"name":"gnupg2-smime"}]}`), 0o600)
+	staged := false
+	var calls []string
+	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
+		line := strings.Join(args, " ")
+		calls = append(calls, name+" "+line)
+		switch {
+		case line == "-q offline status":
+			if staged {
+				return []byte("An offline transaction was initiated by the following command:\n\tdnf5 upgrade --offline --security -y\n"), nil
+			}
+			return []byte("No offline transaction is stored.\n"), nil
+		case strings.HasPrefix(line, "upgrade --offline"):
+			staged = true
+			return []byte("Transaction stored to be performed offline.\n"), nil
+		case line == "-y offline clean":
+			staged = false
+			return nil, nil
+		case strings.Contains(line, "check-upgrade"):
+			return []byte("gnupg2.x86_64 2.4.9-5.fc43 updates\n"), &fakeExitErr{code: 100}
+		case strings.Contains(line, "advisory list"):
+			return []byte("[]"), nil
+		}
+		return nil, nil
+	}
+	fake := systemd.NewFake()
+	fake.AddUnit(systemd.UnitStatus{Name: "dnf5-automatic.timer", LoadState: "loaded", ActiveState: "inactive", UnitFileState: "disabled"})
+	p := &updates.Platform{Engine: updates.EngineDnf, DNF5: true, Installed: true, Package: "dnf5-plugin-automatic", DnfBin: "/usr/bin/dnf5",
+		ConfigPath: "/etc/dnf/automatic.conf", TimerUnit: "dnf5-automatic.timer", ServiceUnit: "dnf5-automatic.service", Root: root}
+	deps := &UpdatesDeps{Platform: p, Run: run, Systemd: fake}
+	opts := UpdatesSyncOptions{StatePath: filepath.Join(root, "state.json"), BackupDir: filepath.Join(root, "backups"), SystemDir: filepath.Join(root, "etc", "systemd", "system"), AllowInstall: true, AllowReboot: true}
+	pol := &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_SECURITY, Offline: true}
+	res := SyncUpdates(context.Background(), deps, []UpdatesEntry{updEntry("p", 10, pol)}, opts)
+	r := res.Policies["p"]
+	if r.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+		t.Fatalf("expected compliant, got %s: %s (%v)", r.Status, r.Message, r.Items)
+	}
+	conf, _ := os.ReadFile(filepath.Join(root, "etc", "dnf", "automatic.conf"))
+	if !strings.Contains(string(conf), "apply_updates = no") || !strings.Contains(string(conf), updates.DnfOfflineMarker) {
+		t.Errorf("offline conf must download only and carry the marker:\n%s", conf)
+	}
+	var offlineItem *pb.ComplianceItemResult
+	for _, it := range r.Items {
+		if it.SchemaId == "updates:offline" {
+			offlineItem = it
+		}
+	}
+	if offlineItem == nil || offlineItem.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT || !strings.Contains(offlineItem.Message, "2 package(s) staged") {
+		t.Errorf("offline item wrong: %+v", offlineItem)
+	}
+	if !staged {
+		t.Error("the transaction must be stored")
+	}
+	state, _ := LoadUpdatesState(opts.StatePath)
+	if !state.OfflineStaged {
+		t.Error("state must record the stored transaction")
+	}
+	// The effective mode still reads as the policy's mode.
+	if m := effectiveMode(p, conf, true, true); m != updates.ModeSecurity {
+		t.Errorf("effective mode with the offline marker = %s, want security", m)
+	}
+	// The reboot signals see the staged transaction.
+	if required, reasons, isStaged := RebootSignals(context.Background(), deps, true); !required || !isStaged || len(reasons) == 0 || !strings.Contains(reasons[0], "offline update transaction staged") {
+		t.Errorf("reboot signals must report the staged transaction: %v %v %v", required, reasons, isStaged)
+	}
+	// Unbinding removes the transaction Bor stored.
+	SyncUpdates(context.Background(), deps, nil, opts)
+	if staged {
+		t.Errorf("restore must clean the stored transaction: %v", calls)
+	}
+}
+
+type fakeExitErr struct{ code int }
+
+func (f *fakeExitErr) Error() string { return "exit status " + strconv.Itoa(f.code) }
+func (f *fakeExitErr) ExitCode() int { return f.code }
+
+func TestSyncUpdatesEngineChangeRestoresOldConfig(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"etc", "proc/sys/kernel", "boot"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(root, "proc", "sys", "kernel", "osrelease"), []byte("6.17.1-default\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "boot", "vmlinuz-6.17.1-default"), []byte("k"), 0o600)
+	var calls []string
+	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}
+	fake := systemd.NewFake()
+	fake.AddUnit(systemd.UnitStatus{Name: "transactional-update.timer", LoadState: "loaded", ActiveState: "inactive", UnitFileState: "disabled"})
+	fake.AddUnit(systemd.UnitStatus{Name: "os-update.timer", LoadState: "loaded", ActiveState: "inactive", UnitFileState: "disabled"})
+	tu := &updates.Platform{Engine: updates.EngineTransactional, OSID: "opensuse-microos", Installed: true, Package: "transactional-update",
+		ConfigPath: "/etc/transactional-update.conf", TimerUnit: "transactional-update.timer", ServiceUnit: "transactional-update.service",
+		ZypperBin: "/usr/bin/zypper", EngineRunBin: "/usr/sbin/transactional-update", Root: root}
+	osu := &updates.Platform{Engine: updates.EngineOsUpdate, OSID: "opensuse-tumbleweed", Installed: true, Package: "os-update",
+		ConfigPath: "/etc/os-update.conf", TimerUnit: "os-update.timer", ServiceUnit: "os-update.service", ZypperBin: "/usr/bin/zypper", Root: root}
+	opts := UpdatesSyncOptions{StatePath: filepath.Join(root, "state.json"), BackupDir: filepath.Join(root, "backups"), SystemDir: filepath.Join(root, "etc", "systemd", "system"), AllowInstall: true, AllowReboot: true}
+	entries := []UpdatesEntry{updEntry("p", 10, &pb.UpdatesPolicy{Mode: pb.UpdatesMode_UPDATES_MODE_SECURITY, Hold: []string{"vim"}})}
+
+	res := SyncUpdates(context.Background(), &UpdatesDeps{Platform: tu, Run: run, Systemd: fake}, entries, opts)
+	if r := res.Policies["p"]; r.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+		t.Fatalf("transactional sync: %s %s %v", r.Status, r.Message, r.Items)
+	}
+	tuConf, err := os.ReadFile(filepath.Join(root, "etc", "transactional-update.conf"))
+	if err != nil || !strings.Contains(string(tuConf), "UPDATE_METHOD=patch") {
+		t.Fatalf("transactional conf not written: %v %s", err, tuConf)
+	}
+	state, _ := LoadUpdatesState(opts.StatePath)
+	if state.ConfigPath != "/etc/transactional-update.conf" {
+		t.Errorf("state must record the configuration path, got %q", state.ConfigPath)
+	}
+
+	// The engine changes under the agent: the old engine's file goes, the
+	// new engine's file comes.
+	res = SyncUpdates(context.Background(), &UpdatesDeps{Platform: osu, Run: run, Systemd: fake}, entries, opts)
+	if r := res.Policies["p"]; r.Status != pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT {
+		t.Fatalf("os-update sync: %s %s %v", r.Status, r.Message, r.Items)
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc", "transactional-update.conf")); !os.IsNotExist(err) {
+		t.Errorf("the transactional-update conf must be removed on the engine change (err=%v)", err)
+	}
+	if osConf, err := os.ReadFile(filepath.Join(root, "etc", "os-update.conf")); err != nil || !strings.Contains(string(osConf), `UPDATE_CMD="security"`) {
+		t.Errorf("os-update conf not written: %v %s", err, osConf)
+	}
+	state, _ = LoadUpdatesState(opts.StatePath)
+	if state.Engine != "os-update" || state.ConfigPath != "/etc/os-update.conf" {
+		t.Errorf("state after the engine change wrong: %+v", state)
 	}
 }

@@ -244,3 +244,92 @@ func (r *UpdatesRepository) FleetSummary(ctx context.Context, scope *models.Grou
 	}
 	return &sm, nil
 }
+
+// UpdatesPendingExportRow is one pending update of one node, for the
+// fleet export.
+type UpdatesPendingExportRow struct {
+	NodeID     string    `json:"nodeId"`
+	NodeName   string    `json:"node"`
+	NodeGroups string    `json:"nodeGroups"`
+	Engine     string    `json:"engine"`
+	Kind       string    `json:"kind"`
+	Name       string    `json:"name"`
+	Version    string    `json:"version"`
+	Advisory   string    `json:"advisory"`
+	Severity   string    `json:"severity"`
+	Security   bool      `json:"security"`
+	CVEs       []string  `json:"cves"`
+	ReportedAt time.Time `json:"reportedAt"`
+}
+
+// UpdatesExportFilter narrows the fleet export.
+type UpdatesExportFilter struct {
+	Scope        *models.GroupScopeFilter
+	GroupID      string
+	NodeID       string
+	Query        string
+	SecurityOnly bool
+	Limit        int
+}
+
+// ListPendingFleet lists the pending updates of every node in the
+// filter, node by node, security first.
+func (r *UpdatesRepository) ListPendingFleet(ctx context.Context, f UpdatesExportFilter) ([]UpdatesPendingExportRow, error) {
+	limit := f.Limit
+	if limit <= 0 || limit > 50000 {
+		limit = 20000
+	}
+	query := `SELECT n.id, n.name,
+		COALESCE((SELECT string_agg(g.name, '; ' ORDER BY g.name) FROM node_group_members m JOIN node_groups g ON g.id = m.node_group_id WHERE m.node_id = n.id), ''),
+		us.engine, p.kind, p.name, p.version, p.advisory, p.severity, p.security, p.cves_json, p.reported_at
+		FROM node_updates_pending p
+		JOIN nodes n ON n.id = p.node_id
+		JOIN node_updates_status us ON us.node_id = p.node_id`
+	var conds []string
+	var args []any
+	if f.Scope != nil {
+		if len(f.Scope.GroupIDs) == 0 {
+			return []UpdatesPendingExportRow{}, nil
+		}
+		args = append(args, pq.Array(f.Scope.GroupIDs))
+		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM node_group_members sgm WHERE sgm.node_id = n.id AND sgm.node_group_id = ANY($%d::uuid[]))", len(args)))
+	}
+	if f.GroupID != "" {
+		args = append(args, f.GroupID)
+		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM node_group_members gm WHERE gm.node_id = n.id AND gm.node_group_id::text = $%d)", len(args)))
+	}
+	if f.NodeID != "" {
+		args = append(args, f.NodeID)
+		conds = append(conds, fmt.Sprintf("n.id::text = $%d", len(args)))
+	}
+	if f.Query != "" {
+		args = append(args, "%"+f.Query+"%")
+		conds = append(conds, fmt.Sprintf("(p.name ILIKE $%d OR p.advisory ILIKE $%d OR p.cves_json::text ILIKE $%d OR n.name ILIKE $%d)", len(args), len(args), len(args), len(args)))
+	}
+	if f.SecurityOnly {
+		conds = append(conds, "p.security")
+	}
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += fmt.Sprintf(` ORDER BY n.name, p.security DESC, CASE p.severity WHEN 'critical' THEN 4 WHEN 'important' THEN 3 WHEN 'moderate' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC, p.name LIMIT %d`, limit)
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("updates: export: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []UpdatesPendingExportRow{}
+	for rows.Next() {
+		var row UpdatesPendingExportRow
+		var cves string
+		if err := rows.Scan(&row.NodeID, &row.NodeName, &row.NodeGroups, &row.Engine, &row.Kind, &row.Name, &row.Version, &row.Advisory, &row.Severity, &row.Security, &cves, &row.ReportedAt); err != nil {
+			return nil, fmt.Errorf("updates: scan export: %w", err)
+		}
+		_ = json.Unmarshal([]byte(cves), &row.CVEs)
+		if row.CVEs == nil {
+			row.CVEs = []string{}
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}

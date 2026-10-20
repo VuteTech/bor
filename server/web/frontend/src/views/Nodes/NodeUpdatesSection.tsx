@@ -17,6 +17,7 @@ import { LiveAlert } from "../../components/LiveAlert";
 import { ConfirmModal } from "../../components/ConfirmModal";
 import { hasPermission } from "../../apiClient/permissions";
 import {
+  downloadUpdatesExport,
   fetchNodeUpdates,
   fetchNodeUpdatesPending,
   runUpdatesAction,
@@ -195,6 +196,11 @@ export const NodeUpdatesSection: React.FC<Props> = ({ nodeId, nodeName }) => {
             <strong>{inv.pendingTotal ?? 0} pending update{(inv.pendingTotal ?? 0) === 1 ? "" : "s"}</strong>
             {(inv.pendingSecurity ?? 0) > 0 && <Label isCompact color="red">{inv.pendingSecurity} security</Label>}
             {(inv.pendingFirmware ?? 0) > 0 && <Label isCompact color="purple">{inv.pendingFirmware} firmware</Label>}
+            {hasPending && (
+              <Button variant="link" isInline onClick={() => { downloadUpdatesExport({ nodeId }).catch((e: unknown) => setPendingError(e instanceof Error ? e.message : "Export failed")); }}>
+                Export CSV
+              </Button>
+            )}
           </div>
           {hasPending && (
             <>

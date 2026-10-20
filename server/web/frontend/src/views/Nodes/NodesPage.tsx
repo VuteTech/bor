@@ -83,6 +83,7 @@ import { NodeMacSection } from "./NodeMacSection";
 import { NodeUpdatesSection } from "./NodeUpdatesSection";
 import { macLsmLabel } from "../../apiClient/macApi";
 import { NODE_UPDATES_FILTERS } from "../../apiClient/nodesApi";
+import { downloadUpdatesExport } from "../../apiClient/updatesApi";
 
 /* ── Helpers ── */
 
@@ -404,6 +405,20 @@ export const NodesPage: React.FC = () => {
       variant: "success",
       title: `Exported ${rows.length} node${rows.length === 1 ? "" : "s"} to CSV`,
     });
+  };
+
+  /* ── Pending updates export ── */
+  const exportPendingUpdates = async (securityOnly: boolean) => {
+    try {
+      const n = await downloadUpdatesExport({
+        security: securityOnly,
+        group: groupFilter !== "All" && groupFilter !== "none" ? groupFilter : undefined,
+        q: appliedSearch || undefined,
+      });
+      addToast({ variant: "success", title: `Exported ${n} pending update${n === 1 ? "" : "s"} to CSV` });
+    } catch (e: unknown) {
+      addToast({ variant: "danger", title: e instanceof Error ? e.message : "The export failed" });
+    }
   };
 
   /* ── Metadata refresh ── */
@@ -1113,6 +1128,16 @@ export const NodesPage: React.FC = () => {
                     <Button variant="link" onClick={exportCSV}>
                       Export CSV
                     </Button>
+                    <Tooltip content="Every pending update of the listed nodes, one row per node and package, with advisory and CVE ids">
+                      <Button variant="link" onClick={() => void exportPendingUpdates(false)}>
+                        Export pending updates
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="Only the pending security updates">
+                      <Button variant="link" onClick={() => void exportPendingUpdates(true)}>
+                        Security only
+                      </Button>
+                    </Tooltip>
                   </ToolbarItem>
               </BorToolbar>
 

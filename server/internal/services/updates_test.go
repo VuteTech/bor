@@ -24,6 +24,7 @@ func TestValidateUpdatesContent(t *testing.T) {
 		"engine off":  `{"installEngine":false}`,
 		"check mode":  `{"mode":"UPDATES_MODE_CHECK","requireEngine":true}`,
 		"limits only": `{"limits":{"securityMaxAgeDays":14,"rebootMaxAgeDays":7,"checkMaxAgeDays":3}}`,
+		"offline":     `{"mode":"UPDATES_MODE_ALL","offline":true}`,
 		"firmware":    `{"firmware":{"refreshMetadata":true,"reportPending":true}}`,
 	}
 	for name, content := range valid {
@@ -35,6 +36,7 @@ func TestValidateUpdatesContent(t *testing.T) {
 		"empty":          `{}`,
 		"nothing set":    `{"mode":"UPDATES_MODE_UNSPECIFIED"}`,
 		"limit too big":  `{"limits":{"securityMaxAgeDays":4000}}`,
+		"offline check":  `{"mode":"UPDATES_MODE_CHECK","offline":true}`,
 		"limit negative": `{"mode":"UPDATES_MODE_ALL","limits":{"checkMaxAgeDays":-1}}`,
 		"bad mode":       `{"mode":"UPDATES_MODE_YES"}`,
 		"delay no cal":   `{"schedule":{"randomizedDelay":"1h"}}`,

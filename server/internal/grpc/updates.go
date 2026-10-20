@@ -53,7 +53,7 @@ const (
 )
 
 var (
-	updatesEngines   = map[string]bool{"none": true, "dnf-automatic": true, "unattended-upgrades": true, "os-update": true, "rpm-ostree": true}
+	updatesEngines   = map[string]bool{"none": true, "dnf-automatic": true, "unattended-upgrades": true, "os-update": true, "transactional-update": true, "rpm-ostree": true}
 	updatesModes     = map[string]bool{"": true, "off": true, "check": true, "security": true, "all": true}
 	updatesManagedBy = map[string]bool{"": true, "bor": true, "vendor": true, "foreign": true}
 	updatesSeverity  = map[string]bool{"": true, "critical": true, "important": true, "moderate": true, "low": true}

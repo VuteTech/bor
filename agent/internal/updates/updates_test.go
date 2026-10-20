@@ -60,17 +60,17 @@ func TestInstalledKernelsFromBoot(t *testing.T) {
 }
 
 func TestRenderDnfAutomaticConf(t *testing.T) {
-	sec := string(RenderDnfAutomaticConf(ModeSecurity, []string{"gnupg2*", "kernel*"}))
+	sec := string(RenderDnfAutomaticConf(ModeSecurity, []string{"gnupg2*", "kernel*"}, false))
 	for _, want := range []string{"# " + Header, "apply_updates = yes", "upgrade_type = security", "reboot = never", "[base]\nexcludepkgs = gnupg2* kernel*"} {
 		if !strings.Contains(sec, want) {
 			t.Errorf("security conf lacks %q:\n%s", want, sec)
 		}
 	}
-	check := string(RenderDnfAutomaticConf(ModeCheck, nil))
+	check := string(RenderDnfAutomaticConf(ModeCheck, nil, false))
 	if !strings.Contains(check, "apply_updates = no") || strings.Contains(check, "[base]") {
 		t.Errorf("check conf wrong:\n%s", check)
 	}
-	all := string(RenderDnfAutomaticConf(ModeAll, nil))
+	all := string(RenderDnfAutomaticConf(ModeAll, nil, false))
 	if !strings.Contains(all, "apply_updates = yes\n") || !strings.Contains(all, "upgrade_type = default") {
 		t.Errorf("all conf wrong:\n%s", all)
 	}
@@ -325,5 +325,109 @@ func TestMetadataRefreshTime(t *testing.T) {
 	}
 	if got := MetadataRefreshTime(p); got.Sub(old).Abs() > time.Second {
 		t.Errorf("expected the list mtime %v, got %v", old, got)
+	}
+}
+
+func TestDnfAdvisoryCVEParsers(t *testing.T) {
+	dnf5 := `{"FEDORA-2026-d5c00a447f":{"Name":"FEDORA-2026-d5c00a447f","Description":"Fix CVE-2026-24882: Stack-based buffer overflow","references":[{"Title":"CVE-2026-24882 gnupg2: GnuPG: overflow [fedora-43]","Id":"2433665","Type":"bugzilla"}]},
+"RHSA-2026:1234":{"Name":"RHSA-2026:1234","Description":"Important: kernel security update","references":[{"Title":"CVE-2026-1 kernel: x","Id":"CVE-2026-1111","Type":"cve"},{"Title":"CVE-2026-2222 kernel: y","Id":"CVE-2026-2222","Type":"cve"}]}}`
+	got := ParseDnf5AdvisoryInfo([]byte(dnf5))
+	if cves := got["FEDORA-2026-d5c00a447f"]; len(cves) != 1 || cves[0] != "CVE-2026-24882" {
+		t.Errorf("fedora bugzilla reference: got %v", cves)
+	}
+	if cves := got["RHSA-2026:1234"]; len(cves) != 2 || cves[0] != "CVE-2026-1111" || cves[1] != "CVE-2026-2222" {
+		t.Errorf("cve references: got %v", cves)
+	}
+	dnf4 := "===============================================================================\n  kernel security update\n===============================================================================\n  Update ID: RHSA-2026:1234\n       Type: security\n    Updated: 2026-10-01\n       CVEs: CVE-2026-1111\n           : CVE-2026-2222\nDescription: fixes\n\n  Update ID: RHBA-2026:9\n       Type: bugfix\n"
+	got4 := ParseDnf4UpdateinfoInfo([]byte(dnf4))
+	if cves := got4["RHSA-2026:1234"]; len(cves) != 2 || cves[1] != "CVE-2026-2222" {
+		t.Errorf("dnf4 CVEs block: got %v", got4)
+	}
+	if _, ok := got4["RHBA-2026:9"]; ok {
+		t.Errorf("an advisory without CVEs must not appear: %v", got4)
+	}
+}
+
+func TestTransactionalUpdateDriver(t *testing.T) {
+	if m := TransactionalMethod(ModeSecurity, "opensuse-microos", ""); m != "patch" {
+		t.Errorf("security mode must patch, got %s", m)
+	}
+	if m := TransactionalMethod(ModeAll, "opensuse-microos", "microos"); m != "dup" {
+		t.Errorf("rolling systems dup, got %s", m)
+	}
+	if m := TransactionalMethod(ModeAll, "sle-micro", ""); m != "up" {
+		t.Errorf("stable systems up, got %s", m)
+	}
+	conf := string(RenderTransactionalUpdateConf(ModeSecurity, "opensuse-microos", "microos"))
+	if !strings.Contains(conf, "UPDATE_METHOD=patch\n") || !strings.Contains(conf, "REBOOT_METHOD=none") || !HasHeader([]byte(conf)) {
+		t.Errorf("rendered conf wrong:\n%s", conf)
+	}
+	if TransactionalUpdateMode([]byte(conf)) != ModeSecurity || TransactionalUpdateMode([]byte("UPDATE_METHOD=dup\n")) != ModeAll {
+		t.Error("UPDATE_METHOD not read back")
+	}
+	root := t.TempDir()
+	if TransactionalRebootNeeded(root) {
+		t.Error("no marker means no reboot")
+	}
+	if err := os.MkdirAll(filepath.Join(root, "run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "run", "reboot-needed"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !TransactionalRebootNeeded(root) {
+		t.Error("marker must mean a reboot")
+	}
+	mi := filepath.Join(root, "mountinfo")
+	_ = os.WriteFile(mi, []byte("22 1 0:21 / / ro,relatime shared:1 - btrfs /dev/vda2 rw\n23 22 0:22 / /var rw,relatime - btrfs /dev/vda2 rw\n"), 0o600)
+	if !rootReadOnly(mi) {
+		t.Error("ro root must be detected")
+	}
+	_ = os.WriteFile(mi, []byte("22 1 0:21 / / rw,relatime shared:1 - btrfs /dev/vda2 rw\n"), 0o600)
+	if rootReadOnly(mi) {
+		t.Error("rw root must not be detected")
+	}
+	p := &Platform{Engine: EngineTransactional, Installed: true, OSID: "opensuse-microos", EngineRunBin: "/usr/sbin/transactional-update", ZypperBin: "/usr/bin/zypper"}
+	bin, args, _ := EngineRunCommand(p, ModeSecurity)
+	if bin != "/usr/sbin/transactional-update" || strings.Join(args, " ") != "--non-interactive --quiet patch" {
+		t.Errorf("run command wrong: %s %v", bin, args)
+	}
+}
+
+func TestDnfOffline(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "usr", "lib", "sysimage", "libdnf5", "offline")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(dir, "transaction.json"), []byte(`{"rpms":[{"name":"a"},{"name":"b"},{"name":"c"}],"version":"1.0"}`), 0o600)
+	staged := true
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") == "-q offline status" {
+			if staged {
+				return []byte("An offline transaction was initiated by the following command:\n\tdnf5 upgrade --offline --security -y\nRun `dnf5 offline reboot` to reboot and perform the offline transaction.\n"), nil
+			}
+			return []byte("No offline transaction is stored.\n"), nil
+		}
+		if strings.Contains(strings.Join(args, " "), "check-upgrade") {
+			return nil, &fakeExit{code: 100}
+		}
+		return nil, nil
+	}
+	p := &Platform{Engine: EngineDnf, DNF5: true, DnfBin: "/usr/bin/dnf5", Root: root}
+	st := DnfOfflineStatus(context.Background(), run, p)
+	if !st.Staged || st.Packages != 3 || !strings.HasPrefix(st.Command, "dnf5 upgrade --offline") {
+		t.Errorf("staged status wrong: %+v", st)
+	}
+	staged = false
+	if st := DnfOfflineStatus(context.Background(), run, p); st.Staged {
+		t.Errorf("no transaction must not be staged: %+v", st)
+	}
+	if !DnfHasUpgrades(context.Background(), run, p, ModeSecurity) {
+		t.Error("exit 100 means upgrades are available")
+	}
+	conf := string(RenderDnfAutomaticConf(ModeSecurity, nil, true))
+	if !strings.Contains(conf, "apply_updates = no") || !strings.Contains(conf, DnfOfflineMarker) || !strings.Contains(conf, "upgrade_type = security") {
+		t.Errorf("offline conf wrong:\n%s", conf)
 	}
 }

@@ -237,6 +237,7 @@ chrome:
 # distribution's update engine, keeps its timer in step with the policy,
 # decides reboots and reports the update state.
 updates:
+  engine: auto          # detected; force dnf-automatic, unattended-upgrades, os-update, transactional-update or rpm-ostree
   state_path: /var/lib/bor/agent/updates-state.json
   backup_dir: /var/lib/bor/agent/updates-backups
   reconcile_interval: 10m

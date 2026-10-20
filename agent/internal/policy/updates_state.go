@@ -31,14 +31,18 @@ type UpdatesState struct {
 	// the file existed at all.
 	ConfigBackup  string `json:"config_backup,omitempty"`
 	ConfigExisted bool   `json:"config_existed,omitempty"`
-	// ConfigWritten records that Bor owns the engine configuration file.
-	ConfigWritten bool `json:"config_written,omitempty"`
+	// ConfigWritten records that Bor owns the engine configuration file;
+	// ConfigPath is that file, so a later engine restores the right one.
+	ConfigWritten bool   `json:"config_written,omitempty"`
+	ConfigPath    string `json:"config_path,omitempty"`
 	// Timers maps a timer unit to its enabled state before Bor changed it.
 	Timers map[string]bool `json:"timers,omitempty"`
 	// DropIns are the timer drop-ins Bor wrote.
 	DropIns []string `json:"drop_ins,omitempty"`
 	// Locks are the zypper package locks Bor added.
 	Locks []string `json:"locks,omitempty"`
+	// OfflineStaged records that Bor stored a dnf5 offline transaction.
+	OfflineStaged bool `json:"offline_staged,omitempty"`
 	// Reboot bookkeeping.
 	RebootPendingSince     *time.Time `json:"reboot_pending_since,omitempty"`
 	RebootReasons          []string   `json:"reboot_reasons,omitempty"`
@@ -96,7 +100,7 @@ func newUpdatesState() *UpdatesState {
 
 // Empty reports whether nothing is recorded.
 func (s *UpdatesState) Empty() bool {
-	return s.ConfigBackup == "" && !s.ConfigWritten && len(s.Timers) == 0 && len(s.DropIns) == 0 && len(s.Locks) == 0 &&
+	return s.ConfigBackup == "" && !s.ConfigWritten && len(s.Timers) == 0 && len(s.DropIns) == 0 && len(s.Locks) == 0 && !s.OfflineStaged &&
 		s.RebootPendingSince == nil && s.RebootWarnedAt == nil && s.LastPolicyReboot == nil &&
 		s.LastScan == nil && len(s.PendingSince) == 0
 }

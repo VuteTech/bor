@@ -39,6 +39,11 @@ message UpdatesPolicy {
   UpdatesLimits limits = 8;
   // Firmware (fwupd) settings.
   UpdatesFirmware firmware = 9;
+  // Install the updates offline: the engine only downloads, the agent
+  // stores a dnf5 offline transaction and the reboot rule's reboot runs
+  // it before the system comes up. dnf5 systems only; elsewhere the
+  // item is inapplicable.
+  bool offline = 10;
 }
 
 message UpdatesLimits {

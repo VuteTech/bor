@@ -17,7 +17,7 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export type UpdatesEngine = "none" | "dnf-automatic" | "unattended-upgrades" | "os-update" | "rpm-ostree" | "";
+export type UpdatesEngine = "none" | "dnf-automatic" | "unattended-upgrades" | "os-update" | "transactional-update" | "rpm-ostree" | "";
 
 export interface UpdatesRun {
   time?: string;
@@ -118,6 +118,33 @@ export interface UpdatesFleetSummary {
   engineMissing: number;
 }
 
+/** Download the pending updates of the scope (or one node) as CSV. */
+export async function downloadUpdatesExport(opts: { security?: boolean; nodeId?: string; group?: string; q?: string } = {}): Promise<number> {
+  const qs = new URLSearchParams();
+  if (opts.security) qs.set("security", "1");
+  if (opts.nodeId) qs.set("node", opts.nodeId);
+  if (opts.group) qs.set("group", opts.group);
+  if (opts.q) qs.set("q", opts.q);
+  const res = await fetch(`/api/v1/updates/export?${qs.toString()}`, { credentials: "same-origin", headers: authHeaders() });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const b = await res.json();
+      if (b.error) detail = b.error;
+    } catch { /* swallow */ }
+    throw new Error(detail);
+  }
+  const text = await res.text();
+  const blob = new Blob([text], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = res.headers.get("Content-Disposition")?.match(/filename=([^;]+)/)?.[1] ?? "pending-updates.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+  return Math.max(0, text.split("\n").filter((l) => l.trim()).length - 1);
+}
+
 export async function fetchUpdatesSummary(): Promise<UpdatesFleetSummary> {
   return apiRequest<UpdatesFleetSummary>("/api/v1/updates/summary", { headers: authHeaders() });
 }
@@ -127,6 +154,7 @@ export function updatesEngineLabel(engine: string): string {
     case "dnf-automatic": return "dnf-automatic";
     case "unattended-upgrades": return "unattended-upgrades";
     case "os-update": return "os-update";
+    case "transactional-update": return "transactional-update";
     case "rpm-ostree": return "rpm-ostree";
     case "none": return "No update engine";
     default: return "";

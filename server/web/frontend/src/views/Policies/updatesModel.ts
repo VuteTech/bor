@@ -50,6 +50,8 @@ export interface UpdatesContent {
   requireEngine: boolean;
   limits: UpdatesLimits;
   firmware: UpdatesFirmware;
+  /** Store a dnf5 offline transaction and install it at the reboot. */
+  offline: boolean;
 }
 
 export const UPDATES_MAX_LIMIT_DAYS = 3650;
@@ -97,6 +99,7 @@ export function emptyUpdatesContent(): UpdatesContent {
     requireEngine: false,
     limits: { securityMaxAgeDays: 0, rebootMaxAgeDays: 0, checkMaxAgeDays: 0 },
     firmware: { refreshMetadata: null, reportPending: false },
+    offline: false,
   };
 }
 
@@ -129,6 +132,7 @@ export function parseUpdatesContent(raw: string): UpdatesContent {
   c.limits = { securityMaxAgeDays: num(l.securityMaxAgeDays), rebootMaxAgeDays: num(l.rebootMaxAgeDays), checkMaxAgeDays: num(l.checkMaxAgeDays) };
   const f = obj(d.firmware);
   c.firmware = { refreshMetadata: typeof f.refreshMetadata === "boolean" ? f.refreshMetadata : null, reportPending: f.reportPending === true };
+  c.offline = d.offline === true;
   return c;
 }
 
@@ -154,6 +158,7 @@ export function serializeUpdatesContent(c: UpdatesContent): string {
   if (c.removeUnusedDependencies) out.removeUnusedDependencies = true;
   if (!c.installEngine) out.installEngine = false;
   if (c.requireEngine) out.requireEngine = true;
+  if (c.offline) out.offline = true;
   if (hasLimits(c.limits)) {
     const l: Record<string, unknown> = {};
     if (c.limits.securityMaxAgeDays > 0) l.securityMaxAgeDays = c.limits.securityMaxAgeDays;
@@ -208,13 +213,14 @@ export function calendarProblem(v: string): string | null {
 
 export function hasUpdatesSettings(c: UpdatesContent): boolean {
   return c.mode !== "UPDATES_MODE_UNSPECIFIED" || !!c.schedule.onCalendar || c.reboot.policy !== "UPDATES_REBOOT_UNSPECIFIED" ||
-    c.hold.length > 0 || c.removeUnusedDependencies || c.requireEngine || !c.installEngine ||
+    c.hold.length > 0 || c.removeUnusedDependencies || c.requireEngine || !c.installEngine || c.offline ||
     hasLimits(c.limits) || c.firmware.refreshMetadata !== null || c.firmware.reportPending;
 }
 
 /** Why the content cannot be saved, or null. */
 export function validateUpdatesContent(c: UpdatesContent): string | null {
   if (!hasUpdatesSettings(c)) return "Set a mode, a schedule, a reboot rule, a hold or a limit";
+  if (c.offline && c.mode !== "UPDATES_MODE_SECURITY" && c.mode !== "UPDATES_MODE_ALL") return "Offline installs need the security or all mode";
   if (c.schedule.onCalendar) {
     const p = calendarProblem(c.schedule.onCalendar);
     if (p) return `Schedule: ${p}`;

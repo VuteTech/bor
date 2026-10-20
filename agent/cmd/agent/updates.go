@@ -62,12 +62,30 @@ var (
 // updatesPlatform is detected once; the engine does not change while the
 // agent runs, only whether its package is installed.
 var (
-	updatesPlatformOnce sync.Once
-	updatesPlatform     *updates.Platform
+	updatesPlatformOnce   sync.Once
+	updatesPlatform       *updates.Platform
+	updatesEngineOverride string
 )
 
+// setUpdatesEngineOverride records the engine the configuration forces
+// (updates.engine); unknown names fall back to detection with a warning.
+func setUpdatesEngineOverride(name string) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" || name == "auto" {
+		return
+	}
+	for _, e := range updates.KnownEngines {
+		if string(e) == name {
+			updatesEngineOverride = name
+			log.Printf("software updates: engine forced to %s by updates.engine", name)
+			return
+		}
+	}
+	log.Printf("software updates: unknown updates.engine %q ignored; detecting the engine", name)
+}
+
 func updatesPlatformCached() *updates.Platform {
-	updatesPlatformOnce.Do(func() { updatesPlatform = updates.Detect() })
+	updatesPlatformOnce.Do(func() { updatesPlatform = updates.DetectEngine(updatesEngineOverride) })
 	return updatesPlatform
 }
 
@@ -152,9 +170,17 @@ func updatesDeps(cfg *config.Config) *policy.UpdatesDeps {
 	return deps
 }
 
-// rebootNode starts the reboot: through rebootmgr when it runs (SUSE's
-// maintenance windows), otherwise systemctl.
+// rebootNode starts the reboot: into dnf5's stored offline transaction
+// when one is staged, through rebootmgr when it runs (SUSE's maintenance
+// windows), otherwise systemctl.
 func rebootNode(ctx context.Context, cfg *config.Config) error {
+	if p := updatesPlatformCached(); p.DNF5 && p.DnfBin != "" && updates.DnfOfflineStatus(ctx, updates.DefaultRunner, p).Staged {
+		err := updates.DnfOfflineReboot(ctx, updates.DefaultRunner, p)
+		if err == nil {
+			return nil
+		}
+		log.Printf("updates: dnf5 offline reboot failed (%v); falling back to a plain reboot", err)
+	}
 	if path, err := exec.LookPath("rebootmgrctl"); err == nil {
 		if bus := systemdManager(cfg); bus != nil {
 			if st, serr := bus.Status(ctx, "rebootmgr.service"); serr == nil && st != nil && st.IsActive() {
@@ -337,8 +363,10 @@ func updatesRebootTick(ctx context.Context, client *policyclient.Client, cfg *co
 	if desired.Reboot == nil {
 		return
 	}
-	suppressManagedWrites(cfg, cfg.Updates.StatePath)
 	dec := policy.EvaluateReboot(ctx, updatesDeps(cfg), desired, state, updatesSyncOptions(cfg, false))
+	// The signals above run package manager commands that can outlast the
+	// watcher's two-second window: open it right before the write.
+	suppressManagedWrites(cfg, cfg.Updates.StatePath)
 	_ = policy.SaveUpdatesState(cfg.Updates.StatePath, state)
 	switch {
 	case dec.Rebooted:
@@ -473,6 +501,24 @@ func updatesActionInstall(ctx context.Context, client *policyclient.Client, cfg 
 	toolCtx, cancel := context.WithTimeout(ctx, cfg.Updates.ToolTimeout)
 	defer cancel()
 	start := time.Now()
+	if desired.Offline && p.DNF5 && p.DnfBin != "" {
+		// The policy installs offline: store the transaction now; the
+		// reboot rule (or the reboot action) runs it.
+		if st := updates.DnfOfflineStatus(toolCtx, updates.DefaultRunner, p); st.Staged {
+			return true, fmt.Sprintf("%d package(s) already staged for the next boot", st.Packages), ""
+		}
+		out, err := updates.DnfOfflineStage(toolCtx, updates.DefaultRunner, p, mode)
+		text = tailString(string(out), updatesActionTextLimit)
+		if err != nil {
+			return false, fmt.Sprintf("storing the offline transaction failed after %s: %v", time.Since(start).Round(time.Second), err), text
+		}
+		st := updates.DnfOfflineStatus(toolCtx, updates.DefaultRunner, p)
+		syncAllUpdates(ctx, client, cfg, true)
+		if !st.Staged {
+			return true, "nothing to stage", text
+		}
+		return true, fmt.Sprintf("%d package(s) staged for the next boot in %s", st.Packages, time.Since(start).Round(time.Second)), text
+	}
 	out, err := updates.DefaultRunner(toolCtx, bin, args...)
 	text = tailString(string(out), updatesActionTextLimit)
 	elapsed := time.Since(start).Round(time.Second)

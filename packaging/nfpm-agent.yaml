@@ -86,3 +86,7 @@ overrides:
 scripts:
   postinstall: packaging/scripts/postinstall-agent.sh
   preremove: packaging/scripts/preremove-agent.sh
+
+rpm:
+  scripts:
+    posttrans: packaging/scripts/posttrans-agent.sh

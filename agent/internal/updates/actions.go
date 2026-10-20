@@ -16,7 +16,7 @@ func RefreshCommand(p *Platform) (bin string, args []string) {
 		if p.AptGetBin != "" {
 			return p.AptGetBin, []string{"update"}
 		}
-	case EngineOsUpdate:
+	case EngineOsUpdate, EngineTransactional:
 		if p.ZypperBin != "" {
 			return p.ZypperBin, []string{"--non-interactive", "refresh"}
 		}
@@ -55,6 +55,8 @@ func EngineRunCommand(p *Platform, mode Mode) (bin string, args []string, reason
 		return p.EngineRunBin, []string{"-v"}, ""
 	case EngineOsUpdate:
 		return p.EngineRunBin, nil, ""
+	case EngineTransactional:
+		return p.EngineRunBin, []string{"--non-interactive", "--quiet", TransactionalMethod(mode, p.OSID, p.Variant)}, ""
 	case EngineRpmOstree:
 		if mode == ModeCheck {
 			return p.EngineRunBin, []string{"upgrade", "--check"}, ""

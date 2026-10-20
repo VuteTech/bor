@@ -170,6 +170,7 @@ type MacConfig struct {
 // unattended-upgrades, os-update, rpm-ostree), keeps its timer in step
 // with the policy, decides reboots and reports the update state.
 type UpdatesConfig struct {
+	Engine              string        `yaml:"engine"`                // update engine to drive: auto (detected), dnf-automatic, unattended-upgrades, os-update, transactional-update, rpm-ostree
 	StatePath           string        `yaml:"state_path"`            // record of original states (default /var/lib/bor/agent/updates-state.json)
 	BackupDir           string        `yaml:"backup_dir"`            // backups of engine configuration files Bor replaced (default /var/lib/bor/agent/updates-backups)
 	ReconcileInterval   time.Duration `yaml:"reconcile_interval"`    // re-assert the engine state this often while policies apply; 0 disables (default 10m)
@@ -344,6 +345,7 @@ func DefaultConfig() *Config {
 			AllowActions:      true,
 		},
 		Updates: UpdatesConfig{
+			Engine:              "auto",
 			StatePath:           "/var/lib/bor/agent/updates-state.json",
 			BackupDir:           "/var/lib/bor/agent/updates-backups",
 			ReconcileInterval:   10 * time.Minute,

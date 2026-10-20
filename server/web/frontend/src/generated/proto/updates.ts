@@ -101,7 +101,16 @@ export interface UpdatesPolicy {
     | UpdatesLimits
     | undefined;
   /** Firmware (fwupd) settings. */
-  firmware: UpdatesFirmware | undefined;
+  firmware:
+    | UpdatesFirmware
+    | undefined;
+  /**
+   * Install the updates offline: the engine only downloads, the agent
+   * stores a dnf5 offline transaction and the reboot rule's reboot runs
+   * it before the system comes up. dnf5 systems only; elsewhere the
+   * item is inapplicable.
+   */
+  offline: boolean;
 }
 
 export interface UpdatesLimits {
