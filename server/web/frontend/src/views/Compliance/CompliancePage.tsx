@@ -65,6 +65,22 @@ const SYSTEMD_ITEM_LABELS: Record<string, string> = {
   "systemd:unit": "Unit",
   "systemd:task": "Scheduled task",
   "systemd:preset": "Preset file",
+  "selinux:active": "SELinux",
+  "selinux:mode": "SELinux mode",
+  "selinux:boolean": "Boolean",
+  "selinux:permissive": "Permissive domain",
+  "selinux:module": "Module",
+  "selinux:custom": "Custom module",
+  "selinux:fcontext": "File context",
+  "selinux:login": "Login mapping",
+  "apparmor:enabled": "AppArmor",
+  "apparmor:service": "Service",
+  "apparmor:userns": "User namespace restriction",
+  "apparmor:unconfined": "Unconfined restriction",
+  "apparmor:profile": "Profile",
+  "apparmor:custom": "Custom profile",
+  "apparmor:local": "Local override",
+  "apparmor:homedirs": "Home directories",
 };
 
 const STATUS_COLORS: Record<ComplianceStatus, "green" | "red" | "grey" | "yellow" | "orange"> = {
@@ -165,7 +181,18 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
                 {STATUS_LABELS[item.status] ?? item.status}
               </Label>
             </Td>
-            <Td dataLabel="Details">{item.message ?? "—"}</Td>
+            <Td dataLabel="Details">
+              {item.message ?? "—"}
+              {item.controls?.length ? (
+                <div style={{ marginTop: "0.25rem", display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                  {item.controls.map((c) => (
+                    <Label key={`${c.framework}-${c.id}`} isCompact variant="outline" title={`${c.framework}: ${c.title}`}>
+                      {c.short}
+                    </Label>
+                  ))}
+                </div>
+              ) : null}
+            </Td>
           </Tr>
         );
       })}

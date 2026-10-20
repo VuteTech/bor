@@ -38,8 +38,11 @@ type PolicyServer struct {
 	systemdRepo systemdRepository
 	// systemdActions receives on-demand unit action results; nil drops them.
 	systemdActions systemdActionSink
-	hub            *PolicyHub
-	diskEncSvc     *services.DiskEncryptionService
+	macRepo        macRepository
+	// macActions receives on-demand mandatory access control action results.
+	macActions macActionSink
+	hub        *PolicyHub
+	diskEncSvc *services.DiskEncryptionService
 }
 
 // dconfRepository is the subset of database.DConfRepository used by PolicyServer.
@@ -208,6 +211,12 @@ func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequ
 			return nil
 		case ev := <-updates:
 			if IsResyncSignal(ev.update) {
+				// The node's group membership may have changed since the
+				// stream started (an administrator moved the node); the
+				// overlap check and the snapshot must see the current set.
+				if fresh, lookupErr := s.nodeSvc.GetNodeByName(ctx, clientID); lookupErr == nil && fresh != nil {
+					node = fresh
+				}
 				// Only resync if this agent's groups are in the affected set.
 				// An empty affectedGroupIDs means "all agents".
 				if !groupsOverlap(node.NodeGroupIDs, ev.affectedGroupIDs) {
@@ -407,6 +416,8 @@ func (s *PolicyServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) 
 		info.DesktopEnvs = ni.GetDesktopEnvs()
 		info.AgentVersion = ni.GetAgentVersion()
 		info.MachineID = ni.GetMachineId()
+		info.LSM = ni.GetLsm()
+		info.LSMMode = ni.GetLsmMode()
 	}
 
 	if err := s.nodeSvc.ProcessHeartbeat(ctx, node.ID, info); err != nil {
@@ -646,6 +657,20 @@ func modelToProto(p *models.Policy) *pb.Policy {
 			log.Printf("WARNING: failed to unmarshal Systemd typed_content for policy %s: %v", p.ID, err)
 		} else {
 			pol.TypedContent = &pb.Policy_SystemdPolicy{SystemdPolicy: &sdPol}
+		}
+	case "Selinux":
+		var sePol pb.SelinuxPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &sePol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Selinux typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_SelinuxPolicy{SelinuxPolicy: &sePol}
+		}
+	case "Apparmor":
+		var aaPol pb.ApparmorPolicy
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(p.Content), &aaPol); err != nil {
+			log.Printf("WARNING: failed to unmarshal Apparmor typed_content for policy %s: %v", p.ID, err)
+		} else {
+			pol.TypedContent = &pb.Policy_ApparmorPolicy{ApparmorPolicy: &aaPol}
 		}
 	}
 

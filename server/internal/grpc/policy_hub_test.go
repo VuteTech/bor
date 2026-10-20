@@ -376,6 +376,44 @@ func TestPolicyHub_PublishResync_SubscriberReceivesSignal(t *testing.T) {
 	}
 }
 
+func TestPolicyHub_SendResync_TargetsOneClient(t *testing.T) {
+	hub := NewPolicyHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	chA, unsubA := hub.Subscribe(ctx, "node-a")
+	defer unsubA()
+	chB, unsubB := hub.Subscribe(ctx, "node-b")
+	defer unsubB()
+
+	if hub.SendResync("node-c") {
+		t.Error("SendResync to an unknown client should return false")
+	}
+	if !hub.SendResync("node-a") {
+		t.Fatal("SendResync to a connected client should return true")
+	}
+
+	select {
+	case ev := <-chA:
+		if !IsResyncSignal(ev.update) {
+			t.Errorf("node-a got %v, want a resync signal", ev.update.Type)
+		}
+		if len(ev.affectedGroupIDs) != 0 {
+			t.Errorf("a targeted resync must not carry group filters, got %v", ev.affectedGroupIDs)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("node-a did not receive the resync")
+	}
+	select {
+	case ev := <-chB:
+		t.Errorf("node-b must not receive a resync addressed to node-a, got %v", ev.update.Type)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if hub.Revision() != 0 {
+		t.Errorf("a targeted resync must not advance the revision, got %d", hub.Revision())
+	}
+}
+
 // fakeRevisionStore is an in-memory RevisionStore for tests. Like the
 // database implementation, it only ever raises the stored high-water mark.
 type fakeRevisionStore struct {

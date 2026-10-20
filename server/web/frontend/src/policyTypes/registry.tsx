@@ -23,6 +23,7 @@ import SlidersHIcon from "@patternfly/react-icons/dist/esm/icons/sliders-h-icon"
 import KeyIcon from "@patternfly/react-icons/dist/esm/icons/key-icon";
 import LockIcon from "@patternfly/react-icons/dist/esm/icons/lock-icon";
 import ShieldAltIcon from "@patternfly/react-icons/dist/esm/icons/shield-alt-icon";
+import FingerprintIcon from "@patternfly/react-icons/dist/esm/icons/fingerprint-icon";
 import UserClockIcon from "@patternfly/react-icons/dist/esm/icons/user-clock-icon";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
 import CogIcon from "@patternfly/react-icons/dist/esm/icons/cog-icon";
@@ -35,6 +36,8 @@ import { KdeMarkIcon } from "../icons/policyTypes/KdeMarkIcon";
 import { FlatpakMarkIcon } from "../icons/policyTypes/FlatpakMarkIcon";
 import { hasAnyKConfigContent, parseKConfigContent } from "../views/Policies/editors/kconfigModel";
 import { parseSystemdContent, validateSystemdContent } from "../views/Policies/systemdModel";
+import { parseSelinuxContent, validateSelinuxContent } from "../views/Policies/selinuxModel";
+import { parseApparmorContent, validateApparmorContent } from "../views/Policies/apparmorModel";
 
 export type PolicyTypeId =
   | "Firefox"
@@ -46,6 +49,8 @@ export type PolicyTypeId =
   | "Polkit"
   | "Firewalld"
   | "Systemd"
+  | "Selinux"
+  | "Apparmor"
   | "SessionAccess"
   | "Package"
   | "Flatpak"
@@ -363,6 +368,62 @@ export const POLICY_TYPES: Record<PolicyTypeId, PolicyTypeDef> = {
       return validateSystemdContent(parseSystemdContent(content));
     },
   },
+  Selinux: {
+    id: "Selinux",
+    label: "SELinux",
+    category: "system",
+    tagline: "Enforcement mode, booleans, exceptions and modules",
+    description:
+      "Keep SELinux enforcing on RHEL, Fedora and SUSE desktops and manage its booleans, per-domain permissive exceptions, policy modules, Bor-deployed CIL modules, file contexts and login mappings. Policies bound to the same node are merged per key by binding priority; nodes without SELinux report the policy as inapplicable unless it requires SELinux.",
+    manages: [
+      "The runtime mode and SELINUX= in /etc/selinux/config",
+      "Booleans through setsebool -P",
+      "Bor modules bor-permissive, bor-filecontexts and bor-<name> at semodule priority 450, with their sources in /etc/bor/selinux",
+      "Login mappings through semanage login",
+      "/var/lib/bor/agent/selinux-state.json (original values, restored on removal)",
+    ],
+    appliesTo: ["Nodes that run SELinux (Fedora, RHEL, Rocky, AlmaLinux, SLES 16, openSUSE Leap 16)"],
+    examples: [
+      "Keep every RHEL desktop enforcing and flag the ones someone switched to permissive",
+      "Allow NFS home directories and deny ptrace fleet-wide",
+      "Make a third-party agent's domain permissive instead of the whole system",
+    ],
+    docsHref: `${DOCS_BASE}/selinux.md`,
+    Icon: ShieldAltIcon,
+    defaultContent: () => pretty({ requireActive: true }),
+    validateContent: (content) => {
+      if (!parseObject(content)) return "SELinux policy content is not valid JSON";
+      return validateSelinuxContent(parseSelinuxContent(content));
+    },
+  },
+  Apparmor: {
+    id: "Apparmor",
+    label: "AppArmor",
+    category: "system",
+    tagline: "Profile modes, user namespace restriction and custom profiles",
+    description:
+      "Keep AppArmor enabled on Ubuntu, Debian and SUSE 15 desktops, set the mode of vendor profiles by name or pattern, control the user namespace restriction, deploy custom profiles (for example the stub that lets one application use sandboxes), add site-local rules to vendor profiles and extra home directory roots. Nodes without AppArmor report the policy as inapplicable unless it requires AppArmor.",
+    manages: [
+      "disable/ and force-complain/ links under /etc/apparmor.d (vendor files stay untouched)",
+      "/etc/apparmor.d/bor-<name> profiles, checked with apparmor_parser before loading",
+      "A managed block in /etc/apparmor.d/local/<profile> and tunables/home.d/bor",
+      "/etc/sysctl.d/zz-bor-apparmor.conf for the user namespace switches",
+      "/var/lib/bor/agent/apparmor-state.json (original states, restored on removal)",
+    ],
+    appliesTo: ["Nodes that run AppArmor (Ubuntu, Debian, SLES 15, openSUSE Leap 15)"],
+    examples: [
+      "Enforce every vendor profile on the Ubuntu fleet and see which ones cannot be",
+      "Allow user namespaces for an in-house Electron application on Ubuntu 24.04",
+      "Add NFS home directories to every profile's @{HOMEDIRS}",
+    ],
+    docsHref: `${DOCS_BASE}/apparmor.md`,
+    Icon: FingerprintIcon,
+    defaultContent: () => pretty({ requireEnabled: true }),
+    validateContent: (content) => {
+      if (!parseObject(content)) return "AppArmor policy content is not valid JSON";
+      return validateApparmorContent(parseApparmorContent(content));
+    },
+  },
   SessionAccess: {
     id: "SessionAccess",
     label: "Session Access",
@@ -519,6 +580,8 @@ export const POLICY_TYPE_ORDER: PolicyTypeId[] = [
   "Polkit",
   "Firewalld",
   "Systemd",
+  "Selinux",
+  "Apparmor",
   "SessionAccess",
   "Package",
   "Flatpak",

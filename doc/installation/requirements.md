@@ -88,6 +88,8 @@ agent log explains which tool was not found.
 | Dconf | GNOME / dconf with the `dconf` command (runs `dconf update`). |
 | Polkit | polkit (`polkitd`); `pkaction` is used to discover available actions. |
 | Firewall | firewalld installed and running (`firewall-cmd`). Without it the policy is Inapplicable. |
+| SELinux | SELinux active (`/sys/fs/selinux` mounted) and the C tools of every SELinux installation: `setsebool`, `semodule`, `restorecon`. `semanage` (`policycoreutils-python-utils`) for login mappings; `audit2allow` and `checkmodule` for module proposals. Without SELinux the policy is Inapplicable unless it requires SELinux. |
+| AppArmor | AppArmor enabled in the kernel and `apparmor_parser` (package `apparmor`). Without AppArmor the policy is Inapplicable unless it requires AppArmor. |
 | Session Access | `loginctl` (systemd-logind). Login-time enforcement uses `pam_time` through `pam-auth-update` (Debian/Ubuntu) or authselect (Fedora/RHEL). |
 | Package | PackageKit on the system D-Bus, and one of `apt`, `dnf`/`yum` or `zypper`. Other package managers make the policy Inapplicable. |
 | Flatpak apps | `flatpak` installed. Without it the policy is Inapplicable. |

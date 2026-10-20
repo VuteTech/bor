@@ -25,6 +25,9 @@ type Config struct {
 	Firewalld   FirewalldConfig   `yaml:"firewalld"`
 	Flatpak     FlatpakConfig     `yaml:"flatpak"`
 	Systemd     SystemdConfig     `yaml:"systemd"`
+	Selinux     SelinuxConfig     `yaml:"selinux"`
+	Apparmor    ApparmorConfig    `yaml:"apparmor"`
+	Mac         MacConfig         `yaml:"mac"`
 	KConfig     KConfigConfig     `yaml:"kconfig"`
 	Enrollment  EnrollmentConfig  `yaml:"enrollment"`
 	Kerberos    KerberosConfig    `yaml:"kerberos"`
@@ -115,6 +118,50 @@ type SystemdConfig struct {
 	UserDir           string        `yaml:"user_dir"`           // unit directory of the user-manager scope (default /etc/systemd/user)
 	UserPresetDir     string        `yaml:"user_preset_dir"`    // preset directory of the user-manager scope (default /etc/systemd/user-preset)
 	AllowActions      bool          `yaml:"allow_actions"`      // run start/stop/restart requested from the node page (default true)
+}
+
+// SelinuxConfig holds the settings of the SELinux policy. The agent sets
+// the mode through selinuxfs and /etc/selinux/config, booleans with
+// setsebool, writes Bor's CIL modules under ModulesDir and installs them
+// with semodule at ModulePriority, and keeps the original values in
+// StatePath so they can be restored.
+type SelinuxConfig struct {
+	ConfigPath         string        `yaml:"config_path"`          // /etc/selinux/config
+	ModulesDir         string        `yaml:"modules_dir"`          // Bor CIL module sources (default /etc/bor/selinux)
+	ModulePriority     int           `yaml:"module_priority"`      // semodule -X priority of Bor modules (default 450)
+	StatePath          string        `yaml:"state_path"`           // record of original values (default /var/lib/bor/agent/selinux-state.json)
+	ReconcileInterval  time.Duration `yaml:"reconcile_interval"`   // re-assert the state this often while policies apply; 0 disables (default 5m)
+	AllowModeChange    bool          `yaml:"allow_mode_change"`    // let policies switch between enforcing and permissive (default true)
+	AllowCustomModules bool          `yaml:"allow_custom_modules"` // install Bor CIL modules and file contexts (default true)
+	FollowAudit        bool          `yaml:"follow_audit"`         // follow the audit log so a manual change is reconciled within seconds (default true)
+	ToolTimeout        time.Duration `yaml:"tool_timeout"`         // maximum run time of one semodule or setsebool call (default 5m)
+}
+
+// ApparmorConfig holds the settings of the AppArmor policy. The agent
+// manages profile modes through the disable and force-complain links of
+// ProfilesDir, writes Bor profiles there, local overrides under its
+// local/ directory and the home directory tunable, and drives
+// apparmor_parser.
+type ApparmorConfig struct {
+	ProfilesDir          string        `yaml:"profiles_dir"`            // /etc/apparmor.d
+	ParserBinary         string        `yaml:"parser_binary"`           // apparmor_parser executable (default "apparmor_parser")
+	SysctlPath           string        `yaml:"sysctl_path"`             // sysctl.d file for the user namespace switches (default /etc/sysctl.d/zz-bor-apparmor.conf)
+	StatePath            string        `yaml:"state_path"`              // record of original states (default /var/lib/bor/agent/apparmor-state.json)
+	BackupDir            string        `yaml:"backup_dir"`              // backups of vendor files whose flags were edited (default /var/lib/bor/agent/apparmor-backups)
+	ReconcileInterval    time.Duration `yaml:"reconcile_interval"`      // re-assert the state this often while policies apply; 0 disables (default 5m)
+	AllowCustomProfiles  bool          `yaml:"allow_custom_profiles"`   // write Bor profiles and local overrides (default true)
+	AllowVendorFlagEdits bool          `yaml:"allow_vendor_flag_edits"` // let policies edit the mode flags inside vendor profile files (default false)
+	FollowAudit          bool          `yaml:"follow_audit"`            // follow the audit log so a manual change is reconciled within seconds (default true)
+	ToolTimeout          time.Duration `yaml:"tool_timeout"`            // maximum run time of one apparmor_parser call (default 2m)
+}
+
+// MacConfig holds what both mandatory access control types share: the
+// inventory report cadence and the denial summary.
+type MacConfig struct {
+	InventoryInterval time.Duration `yaml:"inventory_interval"` // how often the inventory is re-sent while connected (default 1h)
+	DenialWindow      time.Duration `yaml:"denial_window"`      // how far back denials are summarised (default 24h)
+	CollectDenials    bool          `yaml:"collect_denials"`    // read the audit records of the journal for the denial summary (default true)
+	AllowActions      bool          `yaml:"allow_actions"`      // answer proposal requests from the node page (default true)
 }
 
 // FlatpakConfig holds Flatpak enforcement settings. The agent renders the
@@ -250,6 +297,34 @@ func DefaultConfig() *Config {
 			AnalyzeBinary:     "systemd-analyze",
 			UserDir:           "/etc/systemd/user",
 			UserPresetDir:     "/etc/systemd/user-preset",
+			AllowActions:      true,
+		},
+		Selinux: SelinuxConfig{
+			ConfigPath:         "/etc/selinux/config",
+			ModulesDir:         "/etc/bor/selinux",
+			ModulePriority:     450,
+			StatePath:          "/var/lib/bor/agent/selinux-state.json",
+			ReconcileInterval:  5 * time.Minute,
+			AllowModeChange:    true,
+			AllowCustomModules: true,
+			FollowAudit:        true,
+			ToolTimeout:        5 * time.Minute,
+		},
+		Apparmor: ApparmorConfig{
+			ProfilesDir:         "/etc/apparmor.d",
+			ParserBinary:        "apparmor_parser",
+			SysctlPath:          "/etc/sysctl.d/zz-bor-apparmor.conf",
+			StatePath:           "/var/lib/bor/agent/apparmor-state.json",
+			BackupDir:           "/var/lib/bor/agent/apparmor-backups",
+			ReconcileInterval:   5 * time.Minute,
+			AllowCustomProfiles: true,
+			FollowAudit:         true,
+			ToolTimeout:         2 * time.Minute,
+		},
+		Mac: MacConfig{
+			InventoryInterval: time.Hour,
+			DenialWindow:      24 * time.Hour,
+			CollectDenials:    true,
 			AllowActions:      true,
 		},
 		KConfig: KConfigConfig{

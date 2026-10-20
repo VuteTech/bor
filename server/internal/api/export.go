@@ -45,11 +45,20 @@ func (h *ExportHandler) WithAuthorizer(az authz.Authorizer) *ExportHandler {
 
 // callerHasSystemdExec reports whether the caller holds systemd:exec.
 func (h *ExportHandler) callerHasSystemdExec(r *http.Request) bool {
+	return h.callerHas(r, "systemd", "exec")
+}
+
+// callerHasMacAuthor reports whether the caller holds mac:author.
+func (h *ExportHandler) callerHasMacAuthor(r *http.Request) bool {
+	return h.callerHas(r, "mac", "author")
+}
+
+func (h *ExportHandler) callerHas(r *http.Request, resource, action string) bool {
 	claims := GetUserFromContext(r.Context())
 	if claims == nil || h.az == nil {
 		return false
 	}
-	ok, err := h.az.HasPermission(r.Context(), claims.UserID, "systemd", "exec")
+	ok, err := h.az.HasPermission(r.Context(), claims.UserID, resource, action)
 	return ok && err == nil
 }
 
@@ -190,8 +199,10 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	// policy:create. The check runs inside content validation because the
 	// bundle, not the route, says which policies run commands.
 	var commandSummaries []string
+	var macSummaries []string
 	hasExec := h.callerHasSystemdExec(r)
-	execDenied := false
+	hasAuthor := h.callerHasMacAuthor(r)
+	execDenied, authorDenied := false, false
 	validate := func(policyType, content string) error {
 		if systemdExecRequired(policyType, content) {
 			if !hasExec {
@@ -199,6 +210,13 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 				return fmt.Errorf("this policy runs commands on nodes; the systemd:exec permission is required to import it")
 			}
 			commandSummaries = append(commandSummaries, services.SystemdCommandSummary(content))
+		}
+		if macAuthorRequired(policyType, content) {
+			if !hasAuthor {
+				authorDenied = true
+				return fmt.Errorf("this policy carries custom SELinux or AppArmor policy text; the mac:author permission is required to import it")
+			}
+			macSummaries = append(macSummaries, `{"type":"`+policyType+`","content":`+services.MacCustomSummary(policyType, content)+`}`)
 		}
 		return services.ValidatePolicyContentByType(policyType, content)
 	}
@@ -210,6 +228,9 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 		validate, body, opts)
 	if execDenied {
 		auditDenial(r, "systemd", "exec", "", "import of a command-running Systemd policy without systemd:exec")
+	}
+	if authorDenied {
+		auditDenial(r, "mac", "author", "", "import of an SELinux or AppArmor policy with custom policy text without mac:author")
 	}
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -223,6 +244,9 @@ func (h *ExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 			report.Created, report.Updated, report.Skipped, report.Errors))
 		if report.Ok && len(commandSummaries) > 0 {
 			h.audit(r, "policy.systemd_exec", `{"verb":"import","commands":[`+strings.Join(commandSummaries, ",")+`]}`)
+		}
+		if report.Ok && len(macSummaries) > 0 {
+			h.audit(r, "policy.mac_custom", `{"verb":"import","policies":[`+strings.Join(macSummaries, ",")+`]}`)
 		}
 	}
 

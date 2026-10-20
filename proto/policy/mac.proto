@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Vute Tech LTD
+// Copyright (C) 2026 Bor contributors
+
+syntax = "proto3";
+
+package bor.policy.v1;
+
+option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
+
+import "google/protobuf/timestamp.proto";
+import "apparmor.proto";
+import "selinux.proto";
+
+// MacDenialGroup aggregates the mandatory access control denials of one
+// subject (SELinux source type or AppArmor profile) over the report window.
+// Paths are reduced to a prefix and user names are removed before the
+// report leaves the node.
+message MacDenialGroup {
+  // SELinux source type ("virt_qemu_ga_t") or AppArmor profile
+  // ("unprivileged_userns", "unconfined").
+  string subject = 1;
+  // The denied permission (SELinux: "getattr") or operation (AppArmor:
+  // "open", "userns_create", "capable").
+  string operation = 2;
+  // SELinux target class or AppArmor class ("file", "cap", "namespace").
+  string class = 3;
+  // Target type (SELinux) or path prefix / capability name (AppArmor).
+  string target = 4;
+  int32 count = 5;
+  google.protobuf.Timestamp last_seen = 6;
+  // One redacted example record.
+  string example = 7;
+  // The denial was only logged (permissive domain, complain mode).
+  bool permissive = 8;
+  // AppArmor: the executable that hit the user namespace restriction
+  // (execpath=, or comm= on older kernels).
+  string execpath = 9;
+}
+
+// ReportMacInventoryRequest carries the mandatory access control inventory
+// of a node: which LSM is active, its status, and the booleans, modules or
+// profiles the editors pick from, plus the denial summary.
+message ReportMacInventoryRequest {
+  string client_id = 1;
+  // selinux | apparmor | none
+  string lsm = 2;
+  SelinuxStatus selinux = 3;
+  repeated SelinuxBooleanInfo booleans = 4;
+  repeated SelinuxModuleInfo modules = 5;
+  ApparmorStatus apparmor = 6;
+  repeated ApparmorProfileInfo profiles = 7;
+  repeated MacDenialGroup denials = 8;
+  // Start of the denial window.
+  google.protobuf.Timestamp denials_since = 9;
+}
+
+message ReportMacInventoryResponse {}
+
+// MacActionKind is an on-demand operation requested from the node page.
+enum MacActionKind {
+  MAC_ACTION_UNSPECIFIED = 0;
+  // Run audit2allow over the recent denials of one SELinux domain and
+  // return the proposed module source.
+  MAC_ACTION_SELINUX_PROPOSE_MODULE = 1;
+  // Derive AppArmor rules from the recent denials of one profile and
+  // return them as text.
+  MAC_ACTION_APPARMOR_PROPOSE_RULES = 2;
+}
+
+// MacAction is the server-to-agent command carried by a PolicyUpdate of
+// type MAC_ACTION. The agent answers with ReportMacActionResult.
+message MacAction {
+  string id = 1;
+  MacActionKind kind = 2;
+  // The SELinux domain or AppArmor profile the proposal is for.
+  string subject = 3;
+  // How far back to read denials, in hours (default 24).
+  int32 window_hours = 4;
+}
+
+// ReportMacActionResultRequest is the outcome of one action.
+message ReportMacActionResultRequest {
+  string client_id = 1;
+  string action_id = 2;
+  bool success = 3;
+  string message = 4;
+  // The proposed text (CIL or Type Enforcement source for SELinux,
+  // profile rules for AppArmor).
+  string text = 5;
+}
+
+message ReportMacActionResultResponse {}

@@ -72,6 +72,15 @@ line per **Key**, its **Status** and **Details**, for example:
 Use the breakdown to find exactly which setting failed in a policy with
 many settings.
 
+Items that correspond to a control of a security benchmark carry a label
+with the control's number, for example **CIS RHEL 9 1.3.1.5** on the
+SELinux mode item or **CIS Ubuntu 24.04 1.3.1.4** on an AppArmor profile
+item; hovering the label shows the benchmark version and the control's
+title. The numbers are those of the benchmark version named, and other
+versions of the same benchmark number the same controls differently. The
+labels are also part of the `controls` list of each item in the
+compliance API, so an export can be grouped by control.
+
 ## Troubleshoot non-compliance
 
 1. **Read the message and the breakdown.** Expand the row; the failing key

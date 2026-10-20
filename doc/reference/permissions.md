@@ -102,6 +102,13 @@ hold yourself.
 | `systemd:exec` | Create, save, import or release a Services & timers policy that runs commands on nodes: one with scheduled tasks or raw `Exec*` directives. Checked on top of `policy:create` / `policy:edit`; every such save and release is audit-logged (`policy.systemd_exec`) with the task names and a SHA-256 of each script. A policy that only manages existing units needs no extra permission. |
 | `systemd:operate` | Start, stop or restart a unit on one node from the **Services & timers** section of the node details. The action runs on the node at once and is audit-logged (`systemd.unit_action`) with the outcome. Separate from `systemd:exec` so that operators can be allowed to restart services without being allowed to deploy scripts. Can be delegated per node group. |
 
+### Mandatory access control
+
+| Permission | Allows |
+|---|---|
+| `mac:author` | Create, save, import or release an SELinux or AppArmor policy that carries administrator-authored policy text: custom modules or profiles, local overrides, file contexts, login mappings or permissive domains. Checked on top of `policy:create` / `policy:edit`; every such save and release is audit-logged (`policy.mac_custom`) with the names and a SHA-256 of each text. A policy that only sets the mode, booleans, module switches or profile modes needs no extra permission. |
+| `mac:operate` | Ask one node for a policy proposal from the **Mandatory access control** section of the node details: `audit2allow` over the node's recent denials, or AppArmor rules derived from them. The proposal runs a tool on the node, reads its audit records and is audit-logged (`mac.action`); nothing is applied. Can be delegated per node group. |
+
 ## Built-in roles
 
 `Y` means the role holds the permission on a new installation.
@@ -156,6 +163,8 @@ hold yourself.
 | `disk_encryption:rotate` | Y | | | | | |
 | `systemd:exec` | Y | | | | | |
 | `systemd:operate` | Y | | | | | |
+| `mac:author` | Y | | | | | |
+| `mac:operate` | Y | | | | | |
 
 Built-in roles cannot be modified or deleted. To grant a different
 combination, create a custom role. Because `policy:release` is not

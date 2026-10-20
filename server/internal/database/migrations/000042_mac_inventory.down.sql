@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS node_mac_items;
+DROP TABLE IF EXISTS node_mac_status;
+DROP INDEX IF EXISTS idx_nodes_lsm;
+ALTER TABLE nodes DROP COLUMN IF EXISTS lsm_mode;
+ALTER TABLE nodes DROP COLUMN IF EXISTS lsm;

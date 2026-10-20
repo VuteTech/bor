@@ -32,6 +32,9 @@ export interface Node {
   os_name?: string;
   os_version?: string;
   desktop_env?: string;
+  /** Active mandatory access control system ("selinux", "apparmor", "none") and its mode. */
+  lsm?: string;
+  lsm_mode?: string;
   agent_version?: string;
   status: NodeStatus;
   status_reason?: string;
@@ -66,6 +69,7 @@ export interface NodeListParams {
   os?: string;
   desktop?: string;
   agent_version?: string;
+  lsm?: string;
   group?: string;
   sort_field?: string;
   sort_order?: "asc" | "desc";
@@ -83,6 +87,7 @@ export interface NodeFilterOptions {
   os: string[];
   desktops: string[];
   agent_versions: string[];
+  lsms?: string[];
 }
 
 /* ── API calls ── */

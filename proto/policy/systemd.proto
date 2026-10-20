@@ -150,6 +150,14 @@ message SystemdTask {
   // GLOBAL task runs in every user's manager as that user (user and
   // group must be empty) and is wanted by default.target at login.
   SystemdScope scope = 15;
+  // AppArmorProfile= of the service: the profile the task runs under, by
+  // the name it is loaded with on the node (for example bor-<name> from an
+  // AppArmor policy). A leading "-" lets the task start when the profile
+  // is missing.
+  string apparmor_profile = 16;
+  // SELinuxContext= of the service: the user:role:type[:level] the task
+  // runs as. A leading "-" lets the task start when the transition fails.
+  string selinux_context = 17;
 }
 
 // SystemdTimerSettings are [Timer] directives. Values use systemd syntax

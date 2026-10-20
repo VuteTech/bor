@@ -51,6 +51,10 @@ var systemdSyncMu sync.Mutex
 // systemdCatalogueReported is set once the unit inventory reached the server.
 var systemdCatalogueReported bool
 
+// macInventoryReported is set once the mandatory access control inventory
+// reached the server.
+var macInventoryReported bool
+
 // systemdReconcileCancel stops the reconcile ticker; nil when none runs.
 // Guarded by systemdSyncMu.
 var systemdReconcileCancel context.CancelFunc

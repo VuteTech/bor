@@ -82,16 +82,35 @@ func (fw *FileWatcher) SetManaged(paths []string) {
 
 // Suppress instructs the watcher to ignore events for the given paths for
 // duration d. Call this before any Bor-initiated file write to avoid
-// re-triggering a restore from the agent's own writes.
-// Empty strings in paths are silently ignored.
+// re-triggering a restore from the agent's own writes. A window already
+// open for a path is only ever extended: a sync that runs for a long
+// time keeps its window even when another policy type's sync asks for the
+// usual short one in the meantime. Empty strings in paths are silently
+// ignored.
 func (fw *FileWatcher) Suppress(paths []string, d time.Duration) {
+	fw.setSuppress(paths, time.Now().Add(d), false)
+}
+
+// SuppressReset is Suppress for the end of a long run: it shortens the
+// window of the given paths to d from now, whatever was set before.
+func (fw *FileWatcher) SuppressReset(paths []string, d time.Duration) {
+	fw.setSuppress(paths, time.Now().Add(d), true)
+}
+
+func (fw *FileWatcher) setSuppress(paths []string, until time.Time, force bool) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
-	until := time.Now().Add(d)
 	for _, p := range paths {
-		if p != "" {
-			fw.suppress[filepath.Clean(p)] = until
+		if p == "" {
+			continue
 		}
+		key := filepath.Clean(p)
+		if !force {
+			if existing, ok := fw.suppress[key]; ok && existing.After(until) {
+				continue
+			}
+		}
+		fw.suppress[key] = until
 	}
 }
 

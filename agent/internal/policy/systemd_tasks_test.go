@@ -57,9 +57,11 @@ func TestRenderSystemdTaskFiles(t *testing.T) {
 		WorkingDirectory: "/srv",
 		TimeoutStartSec:  "10min",
 		Hardened:         boolPtr(false),
+		ApparmorProfile:  "-bor-fixperms",
+		SelinuxContext:   "system_u:system_r:bor_task_t:s0",
 	}
 	svc = string(RenderSystemdTaskService(boot, ""))
-	want = "# Managed by Bor - changes are overwritten\n# Task: fix-perms\n\n[Unit]\nDescription=Bor task fix-perms\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/chmod 0755 \"/srv/share dir\" \"say \\\"hi\\\"\" \"100%%\" \"$$HOME\"\nTimeoutStartSec=10min\nSyslogIdentifier=bor-task-fix-perms\nUser=nobody\nGroup=nogroup\nWorkingDirectory=/srv\n\n[Install]\nWantedBy=multi-user.target\n"
+	want = "# Managed by Bor - changes are overwritten\n# Task: fix-perms\n\n[Unit]\nDescription=Bor task fix-perms\n\n[Service]\nType=oneshot\nExecStart=/usr/bin/chmod 0755 \"/srv/share dir\" \"say \\\"hi\\\"\" \"100%%\" \"$$HOME\"\nTimeoutStartSec=10min\nSyslogIdentifier=bor-task-fix-perms\nUser=nobody\nGroup=nogroup\nWorkingDirectory=/srv\nAppArmorProfile=-bor-fixperms\nSELinuxContext=system_u:system_r:bor_task_t:s0\n\n[Install]\nWantedBy=multi-user.target\n"
 	if svc != want {
 		t.Errorf("boot task service:\n got: %q\nwant: %q", svc, want)
 	}

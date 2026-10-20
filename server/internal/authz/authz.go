@@ -36,6 +36,8 @@ var scopableResources = map[string]bool{
 	// systemd:operate acts on one node at a time and systemd:exec on
 	// policies; both handlers confine the action to the caller's groups.
 	"systemd": true,
+	// mac:operate asks one node for a mandatory access control proposal.
+	"mac": true,
 }
 
 // IsScopable reports whether a node-group-scoped binding can grant

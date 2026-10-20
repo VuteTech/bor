@@ -415,3 +415,28 @@ func ValidateDirectiveValue(value string) error {
 	}
 	return nil
 }
+
+var (
+	apparmorProfileRE = regexp.MustCompile(`^-?[A-Za-z0-9_][A-Za-z0-9_.:/+-]{0,254}$`)
+	selinuxContextRE  = regexp.MustCompile(`^-?[a-z0-9_]{1,64}:[a-z0-9_]{1,64}:[a-z0-9_]{1,128}(:[a-z0-9_.,:-]{1,128})?$`)
+)
+
+// ValidateAppArmorProfile checks an AppArmorProfile= value: the name of a
+// profile as loaded on the node, optionally prefixed with "-" so a missing
+// profile does not fail the unit.
+func ValidateAppArmorProfile(s string) error {
+	if !apparmorProfileRE.MatchString(s) {
+		return fmt.Errorf("profile name %q: use the name the profile is loaded with (letters, digits, _ . : / + -), optionally prefixed with -", s)
+	}
+	return nil
+}
+
+// ValidateSELinuxContext checks a SELinuxContext= value: user:role:type
+// with an optional level, optionally prefixed with "-" so a failed
+// transition does not fail the unit.
+func ValidateSELinuxContext(s string) error {
+	if !selinuxContextRE.MatchString(s) {
+		return fmt.Errorf("context %q: use user:role:type or user:role:type:level, optionally prefixed with -", s)
+	}
+	return nil
+}

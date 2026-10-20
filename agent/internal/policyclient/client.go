@@ -118,9 +118,13 @@ type PolicyInfo struct {
 	FlatpakPolicy        *pb.FlatpakPolicy        // populated from typed_content for Flatpak type
 	DiskEncryptionPolicy *pb.DiskEncryptionPolicy // populated from typed_content for DiskEncryption type
 	SystemdPolicy        *pb.SystemdPolicy        // populated from typed_content for Systemd type
+	SelinuxPolicy        *pb.SelinuxPolicy        // populated from typed_content for Selinux type
+	ApparmorPolicy       *pb.ApparmorPolicy       // populated from typed_content for Apparmor type
 	// UnitAction carries the command of a SYSTEMD_UNIT_ACTION update; the
 	// other fields are empty then.
 	UnitAction *pb.SystemdUnitAction
+	// MacAction carries the command of a MAC_ACTION update.
+	MacAction *pb.MacAction
 }
 
 // ReportCompliance sends a compliance report for a policy back to the server.
@@ -195,6 +199,8 @@ type NodeInfo struct {
 	DesktopEnvs  []string
 	AgentVersion string
 	MachineID    string
+	LSM          string
+	LSMMode      string
 }
 
 // Heartbeat sends a heartbeat with node metadata to the server.
@@ -212,6 +218,8 @@ func (c *Client) Heartbeat(ctx context.Context, info *NodeInfo) error {
 			DesktopEnvs:  info.DesktopEnvs,
 			AgentVersion: info.AgentVersion,
 			MachineId:    info.MachineID,
+			Lsm:          info.LSM,
+			LsmMode:      info.LSMMode,
 		},
 	}
 
@@ -390,12 +398,24 @@ func (c *Client) SubscribePolicyUpdates(ctx context.Context, lastKnownRevision i
 			if sdp := p.GetSystemdPolicy(); sdp != nil {
 				pi.SystemdPolicy = sdp
 			}
+			if sep := p.GetSelinuxPolicy(); sep != nil {
+				pi.SelinuxPolicy = sep
+			}
+			if aap := p.GetApparmorPolicy(); aap != nil {
+				pi.ApparmorPolicy = aap
+			}
 		}
 		if ua := update.GetSystemdUnitAction(); ua != nil {
 			if pi == nil {
 				pi = &PolicyInfo{}
 			}
 			pi.UnitAction = ua
+		}
+		if ma := update.GetMacAction(); ma != nil {
+			if pi == nil {
+				pi = &PolicyInfo{}
+			}
+			pi.MacAction = ma
 		}
 
 		cb(update.GetType().String(), pi, update.GetRevision(), update.GetSnapshotComplete())
@@ -504,4 +524,34 @@ func clampInt32(v int) int32 {
 		return 0
 	}
 	return int32(v) //nolint:gosec // G115: bounds checked above
+}
+
+// ReportMacInventory sends the mandatory access control inventory of the
+// node (status, booleans or profiles, denial summary).
+func (c *Client) ReportMacInventory(ctx context.Context, req *pb.ReportMacInventoryRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req.ClientId = c.clientID
+	if _, err := c.client.ReportMacInventory(ctx, req); err != nil {
+		return fmt.Errorf("ReportMacInventory RPC failed: %w", err)
+	}
+	return nil
+}
+
+// ReportMacActionResult answers a MAC_ACTION command with the proposal
+// text or the error.
+func (c *Client) ReportMacActionResult(ctx context.Context, actionID string, success bool, message, text string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := c.client.ReportMacActionResult(ctx, &pb.ReportMacActionResultRequest{
+		ClientId: c.clientID,
+		ActionId: actionID,
+		Success:  success,
+		Message:  message,
+		Text:     text,
+	})
+	if err != nil {
+		return fmt.Errorf("ReportMacActionResult RPC failed: %w", err)
+	}
+	return nil
 }

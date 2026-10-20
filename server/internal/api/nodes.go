@@ -25,6 +25,11 @@ type NodeHandler struct {
 	nodeSvc    *services.NodeService
 	enrollSvc  *services.EnrollmentService
 	metaSender MetadataRequestSender // may be nil if hub not available
+
+	// OnMembershipChange is called after a node was added to or removed
+	// from a group, so the agent can be told to take a fresh policy
+	// snapshot. May be nil.
+	OnMembershipChange func(nodeID string)
 }
 
 // NewNodeHandler creates a new NodeHandler
@@ -52,6 +57,7 @@ func (h *NodeHandler) List(w http.ResponseWriter, r *http.Request) {
 		OS:           q.Get("os"),
 		Desktop:      q.Get("desktop"),
 		AgentVersion: q.Get("agent_version"),
+		LSM:          q.Get("lsm"),
 		Group:        q.Get("group"),
 		SortField:    q.Get("sort_field"),
 		SortOrder:    q.Get("sort_order"),
@@ -305,6 +311,9 @@ func (h *NodeHandler) AddToGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to add node to group"}`, http.StatusInternalServerError)
 		return
 	}
+	if h.OnMembershipChange != nil {
+		h.OnMembershipChange(id)
+	}
 	// Return updated node
 	updated, err := h.nodeSvc.GetNode(r.Context(), id)
 	if err != nil || updated == nil {
@@ -335,6 +344,9 @@ func (h *NodeHandler) RemoveFromGroup(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to remove node %s from group %s: %v", id, groupID, err) //nolint:gosec // id comes from URL path parameter
 		http.Error(w, `{"error":"failed to remove node from group"}`, http.StatusInternalServerError)
 		return
+	}
+	if h.OnMembershipChange != nil {
+		h.OnMembershipChange(id)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

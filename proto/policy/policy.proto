@@ -5,6 +5,7 @@ package bor.policy.v1;
 option go_package = "github.com/VuteTech/Bor/server/pkg/grpc/policy;policy";
 
 import "google/protobuf/timestamp.proto";
+import "apparmor.proto";
 import "chrome.proto";
 import "dconf.proto";
 import "disk_encryption.proto";
@@ -13,8 +14,10 @@ import "firefox.proto";
 import "firewalld.proto";
 import "flatpak.proto";
 import "kconfig.proto";
+import "mac.proto";
 import "package.proto";
 import "polkit.proto";
+import "selinux.proto";
 import "session_access.proto";
 import "systemd.proto";
 import "thunderbird.proto";
@@ -71,6 +74,15 @@ service PolicyService {
   // the job result and the unit's state afterwards.
   rpc ReportSystemdUnitActionResult(ReportSystemdUnitActionResultRequest)
       returns (ReportSystemdUnitActionResultResponse);
+
+  // ReportMacInventory sends the SELinux or AppArmor status, booleans,
+  // modules or profiles and the denial summary of a node.
+  rpc ReportMacInventory(ReportMacInventoryRequest)
+      returns (ReportMacInventoryResponse);
+
+  // ReportMacActionResult answers a MAC_ACTION command.
+  rpc ReportMacActionResult(ReportMacActionResultRequest)
+      returns (ReportMacActionResultResponse);
 
   // ─── Disk encryption ─────────────
   // All five RPCs run on the mTLS policy port; the node identity is the
@@ -145,6 +157,8 @@ message Policy {
     FlatpakPolicy       flatpak_policy        = 21;
     DiskEncryptionPolicy disk_encryption_policy = 22;
     SystemdPolicy        systemd_policy        = 23;
+    SelinuxPolicy        selinux_policy        = 24;
+    ApparmorPolicy       apparmor_policy       = 25;
   }
 
   // Binding priority delivered to the agent. Equals the maximum priority
@@ -224,6 +238,10 @@ message PolicyUpdate {
     // systemd_unit_action and the agent answers with
     // ReportSystemdUnitActionResult.
     SYSTEMD_UNIT_ACTION = 7;
+    // MAC_ACTION is a server-to-agent command asking the agent for a
+    // mandatory access control proposal; the command is in mac_action and
+    // the agent answers with ReportMacActionResult.
+    MAC_ACTION = 8;
   }
 
   UpdateType type = 1;
@@ -240,6 +258,9 @@ message PolicyUpdate {
 
   // The command of a SYSTEMD_UNIT_ACTION update; unset otherwise.
   SystemdUnitAction systemd_unit_action = 5;
+
+  // The command of a MAC_ACTION update; unset otherwise.
+  MacAction mac_action = 6;
 }
 
 // ComplianceItemResult is the compliance result for a single DConf key.
@@ -328,6 +349,12 @@ message NodeInfo {
   repeated string desktop_envs = 5;
   string agent_version = 6;
   string machine_id = 7;
+  // Active mandatory access control system: "selinux", "apparmor" or
+  // "none".
+  string lsm = 8;
+  // Its state: SELinux "enforcing" | "permissive" | "disabled";
+  // AppArmor "enabled" | "disabled".
+  string lsm_mode = 9;
 }
 
 message HeartbeatRequest {

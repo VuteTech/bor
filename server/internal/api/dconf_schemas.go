@@ -12,6 +12,7 @@ import (
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
+	"github.com/VuteTech/Bor/server/internal/services"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 )
 
@@ -179,6 +180,9 @@ func (h *ComplianceHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if results == nil {
 		results = []*database.ComplianceRow{}
+	}
+	for _, row := range results {
+		row.Items = services.AnnotateComplianceItems(row.Items)
 	}
 
 	total, err := h.dconfRepo.CountComplianceFiltered(r.Context(), req)

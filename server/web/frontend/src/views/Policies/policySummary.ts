@@ -25,6 +25,8 @@ import {
 } from "./editors/kconfigModel";
 import { boolDisplay, groupPathLabel, targetLabel } from "./editors/kconfigCatalogue";
 import { describeTaskEntry, describeUnitEntry, parseSystemdContent } from "./systemdModel";
+import { parseSelinuxContent } from "./selinuxModel";
+import { apparmorModeLabel, parseApparmorContent } from "./apparmorModel";
 
 export interface SettingsRow {
   setting: string;
@@ -325,6 +327,33 @@ export function buildSettingsRows(policyType: string, content: string): Settings
     if (sd.writePresets) {
       rows.push({ setting: "Preset file", value: "10-bor.preset carries the enablement decisions for units installed later", locked: null });
     }
+    return rows;
+  }
+
+  if (policyType === "Selinux") {
+    const se = parseSelinuxContent(content);
+    if (se.mode !== "SELINUX_MODE_UNSPECIFIED") rows.push({ setting: "Mode", value: se.mode === "SELINUX_MODE_ENFORCING" ? "enforcing" : "permissive", locked: null });
+    if (se.requireActive) rows.push({ setting: "SELinux required", value: "nodes without SELinux are non-compliant", locked: null });
+    if (se.prepareDisabledNodes) rows.push({ setting: "Disabled nodes", value: "prepared (config permissive, relabel at next boot)", locked: null });
+    for (const b of se.booleans) rows.push({ setting: `Boolean ${b.name}`, value: `${b.value ? "on" : "off"}${b.description ? ` (${b.description})` : ""}`, locked: null });
+    for (const d of se.permissiveDomains) rows.push({ setting: `Permissive domain ${d}`, value: "permissive", locked: null });
+    for (const m of se.modules) rows.push({ setting: `Module ${m.name}`, value: m.enabled ? "enabled" : "disabled", locked: null });
+    for (const m of se.customModules) rows.push({ setting: `Custom module bor-${m.name}`, value: m.description || `${m.cil.split("\n").filter((l) => l.trim() && !l.trim().startsWith(";")).length} CIL statements`, locked: null });
+    for (const f of se.fileContexts) rows.push({ setting: `File context ${f.pathRegex}`, value: `${f.type}${f.restorecon ? ", relabelled" : ""}`, locked: null });
+    for (const l of se.logins) rows.push({ setting: `Login ${l.login}`, value: `${l.seuser}${l.range ? ` ${l.range}` : ""}`, locked: null });
+    return rows;
+  }
+
+  if (policyType === "Apparmor") {
+    const aa = parseApparmorContent(content);
+    if (aa.requireEnabled) rows.push({ setting: "AppArmor required", value: "nodes without AppArmor are non-compliant", locked: null });
+    if (aa.ensureService) rows.push({ setting: "apparmor.service", value: "kept enabled and running", locked: null });
+    if (aa.restrictUnprivilegedUserns !== "APPARMOR_SWITCH_UNSPECIFIED") rows.push({ setting: "Restrict unprivileged user namespaces", value: aa.restrictUnprivilegedUserns === "APPARMOR_SWITCH_ON" ? "on" : "off", locked: null });
+    if (aa.restrictUnprivilegedUnconfined !== "APPARMOR_SWITCH_UNSPECIFIED") rows.push({ setting: "Restrict unprivileged unconfined", value: aa.restrictUnprivilegedUnconfined === "APPARMOR_SWITCH_ON" ? "on" : "off", locked: null });
+    for (const p of aa.profiles) rows.push({ setting: `Profile ${p.match}`, value: `${apparmorModeLabel(p.mode).toLowerCase()}${p.editVendorFlags ? " (vendor flags edited)" : ""}`, locked: null });
+    for (const c of aa.customProfiles) rows.push({ setting: `Custom profile bor-${c.name}`, value: c.description || `${c.text.split("\n").length} lines`, locked: null });
+    for (const o of aa.localOverrides) rows.push({ setting: `Local override ${o.profileFile}`, value: `${o.text.split("\n").filter((l) => l.trim()).length} rules`, locked: null });
+    if (aa.extraHomeDirs.length) rows.push({ setting: "Extra home directories", value: aa.extraHomeDirs.join(" "), locked: null });
     return rows;
   }
 

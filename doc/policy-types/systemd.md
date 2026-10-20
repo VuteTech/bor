@@ -373,6 +373,8 @@ Task entry:
 | `environment` | list of strings | `KEY=value` entries, at most 64. |
 | `timeoutStartSec` | string | Time span; `1h` when omitted. |
 | `hardened` | boolean | Omitted = on. |
+| `apparmorProfile` | string | `AppArmorProfile=` of the service: the profile the task runs under, by the name it is loaded with on the node (a custom profile of an [AppArmor](apparmor.md) policy is `bor-<name>`). A leading `-` lets the task start when the profile is missing. |
+| `selinuxContext` | string | `SELinuxContext=` of the service: the `user:role:type[:level]` the task runs as; the type can come from a custom module of an [SELinux](selinux.md) policy. A leading `-` lets the task start when the transition fails. |
 | `requireLastRunSuccess` | boolean | |
 | `enabled` | boolean | Omitted = on. |
 

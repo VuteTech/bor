@@ -139,6 +139,12 @@ or the file deleted.
 | Services & timers | Task scripts `/etc/bor/systemd/<task>.sh` (the directory belongs to Bor) | Yes | `systemd.scripts_dir` |
 | Services & timers | `/etc/systemd/system-preset/10-bor.preset` (optional, policies with the preset switch) | Yes | `systemd.preset_dir` |
 | Services & timers | `/var/lib/bor/agent/systemd-state.json` (original unit states, restored when a unit leaves every policy) | Yes | `systemd.state_path` |
+| SELinux | The `SELINUX=` line of `/etc/selinux/config` | Yes | `selinux.config_path` |
+| SELinux | CIL sources `/etc/bor/selinux/bor-*.cil` of the modules Bor installs at semodule priority 450 | Yes | `selinux.modules_dir`, `selinux.module_priority` |
+| SELinux | `/var/lib/bor/agent/selinux-state.json` (original mode, boolean values, module flags and login mappings, restored when they leave every policy) | Yes | `selinux.state_path` |
+| AppArmor | Symlinks `/etc/apparmor.d/disable/<file>` and `/etc/apparmor.d/force-complain/<file>`, profiles `/etc/apparmor.d/bor-<name>`, the Bor block in `/etc/apparmor.d/local/<file>`, `/etc/apparmor.d/tunables/home.d/bor`; with vendor flag edits, the complain flag of a vendor profile file | Yes | `apparmor.profiles_dir` |
+| AppArmor | `/etc/sysctl.d/zz-bor-apparmor.conf` (user namespace switches) | Yes | `apparmor.sysctl_path` |
+| AppArmor | `/var/lib/bor/agent/apparmor-state.json` and backups of edited vendor files under `/var/lib/bor/agent/apparmor-backups/` | Yes | `apparmor.state_path`, `apparmor.backup_dir` |
 | Services & timers | Drop-ins `/etc/systemd/user/<unit>.d/90-bor.conf`, task units `/etc/systemd/user/bor-<task>.service` and `.timer`, and the enablement symlinks and masks of entries scoped to all users | Yes (files Bor writes) | `systemd.user_dir` |
 | Services & timers | `/etc/systemd/user-preset/10-bor.preset` (optional, policies with the preset switch and units scoped to all users) | Yes | `systemd.user_preset_dir` |
 | Package (apt) | `/etc/apt/sources.list.d/bor-<id>.sources`, `/etc/apt/trusted.gpg.d/bor-<id>.gpg` | Yes | - |
