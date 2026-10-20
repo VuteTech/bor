@@ -4,3 +4,4 @@
 
 export { ReportsPage } from "./ReportsPage";
 export { ReportDetailPage } from "./ReportDetailPage";
+export { EditionNotice } from "./EditionNotice";

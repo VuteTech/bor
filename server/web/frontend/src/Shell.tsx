@@ -41,7 +41,7 @@ import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
 import { checkSession, logout, getMFAStatus, getPublicConfig, UserInfo } from "./apiClient/authApi";
 import { getServerVersion } from "./apiClient/systemApi";
-import { setPermissions, clearPermissions, hasPermission } from "./apiClient/permissions";
+import { setPermissions, clearPermissions, hasPermission, hasFeature, FEATURE_COMPLIANCE_REPORTS } from "./apiClient/permissions";
 import { onSessionExpired } from "./apiClient/session";
 import { PageHeader } from "./components/PageHeader";
 import { DeployAgentProvider, DeployAgentMastheadButton } from "./components/DeployAgentModal";
@@ -56,7 +56,7 @@ import { PolicyBindingsPage } from "./views/PolicyBindings";
 import { SettingsPage } from "./views/Settings";
 import { AuditLogsPage } from "./views/AuditLogs";
 import { CompliancePage } from "./views/Compliance";
-import { ReportsPage, ReportDetailPage } from "./views/Reports";
+import { ReportsPage, ReportDetailPage, EditionNotice } from "./views/Reports";
 import { DiskEncryptionPage } from "./views/DiskEncryption";
 import logoWhite from "./assets/logo-white.svg";
 
@@ -451,7 +451,7 @@ export const Shell: React.FC = () => {
             {navItem("nodes", "Nodes")}
             {navItem("node-groups", "Node Groups")}
             {navItem("compliance", "Compliance")}
-            {hasPermission("report:view") && navItem("reports", "Reports")}
+            {hasFeature(FEATURE_COMPLIANCE_REPORTS) && hasPermission("report:view") && navItem("reports", "Reports")}
             {hasPermission("disk_encryption:view") && navItem("disk-encryption", "Disk Encryption")}
           </NavGroup>
           <NavGroup title="Policy">
@@ -555,8 +555,8 @@ export const Shell: React.FC = () => {
           <Route path="/node-groups" element={<NodeGroupsPage />} />
           <Route path="/policy-bindings" element={<PolicyBindingsPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/reports/:id" element={<ReportDetailPage />} />
+          <Route path="/reports" element={hasFeature(FEATURE_COMPLIANCE_REPORTS) ? <ReportsPage /> : <EditionNotice />} />
+          <Route path="/reports/:id" element={hasFeature(FEATURE_COMPLIANCE_REPORTS) ? <ReportDetailPage /> : <EditionNotice />} />
           <Route path="/disk-encryption" element={<DiskEncryptionPage />} />
           <Route path="/audit-logs" element={<AuditLogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />

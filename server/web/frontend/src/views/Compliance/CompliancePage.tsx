@@ -29,7 +29,7 @@ import FileAltIcon from "@patternfly/react-icons/dist/esm/icons/file-alt-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
-import { hasPermission } from "../../apiClient/permissions";
+import { hasPermission, hasFeature, FEATURE_COMPLIANCE_REPORTS } from "../../apiClient/permissions";
 import {
   fetchCompliancePaged,
   fetchDConfSchemas,
@@ -218,6 +218,7 @@ export const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) =
 /* ── component ── */
 
 export const CompliancePage: React.FC = () => {
+  const reportsEnabled = hasFeature(FEATURE_COMPLIANCE_REPORTS);
   const navigate = useNavigate();
   const [results, setResults] = useState<ComplianceResult[]>([]);
   const [schemas, setSchemas] = useState<DConfSchema[]>([]);
@@ -318,14 +319,14 @@ export const CompliancePage: React.FC = () => {
         </FlexItem>
         <FlexItem>
           <Flex spaceItems={{ default: "spaceItemsSm" }} alignItems={{ default: "alignItemsCenter" }}>
-            {hasPermission("report:create") && (
+            {reportsEnabled && hasPermission("report:create") && (
               <FlexItem>
                 <Button variant="primary" icon={<FileAltIcon />} onClick={() => navigate("/reports?new=1")}>
                   Generate report
                 </Button>
               </FlexItem>
             )}
-            {hasPermission("report:view") && (
+            {reportsEnabled && hasPermission("report:view") && (
               <FlexItem>
                 <Button variant="link" onClick={() => navigate("/reports")}>
                   Reports

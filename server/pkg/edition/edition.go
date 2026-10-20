@@ -18,10 +18,16 @@ const (
 	// bindings can be created and existing node-group-scoped bindings grant
 	// nothing.
 	NodeGroupScopedRBAC Feature = "node_group_scoped_rbac"
+	// ComplianceReports enables point-in-time compliance reports: the
+	// Reports page and the /api/v1/compliance/reports API. When it is off
+	// the routes answer 404 and the web UI hides the page; the report
+	// tables, permissions and retention purge stay in place, so reports
+	// generated while it was on reappear when it is switched on again.
+	ComplianceReports Feature = "reports"
 )
 
 // AllFeatures lists every known Feature, in a stable order.
-var AllFeatures = []Feature{NodeGroupScopedRBAC}
+var AllFeatures = []Feature{NodeGroupScopedRBAC, ComplianceReports}
 
 // Edition reports the running edition and its enabled features.
 type Edition interface {

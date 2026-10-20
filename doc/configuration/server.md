@@ -404,10 +404,10 @@ results and posture. See [Compliance reports](../user-guide/reports.md).
 | `reports.max_results` | `BOR_REPORT_MAX_RESULTS` | `100000` | A report with more node-policy results than this is refused; narrow its scope. |
 | `reports.generate_timeout` | `BOR_REPORT_GENERATE_TIMEOUT` | `120s` | Time budget of one generation. |
 
-Reports are stored in PostgreSQL and are part of the normal database
-backup. Signing reports and rendering them as documents are Bor
-Enterprise features; the community server stores reports unsigned with
-their SHA-256.
+Compliance reports are a Bor Enterprise feature: the community server
+keeps the page and the API switched off and answers 404 on the report
+API. The retention purge runs in every edition. Reports are stored in
+PostgreSQL and are part of the normal database backup.
 
 ## Systemd options that are not configuration keys
 

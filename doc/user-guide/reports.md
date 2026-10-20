@@ -12,6 +12,14 @@ when an auditor asks, and to keep evidence for your records.
 Open **Fleet -> Reports** in the sidebar. The page lists reports and
 generates new ones.
 
+!!! note "Bor Enterprise"
+    Compliance reports are a Bor Enterprise feature. The community server
+    contains the page and the API but keeps them switched off; a license
+    that includes the `reports` feature enables them, together with report
+    signing and the HTML document. Without it the **Reports** page says so
+    and the report API answers 404. Reports generated while the feature was
+    enabled are kept and reappear when it is enabled again.
+
 ## Permissions
 
 | Action | Permission |
@@ -78,7 +86,7 @@ generated, the scope, and the report's integrity:
 |---|---|
 | **SHA-256** | The hash of the report's canonical JSON bundle, recorded when the report was generated and written to the audit log. |
 | **Hash** | `ok` when the stored bundle still has that hash. `mismatch` means the stored data changed after generation; the server records a `report.integrity_failure` audit event when this happens. |
-| **Signature** | `unsigned` in the community edition. Bor Enterprise signs every report with a certificate issued by the server's certificate authority; the status is then `valid`, `invalid` (the signature does not match the stored bundle) or `unverified` (signed, but this server cannot check it, for example after the license was removed). |
+| **Signature** | Every report generated while the feature is licensed is signed with a certificate issued by the server's certificate authority; the status is `valid`, `invalid` (the signature does not match the stored bundle) or `unverified` (signed, but this server cannot check it, for example after the license was removed). `unsigned` marks a report generated while signing was off. |
 
 The tabs list the policies, the nodes with their posture, and the
 results with filters for status and staleness. Expand a result to see
@@ -90,8 +98,8 @@ its per-setting items.
 |---|---|
 | **JSON** | The canonical bundle (`apiVersion: bor.report.v1`), byte for byte as stored. Its SHA-256 is the hash shown in the header. Keep this file: it is the evidence, and every other format is derived from it. |
 | **CSV** | Four files: `results` (one row per node and policy), `items` (one row per setting), `nodes` (one row per node with posture columns) and `controls` (one row per benchmark control). Cells that start with a formula character are prefixed with an apostrophe so spreadsheets do not execute them. |
-| **Signature** | The detached signature of the JSON bundle, for signed reports (Bor Enterprise). |
-| **HTML** and other documents | Added by Bor Enterprise. |
+| **Signature** | The detached signature of the JSON bundle (a compact JWS), for signed reports. |
+| **HTML** | A self-contained, printable document of the report with the hash and the signing key on every page. |
 
 Every download is recorded in the audit log (`report.download`) with the
 format, since handing out evidence is itself an auditable event.
@@ -107,17 +115,21 @@ sha256sum compliance-report-q4-labs-20261020-1400.json
 
 When the audit log is forwarded to a SIEM, the hash in the forwarded
 event is an anchor outside Bor's database: a bundle that matches it is
-the bundle the server generated at that time. Signed reports can also be
-verified offline with the Bor Enterprise `bor-verify` tool and the
-server's CA certificate.
+the bundle the server generated at that time. Signed reports are verified
+offline with the `bor-verify` tool and the server's CA certificate:
+
+```bash
+bor-verify -bundle compliance-report-q4-labs-20261020-1400.json \
+  -signature compliance-report-q4-labs-20261020-1400.jws -ca ca.crt
+```
 
 ## Retention and deletion
 
 Reports are kept for `reports.retention_days` (1095 days, three years,
 by default); an hourly job deletes older ones and records a
-`report.purge` audit event with the count. Set the value to `0` to keep
-reports forever. Pinned reports (Bor Enterprise legal hold) are never
-purged.
+`report.purge` audit event with the count. The purge runs in every
+edition, so old reports age out even after a license lapses. Set the
+value to `0` to keep reports forever.
 
 Deleting a report needs `report:manage` and is recorded as
 `report.delete` with the report's hash. There is no undo: download the

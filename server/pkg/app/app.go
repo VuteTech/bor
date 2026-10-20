@@ -510,6 +510,9 @@ func Run(opts Options) {
 	})
 	reportSvc.StartJanitor(context.Background())
 	reportsHandler := api.NewReportsHandler(reportSvc, cfg.Audit.AnonymizeIPs, cfg.Reports.GenerateTimeout)
+	// Reports are an optional feature: without it the routes do not exist
+	// (404), while the tables and the retention purge stay in place.
+	reportsGate := api.RequireFeature(func() bool { return ed.Enabled(edition.ComplianceReports) }, "compliance reports are not available in this edition")
 	stepUpSvc := services.NewStepUpService(authSvc, mfaSvc, cfg.Security.JWTSecret, cfg.DiskEncryption.RequireMFAForReveal)
 	diskEncHandler := api.NewDiskEncryptionHandler(diskEncSvc, stepUpSvc, cfg.Audit.AnonymizeIPs)
 	tangServersHandler := api.NewTangServersHandler(tangSvc)
@@ -782,18 +785,18 @@ func Run(opts Options) {
 
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(gate.RequireScoped("compliance", "view")(http.HandlerFunc(complianceHandler.List))))
-	// Compliance reports. Generation and reads are confined to the caller's
-	// node groups; deleting evidence needs a global report:manage. The
-	// handlers audit themselves (generation, downloads and deletion carry
-	// the report hash).
-	mux.Handle("POST /api/v1/compliance/reports", authMiddleware(gate.RequireScoped("report", "create")(http.HandlerFunc(reportsHandler.Create))))
-	mux.Handle("GET /api/v1/compliance/reports", authMiddleware(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.List))))
-	mux.Handle("GET /api/v1/compliance/reports/{id}", authMiddleware(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Get))))
-	mux.Handle("GET /api/v1/compliance/reports/{id}/nodes", authMiddleware(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Nodes))))
-	mux.Handle("GET /api/v1/compliance/reports/{id}/results", authMiddleware(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Results))))
-	mux.Handle("GET /api/v1/compliance/reports/{id}/policies", authMiddleware(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Policies))))
-	mux.Handle("GET /api/v1/compliance/reports/{id}/download", authMiddleware(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Download))))
-	mux.Handle("DELETE /api/v1/compliance/reports/{id}", authMiddleware(gate.Require("report", "manage")(http.HandlerFunc(reportsHandler.Delete))))
+	// Compliance reports (an optional feature, see reportsGate). Generation
+	// and reads are confined to the caller's node groups; deleting evidence
+	// needs a global report:manage. The handlers audit themselves
+	// (generation, downloads and deletion carry the report hash).
+	mux.Handle("POST /api/v1/compliance/reports", authMiddleware(reportsGate(gate.RequireScoped("report", "create")(http.HandlerFunc(reportsHandler.Create)))))
+	mux.Handle("GET /api/v1/compliance/reports", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.List)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Get)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/nodes", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Nodes)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/results", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Results)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/policies", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Policies)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/download", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Download)))))
+	mux.Handle("DELETE /api/v1/compliance/reports/{id}", authMiddleware(reportsGate(gate.Require("report", "manage")(http.HandlerFunc(reportsHandler.Delete)))))
 
 	// Polkit action catalogue — readable by anyone with policy:view
 	mux.Handle("/api/v1/polkit/actions", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(polkitHandler.ListActions))))

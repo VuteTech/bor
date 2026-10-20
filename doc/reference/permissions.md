@@ -117,6 +117,10 @@ hold yourself.
 
 ### Compliance reports
 
+These permissions take effect when the edition enables compliance reports
+(Bor Enterprise); otherwise the **Reports** page and its API are not
+available.
+
 | Permission | Allows |
 |---|---|
 | `report:view` | List, open and download compliance reports (the **Reports** page). Downloads are audit-logged (`report.download`). Can be delegated per node group: a scoped holder sees only reports whose scope lies inside their groups. |
@@ -192,7 +196,8 @@ checked, the **Policy Editor** role can release policies (it holds
 ## Navigation and permissions
 
 The sidebar hides **Disk Encryption** without `disk_encryption:view`,
-**Reports** without `report:view`,
+**Reports** without `report:view` or when the edition does not enable
+compliance reports,
 **Audit Logs** without `audit_log:view`, and **Settings** unless you hold
 at least one of `user:view`, `role:view`, `user_group:view`,
 `settings:manage` or `flatpak_repo:view`. Other pages are always listed
