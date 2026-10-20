@@ -392,6 +392,23 @@ sudo chmod 0600 /etc/bor/escrow.kek
     up separately from the database backup. See [Backup and
     restore](../operations/backup.md).
 
+## reports
+
+Compliance reports: point-in-time snapshots of the fleet's compliance
+results and posture. See [Compliance reports](../user-guide/reports.md).
+
+| YAML key | Environment variable | Default | Description |
+|----------|----------------------|---------|-------------|
+| `reports.retention_days` | `BOR_REPORT_RETENTION_DAYS` | `1095` | Days a report is kept. An hourly job deletes older unpinned reports and records a `report.purge` audit event. `0` keeps reports forever. |
+| `reports.stale_after` | `BOR_REPORT_STALE_AFTER` | `168h` | Age after which a compliance result counts as stale and a node that is not online counts as unreachable in a report. A Go duration such as `72h`. |
+| `reports.max_results` | `BOR_REPORT_MAX_RESULTS` | `100000` | A report with more node-policy results than this is refused; narrow its scope. |
+| `reports.generate_timeout` | `BOR_REPORT_GENERATE_TIMEOUT` | `120s` | Time budget of one generation. |
+
+Compliance reports are a Bor Enterprise feature: the community server
+keeps the page and the API switched off and answers 404 on the report
+API. The retention purge runs in every edition. Reports are stored in
+PostgreSQL and are part of the normal database backup.
+
 ## Systemd options that are not configuration keys
 
 Some behavior is controlled through the service environment rather than
@@ -458,4 +475,7 @@ audit:
 
 disk_encryption:
   escrow_kek_file: "/etc/bor/escrow.kek"
+reports:
+  retention_days: 1095
+  stale_after: 168h
 ```

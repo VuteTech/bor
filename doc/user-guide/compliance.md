@@ -8,6 +8,11 @@ troubleshoot a non-compliant result.
 Open it from **Fleet -> Compliance** in the sidebar. Viewing compliance
 requires `compliance:view`.
 
+The page shows the current state only. Bor Enterprise adds
+[compliance reports](reports.md): point-in-time snapshots of the results,
+the nodes' posture and the benchmark controls, hashed, signed and
+downloadable as JSON, CSV and HTML.
+
 ## How agents report compliance
 
 After the agent applies a policy type (on startup, when it receives a

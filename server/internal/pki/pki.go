@@ -15,6 +15,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -465,4 +466,46 @@ func loadCACert(certPath string) (*x509.Certificate, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// oidDocumentSigning is id-kp-documentSigning (RFC 9336), the extended key
+// usage of certificates that sign documents such as compliance reports.
+var oidDocumentSigning = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 36}
+
+// DefaultDocumentSigningValidity is the validity of a document-signing
+// certificate when the caller does not choose one.
+const DefaultDocumentSigningValidity = 365 * 24 * time.Hour
+
+// IssueDocumentSigningCert issues a certificate for pub from the CA with the
+// document-signing extended key usage and no TLS usages, so it can never
+// authenticate as a server or an agent. The public key must meet the same
+// strength baseline as enrollment keys.
+func IssueDocumentSigningCert(pub crypto.PublicKey, caCert *x509.Certificate, caKey crypto.Signer, commonName string, validity time.Duration) ([]byte, error) {
+	if commonName == "" {
+		return nil, fmt.Errorf("document signing certificate: common name is required")
+	}
+	if err := validateCSRPublicKey(pub); err != nil {
+		return nil, err
+	}
+	if validity <= 0 {
+		validity = DefaultDocumentSigningValidity
+	}
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          serialNumber,
+		Subject:               pkix.Name{CommonName: commonName},
+		NotBefore:             time.Now().Add(-1 * time.Minute),
+		NotAfter:              time.Now().Add(validity),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{oidDocumentSigning},
+		BasicConstraintsValid: true,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, pub, caKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign document signing certificate: %w", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}), nil
 }

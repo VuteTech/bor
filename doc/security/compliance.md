@@ -307,7 +307,7 @@ Bor does not do or only partly does.
 | Principle / right | How Bor supports it | Operator action | Gaps and limitations |
 |---|---|---|---|
 | Data minimization (Art. 5(1)(c)) | Optional truncation of client IP addresses in audit records to /24 (IPv4) or /48 (IPv6) | Set `BOR_AUDIT_ANONYMIZE_IPS=true` in the **environment** (the `audit.anonymize_ips` YAML key is not read) | Sign-in and logout audit events always store the full IP address; node inventory stores endpoint IP addresses; tamper events store local usernames of processes |
-| Storage limitation (Art. 5(1)(e)) | Audit retention, default 365 days, purged at startup and daily; retired recovery keys kept 30 days, orphaned 90 days | Set `audit.retention_days` / `BOR_AUDIT_RETENTION_DAYS` to your policy | Data forwarded to a SIEM follows the SIEM's retention |
+| Storage limitation (Art. 5(1)(e)) | Audit retention, default 365 days, purged at startup and daily; retired recovery keys kept 30 days, orphaned 90 days; compliance reports (Bor Enterprise) kept 1095 days, purged hourly | Set `audit.retention_days` / `BOR_AUDIT_RETENTION_DAYS` and `reports.retention_days` / `BOR_REPORT_RETENTION_DAYS` to your policy | Data forwarded to a SIEM follows the SIEM's retention; downloaded report bundles follow the downloader's retention |
 | Right of access / portability (Art. 15, 20) | `GET /api/v1/users/me/export` returns the signed-in user's account, MFA status and security keys as JSON | None | Audit records about the user are not included |
 | Right to erasure (Art. 17) | Deleting a user removes the account, MFA data, security keys and role assignments | Delete the user; purge or pseudonymize audit entries in the database if required | Audit entries keep the username (only the user ID link is cleared); no built-in pseudonymization of audit history |
 | Transparency | Privacy policy link in the UI (`ui.privacy_policy_url`) | Publish and link your privacy notice | - |
@@ -371,7 +371,7 @@ over TCP with `sslmode: disable`. For PostgreSQL over TCP use
 
 | Aspect | Detail |
 |---|---|
-| Events | Successful (`2xx`) `POST`/`PUT`/`PATCH`/`DELETE` API requests; successful and failed sign-ins, logouts, MFA enrollment and removal, step-up; permission denials (`access_denied`); role removals; agent tamper detections (`tamper_detected`); policy export and import; recovery-key escrow, reveal, refused reveal, rotation and destruction (`recoverykey.*`, `luks.*`) |
+| Events | Successful (`2xx`) `POST`/`PUT`/`PATCH`/`DELETE` API requests; successful and failed sign-ins, logouts, MFA enrollment and removal, step-up; permission denials (`access_denied`); role removals; agent tamper detections (`tamper_detected`); policy export and import; recovery-key escrow, reveal, refused reveal, rotation and destruction (`recoverykey.*`, `luks.*`); compliance report generation, download, deletion, retention purge and integrity failures (`report.*`, with the report's SHA-256) |
 | Fields | Event time, actor (user ID and username, or node for agent events), action, resource type and ID, outcome, source IP address, details (redacted request body, tamper file path and processes with PID, command and user) |
 | Storage | PostgreSQL `audit_logs` |
 | Viewing and export | **Audit Logs** page (`audit_log:view`); **Export CSV** / **Export JSON** (`audit_log:export`) |
@@ -419,6 +419,7 @@ risk assessment.
 | Audit source IP | The audit log takes the client IP from `X-Forwarded-For` or `X-Real-IP` when present, without checking for a trusted proxy, so a client can set it. Rate limiting uses the TCP peer address and is not affected. | Treat audit IP addresses as informational, or strip these headers at a trusted reverse proxy. |
 | IP anonymization coverage | `BOR_AUDIT_ANONYMIZE_IPS` does not apply to sign-in and logout events. | Account for this in your records of processing. |
 | Audit log integrity | No hash chain or signatures. | Forward events to a SIEM in real time. |
+| Compliance report integrity (Bor Enterprise) | A report's SHA-256 is re-checked and its signature verified on every open, but anyone with write access to the database can replace a bundle together with its hash; only the signature, the forwarded audit event and downloaded copies survive that. | Forward the audit log (the `report.generate` event carries the hash) to a SIEM or write-once store; keep downloaded bundles and signatures outside the server and verify them with `bor-verify`. |
 | Backup codes | Hashed with bcrypt at cost 10 (not a FIPS-approved algorithm); 40 bits of entropy per code. | Rate limiting applies to the sign-in endpoints. |
 | `BOR_MFA_SECRET` | No minimum length is enforced; when unset, `jwt_secret` is used, so changing `jwt_secret` breaks existing TOTP enrollments. | Set a dedicated 32-byte random value before users enroll. |
 | WebAuthn | No attestation, user verification only preferred. | Combine with a password (always required) and enforce MFA. |

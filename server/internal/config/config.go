@@ -35,6 +35,24 @@ type Config struct {
 	AgentRepo      AgentRepoConfig
 	FlatpakCatalog FlatpakCatalogConfig
 	DiskEncryption DiskEncryptionConfig
+	Reports        ReportsConfig
+}
+
+// ReportsConfig configures compliance reports: how long generated reports
+// are kept, when a result counts as stale, and the size and time budget of
+// one generation.
+type ReportsConfig struct {
+	// RetentionDays purges unpinned reports older than this (default 1095;
+	// 0 keeps reports forever).
+	RetentionDays int // BOR_REPORT_RETENTION_DAYS
+	// StaleAfter is the age after which a compliance result counts as stale
+	// and a silent node as unreachable (default 168h).
+	StaleAfter time.Duration // BOR_REPORT_STALE_AFTER
+	// MaxResults refuses a report with more node-policy results than this
+	// (default 100000).
+	MaxResults int // BOR_REPORT_MAX_RESULTS
+	// GenerateTimeout bounds one generation (default 120s).
+	GenerateTimeout time.Duration // BOR_REPORT_GENERATE_TIMEOUT
 }
 
 // DiskEncryptionConfig configures LUKS recovery-key escrow and (Phase 2) the
@@ -428,6 +446,12 @@ type fileConfig struct {
 		TangListen             string   `yaml:"tang_listen"`
 		TangAllowedNetworks    []string `yaml:"tang_allowed_networks"`
 	} `yaml:"disk_encryption"`
+	Reports struct {
+		RetentionDays   *int   `yaml:"retention_days"`
+		StaleAfter      string `yaml:"stale_after"`
+		MaxResults      int    `yaml:"max_results"`
+		GenerateTimeout string `yaml:"generate_timeout"`
+	} `yaml:"reports"`
 	ACME struct {
 		Enabled      bool     `yaml:"enabled"`
 		DirectoryURL string   `yaml:"directory_url"`
@@ -655,6 +679,38 @@ func Load() (*Config, error) {
 		tangAllowedNetworks = splitComma(v)
 	}
 
+	// ─── Compliance reports ───────────────────────────────────────────────
+	reportRetentionDays := 1095
+	if fc.Reports.RetentionDays != nil {
+		reportRetentionDays = *fc.Reports.RetentionDays
+	}
+	if v := os.Getenv("BOR_REPORT_RETENTION_DAYS"); v != "" {
+		n, convErr := strconv.Atoi(v)
+		if convErr != nil || n < 0 {
+			return nil, fmt.Errorf("invalid BOR_REPORT_RETENTION_DAYS: %q", v)
+		}
+		reportRetentionDays = n
+	}
+	reportStaleAfter, staleErr := parseDurationSetting("BOR_REPORT_STALE_AFTER", fc.Reports.StaleAfter, 168*time.Hour)
+	if staleErr != nil {
+		return nil, staleErr
+	}
+	reportGenerateTimeout, timeoutErr := parseDurationSetting("BOR_REPORT_GENERATE_TIMEOUT", fc.Reports.GenerateTimeout, 120*time.Second)
+	if timeoutErr != nil {
+		return nil, timeoutErr
+	}
+	reportMaxResults := fc.Reports.MaxResults
+	if reportMaxResults <= 0 {
+		reportMaxResults = 100000
+	}
+	if v := os.Getenv("BOR_REPORT_MAX_RESULTS"); v != "" {
+		n, convErr := strconv.Atoi(v)
+		if convErr != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid BOR_REPORT_MAX_RESULTS: %q", v)
+		}
+		reportMaxResults = n
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", fc.Database.Host),
@@ -756,6 +812,12 @@ func Load() (*Config, error) {
 			TangListen:             getEnv("BOR_TANG_LISTEN", fc.DiskEncryption.TangListen),
 			TangAllowedNetworks:    tangAllowedNetworks,
 		},
+		Reports: ReportsConfig{
+			RetentionDays:   reportRetentionDays,
+			StaleAfter:      reportStaleAfter,
+			MaxResults:      reportMaxResults,
+			GenerateTimeout: reportGenerateTimeout,
+		},
 		UI: UIConfig{
 			PrivacyPolicyURL: getEnv("BOR_PRIVACY_POLICY_URL", fc.UI.PrivacyPolicyURL),
 		},
@@ -846,6 +908,29 @@ func resolveJWTSecret(secret string) string {
 	// Secret was set explicitly but is too short.
 	log.Fatalf("JWT_SECRET is too short (%d bytes); minimum 32 bytes required", len(secret))
 	return "" // unreachable
+}
+
+// parseDurationSetting resolves a duration from the environment variable
+// key, else the YAML value, else the default. Negative durations are
+// rejected; zero keeps the default.
+func parseDurationSetting(key, fileValue string, defaultValue time.Duration) (time.Duration, error) {
+	raw := fileValue
+	source := "config key"
+	if v := os.Getenv(key); v != "" {
+		raw = v
+		source = key
+	}
+	if raw == "" {
+		return defaultValue, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("invalid %s: %q", source, raw)
+	}
+	if d == 0 {
+		return defaultValue, nil
+	}
+	return d, nil
 }
 
 func getEnv(key, defaultValue string) string {

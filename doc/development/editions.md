@@ -89,7 +89,7 @@ expires) without a restart.
 ### Features
 
 `Feature` is a string type. The known features are listed in
-`edition.AllFeatures`; there is currently one:
+`edition.AllFeatures`; there are currently two:
 
 `NodeGroupScopedRBAC` (`"node_group_scoped_rbac"`)
 :   Role bindings scoped to a single node group (delegated
@@ -102,6 +102,16 @@ expires) without a restart.
     ```go
     nodeGroupScopes := func() bool { return ed.Enabled(edition.NodeGroupScopedRBAC) }
     ```
+
+`ComplianceReports` (`"reports"`)
+:   Point-in-time compliance reports: the **Reports** page and the
+    `/api/v1/compliance/reports` API. When it is off, `api.RequireFeature`
+    makes the routes answer 404 and the web UI hides the page (the feature
+    list of `/api/v1/auth/me` drives it); the report tables, the `report:*`
+    permissions and the retention purge stay in place, so reports generated
+    while it was on reappear when it is enabled again. The same feature
+    switches on report signing and the HTML document in the enterprise
+    `reports` extension module.
 
 To add a feature, declare a new `Feature` constant, append it to
 `AllFeatures`, and gate the behavior on `ed.Enabled(...)` at request time.
@@ -227,8 +237,27 @@ Audit and secrets
     `RequestUser(r)` returns the signed-in user inside a `HandleAdmin`
     route.
 
-The community edition registers no modules, so `/api/v1/ext-panels`
-returns an empty list and the login page shows no extra buttons.
+Compliance reports and certificates
+:   `Reports().RegisterSigner(s)` installs an `ext.ReportSigner`: the
+    server calls `Sign` with the canonical bytes of every generated
+    compliance report and stores the returned `ext.ReportSignature`
+    (format, value, key id) next to the report's SHA-256; it calls
+    `Verify` whenever a report is opened and shows the outcome. A signer
+    that returns no signature leaves the report unsigned (for example
+    while unlicensed); without a signer, reports are always unsigned.
+    `Reports().RegisterRenderer(r)` adds a download format (for example
+    `html` or `pdf`) rendered by the module from the canonical bundle;
+    the built-in `json`, `csv` and `jws` names are reserved. The bundle
+    schema is the public `server/pkg/report` package. `PKI()` gives
+    access to the server's certificate authority: `CACertificatePEM()`
+    and `IssueCertificate(ctx, ext.CertificateRequest{...})`, which today
+    issues document-signing certificates (extended key usage
+    id-kp-documentSigning, no TLS usages) for a public key the module
+    generated and keeps itself.
+
+The community edition registers no modules and enables no features, so
+`/api/v1/ext-panels` returns an empty list, the login page shows no extra
+buttons and the compliance report routes answer 404.
 
 ## Building a distribution
 

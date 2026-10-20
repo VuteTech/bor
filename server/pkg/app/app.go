@@ -36,6 +36,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/metrics"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/pki"
+	"github.com/VuteTech/Bor/server/internal/reports"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/edition"
 	"github.com/VuteTech/Bor/server/pkg/ext"
@@ -213,6 +214,7 @@ func Run(opts Options) {
 	mfaRepo := database.NewMFARepository(db)
 	webauthnRepo := database.NewWebAuthnRepository(db)
 	luksRepo := database.NewLuksRepository(db)
+	reportRepo := database.NewReportRepository(db)
 
 	// Initialize LDAP service
 	var ldapSvc *services.LDAPService
@@ -496,6 +498,21 @@ func Run(opts Options) {
 		WithTangService(tangSvc).
 		WithMetrics(luksEscrowOps, luksReveals)
 	diskEncSvc.StartJanitor(context.Background())
+
+	// Compliance reports: point-in-time snapshots of compliance and posture.
+	// Extension modules may add a signer and document formats through the
+	// registry; the community server stores reports unsigned.
+	reportRegistry := reports.NewRegistry()
+	reportSvc := services.NewReportService(reportRepo, nodeGroupRepo, reportRegistry, auditSvc, version, services.ReportConfig{
+		RetentionDays: cfg.Reports.RetentionDays,
+		StaleAfter:    cfg.Reports.StaleAfter,
+		MaxResults:    cfg.Reports.MaxResults,
+	})
+	reportSvc.StartJanitor(context.Background())
+	reportsHandler := api.NewReportsHandler(reportSvc, cfg.Audit.AnonymizeIPs, cfg.Reports.GenerateTimeout)
+	// Reports are an optional feature: without it the routes do not exist
+	// (404), while the tables and the retention purge stay in place.
+	reportsGate := api.RequireFeature(func() bool { return ed.Enabled(edition.ComplianceReports) }, "compliance reports are not available in this edition")
 	stepUpSvc := services.NewStepUpService(authSvc, mfaSvc, cfg.Security.JWTSecret, cfg.DiskEncryption.RequireMFAForReveal)
 	diskEncHandler := api.NewDiskEncryptionHandler(diskEncSvc, stepUpSvc, cfg.Audit.AnonymizeIPs)
 	tangServersHandler := api.NewTangServersHandler(tangSvc)
@@ -768,6 +785,18 @@ func Run(opts Options) {
 
 	// Compliance results — readable by anyone with compliance:view
 	mux.Handle("/api/v1/compliance", authMiddleware(gate.RequireScoped("compliance", "view")(http.HandlerFunc(complianceHandler.List))))
+	// Compliance reports (an optional feature, see reportsGate). Generation
+	// and reads are confined to the caller's node groups; deleting evidence
+	// needs a global report:manage. The handlers audit themselves
+	// (generation, downloads and deletion carry the report hash).
+	mux.Handle("POST /api/v1/compliance/reports", authMiddleware(reportsGate(gate.RequireScoped("report", "create")(http.HandlerFunc(reportsHandler.Create)))))
+	mux.Handle("GET /api/v1/compliance/reports", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.List)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Get)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/nodes", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Nodes)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/results", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Results)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/policies", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Policies)))))
+	mux.Handle("GET /api/v1/compliance/reports/{id}/download", authMiddleware(reportsGate(gate.RequireScoped("report", "view")(http.HandlerFunc(reportsHandler.Download)))))
+	mux.Handle("DELETE /api/v1/compliance/reports/{id}", authMiddleware(reportsGate(gate.Require("report", "manage")(http.HandlerFunc(reportsHandler.Delete)))))
 
 	// Polkit action catalogue — readable by anyone with policy:view
 	mux.Handle("/api/v1/polkit/actions", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(polkitHandler.ListActions))))
@@ -799,6 +828,9 @@ func Run(opts Options) {
 		AuditSvc:        auditSvc,
 		AnonymizeIPs:    cfg.Audit.AnonymizeIPs,
 		SecretRoot:      cfg.Security.JWTSecret,
+		Reports:         reportRegistry,
+		CACert:          caCert,
+		CAKey:           caKey,
 	}, extLogins, opts.Extensions); extErr != nil {
 		log.Fatalf("Failed to initialize extensions: %v", extErr)
 	}
@@ -1044,6 +1076,7 @@ func Run(opts Options) {
 	log.Println("Shutting down server...")
 	flatpakManager.Stop()
 	diskEncSvc.StopJanitor()
+	reportSvc.StopJanitor()
 	enrollGrpcSrv.GracefulStop()
 	policyGrpcSrv.GracefulStop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

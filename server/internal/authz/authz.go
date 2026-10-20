@@ -41,6 +41,10 @@ var scopableResources = map[string]bool{
 	// updates:operate runs a Software updates check, install or reboot on
 	// one node.
 	"updates": true,
+	// report:view and report:create apply to compliance reports whose scope
+	// lies inside the caller's groups; the handler confines generation to
+	// them.
+	"report": true,
 }
 
 // IsScopable reports whether a node-group-scoped binding can grant
