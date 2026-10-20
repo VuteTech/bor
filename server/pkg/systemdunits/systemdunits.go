@@ -258,10 +258,19 @@ func ValidateUnitAction(unit, action string) error {
 	return fmt.Errorf("action must be start, stop or restart")
 }
 
+// timeSpanUnit is one systemd.time(7) unit; longer spellings come first so a
+// prefix never wins.
+const timeSpanUnit = `(?:usec|us|nsec|ns|msec|ms|seconds|second|sec|s|minutes|minute|min|m|hours|hour|hr|h|days|day|d|weeks|week|w|months|month|M|years|year|y)`
+
+// timeSpanNumber is an integer or decimal value.
+const timeSpanNumber = `\d+(?:\.\d+)?`
+
 // timeSpanRE matches the systemd.time(7) time span grammar in ASCII: a
 // sequence of number-unit pairs ("1h 30min", "90s", "1.5h"), a bare number
-// (seconds) or "infinity".
-var timeSpanRE = regexp.MustCompile(`^(infinity|(\d+(\.\d+)?[ ]*(usec|us|nsec|ns|msec|ms|seconds|second|sec|s|minutes|minute|min|m|hours|hour|hr|h|days|day|d|weeks|week|w|months|month|M|years|year|y)?[ ]*)+)$`)
+// (seconds) or "infinity". Two numbers must be separated by a unit or by
+// spaces, so every input matches in exactly one way. The web UI mirrors
+// this pattern.
+var timeSpanRE = regexp.MustCompile(`^(?:infinity|` + timeSpanNumber + `(?:(?: *` + timeSpanUnit + ` *| +)` + timeSpanNumber + `)*(?: *` + timeSpanUnit + `)? *)$`)
 
 // ValidateTimeSpan reports whether s is a well-formed systemd time span.
 // The value is checked as is: it is written verbatim into a drop-in, so

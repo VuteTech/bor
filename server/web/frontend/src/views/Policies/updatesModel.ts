@@ -186,7 +186,12 @@ export function limitProblem(v: number): string | null {
 
 const HOLD_RE = /^[A-Za-z0-9][A-Za-z0-9._+*?-]{0,127}$/;
 const WINDOW_RE = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/;
-const TIME_SPAN_RE = /^(\d+(\.\d+)?\s*(usec|us|msec|ms|seconds?|sec|s|minutes?|min|m|hours?|hr|h|days?|d|weeks?|w|months?|M|years?|y)\s*)+$/;
+// One systemd.time(7) unit; longer spellings come first so a prefix never wins.
+const TIME_SPAN_UNIT = "(?:usec|us|msec|ms|seconds?|sec|s|minutes?|min|m|hours?|hr|h|days?|d|weeks?|w|months?|M|years?|y)";
+const TIME_SPAN_NUMBER = "\\d+(?:\\.\\d+)?";
+// Numbers each followed by a unit, with spaces only between a unit and the
+// next number, so every input matches in exactly one way.
+const TIME_SPAN_RE = new RegExp(`^${TIME_SPAN_NUMBER} *${TIME_SPAN_UNIT}(?: *${TIME_SPAN_NUMBER} *${TIME_SPAN_UNIT})* *$`);
 
 export function holdProblem(h: string): string | null {
   if (!h.trim()) return "Enter a package name or a pattern";
