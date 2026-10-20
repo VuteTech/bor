@@ -16,7 +16,7 @@ updates:
       interval: weekly
     ignore:
       # ESLint 10 cannot be installed until eslint-plugin-jsx-a11y declares
-      # support for it (6.10.x allows eslint ^3–^9 only): npm ci fails with
+      # support for it (6.10.x allows eslint ^3 to ^9 only): npm ci fails with
       # ERESOLVE. Drop this once jsx-a11y ships an ESLint 10 peer range.
       - dependency-name: eslint
         update-types: ["version-update:semver-major"]
