@@ -10,7 +10,7 @@ the endpoint, how to build a policy in the editor, how several policies
 are merged, and how to verify and troubleshoot the result.
 
 !!! note "The Package type is for named packages"
-    The [Package](package.md) type manages repositories and the state of
+    The [Package](packages.md) type manages repositories and the state of
     named packages (installed, latest, removed). The Software updates type
     manages everything else: the distribution's own update engine and the
     reboot. The two work together; a package the Package type keeps at
