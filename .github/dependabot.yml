@@ -20,6 +20,11 @@ updates:
       # ERESOLVE. Drop this once jsx-a11y ships an ESLint 10 peer range.
       - dependency-name: eslint
         update-types: ["version-update:semver-major"]
+      # TypeScript 7 cannot be installed while the @typescript-eslint packages
+      # declare a peer range of typescript >=4.8.4 <6.1.0: the update job fails
+      # to resolve and aborts. Drop this once they support TypeScript 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
