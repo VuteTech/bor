@@ -214,6 +214,40 @@ These metrics carry aggregate labels only, never node names or key material.
 :   Recovery keys revealed to administrators. Each reveal is also recorded in
     the audit log.
 
+### Compliance reports (Bor Enterprise)
+
+Served by servers whose license includes compliance reports. Like the
+metrics above they are read from the database on every scrape.
+
+`bor_compliance_reports_total` (gauge, label `kind`)
+:   Stored reports: `full` reports and daily `summary` snapshots.
+
+`bor_compliance_report_last_generated_timestamp_seconds` (gauge, label `trigger`)
+:   Unix time of the newest stored report per trigger: `manual`,
+    `scheduled`, `daily_summary` or `api`. A trigger that never produced a
+    report has no series.
+
+`bor_compliance_score_pct` (gauge, label `scope`)
+:   Fleet compliance score in percent (`scope="fleet"`) from the newest
+    daily summary that covers all nodes.
+
+`bor_compliance_report_schedules` (gauge, label `state`)
+:   Report schedules by the result of their last run (`ok`, `error`,
+    `skipped`, `never_run`), with switched-off schedules as `disabled`.
+
+`bor_compliance_report_schedules_overdue` (gauge, no labels)
+:   Enabled schedules whose next run is more than 15 minutes late: the
+    scheduler is not running (for example the license has expired) or a
+    run hangs.
+
+`bor_compliance_report_deliveries` (gauge, label `status`)
+:   Webhook calls and emails in the delivery queue: `pending`, `sending`,
+    `sent` and `failed`. Finished deliveries are kept for 90 days.
+
+`bor_compliance_report_signing_certificate_expiry_timestamp_seconds` (gauge, no labels)
+:   Expiry of the active report-signing certificate. The server renews it
+    30 days before; a value closer than that means renewal fails.
+
 !!! note "Missing series mean a failed query"
     If a database query fails during a scrape, the server logs a line starting
     with `metrics:` (for example `metrics: CountByStatus: ...`) and simply
@@ -351,6 +385,45 @@ groups:
           severity: warning
         annotations:
           summary: "Recovery-key escrow operation {{ $labels.op }} failed"
+
+      # Bor Enterprise compliance reports
+      - alert: BorReportScheduleFailing
+        expr: bor_compliance_report_schedules{state="error"} > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} compliance report schedule(s) failed their last run"
+
+      - alert: BorReportScheduleOverdue
+        expr: bor_compliance_report_schedules_overdue > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Compliance report schedules are not running"
+
+      - alert: BorReportDeliveryFailed
+        expr: delta(bor_compliance_report_deliveries{status="failed"}[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A compliance report delivery failed after all retries"
+
+      - alert: BorReportSigningCertificateNotRenewed
+        expr: bor_compliance_report_signing_certificate_expiry_timestamp_seconds - time() < 20 * 86400
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "The compliance report signing certificate was not renewed"
+
+      - alert: BorFleetComplianceLow
+        expr: bor_compliance_score_pct{scope="fleet"} < 90
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: "Fleet compliance score is {{ $value }}%"
 ```
 
 Notes on these rules:
@@ -365,6 +438,10 @@ Notes on these rules:
 - `BorFlatpakCatalogStale` only makes sense when catalog refresh is enabled
   (`flatpak_catalog.refresh_enabled`, on by default). Each repository's refresh
   interval is configured per repository; adjust the threshold to match.
+- `BorReportDeliveryFailed` uses `delta` because the delivery counts are
+  gauges; the **Settings -> Compliance reports** page lists the failed
+  deliveries and retries them. Set the `BorFleetComplianceLow` threshold
+  to your own target.
 - Do not alert on `bor_node_last_seen_seconds` age: as explained above, it only
   changes when an agent reconnects.
 

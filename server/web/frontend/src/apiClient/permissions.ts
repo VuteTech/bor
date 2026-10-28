@@ -17,6 +17,8 @@ export interface PermissionScope {
 
 /** Optional server features, as reported by /api/v1/auth/me. */
 export const FEATURE_NODE_GROUP_SCOPED_RBAC = "node_group_scoped_rbac";
+/** Point-in-time compliance reports (the Reports page and its API). */
+export const FEATURE_COMPLIANCE_REPORTS = "reports";
 
 let currentPermissions: Set<string> = new Set();
 let currentScopes: Record<string, PermissionScope> = {};

@@ -5,6 +5,7 @@
 package metrics
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -19,13 +20,21 @@ import (
 // addr is the listen address in host:port form (e.g. "127.0.0.1:9090").
 // When bearerToken is non-empty every request must carry
 // "Authorization: Bearer <token>"; otherwise no authentication is applied.
-// Every collector in cs is registered on the server's registry.
+// Every collector in cs is registered on the server's registry. The
+// collectors of extension modules in ext are registered after them; one the
+// registry rejects (an invalid or clashing metric) is logged and left out
+// rather than stopping the server.
 //
 // The returned *http.Server is not started — call ListenAndServe in a goroutine.
-func NewServer(addr, bearerToken string, cs ...prometheus.Collector) *http.Server {
+func NewServer(addr, bearerToken string, ext []prometheus.Collector, cs ...prometheus.Collector) *http.Server {
 	reg := prometheus.NewRegistry()
 	for _, c := range cs {
 		reg.MustRegister(c)
+	}
+	for _, c := range ext {
+		if err := reg.Register(c); err != nil {
+			log.Printf("metrics: extension collector not registered: %v", err)
+		}
 	}
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))

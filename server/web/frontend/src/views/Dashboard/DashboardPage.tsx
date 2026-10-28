@@ -19,6 +19,7 @@ import { FleetOverviewSection } from "./FleetOverviewSection";
 import { NodesGroupsSection } from "./NodesGroupsSection";
 import { PoliciesOverviewSection } from "./PoliciesOverviewSection";
 import { PolicyBindingsSection } from "./PolicyBindingsSection";
+import { ComplianceTrendSection } from "./ComplianceTrendSection";
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -122,6 +123,7 @@ export const DashboardPage: React.FC = () => {
       </PageSection>
       <PageSection>
         <FleetOverviewSection data={data.fleet} />
+        <ComplianceTrendSection />
         <NodesGroupsSection data={data.nodesGroups} />
         <PoliciesOverviewSection data={data.policies} />
         <PolicyBindingsSection data={data.bindings} />

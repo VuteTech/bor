@@ -18,10 +18,14 @@ const (
 	// bindings can be created and existing node-group-scoped bindings grant
 	// nothing.
 	NodeGroupScopedRBAC Feature = "node_group_scoped_rbac"
+	// ComplianceReports is the license feature of compliance reports. The
+	// reports are implemented by a server extension (Bor Enterprise); the
+	// web UI shows the Reports page only while the edition enables it.
+	ComplianceReports Feature = "reports"
 )
 
 // AllFeatures lists every known Feature, in a stable order.
-var AllFeatures = []Feature{NodeGroupScopedRBAC}
+var AllFeatures = []Feature{NodeGroupScopedRBAC, ComplianceReports}
 
 // Edition reports the running edition and its enabled features.
 type Edition interface {

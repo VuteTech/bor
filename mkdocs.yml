@@ -98,6 +98,7 @@ nav:
       - Policies: user-guide/policies.md
       - Policy bindings: user-guide/bindings.md
       - Compliance: user-guide/compliance.md
+      - Compliance reports (Enterprise): user-guide/reports.md
       - Users, groups and roles: user-guide/users-and-roles.md
       - Audit log: user-guide/audit-log.md
       - Settings: user-guide/settings.md
