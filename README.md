@@ -34,6 +34,8 @@ can do.
   restores it when someone changes it locally, and reports the event.
 - **Compliance reporting.** Every machine reports, per policy, whether it is
   compliant, and the web interface shows the state of the whole fleet.
+  Bor Enterprise adds point-in-time compliance reports that freeze that
+  state as signed evidence for auditors.
 - **Simple rollout.** Each server hosts signed agent package repositories
   and a deploy wizard, so agents install and enroll with one script and
   managed desktops need no internet access.

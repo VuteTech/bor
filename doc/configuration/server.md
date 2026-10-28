@@ -392,6 +392,53 @@ sudo chmod 0600 /etc/bor/escrow.kek
     up separately from the database backup. See [Backup and
     restore](../operations/backup.md).
 
+## reports
+
+Compliance reports: point-in-time snapshots of the fleet's compliance
+results and posture, with schedules, delivery, waivers and sign-off. See
+[Compliance reports](../user-guide/reports.md). Compliance reports are
+implemented by the Bor Enterprise server; the community server ignores this
+section. Every key can also be set with its environment variable, which
+wins over the file, so the section can be configured from the environment
+alone. **Settings -> Compliance reports** shows the settings in force
+(read-only) and sends a test email. Reports are stored in PostgreSQL (tables `ext_reports_*`) and are
+part of the normal database backup.
+
+| YAML key | Environment variable | Default | Description |
+|----------|----------------------|---------|-------------|
+| `reports.retention_days` | `BOR_REPORT_RETENTION_DAYS` | `1095` | Days a report is kept. An hourly job deletes older unpinned reports and records a `report.purge` audit event. `0` keeps reports forever. |
+| `reports.stale_after` | `BOR_REPORT_STALE_AFTER` | `168h` | Age after which a compliance result counts as stale and a node that is not online counts as unreachable in a report. A Go duration such as `72h`. |
+| `reports.max_results` | `BOR_REPORT_MAX_RESULTS` | `100000` | A report with more node-policy results than this is refused; narrow its scope. |
+| `reports.generate_timeout` | `BOR_REPORT_GENERATE_TIMEOUT` | `120s` | Time budget of one generation, including a fresh-evidence wait. |
+| `reports.daily_summary` | `BOR_REPORT_DAILY_SUMMARY` | `true` | Store one summary (counts only) per day for the fleet and for every node group; they feed the compliance trend. |
+| `reports.refresh_wait` | `BOR_REPORT_REFRESH_WAIT` | `60s` | How long a fresh-evidence report waits for the agents to re-check. Bounded by `generate_timeout`. |
+| `reports.refresh_rate` | `BOR_REPORT_REFRESH_RATE` | `50` | Agents per second a fresh-evidence report asks to re-check. |
+| `reports.public_url` | `BOR_REPORT_PUBLIC_URL` | (none) | The web UI's address, `https://...`; deliveries link to reports under it. Without it, webhook payloads and emails carry no links. |
+| `reports.timestamp_url` | `BOR_REPORT_TIMESTAMP_URL` | (none) | An RFC 3161 time-stamping authority that time-stamps the PDF signature. Leave it empty on air-gapped installations; a PDF that cannot be time-stamped is not produced. |
+| `reports.smtp.host` | `BOR_REPORT_SMTP_HOST` | (none) | Mail relay for email delivery; empty disables email. |
+| `reports.smtp.port` | `BOR_REPORT_SMTP_PORT` | `587`, or `465` with `tls: implicit` | Relay port. |
+| `reports.smtp.tls` | `BOR_REPORT_SMTP_TLS` | `starttls` | `starttls` (the relay must offer it) or `implicit`. Mail is never sent in the clear. |
+| `reports.smtp.username` | `BOR_REPORT_SMTP_USERNAME` | (none) | Login for the relay (SMTP AUTH PLAIN over TLS). |
+| `reports.smtp.password_file` / `password_env` | `BOR_REPORT_SMTP_PASSWORD_FILE`, `BOR_REPORT_SMTP_PASSWORD` | (none) | The relay password: read from a file, or from the environment variable `password_env` names. `BOR_REPORT_SMTP_PASSWORD` gives the password itself (for example from a container secret) and wins over every other source. Never in `server.yaml`. |
+| `reports.smtp.ca_file` | `BOR_REPORT_SMTP_CA_FILE` | (system CAs) | PEM file of the certificate authorities the relay's certificate is checked against, for a relay with a certificate from a private CA. |
+| `reports.smtp.from` | `BOR_REPORT_SMTP_FROM` | (none) | Sender address, for example `Bor <bor@example.com>`. Required with `host`. |
+| `reports.allow_http_webhooks` | `BOR_REPORT_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs. Keep it off outside test environments. |
+| `reports.ocsf_findings` | `BOR_REPORT_OCSF_FINDINGS` | `true` | Forward compliance status changes as OCSF Compliance Findings when the audit log is forwarded in OCSF format. |
+| `reports.required_approvals` | `BOR_REPORT_REQUIRED_APPROVALS` | `1` | Approvals (by people other than the generator) a report needs to count as approved; 1 to 5. |
+| `reports.waiver_max_days` | `BOR_REPORT_WAIVER_MAX_DAYS` | `365` | Longest lifetime of a waiver. |
+| `reports.catch_up_window` | `BOR_REPORT_CATCH_UP_WINDOW` | `24h` | A schedule run missed while the server was down runs at startup when it is younger than this; older runs are skipped. |
+
+```yaml
+reports:
+  retention_days: 1095
+  public_url: "https://bor.example.com"
+  smtp:
+    host: "smtp.example.com"
+    username: "bor"
+    password_file: "/etc/bor/smtp-password"
+    from: "Bor <bor@example.com>"
+```
+
 ## Systemd options that are not configuration keys
 
 Some behavior is controlled through the service environment rather than
@@ -458,4 +505,7 @@ audit:
 
 disk_encryption:
   escrow_kek_file: "/etc/bor/escrow.kek"
+reports:
+  retention_days: 1095
+  stale_after: 168h
 ```

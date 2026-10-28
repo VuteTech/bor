@@ -48,7 +48,7 @@ type SyslogConfig struct {
 // events are dropped and a warning is logged.
 type SyslogSink struct {
 	cfg      *SyslogConfig
-	queue    chan *auditpb.AuditEvent
+	queue    chan syslogItem
 	mu       sync.Mutex
 	conn     net.Conn
 	stopOnce sync.Once
@@ -57,12 +57,20 @@ type SyslogSink struct {
 
 const syslogQueueSize = 512
 
+// syslogItem is a queued message: an audit event, or a pre-formatted body
+// forwarded for an extension module.
+type syslogItem struct {
+	event    *auditpb.AuditEvent
+	raw      string
+	severity int
+}
+
 // NewSyslogSink creates and starts a SyslogSink.
 // Call Close() to drain the queue and shut down the sender goroutine.
 func NewSyslogSink(cfg *SyslogConfig) *SyslogSink {
 	s := &SyslogSink{
 		cfg:   cfg,
-		queue: make(chan *auditpb.AuditEvent, syslogQueueSize),
+		queue: make(chan syslogItem, syslogQueueSize),
 		stop:  make(chan struct{}),
 	}
 	go s.sender()
@@ -72,9 +80,25 @@ func NewSyslogSink(cfg *SyslogConfig) *SyslogSink {
 // Emit enqueues an event for asynchronous delivery. Non-blocking.
 func (s *SyslogSink) Emit(_ context.Context, event *auditpb.AuditEvent) {
 	select {
-	case s.queue <- event:
+	case s.queue <- syslogItem{event: event}:
 	default:
 		log.Printf("audit SyslogSink: queue full, dropping event action=%s", event.GetAction())
+	}
+}
+
+// Format is the configured message body format.
+func (s *SyslogSink) Format() SyslogFormat { return s.cfg.Format }
+
+// ForwardRaw enqueues a message body that is already in the configured
+// format, with a syslog severity (0-7). Non-blocking.
+func (s *SyslogSink) ForwardRaw(body string, severity int) {
+	if severity < 0 || severity > 7 {
+		severity = 6
+	}
+	select {
+	case s.queue <- syslogItem{raw: body, severity: severity}:
+	default:
+		log.Printf("audit SyslogSink: queue full, dropping forwarded message")
 	}
 }
 
@@ -87,14 +111,14 @@ func (s *SyslogSink) Close() {
 func (s *SyslogSink) sender() {
 	for {
 		select {
-		case event := <-s.queue:
-			s.send(event)
+		case item := <-s.queue:
+			s.send(item)
 		case <-s.stop:
 			// Drain remaining events before exit.
 			for {
 				select {
-				case event := <-s.queue:
-					s.send(event)
+				case item := <-s.queue:
+					s.send(item)
 				default:
 					s.closeConn()
 					return
@@ -104,12 +128,17 @@ func (s *SyslogSink) sender() {
 	}
 }
 
-// send formats and writes one event, reconnecting if necessary.
-func (s *SyslogSink) send(event *auditpb.AuditEvent) {
-	msg, err := s.format(event)
-	if err != nil {
-		log.Printf("audit SyslogSink: format error: %v", err)
-		return
+// send formats and writes one message, reconnecting if necessary.
+func (s *SyslogSink) send(item syslogItem) {
+	var msg string
+	if item.event != nil {
+		var err error
+		if msg, err = s.format(item.event); err != nil {
+			log.Printf("audit SyslogSink: format error: %v", err)
+			return
+		}
+	} else {
+		msg = s.header(item.severity, time.Now().UTC()) + item.raw
 	}
 
 	frame := s.frame(msg)
@@ -134,22 +163,11 @@ func (s *SyslogSink) send(event *auditpb.AuditEvent) {
 // format renders the AuditEvent as a RFC 5424 syslog message string.
 // The syslog header uses priority derived from facility + severity.
 func (s *SyslogSink) format(event *auditpb.AuditEvent) (string, error) {
-	facility := s.cfg.Facility
-	if facility == 0 {
-		facility = 16 // local0
-	}
-
 	severity := syslogSeverity(event.GetAction())
-	priority := facility*8 + severity
 
 	ts := time.Now().UTC()
 	if event.GetOccurredAt() != nil {
 		ts = event.GetOccurredAt().AsTime().UTC()
-	}
-
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "-"
 	}
 
 	var body string
@@ -164,13 +182,21 @@ func (s *SyslogSink) format(event *auditpb.AuditEvent) (string, error) {
 		body = FormatCEF(event)
 	}
 
-	// RFC 5424: <priority>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID STRUCTURED-DATA MSG
-	return fmt.Sprintf("<%d>1 %s %s Bor - - - %s",
-		priority,
-		ts.Format(time.RFC3339),
-		hostname,
-		body,
-	), nil
+	return s.header(severity, ts) + body, nil
+}
+
+// header renders the RFC 5424 header up to and including the space before
+// MSG: <priority>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID STRUCTURED-DATA.
+func (s *SyslogSink) header(severity int, ts time.Time) string {
+	facility := s.cfg.Facility
+	if facility == 0 {
+		facility = 16 // local0
+	}
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "-"
+	}
+	return fmt.Sprintf("<%d>1 %s %s Bor - - - ", facility*8+severity, ts.Format(time.RFC3339), hostname)
 }
 
 // frame wraps a syslog message for the configured transport.

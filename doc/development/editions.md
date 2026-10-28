@@ -89,7 +89,7 @@ expires) without a restart.
 ### Features
 
 `Feature` is a string type. The known features are listed in
-`edition.AllFeatures`; there is currently one:
+`edition.AllFeatures`; there are currently two:
 
 `NodeGroupScopedRBAC` (`"node_group_scoped_rbac"`)
 :   Role bindings scoped to a single node group (delegated
@@ -102,6 +102,14 @@ expires) without a restart.
     ```go
     nodeGroupScopes := func() bool { return ed.Enabled(edition.NodeGroupScopedRBAC) }
     ```
+
+`ComplianceReports` (`"reports"`)
+:   Point-in-time compliance reports. They are implemented entirely by the
+    enterprise `reports` extension module (storage, generation, API under
+    `/api/v1/ext/reports/`, signing, documents, schedules); the community
+    server contains only the web UI pages, which show the **Reports** page
+    while the edition enables the feature (the feature list of
+    `/api/v1/auth/me` drives it) and a Bor Enterprise notice otherwise.
 
 To add a feature, declare a new `Feature` constant, append it to
 `AllFeatures`, and gate the behavior on `ed.Enabled(...)` at request time.
@@ -227,8 +235,40 @@ Audit and secrets
     `RequestUser(r)` returns the signed-in user inside a `HandleAdmin`
     route.
 
-The community edition registers no modules, so `/api/v1/ext-panels`
-returns an empty list and the login page shows no extra buttons.
+Permissions for user routes
+:   `HandleUser(pattern, h)` mounts a handler for any signed-in user; the
+    handler checks each operation with `Authorize(w, r, resource, action,
+    scoped)`, which returns where the user holds the permission (globally,
+    or the node groups of a scoped role binding) and answers 403 with an
+    audited denial otherwise. `RegisterScopableResource(resource)` lets
+    node-group-scoped role bindings grant the module's permissions; the
+    module must then confine every operation to the returned groups
+    (`DenyOutOfScope` refuses and audits an object outside them).
+
+Agents, compliance results and certificates
+:   `Agents().Resync(nodeName)` asks a connected agent to re-apply its
+    policies and report compliance again.
+    `RegisterComplianceListener(l)` tells the module about every
+    compliance result an agent reports, with the previous status, the
+    items and the node's operating system; the listener runs on the
+    agent's request and must return quickly. `SIEM()` forwards a
+    pre-formatted message with the audit log's syslog forwarding (and
+    reports its format, `ocsf` or `cef`, or none). `PKI()` gives access to
+    the server's certificate authority: `CACertificatePEM()` and
+    `IssueCertificate(ctx, ext.CertificateRequest{...})`, which today
+    issues document-signing certificates (extended key usage
+    id-kp-documentSigning, no TLS usages) for a public key the module
+    generated and keeps itself.
+
+Metrics
+:   `RegisterMetrics(collector)`, called from `Init`, adds a Prometheus
+    collector to the server's `/metrics` endpoint. Metric names start with
+    `bor_`; a collector the registry rejects (an invalid or clashing
+    metric) is logged and left out without stopping the server.
+
+The community edition registers no modules and enables no features, so
+`/api/v1/ext-panels` returns an empty list, the login page shows no extra
+buttons and no compliance report routes exist.
 
 ## Building a distribution
 

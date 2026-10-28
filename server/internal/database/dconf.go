@@ -125,25 +125,32 @@ func (r *DConfRepository) ListSchemasByNode(ctx context.Context, nodeID string) 
 
 // UpsertComplianceResult inserts or updates a compliance result for a (node, policy) pair.
 // itemsJSON is a JSON array of per-item results (may be nil/empty for non-dconf policies).
-func (r *DConfRepository) UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) error {
+// It returns the status stored before, or "" when this is the pair's first result.
+func (r *DConfRepository) UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) (string, error) {
 	var items any
 	if len(itemsJSON) > 0 {
 		items = itemsJSON
 	}
-	_, err := r.db.ExecContext(ctx, `
+	var previous *string
+	err := r.db.QueryRowContext(ctx, `
+		WITH prev AS (SELECT status FROM compliance_results WHERE node_id = $1 AND policy_id = $2)
 		INSERT INTO compliance_results (node_id, policy_id, status, message, items_json, reported_at)
 		VALUES ($1, $2, $3, $4, $5, NOW())
 		ON CONFLICT (node_id, policy_id) DO UPDATE
 		  SET status      = EXCLUDED.status,
 		      message     = EXCLUDED.message,
 		      items_json  = EXCLUDED.items_json,
-		      reported_at = EXCLUDED.reported_at`,
+		      reported_at = EXCLUDED.reported_at
+		RETURNING (SELECT status FROM prev)`,
 		nodeID, policyID, statusStr, nullableString(message), items,
-	)
+	).Scan(&previous)
 	if err != nil {
-		return fmt.Errorf("dconf: upsert compliance result: %w", err)
+		return "", fmt.Errorf("dconf: upsert compliance result: %w", err)
 	}
-	return nil
+	if previous == nil {
+		return "", nil
+	}
+	return *previous, nil
 }
 
 // ComplianceRow is a single compliance result row with joined names.

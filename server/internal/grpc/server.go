@@ -11,9 +11,11 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/services"
+	"github.com/VuteTech/Bor/server/pkg/ext"
 	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc/codes"
@@ -47,13 +49,30 @@ type PolicyServer struct {
 	updatesActions updatesActionSink
 	hub            *PolicyHub
 	diskEncSvc     *services.DiskEncryptionService
+	// compliance is told about every reported compliance result; nil when
+	// nobody listens.
+	compliance complianceListener
+}
+
+// complianceListener receives reported compliance results
+// (reports.Registry implements it for extension modules).
+type complianceListener interface {
+	HasComplianceListeners() bool
+	ComplianceReported(ctx context.Context, c *ext.ComplianceChange)
+}
+
+// WithComplianceListener tells l about every compliance result an agent
+// reports.
+func (s *PolicyServer) WithComplianceListener(l complianceListener) *PolicyServer {
+	s.compliance = l
+	return s
 }
 
 // dconfRepository is the subset of database.DConfRepository used by PolicyServer.
 type dconfRepository interface {
 	UpsertSchema(ctx context.Context, schema *pb.GSettingsSchema, source string) error
 	ReplaceNodeSchemas(ctx context.Context, nodeID string, schemaIDs []string) error
-	UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) error
+	UpsertComplianceResult(ctx context.Context, nodeID, policyID, statusStr, message string, itemsJSON []byte) (previous string, err error)
 }
 
 // polkitRepository is the subset of database.PolkitRepository used by PolicyServer.
@@ -342,17 +361,41 @@ func (s *PolicyServer) ReportCompliance(ctx context.Context, req *pb.ReportCompl
 				Message:  it.GetMessage(),
 			})
 		}
-		if b, err := json.Marshal(arr); err == nil {
+		if b, mErr := json.Marshal(arr); mErr == nil {
 			itemsJSON = b
 		}
 	}
 
-	if err := s.dconfRepo.UpsertComplianceResult(ctx, node.ID, req.GetPolicyId(), statusStr, req.GetMessage(), itemsJSON); err != nil {
+	previous, err := s.dconfRepo.UpsertComplianceResult(ctx, node.ID, req.GetPolicyId(), statusStr, req.GetMessage(), itemsJSON)
+	if err != nil {
 		log.Printf("WARNING: ReportCompliance: failed to persist result for node %s policy %s: %v", node.ID, req.GetPolicyId(), err)
 		return nil, status.Errorf(codes.Internal, "failed to persist compliance result")
 	}
+	if s.compliance != nil && s.compliance.HasComplianceListeners() {
+		change := &ext.ComplianceChange{
+			NodeID: node.ID, NodeName: node.Name, OSName: derefString(node.OSName), OSVersion: derefString(node.OSVersion),
+			PolicyID: req.GetPolicyId(), PreviousStatus: previous, Status: statusStr, Message: req.GetMessage(),
+			ReportedAt: time.Now().UTC(),
+		}
+		if p, perr := s.policySvc.GetPolicy(ctx, req.GetPolicyId()); perr == nil && p != nil {
+			change.PolicyName, change.PolicyType = p.Name, p.Type
+		}
+		for _, it := range req.GetItems() {
+			change.Items = append(change.Items, ext.ComplianceItem{
+				SchemaID: it.GetSchemaId(), Key: it.GetKey(), Status: complianceStatusToString(it.GetStatus(), false), Message: it.GetMessage(),
+			})
+		}
+		s.compliance.ComplianceReported(ctx, change)
+	}
 
 	return &pb.ReportComplianceResponse{Success: true}, nil
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // complianceStatusToString converts a pb.ComplianceStatus to its VARCHAR representation.

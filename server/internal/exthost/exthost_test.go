@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/VuteTech/Bor/server/pkg/ext"
 )
 
@@ -200,5 +202,20 @@ func TestDecideMFA(t *testing.T) {
 		if got := decideMFA(&ac, tt.required, tt.hasLocal); got != tt.want {
 			t.Errorf("%s: decideMFA = %d, want %d", tt.name, got, tt.want)
 		}
+	}
+}
+
+func TestHost_RegisterMetrics(t *testing.T) {
+	reg := NewRegistry()
+	h := &host{name: "reports", deps: testDeps(), reg: reg}
+	if err := h.RegisterMetrics(nil); err == nil {
+		t.Error("a nil collector must be rejected")
+	}
+	g := prometheus.NewGauge(prometheus.GaugeOpts{Name: "bor_test", Help: "Test."})
+	if err := h.RegisterMetrics(g); err != nil {
+		t.Fatal(err)
+	}
+	if got := reg.Collectors(); len(got) != 1 || got[0] != g {
+		t.Errorf("Collectors() = %v", got)
 	}
 }

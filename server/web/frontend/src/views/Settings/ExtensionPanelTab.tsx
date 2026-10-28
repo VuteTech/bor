@@ -168,7 +168,7 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
               ))}
             </DescriptionList>
           )}
-          {(s.tables ?? []).map((t) => (
+          {(s.tables ?? []).map((t) => ({ ...t, rows: t.rows ?? [] })).map((t) => (
             <div key={t.title} style={{ marginBottom: 16 }}>
               <Content component="h4">{t.title}</Content>
               {t.rows.length === 0 ? (

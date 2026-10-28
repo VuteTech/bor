@@ -496,6 +496,7 @@ func Run(opts Options) {
 		WithTangService(tangSvc).
 		WithMetrics(luksEscrowOps, luksReveals)
 	diskEncSvc.StartJanitor(context.Background())
+
 	stepUpSvc := services.NewStepUpService(authSvc, mfaSvc, cfg.Security.JWTSecret, cfg.DiskEncryption.RequireMFAForReveal)
 	diskEncHandler := api.NewDiskEncryptionHandler(diskEncSvc, stepUpSvc, cfg.Audit.AnonymizeIPs)
 	tangServersHandler := api.NewTangServersHandler(tangSvc)
@@ -784,6 +785,10 @@ func Run(opts Options) {
 	// Extension modules mount their routes under /api/v1/ext/<module>/.
 	mux.Handle("/api/v1/sso-link-approvals/", authMiddleware(gate.Require("user", "edit")(auditMw(api.NewSSOLinkApprovalHandler(authSvc, userRepo)))))
 	mux.Handle("/api/v1/ext-panels", authMiddleware(gate.Require("settings", "manage")(http.HandlerFunc(extLogins.Panels))))
+	var siem ext.SIEM
+	if syslogSink != nil {
+		siem = syslogSIEM{syslogSink}
+	}
 	if extErr := exthost.Init(context.Background(), &exthost.Deps{
 		Mux:             mux,
 		AuthMiddleware:  authMiddleware,
@@ -799,6 +804,10 @@ func Run(opts Options) {
 		AuditSvc:        auditSvc,
 		AnonymizeIPs:    cfg.Audit.AnonymizeIPs,
 		SecretRoot:      cfg.Security.JWTSecret,
+		Agents:          hubAgents{policyHub},
+		SIEM:            siem,
+		CACert:          caCert,
+		CAKey:           caKey,
 	}, extLogins, opts.Extensions); extErr != nil {
 		log.Fatalf("Failed to initialize extensions: %v", extErr)
 	}
@@ -929,7 +938,8 @@ func Run(opts Options) {
 			WithMacRepository(macRepo).
 			WithUpdatesRepository(updatesRepo).
 			WithMacActions(macActions).
-			WithUpdatesActions(updatesActions))
+			WithUpdatesActions(updatesActions).
+			WithComplianceListener(extLogins))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
@@ -1004,7 +1014,7 @@ func Run(opts Options) {
 		nodeRepo, policyRepo, policyBindingRepo,
 		auditLogRepo, userRepo, dconfRepo, flatpakRepo, luksRepo,
 	)
-	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, metricsCollector, agentPackageDownloads, flatpakRefreshes, luksEscrowOps, luksReveals)
+	metricsServer := metrics.NewServer(cfg.Metrics.ListenAddr, cfg.Metrics.BearerToken, extLogins.Collectors(), metricsCollector, agentPackageDownloads, flatpakRefreshes, luksEscrowOps, luksReveals)
 
 	// Start both servers.
 	go func() {
@@ -1063,6 +1073,18 @@ func Run(opts Options) {
 
 	log.Println("Server stopped")
 }
+
+// hubAgents lets extension modules ask connected agents to re-sync.
+type hubAgents struct{ hub *grpcserver.PolicyHub }
+
+func (a hubAgents) Resync(nodeName string) bool { return a.hub.SendResync(nodeName) }
+
+// syslogSIEM forwards extension module messages through the audit syslog
+// sink.
+type syslogSIEM struct{ sink *auditsink.SyslogSink }
+
+func (s syslogSIEM) Format() string                    { return string(s.sink.Format()) }
+func (s syslogSIEM) Forward(body string, severity int) { s.sink.ForwardRaw(body, severity) }
 
 // ResetMFA connects to the database using environment config, looks up the
 // user by username, and deletes their MFA record (the -reset-mfa recovery

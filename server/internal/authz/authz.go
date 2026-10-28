@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
@@ -43,9 +44,24 @@ var scopableResources = map[string]bool{
 	"updates": true,
 }
 
+// scopableMu guards scopableResources against registrations by extension
+// modules.
+var scopableMu sync.RWMutex
+
+// RegisterScopable lets node-group-scoped bindings grant permissions on a
+// resource whose handlers confine every operation to the caller's groups
+// (extension modules register their resources at startup).
+func RegisterScopable(resource string) {
+	scopableMu.Lock()
+	defer scopableMu.Unlock()
+	scopableResources[resource] = true
+}
+
 // IsScopable reports whether a node-group-scoped binding can grant
 // permissions on resource.
 func IsScopable(resource string) bool {
+	scopableMu.RLock()
+	defer scopableMu.RUnlock()
 	return scopableResources[resource]
 }
 

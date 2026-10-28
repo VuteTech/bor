@@ -14,11 +14,15 @@ package ext
 
 import (
 	"context"
+	"crypto"
 	"database/sql"
 	"errors"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Module is an optional server component.
@@ -41,6 +45,22 @@ type Host interface {
 	// holding resource:action globally. Same prefix rule as HandlePublic.
 	// State-changing requests are recorded by the audit middleware.
 	HandleAdmin(pattern, resource, action string, h http.Handler) error
+	// HandleUser mounts a handler for any signed-in user (same prefix rule).
+	// The handler checks each operation's permission with Authorize and
+	// audits its own changes.
+	HandleUser(pattern string, h http.Handler) error
+	// Authorize returns where the user of a HandleUser request holds
+	// resource:action. When it is not held, or held only for node groups
+	// and scoped is false, Authorize answers 403, audits the denial and
+	// returns false.
+	Authorize(w http.ResponseWriter, r *http.Request, resource, action string, scoped bool) (Scope, bool)
+	// DenyOutOfScope answers 403 for an object outside the caller's
+	// node-group scope and audits it.
+	DenyOutOfScope(w http.ResponseWriter, r *http.Request, resource, action, objectID string)
+	// RegisterScopableResource lets node-group-scoped role bindings grant
+	// the module's permissions on resource; its handlers confine every
+	// operation to the caller's groups.
+	RegisterScopableResource(resource string) error
 
 	// RunMigrations applies the module's *.up.sql files in dir of fsys, in
 	// name order, once each. They are tracked per module, so their numbering
@@ -62,6 +82,52 @@ type Host interface {
 	// Secrets encrypts and decrypts data at rest with a key derived for this
 	// module from the server's secret.
 	Secrets() SecretBox
+	// PKI issues certificates from the server's certificate authority.
+	PKI() PKI
+	// SIEM forwards messages to the system the audit log is forwarded to.
+	SIEM() SIEM
+	// Agents acts on connected agents.
+	Agents() Agents
+	// RegisterComplianceListener adds a listener that is told about every
+	// compliance result an agent reports.
+	RegisterComplianceListener(l ComplianceListener) error
+	// RegisterMetrics adds a collector to the server's Prometheus metrics
+	// endpoint. Call it from Init. Metric names start with bor_ and must not
+	// clash with the server's own; a collector the registry rejects is
+	// logged and left out.
+	RegisterMetrics(c prometheus.Collector) error
+}
+
+// Scope is where a user holds a permission: everywhere, or in some node
+// groups.
+type Scope struct {
+	Global       bool
+	NodeGroupIDs []string
+}
+
+// AllowsAll reports whether every group in ids lies inside the scope.
+func (s Scope) AllowsAll(ids []string) bool {
+	if s.Global {
+		return true
+	}
+	held := make(map[string]bool, len(s.NodeGroupIDs))
+	for _, id := range s.NodeGroupIDs {
+		held[id] = true
+	}
+	for _, id := range ids {
+		if !held[id] {
+			return false
+		}
+	}
+	return true
+}
+
+// Agents acts on the agents connected to the server.
+type Agents interface {
+	// Resync asks the connected agent of a node (by node name) to re-apply
+	// its policies and report compliance again. It returns false when the
+	// agent is not connected.
+	Resync(nodeName string) bool
 }
 
 // User is a Bor user as seen by modules.
@@ -401,4 +467,79 @@ type PanelAction struct {
 	// shown once with a copy control), "message" (the "message" member) or
 	// "" (nothing).
 	Result string `json:"result,omitempty"`
+}
+
+// ─── Compliance results, certificates, SIEM ─────────────────────────────
+
+// ComplianceItem is one setting of a compliance result.
+type ComplianceItem struct {
+	SchemaID string
+	Key      string
+	Status   string
+	Message  string
+}
+
+// ComplianceChange is a compliance result an agent has just reported.
+type ComplianceChange struct {
+	NodeID    string
+	NodeName  string
+	OSName    string
+	OSVersion string
+	PolicyID  string
+	// PolicyName and PolicyType are empty when the policy is unknown.
+	PolicyName string
+	PolicyType string
+	// PreviousStatus is the status stored before this report, or "" for
+	// the first result of the node and policy.
+	PreviousStatus string
+	Status         string
+	Message        string
+	Items          []ComplianceItem
+	ReportedAt     time.Time
+}
+
+// ComplianceListener is told about compliance results as agents report
+// them. ComplianceReported runs on the agent's request: it must return
+// quickly and must not fail the report.
+type ComplianceListener interface {
+	ComplianceReported(ctx context.Context, c *ComplianceChange)
+}
+
+// SIEM forwards messages to the security information and event management
+// system the server's audit log goes to (syslog forwarding).
+type SIEM interface {
+	// Format is the configured message format, "ocsf" or "cef", or ""
+	// when forwarding is off.
+	Format() string
+	// Forward queues one message body in Format with a syslog severity
+	// (0 emergency to 7 debug). It never blocks.
+	Forward(body string, severity int)
+}
+
+// CertificateRequest asks the server's certificate authority for a
+// certificate.
+type CertificateRequest struct {
+	// CommonName is the subject's common name.
+	CommonName string
+	// PublicKey is the key to certify: ECDSA P-256 or stronger, RSA-3072 or
+	// stronger, or Ed25519.
+	PublicKey crypto.PublicKey
+	// Usage selects the certificate profile. "document-signing" (extended
+	// key usage id-kp-documentSigning) is the only profile today.
+	Usage string
+	// Validity is how long the certificate is valid; zero means one year.
+	Validity time.Duration
+}
+
+// Certificate usage profiles for CertificateRequest.Usage.
+const (
+	CertificateUsageDocumentSigning = "document-signing"
+)
+
+// PKI is the server's certificate authority as seen by modules.
+type PKI interface {
+	// CACertificatePEM returns the CA certificate the agents trust.
+	CACertificatePEM() []byte
+	// IssueCertificate signs a certificate for req and returns it in PEM.
+	IssueCertificate(ctx context.Context, req CertificateRequest) (certPEM []byte, err error)
 }

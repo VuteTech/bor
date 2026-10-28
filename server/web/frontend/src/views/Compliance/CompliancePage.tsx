@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router";
 import {
   PageSection,
   Title,
@@ -24,9 +25,11 @@ import {
 } from "@patternfly/react-core";
 import { Table, Thead, Tr, Th, Tbody, Td, ExpandableRowContent, ThProps } from "@patternfly/react-table";
 import SyncAltIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
+import FileAltIcon from "@patternfly/react-icons/dist/esm/icons/file-alt-icon";
 
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
+import { hasPermission, hasFeature, FEATURE_COMPLIANCE_REPORTS } from "../../apiClient/permissions";
 import {
   fetchCompliancePaged,
   fetchDConfSchemas,
@@ -132,12 +135,13 @@ function buildSummaryIndex(schemas: DConfSchema[]): Map<string, string> {
 
 /* ── per-item breakdown sub-table ── */
 
-interface ItemsTableProps {
+export interface ItemsTableProps {
   items: ComplianceItem[];
   summaryIndex: Map<string, string>;
 }
 
-const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
+/** Per-item breakdown of one compliance result; also used by the report pages. */
+export const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
   <Table aria-label="Per-key compliance breakdown" variant="compact" borders={false}
     style={{ marginLeft: "2rem", marginTop: "0.5rem", marginBottom: "0.5rem" }}
   >
@@ -197,7 +201,7 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
               {item.controls?.length ? (
                 <div style={{ marginTop: "0.25rem", display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
                   {item.controls.map((c) => (
-                    <Label key={`${c.framework}-${c.id}`} isCompact variant="outline" title={`${c.framework}: ${c.title}`}>
+                    <Label key={`${c.framework}-${c.id}`} isCompact variant="outline" title={c.title ? `${c.framework}: ${c.title}` : c.framework}>
                       {c.short}
                     </Label>
                   ))}
@@ -214,6 +218,8 @@ const ItemsTable: React.FC<ItemsTableProps> = ({ items, summaryIndex }) => (
 /* ── component ── */
 
 export const CompliancePage: React.FC = () => {
+  const reportsEnabled = hasFeature(FEATURE_COMPLIANCE_REPORTS);
+  const navigate = useNavigate();
   const [results, setResults] = useState<ComplianceResult[]>([]);
   const [schemas, setSchemas] = useState<DConfSchema[]>([]);
   const [loading, setLoading] = useState(true);
@@ -312,15 +318,33 @@ export const CompliancePage: React.FC = () => {
           <Title headingLevel="h1" size="xl">Compliance</Title>
         </FlexItem>
         <FlexItem>
-          <Button
-            variant="plain"
-            onClick={() => load(true)}
-            isLoading={refreshing}
-            isDisabled={refreshing}
-            aria-label="Refresh compliance results"
-          >
-            <SyncAltIcon />
-          </Button>
+          <Flex spaceItems={{ default: "spaceItemsSm" }} alignItems={{ default: "alignItemsCenter" }}>
+            {reportsEnabled && hasPermission("report:create") && (
+              <FlexItem>
+                <Button variant="primary" icon={<FileAltIcon />} onClick={() => navigate("/reports?new=1")}>
+                  Generate report
+                </Button>
+              </FlexItem>
+            )}
+            {reportsEnabled && hasPermission("report:view") && (
+              <FlexItem>
+                <Button variant="link" onClick={() => navigate("/reports")}>
+                  Reports
+                </Button>
+              </FlexItem>
+            )}
+            <FlexItem>
+              <Button
+                variant="plain"
+                onClick={() => load(true)}
+                isLoading={refreshing}
+                isDisabled={refreshing}
+                aria-label="Refresh compliance results"
+              >
+                <SyncAltIcon />
+              </Button>
+            </FlexItem>
+          </Flex>
         </FlexItem>
       </Flex>
 

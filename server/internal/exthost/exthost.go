@@ -8,10 +8,12 @@ package exthost
 
 import (
 	"context"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -26,12 +29,15 @@ import (
 	"sync"
 
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/VuteTech/Bor/server/internal/api"
+	"github.com/VuteTech/Bor/server/internal/authz"
 	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
+	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/ext"
 	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
@@ -56,6 +62,16 @@ type Deps struct {
 	AnonymizeIPs bool
 	// SecretRoot is the server secret module SecretBox keys derive from.
 	SecretRoot string
+
+	// SIEM forwards module messages with the audit log; nil when audit
+	// forwarding is off.
+	SIEM ext.SIEM
+	// Agents acts on connected agents; nil in tests.
+	Agents ext.Agents
+	// CACert and CAKey are the server's certificate authority, for
+	// certificates modules ask for through Host.PKI().
+	CACert *x509.Certificate
+	CAKey  crypto.Signer
 }
 
 var moduleName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -162,6 +178,107 @@ func (h *host) RequestUser(r *http.Request) (userID, username string) {
 func (h *host) Identity() ext.Identity    { return &identity{deps: h.deps, module: h.name} }
 func (h *host) Logins() ext.LoginRegistry { return &logins{reg: h.reg, prefix: h.prefix()} }
 func (h *host) Audit() ext.Auditor        { return &auditor{deps: h.deps} }
+
+func (h *host) HandleUser(pattern string, handler http.Handler) error {
+	return h.handle(pattern, h.deps.AuthMiddleware(h.deps.Gate.Authenticated()(handler)))
+}
+
+func (h *host) Authorize(w http.ResponseWriter, r *http.Request, resource, action string, scoped bool) (ext.Scope, bool) {
+	held, ok := api.Authorize(w, r, resource, action, scoped)
+	return ext.Scope{Global: held.IsGlobal(), NodeGroupIDs: held.GroupIDs()}, ok
+}
+
+func (h *host) DenyOutOfScope(w http.ResponseWriter, r *http.Request, resource, action, objectID string) {
+	api.DenyOutOfScope(w, r, resource, action, objectID)
+}
+
+func (h *host) RegisterScopableResource(resource string) error {
+	if !moduleName.MatchString(strings.ReplaceAll(resource, "_", "-")) {
+		return fmt.Errorf("invalid resource name %q", resource)
+	}
+	authz.RegisterScopable(resource)
+	return nil
+}
+
+func (h *host) Agents() ext.Agents {
+	if h.deps.Agents == nil {
+		return noAgents{}
+	}
+	return h.deps.Agents
+}
+
+// noAgents is the agent control of a server without a policy hub (tests).
+type noAgents struct{}
+
+func (noAgents) Resync(string) bool { return false }
+
+func (h *host) RegisterComplianceListener(l ext.ComplianceListener) error {
+	if l == nil {
+		return errors.New("nil compliance listener")
+	}
+	h.reg.mu.Lock()
+	defer h.reg.mu.Unlock()
+	h.reg.listeners = append(h.reg.listeners, l)
+	return nil
+}
+
+func (h *host) RegisterMetrics(c prometheus.Collector) error {
+	if c == nil {
+		return errors.New("nil metrics collector")
+	}
+	h.reg.mu.Lock()
+	defer h.reg.mu.Unlock()
+	h.reg.collectors = append(h.reg.collectors, c)
+	return nil
+}
+
+func (h *host) SIEM() ext.SIEM {
+	if h.deps.SIEM == nil {
+		return noSIEM{}
+	}
+	return h.deps.SIEM
+}
+
+// noSIEM is the SIEM of a server that does not forward its audit log.
+type noSIEM struct{}
+
+func (noSIEM) Format() string      { return "" }
+func (noSIEM) Forward(string, int) {}
+
+func (h *host) PKI() ext.PKI { return &pkiHost{deps: h.deps, module: h.name} }
+
+// pkiHost issues certificates from the server CA for one module.
+type pkiHost struct {
+	deps   *Deps
+	module string
+}
+
+func (p *pkiHost) CACertificatePEM() []byte {
+	if p.deps.CACert == nil {
+		return nil
+	}
+	return pki.EncodeCertPEM(p.deps.CACert)
+}
+
+func (p *pkiHost) IssueCertificate(_ context.Context, req ext.CertificateRequest) ([]byte, error) {
+	if p.deps.CACert == nil || p.deps.CAKey == nil {
+		return nil, errors.New("ext: the certificate authority is not available")
+	}
+	if req.PublicKey == nil {
+		return nil, errors.New("ext: a public key is required")
+	}
+	switch req.Usage {
+	case ext.CertificateUsageDocumentSigning:
+		certPEM, err := pki.IssueDocumentSigningCert(req.PublicKey, p.deps.CACert, p.deps.CAKey, req.CommonName, req.Validity)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("ext: module %q was issued a document signing certificate for %q", p.module, req.CommonName)
+		return certPEM, nil
+	default:
+		return nil, fmt.Errorf("ext: unsupported certificate usage %q", req.Usage)
+	}
+}
 
 func (h *host) Secrets() ext.SecretBox {
 	r := hkdf.New(sha256.New, []byte(h.deps.SecretRoot), []byte("bor-ext-secretbox-v1"), []byte("ext:"+h.name))
@@ -538,6 +655,35 @@ type Registry struct {
 	stepUps map[string]func(username, purpose string) string
 	logouts map[string]string
 	panels  []ext.SettingsPanel
+	// listeners are told about every reported compliance result.
+	listeners []ext.ComplianceListener
+	// collectors are added to the Prometheus metrics endpoint.
+	collectors []prometheus.Collector
+}
+
+// Collectors returns the metrics collectors the modules registered.
+func (reg *Registry) Collectors() []prometheus.Collector {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	return append([]prometheus.Collector(nil), reg.collectors...)
+}
+
+// HasComplianceListeners reports whether a module listens to compliance
+// results, so the caller can skip preparing a change nobody receives.
+func (reg *Registry) HasComplianceListeners() bool {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	return len(reg.listeners) > 0
+}
+
+// ComplianceReported tells every listening module about c.
+func (reg *Registry) ComplianceReported(ctx context.Context, c *ext.ComplianceChange) {
+	reg.mu.RLock()
+	listeners := append([]ext.ComplianceListener(nil), reg.listeners...)
+	reg.mu.RUnlock()
+	for _, l := range listeners {
+		l.ComplianceReported(ctx, c)
+	}
 }
 
 // NewRegistry creates an empty Registry.

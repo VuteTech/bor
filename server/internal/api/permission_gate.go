@@ -126,6 +126,52 @@ func (g *PermissionGate) gate(resolve permissionResolver, scoped bool) func(http
 	}
 }
 
+// Authenticated admits every signed-in user and loads their grants, so the
+// handler decides with Authorize which permission each operation needs.
+func (g *PermissionGate) Authenticated() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims := GetUserFromContext(r.Context())
+			if claims == nil {
+				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+				return
+			}
+			grants, err := g.az.Grants(r.Context(), claims.UserID)
+			if err != nil {
+				log.Printf("authorization check failed for user %s: %v", claims.UserID, err)
+				http.Error(w, `{"error":"authorization check failed"}`, http.StatusInternalServerError)
+				return
+			}
+			state := &authzState{userID: claims.UserID, grants: grants, gate: g}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authzContextKey{}, state)))
+		})
+	}
+}
+
+// Authorize returns where the caller of a request that passed a permission
+// gate holds resource:action. When the permission is not held, or held only
+// for node groups and scoped is false, it answers 403, audits the denial
+// and returns false.
+func Authorize(w http.ResponseWriter, r *http.Request, resource, action string, scoped bool) (authz.Scope, bool) {
+	held := requestScope(r, resource, action)
+	switch {
+	case held.IsGlobal(), scoped && !held.IsEmpty():
+		return held, true
+	case held.IsEmpty():
+		denyRequest(w, r, resource, action, "", "permission not held")
+	default:
+		writeJSONError(w, http.StatusForbidden, "this operation requires a global role binding")
+		auditDenial(r, resource, action, "", "permission held only for node groups; route requires a global grant")
+	}
+	return held, false
+}
+
+// DenyOutOfScope answers 403 for an object outside the caller's node-group
+// scope and audits it.
+func DenyOutOfScope(w http.ResponseWriter, r *http.Request, resource, action, objectID string) {
+	denyOutOfScope(w, r, resource, action, objectID)
+}
+
 // authzState is what a permission gate leaves in the request context.
 type authzState struct {
 	userID string
