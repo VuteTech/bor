@@ -1,5 +1,15 @@
 # Compliance reports
 
+!!! info "Bor Enterprise only"
+    Compliance reports are a Bor Enterprise feature: the Bor Enterprise
+    server generates, stores and serves them while its license includes the
+    `reports` feature. The community server has no reports; its
+    **Reports** page says so. Moving from the community server to Bor
+    Enterprise of the same version needs no migration step: install the
+    Bor Enterprise server and its license, and it creates the report tables
+    on its first start. Reports stay in the database when the license
+    lapses and reappear when it is renewed.
+
 A compliance report is a point-in-time record of the fleet: which nodes
 were in scope, which policies applied to each of them, the agent's last
 compliance result for every policy, and each node's security posture
@@ -13,16 +23,6 @@ Open **Fleet -> Reports** in the sidebar. The page shows the fleet's
 compliance trend, lists reports and generates new ones; with the
 corresponding permissions it also has the **Schedules** and **Waivers**
 tabs.
-
-!!! note "Bor Enterprise"
-    Compliance reports are a Bor Enterprise feature: the Bor Enterprise
-    server generates, stores and serves them while its license includes the
-    `reports` feature. The community server has no reports; its
-    **Reports** page says so. Moving from the community server to Bor
-    Enterprise of the same version needs no migration step: install the
-    Bor Enterprise server and its license, and it creates the report tables
-    on its first start. Reports stay in the database when the license
-    lapses and reappear when it is renewed.
 
 ## Permissions
 
