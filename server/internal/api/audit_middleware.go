@@ -25,6 +25,7 @@ var sensitiveKeys = []string{
 	"passphrase", "private_key", "privatekey", "api_key", "apikey",
 	"jwt", "auth_token", "access_token", "refresh_token",
 	"recovery_key", // LUKS recovery keys (belt and braces; the reveal route bypasses this middleware anyway)
+	"panel_input",  // values entered in extension settings panels (licenses, keys, IdP metadata); the extension audits what matters
 }
 
 func isSensitiveKey(key string) bool {

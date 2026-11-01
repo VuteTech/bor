@@ -86,6 +86,13 @@ type Edition interface {
 switch a feature on or off at run time (for example when a license
 expires) without a restart.
 
+An edition may also implement `edition.Notifier`. Its `Notice()` returns an
+`*edition.Notice` (`Severity` "info", "warning" or "danger", `Message`, and
+an optional `Link` to a web UI path with `LinkText`), or nil. The server
+adds it to `GET /api/v1/auth/me` as `edition_notice` for users who hold
+`settings:manage` globally, and the web UI shows it as a banner on every
+page; Bor Enterprise uses it to announce an expiring or rejected license.
+
 ### Features
 
 `Feature` is a string type. The known features are listed in
@@ -206,7 +213,16 @@ Settings panels
     optional copy button), tables and actions. An action is a button that
     sends `Method` to a module URL and reloads the panel; a `Danger`
     action requires typing its `ConfirmPhrase`, and `Result: "secret"`
-    shows a returned token once with a copy control.
+    shows a returned token once with a copy control. An action with an
+    `Input` (`ext.PanelInput{Label, Help, MaxBytes}`) first asks for a
+    multi-line value, typed, pasted or loaded from a local file, and sends
+    it as the JSON body `{"panel_input": "..."}`; its `Confirm` text is
+    shown in the same dialog, and a `Danger` action asks for its
+    `ConfirmPhrase` there too. The generic audit log
+    redacts `panel_input` (it may be a key or a certificate), so the module
+    records what matters with `Audit()`. After any action the web UI
+    re-reads the signed-in session, so features the action switched on or
+    off show up without a reload.
 
 Storage
 :   `DB()` returns the server's `*sql.DB` for the module's own tables.

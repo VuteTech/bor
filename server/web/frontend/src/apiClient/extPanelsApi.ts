@@ -40,6 +40,14 @@ export interface PanelAction {
   confirm?: string;
   /** "secret": show the response's token once; "message": show its message. */
   result?: "secret" | "message" | "";
+  /** Asks for a value first; it is sent as the JSON body {"panel_input": ...}. */
+  input?: PanelInput;
+}
+
+export interface PanelInput {
+  label: string;
+  help?: string;
+  max_bytes?: number;
 }
 
 export interface PanelField {
@@ -88,9 +96,16 @@ export async function fetchPanel(dataUrl: string): Promise<Panel> {
 
 export async function runPanelAction(
   action: PanelAction,
+  value?: string,
 ): Promise<{ token?: string; message?: string }> {
-  return apiRequest<{ token?: string; message?: string }>(checkURL(action.url), {
-    method: action.method,
-    headers: authHeaders(),
-  });
+  const init: RequestInit = { method: action.method, headers: authHeaders() };
+  if (value !== undefined) init.body = JSON.stringify({ panel_input: value });
+  const res = await apiRequest<{ token?: string; message?: string }>(checkURL(action.url), init);
+  // An extension action may change what the edition enables (a license, for
+  // example); the shell re-reads the session to pick that up.
+  window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+  return res;
 }
+
+/** Dispatched on window when the signed-in session's data may have changed. */
+export const SESSION_CHANGED_EVENT = "bor:session-changed";

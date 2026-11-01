@@ -103,3 +103,26 @@ func TestStatusRecorder(t *testing.T) {
 		t.Errorf("underlying recorder code = %d, want %d", rec.Code, http.StatusCreated)
 	}
 }
+
+func TestRedactBody(t *testing.T) {
+	body := map[string]interface{}{
+		"name":        "corp",
+		"password":    "hunter2",
+		"panel_input": "-----BEGIN PRIVATE KEY-----",
+		"items":       []interface{}{map[string]interface{}{"api_key": "k", "value": "kept"}},
+	}
+	redactBody(body)
+
+	for _, key := range []string{"password", "panel_input"} {
+		if body[key] != "[REDACTED]" {
+			t.Errorf("%s = %v, want [REDACTED]", key, body[key])
+		}
+	}
+	if body["name"] != "corp" {
+		t.Errorf("name = %v, want it kept", body["name"])
+	}
+	item := body["items"].([]interface{})[0].(map[string]interface{})
+	if item["api_key"] != "[REDACTED]" || item["value"] != "kept" {
+		t.Errorf("nested item = %v", item)
+	}
+}

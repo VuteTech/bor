@@ -55,3 +55,22 @@ func EnabledFeatures(e Edition) []Feature {
 	}
 	return out
 }
+
+// Notice is a message about the edition itself that administrators should
+// act on, such as a license about to expire.
+type Notice struct {
+	// Severity is "info", "warning" or "danger".
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	// Link optionally points to the web UI page where it is resolved (a
+	// path such as "/settings?tab=ext-license"), shown as LinkText.
+	Link     string `json:"link,omitempty"`
+	LinkText string `json:"link_text,omitempty"`
+}
+
+// Notifier is optionally implemented by an Edition that has something to
+// tell administrators. The web UI shows the notice to users who hold
+// settings:manage; nil means there is nothing to show.
+type Notifier interface {
+	Notice() *Notice
+}
