@@ -274,6 +274,9 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	for _, f := range edition.EnabledFeatures(ed) {
 		resp.Features = append(resp.Features, string(f))
 	}
+	if n, ok := ed.(edition.Notifier); ok && grants.Scope("settings", "manage").IsGlobal() {
+		resp.EditionNotice = n.Notice()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {

@@ -5,7 +5,8 @@
 /**
  * ExtensionPanelTab renders a settings panel served by a server extension
  * (pkg/ext Panel JSON): per section a status, read-only fields, tables and
- * actions that call the extension's admin routes. It contains no
+ * actions that call the extension's admin routes, optionally after asking
+ * for a value (typed or loaded from a file). It contains no
  * extension-specific code.
  */
 
@@ -22,8 +23,14 @@ import {
   DescriptionListDescription,
   DescriptionListGroup,
   DescriptionListTerm,
+  FileUpload,
   Flex,
   FlexItem,
+  Form,
+  FormGroup,
+  FormHelperText,
+  HelperText,
+  HelperTextItem,
   Label,
   Modal,
   ModalBody,
@@ -31,6 +38,7 @@ import {
   ModalHeader,
   ModalVariant,
   Spinner,
+  TextInput,
 } from "@patternfly/react-core";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
@@ -63,6 +71,11 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
+  // The action waiting for its input value, and that value.
+  const [inputAction, setInputAction] = useState<PanelAction | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [inputFilename, setInputFilename] = useState("");
+  const [inputPhrase, setInputPhrase] = useState("");
   const { addToast } = useToast();
 
   const reload = useCallback(() => {
@@ -78,12 +91,13 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
     reload();
   }, [reload]);
 
-  const run = async (action: PanelAction) => {
+  const run = async (action: PanelAction, value?: string) => {
     setBusy(true);
     setActionError(null);
     try {
-      const res = await runPanelAction(action);
+      const res = await runPanelAction(action, value);
       setPending(null);
+      setInputAction(null);
       if (action.result === "secret" && res.token) {
         setSecret(res.token);
       } else {
@@ -99,7 +113,12 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
 
   const start = (action: PanelAction) => {
     setActionError(null);
-    if (action.danger || action.confirm) {
+    if (action.input) {
+      setInputValue("");
+      setInputFilename("");
+      setInputPhrase("");
+      setInputAction(action);
+    } else if (action.danger || action.confirm) {
       setPending(action);
     } else {
       void run(action);
@@ -207,6 +226,13 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
     );
   };
 
+  const maxBytes = inputAction?.input?.max_bytes ?? 0;
+  const inputTooLarge = maxBytes > 0 && new TextEncoder().encode(inputValue).length > maxBytes;
+  // A destructive action that also takes a value asks for its confirm
+  // phrase in the same dialog.
+  const inputPhraseOK =
+    !inputAction?.danger || !inputAction.confirm_phrase || inputPhrase === inputAction.confirm_phrase;
+
   if (error) return <LiveAlert variant="danger" isInline message={error} />;
   if (!panel) return <Spinner size="lg" aria-label="Loading" />;
 
@@ -253,7 +279,94 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
           </Button>
         </ModalFooter>
       </Modal>
-      {!pending && <LiveAlert variant="danger" isInline message={actionError} />}
+      <Modal
+        variant={ModalVariant.medium}
+        isOpen={inputAction !== null}
+        onClose={() => setInputAction(null)}
+        aria-labelledby="ext-input-title"
+      >
+        <ModalHeader title={inputAction?.label ?? ""} labelId="ext-input-title" />
+        <ModalBody>
+          {inputAction?.confirm && (
+            <Content component="p" style={{ marginBottom: 16 }}>
+              {inputAction.confirm}
+            </Content>
+          )}
+          {inputAction?.input && (
+            <Form
+              id="ext-input-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (inputValue.trim() && !inputTooLarge && inputPhraseOK) void run(inputAction, inputValue);
+              }}
+            >
+              <FormGroup label={inputAction.input.label} fieldId="ext-input-value">
+                <FileUpload
+                  id="ext-input-value"
+                  type="text"
+                  value={inputValue}
+                  filename={inputFilename}
+                  filenamePlaceholder="Drag a file here, browse for one, or paste below"
+                  browseButtonText="Browse..."
+                  allowEditingUploadedText
+                  onFileInputChange={(_e, file) => setInputFilename(file.name)}
+                  onDataChange={(_e, data) => {
+                    setInputValue(data);
+                    setActionError(null);
+                  }}
+                  onTextChange={(_e, text) => {
+                    setInputValue(text);
+                    setActionError(null);
+                  }}
+                  onClearClick={() => {
+                    setInputValue("");
+                    setInputFilename("");
+                    setActionError(null);
+                  }}
+                  validated={inputTooLarge || actionError ? "error" : "default"}
+                  aria-invalid={inputTooLarge || actionError ? true : undefined}
+                  aria-describedby={actionError ? "ext-input-error" : undefined}
+                />
+                {(inputAction.input.help || inputTooLarge) && (
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem variant={inputTooLarge ? "error" : "default"}>
+                        {inputTooLarge ? "The value is too large." : inputAction.input.help}
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                )}
+              </FormGroup>
+              {inputAction.danger && inputAction.confirm_phrase && (
+                <FormGroup label={`Type ${inputAction.confirm_phrase} to confirm`} fieldId="ext-input-phrase" isRequired>
+                  <TextInput
+                    id="ext-input-phrase"
+                    value={inputPhrase}
+                    onChange={(_e, v) => setInputPhrase(v)}
+                    aria-label="Confirmation phrase"
+                  />
+                </FormGroup>
+              )}
+            </Form>
+          )}
+          <LiveAlert id="ext-input-error" variant="danger" isInline message={inputAction ? actionError : null} style={{ marginTop: 16 }} />
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant={inputAction?.danger ? "danger" : "primary"}
+            type="submit"
+            form="ext-input-form"
+            isLoading={busy}
+            isDisabled={busy || !inputValue.trim() || inputTooLarge || !inputPhraseOK}
+          >
+            {inputAction?.label}
+          </Button>
+          <Button variant="link" onClick={() => setInputAction(null)} isDisabled={busy}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+      {!pending && !inputAction && <LiveAlert variant="danger" isInline message={actionError} />}
     </>
   );
 };

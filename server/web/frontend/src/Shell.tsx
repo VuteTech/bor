@@ -31,6 +31,7 @@ import {
   Button,
   Spinner,
   Tooltip,
+  AlertActionLink,
 } from "@patternfly/react-core";
 import UserIcon from "@patternfly/react-icons/dist/esm/icons/user-icon";
 import BarsIcon from "@patternfly/react-icons/dist/esm/icons/bars-icon";
@@ -39,7 +40,9 @@ import MoonIcon from "@patternfly/react-icons/dist/esm/icons/moon-icon";
 import DesktopIcon from "@patternfly/react-icons/dist/esm/icons/desktop-icon";
 import AdjustIcon from "@patternfly/react-icons/dist/esm/icons/adjust-icon";
 
-import { checkSession, logout, getMFAStatus, getPublicConfig, UserInfo } from "./apiClient/authApi";
+import { checkSession, logout, getMFAStatus, getPublicConfig, EditionNoticeInfo, UserInfo } from "./apiClient/authApi";
+import { SESSION_CHANGED_EVENT } from "./apiClient/extPanelsApi";
+import { LiveAlert } from "./components/LiveAlert";
 import { getServerVersion } from "./apiClient/systemApi";
 import { setPermissions, clearPermissions, hasPermission, hasFeature, FEATURE_COMPLIANCE_REPORTS } from "./apiClient/permissions";
 import { onSessionExpired } from "./apiClient/session";
@@ -183,6 +186,10 @@ export const Shell: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<string>("");
   const [currentUserSource, setCurrentUserSource] = useState<string>("local");
+  const [editionNotice, setEditionNotice] = useState<EditionNoticeInfo | null>(null);
+  // Bumped when permissions or features are re-read: they live outside React
+  // state, so the navigation would otherwise not re-render.
+  const [, setSessionVersion] = useState(0);
   const [authChecked, setAuthChecked] = useState(false);
 
   /* ── Update document title on screen change (WCAG 2.4.2) ── */
@@ -199,6 +206,7 @@ export const Shell: React.FC = () => {
   /* ── After session is established, check if MFA setup is required ── */
   const applySession = useCallback(async (user: UserInfo) => {
     setPermissions(user.permissions || [], user.permission_scopes, user.features);
+    setEditionNotice(user.edition_notice ?? null);
     setCurrentUser(user.full_name || user.username);
     setCurrentUserSource(user.source || "local");
     setIsLoggedIn(true);
@@ -210,6 +218,24 @@ export const Shell: React.FC = () => {
     } catch {
       setMfaGateActive(false);
     }
+  }, []);
+
+  /* ── Re-read permissions, features and the edition notice when an action
+        may have changed them (e.g. a license was installed) ── */
+  useEffect(() => {
+    const refresh = () => {
+      checkSession()
+        .then((user: UserInfo) => {
+          setPermissions(user.permissions || [], user.permission_scopes, user.features);
+          setEditionNotice(user.edition_notice ?? null);
+          setSessionVersion((v) => v + 1);
+        })
+        .catch(() => {
+          /* the session layer handles expiry */
+        });
+    };
+    window.addEventListener(SESSION_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, refresh);
   }, []);
 
   /* ── Validate existing session on mount ── */
@@ -545,6 +571,22 @@ export const Shell: React.FC = () => {
         defaultManagedSidebarIsOpen={true}
         mainContainerId="bor-main-content"
       >
+        {editionNotice && (
+          <PageSection padding={{ default: "noPadding" }} style={{ padding: "var(--pf-t--global--spacer--md) var(--pf-t--global--spacer--lg) 0" }}>
+            <LiveAlert
+              variant={editionNotice.severity}
+              isInline
+              message={editionNotice.message}
+              actionLinks={
+                editionNotice.link?.startsWith("/") ? (
+                  <AlertActionLink onClick={() => navigate(editionNotice.link as string)}>
+                    {editionNotice.link_text || "Details"}
+                  </AlertActionLink>
+                ) : undefined
+              }
+            />
+          </PageSection>
+        )}
         <PageHeader title={routeTitle?.title ?? PAGE_NAMES[activeScreen]} subtitle={routeTitle?.subtitle ?? PAGE_SUBTITLES[activeScreen]} />
         <Routes>
           <Route index element={<DashboardPage />} />

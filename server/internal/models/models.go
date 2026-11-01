@@ -7,6 +7,8 @@ package models
 
 import (
 	"time"
+
+	"github.com/VuteTech/Bor/server/pkg/edition"
 )
 
 // Policy state constants (artifact lifecycle)
@@ -302,6 +304,9 @@ type MeResponse struct {
 	Edition string `json:"edition"`
 	// Features lists the optional features the edition currently enables.
 	Features []string `json:"features"`
+	// EditionNotice is the edition's message for administrators (only for
+	// users who hold settings:manage globally), e.g. an expiring license.
+	EditionNotice *edition.Notice `json:"edition_notice,omitempty"`
 }
 
 // PermissionScope describes where a user holds one permission.

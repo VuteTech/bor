@@ -467,6 +467,22 @@ type PanelAction struct {
 	// shown once with a copy control), "message" (the "message" member) or
 	// "" (nothing).
 	Result string `json:"result,omitempty"`
+	// Input, when set, asks the administrator for a value before the
+	// request is sent; it is sent as the JSON body {"panel_input": "..."}.
+	// The generic audit log redacts it (it may be a key or a certificate),
+	// so the module records what matters itself.
+	Input *PanelInput `json:"input,omitempty"`
+}
+
+// PanelInput is a multi-line text value an action asks for, which can also
+// be loaded from a local file (a license, a certificate, IdP metadata).
+type PanelInput struct {
+	Label string `json:"label"`
+	// Help is shown below the field.
+	Help string `json:"help,omitempty"`
+	// MaxBytes rejects larger values in the browser (0: no limit). The
+	// module must enforce its own limit as well.
+	MaxBytes int `json:"max_bytes,omitempty"`
 }
 
 // ─── Compliance results, certificates, SIEM ─────────────────────────────

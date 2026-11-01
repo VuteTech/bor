@@ -99,6 +99,16 @@ export interface UserInfo {
   edition?: string;
   features?: string[];
   source?: string;
+  /** The edition's message for administrators, e.g. an expiring license. */
+  edition_notice?: EditionNoticeInfo;
+}
+
+export interface EditionNoticeInfo {
+  severity: "info" | "warning" | "danger";
+  message: string;
+  /** A path in the web UI where the notice is resolved. */
+  link?: string;
+  link_text?: string;
 }
 
 export async function login(
