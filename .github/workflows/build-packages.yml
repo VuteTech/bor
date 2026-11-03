@@ -385,6 +385,66 @@ jobs:
         with:
           files: builds/bor-server*
 
+  # Publishes SHA256SUMS and its detached signature once every package of a
+  # release is uploaded, so downloads from GitHub can be verified against the
+  # release key that also signs the agent package repositories.
+  publish-checksums:
+    name: Publish Checksums
+    runs-on: ubuntu-latest
+    needs: [build-agent-packages, build-server-packages]
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name }}
+      BOR_RELEASE_GPG_KEY: ${{ secrets.BOR_RELEASE_GPG_KEY }}
+      SIGN_KEY_PASSPHRASE: ${{ secrets.BOR_RELEASE_GPG_PASSPHRASE }}
+
+    steps:
+      - name: Build SHA256SUMS from the uploaded assets
+        run: |
+          # GitHub records a SHA-256 digest for every uploaded asset, so the
+          # sums come from the API without downloading the packages again.
+          # Assets without a digest are downloaded and hashed instead.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            --jq '.assets[] | select(.name | startswith("SHA256SUMS") | not) | "\(.digest // "")  \(.name)"' \
+            > assets.txt
+          test -s assets.txt
+          if grep -q '^  ' assets.txt; then
+            mkdir download
+            gh release download "$TAG" --dir download --pattern '*'
+            rm -f download/SHA256SUMS download/SHA256SUMS.asc
+            (cd download && sha256sum *) > SHA256SUMS
+          else
+            sed 's/^sha256://' assets.txt | sort -k2 > SHA256SUMS
+          fi
+          cat SHA256SUMS
+
+      - name: Sign SHA256SUMS
+        run: |
+          if [ -z "$BOR_RELEASE_GPG_KEY" ]; then
+            echo "::error::BOR_RELEASE_GPG_KEY not set - a release must be signed"
+            exit 1
+          fi
+          printf '%s' "$BOR_RELEASE_GPG_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+          GPG_SIGN=(gpg --batch --yes --local-user "$KEY_ID")
+          PASSFILE=""
+          if [ -n "$SIGN_KEY_PASSPHRASE" ]; then
+            # Passphrase via a 0600 file, never argv (as scripts/assemble-agent-repo.sh).
+            PASSFILE=$(mktemp)
+            chmod 600 "$PASSFILE"
+            printf '%s' "$SIGN_KEY_PASSPHRASE" > "$PASSFILE"
+            GPG_SIGN+=(--pinentry-mode loopback --passphrase-file "$PASSFILE")
+          fi
+          "${GPG_SIGN[@]}" --armor --detach-sign -o SHA256SUMS.asc SHA256SUMS
+          if [ -n "$PASSFILE" ]; then rm -f "$PASSFILE"; fi
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+
+      - name: Upload SHA256SUMS and the signature to the release
+        run: gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc --clobber
+
   build-image:
     name: Build Container Image
     runs-on: ubuntu-latest

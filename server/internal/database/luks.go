@@ -895,13 +895,20 @@ func (r *LuksRepository) GetTangServer(ctx context.Context, id string) (*models.
 
 // CreateTangServer inserts a Tang server and fills ID and timestamps.
 func (r *LuksRepository) CreateTangServer(ctx context.Context, t *models.TangServer) error {
+	// A freshly registered server has no advertisement yet. pq encodes a nil
+	// slice as SQL NULL, which the NOT NULL column rejects, so insert an
+	// empty array instead.
+	advertised := t.AdvertisedThumbprints
+	if advertised == nil {
+		advertised = []string{}
+	}
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO tang_servers
 		  (name, url, trusted_thumbprints, advertised_thumbprints, advertisement,
 		   last_check_at, last_check_status, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at`,
-		t.Name, t.URL, pq.Array(t.TrustedThumbprints), pq.Array(t.AdvertisedThumbprints),
+		t.Name, t.URL, pq.Array(t.TrustedThumbprints), pq.Array(advertised),
 		nullableBytes(t.Advertisement), t.LastCheckAt, t.LastCheckStatus, t.CreatedBy,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 	if isUniqueViolation(err) {

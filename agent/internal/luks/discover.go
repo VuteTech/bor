@@ -94,7 +94,7 @@ func Discover() (volumes []*Volume, mounts []*Mount, err error) {
 		seenMounts[m.Mountpoint] = true
 
 		mount := &Mount{Mountpoint: m.Mountpoint, Source: m.Source, Fstype: m.Fstype, MajorMinor: m.MajorMinor}
-		if crypt := findCryptBacking(sysDevBlockPath(m.MajorMinor), 0); crypt != nil {
+		if crypt := findMountCryptBacking(m); crypt != nil {
 			vol := addVolume(crypt)
 			vol.Mountpoints = append(vol.Mountpoints, m.Mountpoint)
 			if systemMountpoints[m.Mountpoint] {
@@ -217,6 +217,28 @@ func parseSwaps(path string) []string {
 // sysDevBlockPath returns the sysfs node for a major:minor.
 func sysDevBlockPath(majorMinor string) string {
 	return rooted("sys/dev/block/" + majorMinor)
+}
+
+// findMountCryptBacking locates the dm-crypt volume behind a mounted
+// filesystem. Filesystems that manage their own device set (btrfs,
+// bcachefs) report an anonymous device number (major 0) in mountinfo, and
+// /sys/dev/block has no node for it; for those the mount source path is
+// resolved to its kernel block name instead. A multi-device btrfs is
+// attributed to the device named as the source.
+func findMountCryptBacking(m mountinfoRow) *Volume {
+	if !strings.HasPrefix(m.MajorMinor, "0:") {
+		if v := findCryptBacking(sysDevBlockPath(m.MajorMinor), 0); v != nil {
+			return v
+		}
+	}
+	if !strings.HasPrefix(m.Source, "/dev/") {
+		return nil
+	}
+	name := resolveBlockName(m.Source)
+	if name == "" {
+		return nil
+	}
+	return findCryptBacking(rooted("sys/class/block/"+name), 0)
 }
 
 // resolveBlockName maps a /dev path to its kernel block name ("dm-3").

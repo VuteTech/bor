@@ -435,6 +435,10 @@ func (s *PolicyServer) GetAgentConfig(ctx context.Context, _ *pb.GetAgentConfigR
 			NotifyMessageChrome:      settings.NotifyMessageChrome,
 			NotifyMessageThunderbird: settings.NotifyMessageThunderbird,
 			NotifyMessageEdge:        settings.NotifyMessageEdge,
+			// Read-only LUKS inventory from nodes without a DiskEncryption
+			// policy. Always on: the fleet view and `bor-agent luks adopt`
+			// rely on the server knowing the volumes before a policy binds.
+			DiskEncryptionInventory: true,
 		},
 	}, nil
 }
