@@ -253,12 +253,13 @@ func enforceVolume(ctx context.Context, cfg *Config, client EscrowClient, pol *p
 			if cred.Key != nil {
 				credCopy.Key = append([]byte(nil), cred.Key...)
 			}
-			if err := RotateRecoveryKey(ctx, cfg, client, vi.Volume, header, credCopy, reason, rotationID, serverName, state); err != nil {
-				log.Printf("luks: recovery rotation on %s: %v", vi.LuksUUID, err)
+			newKey, rotErr := RotateRecoveryKey(ctx, cfg, client, vi.Volume, header, credCopy, reason, rotationID, serverName, state)
+			if rotErr != nil {
+				log.Printf("luks: recovery rotation on %s: %v", vi.LuksUUID, rotErr)
 				items = append(items, Item{
 					SchemaID: "luks:recovery", Key: vi.LuksUUID,
 					Status:  pb.ComplianceStatus_COMPLIANCE_STATUS_ERROR,
-					Message: "recovery key escrow failed: " + err.Error(),
+					Message: "recovery key escrow failed: " + rotErr.Error(),
 				})
 			} else {
 				items = append(items, Item{
@@ -266,6 +267,13 @@ func enforceVolume(ctx context.Context, cfg *Config, client EscrowClient, pol *p
 					Status:  pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
 					Message: "recovery key escrowed",
 				})
+				// The rotation wiped the old Bor recovery slots, so a key the
+				// server released for it no longer opens the volume. The
+				// protector steps below continue with the key just enrolled.
+				if newKey != nil {
+					defer Zero(newKey)
+					cred = &Credential{Key: newKey, Source: "recovery key enrolled in this sync"}
+				}
 				// The header changed; re-read it for the following steps.
 				if fresh, err := DumpHeader(ctx, cfg.CryptsetupBinary(), vi.DevicePath, vi.LuksUUID); err == nil {
 					header = fresh
