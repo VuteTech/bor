@@ -43,6 +43,7 @@ func buildFakeTree(t *testing.T) string {
 2 0 253:2 / /home rw - ext4 /dev/mapper/luks-aaaabbbb rw
 3 0 8:1 / /boot rw - ext4 /dev/sda1 rw
 4 0 0:99 / /proc rw - proc proc rw
+5 0 0:36 /var /var rw - btrfs /dev/mapper/luks-cccc0000 rw,subvol=/var
 `)
 	write("proc/swaps", "Filename\tType\tSize\tUsed\tPriority\n/dev/dm-3 partition 8388604 0 -2\n")
 
@@ -58,6 +59,16 @@ func buildFakeTree(t *testing.T) string {
 	// dm-3: plain crypt swap.
 	write("sys/class/block/dm-3/dm/uuid", "CRYPT-PLAIN-swap\n")
 	mkdir("sys/class/block/dm-3/slaves/sda2")
+	// dm-4: LUKS2 crypt backing a btrfs /var. btrfs mounts carry an
+	// anonymous device number (0:36), so the walk must go through the
+	// /dev/mapper source path.
+	write("sys/class/block/dm-4/dm/uuid", "CRYPT-LUKS2-cccc0000111122223333444455556666-luks-cccc0000\n")
+	mkdir("sys/class/block/dm-4/slaves/nvme0n1p3")
+	write("dev/dm-4", "")
+	mkdir("dev/mapper")
+	if err := os.Symlink("../dm-4", filepath.Join(root, "dev", "mapper", "luks-cccc0000")); err != nil {
+		t.Fatalf("symlink luks-cccc0000: %v", err)
+	}
 
 	// /sys/dev/block major:minor -> class nodes (symlinks).
 	mkdir("sys/dev/block")
@@ -129,6 +140,17 @@ func TestDiscover(t *testing.T) {
 	}
 	if !homeVol.IsSystem {
 		t.Error("/home is a system mountpoint")
+	}
+
+	varVol := byUUID["cccc0000-1111-2222-3333-444455556666"]
+	if varVol == nil {
+		t.Fatalf("btrfs /var volume not discovered (anonymous device number walk); volumes: %+v", volumes)
+	}
+	if varVol.DevicePath != "/dev/nvme0n1p3" {
+		t.Errorf("btrfs volume device = %q, want /dev/nvme0n1p3", varVol.DevicePath)
+	}
+	if !varVol.IsSystem || len(varVol.Mountpoints) != 1 || varVol.Mountpoints[0] != "/var" {
+		t.Errorf("btrfs volume = %+v, want system volume mounted at /var", varVol)
 	}
 
 	if plain == nil {
