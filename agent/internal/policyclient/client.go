@@ -18,6 +18,7 @@ import (
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -77,6 +78,16 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 
 	conn, err := grpc.NewClient(serverAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
+		// HTTP/2 pings so a dead connection is noticed within about a
+		// minute. After a suspend, a NAT reset or a server restart the TCP
+		// socket can stay established on the node while the server has
+		// dropped it; without pings the policy stream would wait forever
+		// and never see new bindings. The server permits pings every 10 s.
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                60 * time.Second,
+			Timeout:             20 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC server %s: %w", serverAddr, err)
