@@ -83,6 +83,12 @@ func CheckStatic(inv *Inventory, pol *pb.DiskEncryptionPolicy) []Item {
 	if pol.GetRequireEncryption() {
 		for _, m := range ScopeMounts(inv.Mounts, pol.GetVolumeScope(), pol.GetMountpoints()) {
 			switch {
+			case m.InMemory:
+				items = append(items, Item{
+					SchemaID: "luks:encryption", Key: m.Mountpoint,
+					Status:  pb.ComplianceStatus_COMPLIANCE_STATUS_COMPLIANT,
+					Message: fmt.Sprintf("%s is RAM-backed swap; nothing is written to disk", m.Source),
+				})
 			case m.Volume == nil:
 				items = append(items, Item{
 					SchemaID: "luks:encryption", Key: m.Mountpoint,

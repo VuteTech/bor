@@ -40,6 +40,9 @@ type Mount struct {
 	MajorMinor string
 	// Volume is the backing dm-crypt volume, nil when unencrypted.
 	Volume *Volume
+	// InMemory: RAM-backed swap (zram). Nothing is written to a disk, so
+	// there is nothing to encrypt.
+	InMemory bool
 }
 
 // systemMountpoints are the mounts the SYSTEM volume scope covers.
@@ -112,6 +115,12 @@ func Discover() (volumes []*Volume, mounts []*Mount, err error) {
 			continue
 		}
 		mount := &Mount{Mountpoint: "[swap]", Source: dev, Fstype: "swap"}
+		if strings.HasPrefix(name, "zram") {
+			// Compressed RAM (the Fedora default swap): no disk behind it.
+			mount.InMemory = true
+			mounts = append(mounts, mount)
+			continue
+		}
 		if crypt := findCryptBacking(rooted("sys/class/block/"+name), 0); crypt != nil {
 			vol := addVolume(crypt)
 			vol.Mountpoints = append(vol.Mountpoints, "[swap]")

@@ -45,7 +45,9 @@ func buildFakeTree(t *testing.T) string {
 4 0 0:99 / /proc rw - proc proc rw
 5 0 0:36 /var /var rw - btrfs /dev/mapper/luks-cccc0000 rw,subvol=/var
 `)
-	write("proc/swaps", "Filename\tType\tSize\tUsed\tPriority\n/dev/dm-3 partition 8388604 0 -2\n")
+	write("proc/swaps", "Filename\tType\tSize\tUsed\tPriority\n/dev/dm-3 partition 8388604 0 -2\n/dev/zram0 partition 8388604 0 100\n")
+	// zram swap: RAM-backed, never reaches a disk.
+	write("dev/zram0", "")
 
 	// dm-0: LUKS2 crypt under the LVM root.
 	write("sys/class/block/dm-0/dm/uuid", "CRYPT-LUKS2-3f2a9c1e111122223333444455556666-luks-3f2a9c1e\n")
@@ -161,10 +163,13 @@ func TestDiscover(t *testing.T) {
 	}
 
 	// /boot is unencrypted and must appear as a mount without a volume.
-	var boot *Mount
+	var boot, zram *Mount
 	for _, m := range mounts {
 		if m.Mountpoint == "/boot" {
 			boot = m
+		}
+		if m.Source == "/dev/zram0" {
+			zram = m
 		}
 		if m.Mountpoint == "/proc" {
 			t.Error("virtual mounts must be filtered out")
@@ -172,6 +177,10 @@ func TestDiscover(t *testing.T) {
 	}
 	if boot == nil || boot.Volume != nil {
 		t.Errorf("/boot mount = %+v, want unencrypted", boot)
+	}
+	// zram swap is RAM-backed: listed, flagged in-memory, no volume.
+	if zram == nil || !zram.InMemory || zram.Volume != nil {
+		t.Errorf("zram swap mount = %+v, want in-memory without a volume", zram)
 	}
 }
 
