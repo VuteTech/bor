@@ -186,8 +186,9 @@ func luksAdopt(ctx context.Context, cfg *config.Config, lcfg *luks.Config, devic
 			continue
 		}
 		cred := &luks.Credential{Key: append([]byte(nil), passphrase...), Source: "interactive adoption"}
-		err := luks.RotateRecoveryKey(ctx, lcfg, client, vi.Volume, vi.Header, cred,
+		newKey, err := luks.RotateRecoveryKey(ctx, lcfg, client, vi.Volume, vi.Header, cred,
 			pb.RecoveryKeyReason_RECOVERY_KEY_REASON_INITIAL, "", cfg.Server.Address, state)
+		luks.Zero(newKey) // the daemon resolves its own credential later
 		if err != nil {
 			fmt.Printf("%s: adoption failed: %v\n", vi.MappingName, err)
 			continue

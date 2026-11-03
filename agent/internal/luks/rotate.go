@@ -31,15 +31,18 @@ func mustRandRead(b []byte) {
 // not hold, and the old slot is wiped only after the server confirmed the
 // new one. Progress (never keys) is persisted in the state file so a crash
 // resumes instead of leaking slots. rotationID links a server-assisted
-// release to the rotation that consumes it.
+// release to the rotation that consumes it. On success it returns a copy of
+// the new key (the caller zeroes it) so later steps in the same sync can use
+// it; the old Bor slots are wiped, which invalidates a key the server
+// released for this rotation. A resumed rotation returns no key.
 func RotateRecoveryKey(ctx context.Context, cfg *Config, client EscrowClient, vol *Volume, header *Header,
-	cred *Credential, reason pb.RecoveryKeyReason, rotationID, serverName string, state *State) error {
+	cred *Credential, reason pb.RecoveryKeyReason, rotationID, serverName string, state *State) ([]byte, error) {
 	vs := state.Volume(vol.LuksUUID)
 
 	// Resume: a slot from a crashed run only needs confirm + cleanup.
 	if vs.Step == RotationStepSlotAdded && vs.EscrowID != "" {
 		if resumeErr := resumeRotation(ctx, cfg, client, vol, header, vs, state); resumeErr == nil {
-			return nil
+			return nil, nil
 		}
 		// The pending escrow expired (>24 h): the un-escrowed slot is an
 		// orphan. Wipe it (credential-free) when the invariants allow, then
@@ -50,21 +53,21 @@ func RotateRecoveryKey(ctx context.Context, cfg *Config, client EscrowClient, vo
 		var reloadErr error
 		header, reloadErr = DumpHeader(ctx, cfg.CryptsetupBinary(), vol.DevicePath, vol.LuksUUID)
 		if reloadErr != nil {
-			return reloadErr
+			return nil, reloadErr
 		}
 	}
 
 	// 1. Generate the key in memory only.
 	key, err := GenerateRecoveryKey()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer Zero(key)
 
 	// 2. Escrow BEFORE any slot exists.
 	escrowID := newEscrowID()
 	if escrowErr := client.EscrowRecoveryKey(ctx, vol.LuksUUID, escrowID, key, reason, rotationID); escrowErr != nil {
-		return fmt.Errorf("escrow recovery key: %w", escrowErr)
+		return nil, fmt.Errorf("escrow recovery key: %w", escrowErr)
 	}
 
 	// Old Bor recovery slots to retire once the new one is ACTIVE.
@@ -77,26 +80,26 @@ func RotateRecoveryKey(ctx context.Context, cfg *Config, client EscrowClient, vo
 	keyCopy := append([]byte(nil), key...)
 	slot, err := addSlotWithCredential(ctx, cfg, vol.DevicePath, cred, keyCopy)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if tokenErr := ImportRecoveryToken(ctx, cfg, vol.DevicePath, slot); tokenErr != nil {
-		return tokenErr
+		return nil, tokenErr
 	}
 
 	// 4. Verify the slot really opens with the escrowed key.
 	verifyCopy := append([]byte(nil), key...)
 	if verifyErr := TestKeySlot(ctx, cfg, vol.DevicePath, slot, verifyCopy); verifyErr != nil {
-		return fmt.Errorf("verify new recovery slot: %w", verifyErr)
+		return nil, fmt.Errorf("verify new recovery slot: %w", verifyErr)
 	}
 
 	// Recompute the fingerprint from the fresh header.
 	newHeader, err := DumpHeader(ctx, cfg.CryptsetupBinary(), vol.DevicePath, vol.LuksUUID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	newSlot := newHeader.FindSlot(slot)
 	if newSlot == nil {
-		return fmt.Errorf("luks: new recovery slot %d vanished from the header", slot)
+		return nil, fmt.Errorf("luks: new recovery slot %d vanished from the header", slot)
 	}
 
 	vs.Step = RotationStepSlotAdded
@@ -112,7 +115,7 @@ func RotateRecoveryKey(ctx context.Context, cfg *Config, client EscrowClient, vo
 
 	// 5. Confirm: the server promotes PENDING -> ACTIVE.
 	if err := client.ConfirmRecoveryKey(ctx, vol.LuksUUID, escrowID, slot, newSlot.Fingerprint); err != nil {
-		return fmt.Errorf("confirm recovery key: %w", err)
+		return nil, fmt.Errorf("confirm recovery key: %w", err)
 	}
 	vs.Step = RotationStepConfirmed
 	_ = state.Save(cfg)
@@ -122,7 +125,7 @@ func RotateRecoveryKey(ctx context.Context, cfg *Config, client EscrowClient, vo
 	// protector.
 	finishRotation(ctx, cfg, vol, newHeader, vs, key, serverName)
 	_ = state.Save(cfg)
-	return nil
+	return append([]byte(nil), key...), nil
 }
 
 // addSlotWithCredential dispatches on the credential type.
