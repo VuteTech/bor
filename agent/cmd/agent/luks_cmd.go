@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -159,6 +160,14 @@ func luksAdopt(ctx context.Context, cfg *config.Config, lcfg *luks.Config, devic
 		return fmt.Errorf("no matching LUKS2 volume found")
 	}
 
+	// The server escrows keys only for volumes it knows from an inventory
+	// report, and the daemon sends none while no DiskEncryption policy is
+	// bound. Report before asking for the passphrase so adoption works on
+	// a node that has no policy yet.
+	if _, rerr := client.ReportDiskEncryptionState(ctx, inv.ToProtoReport("", nil)); rerr != nil {
+		return fmt.Errorf("report the volume inventory to the server: %w", rerr)
+	}
+
 	passphrase, err := askPassword(ctx, "Enter the current LUKS passphrase for adoption:")
 	if err != nil {
 		return fmt.Errorf("read the passphrase: %w", err)
@@ -190,13 +199,26 @@ func luksAdopt(ctx context.Context, cfg *config.Config, lcfg *luks.Config, devic
 }
 
 // askPassword reads a secret via systemd-ask-password (no TTY handling in
-// the agent, no secret on any command line but the prompt text).
+// the agent, no secret on any command line but the prompt text). The tool
+// gets the caller's stdin and stderr: with a terminal on stdin it prompts
+// there with echo off; otherwise it falls back to the password-agent
+// protocol and the answer comes from `systemd-tty-ask-password-agent
+// --query` in another shell. The generic command runner is not used here
+// because it detaches the child from the terminal.
 func askPassword(ctx context.Context, prompt string) ([]byte, error) {
-	res, err := luks.RunForOutput(ctx, "systemd-ask-password", []string{"--timeout=120", prompt}, 3*time.Minute)
+	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice == 0 {
+		fmt.Fprintln(os.Stderr, "stdin is not a terminal: answer the prompt with 'systemd-tty-ask-password-agent --query' in another shell")
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, "systemd-ask-password", "--timeout=120", prompt) //nolint:gosec // G204: fixed binary, the only variable is the prompt text
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-	pass := strings.TrimSuffix(res, "\n")
+	pass := strings.TrimSuffix(string(out), "\n")
 	if pass == "" {
 		return nil, fmt.Errorf("empty passphrase")
 	}
