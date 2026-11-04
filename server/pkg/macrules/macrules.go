@@ -270,12 +270,15 @@ func IsRiskyPermissiveDomain(name string) bool {
 
 // cilAllowedStatements are the top-level CIL statements a Bor module may
 // use: rules, type and attribute declarations, booleans, file and port
-// contexts, login mappings, and the containers CIL sources are organised
-// in. Statements that restructure the base policy (classes, sids, users
-// and roles, MLS, policy capabilities, kernel object contexts) are not
+// contexts, login mappings, constraints, and the containers CIL sources
+// are organised in. Constraints are accepted because they are the only
+// way to take a permission away from the unconfined domains, which hold
+// allow rules for everything; a bad one is undone by removing the module.
+// Statements that restructure the base policy (classes, sids, users and
+// roles, MLS, policy capabilities, kernel object contexts) are not
 // accepted.
 var cilAllowedStatements = map[string]struct{}{
-	"allow": {}, "auditallow": {}, "dontaudit": {}, "neverallow": {},
+	"allow": {}, "auditallow": {}, "dontaudit": {}, "neverallow": {}, "constrain": {},
 	"allowx": {}, "auditallowx": {}, "dontauditx": {}, "neverallowx": {}, "permissionx": {},
 	"type": {}, "typealias": {}, "typealiasactual": {}, "typeattribute": {}, "typeattributeset": {},
 	"typetransition": {}, "typechange": {}, "typemember": {}, "typebounds": {}, "typepermissive": {},
