@@ -101,6 +101,7 @@ func TestCheckCIL(t *testing.T) {
 		"(optional corp (allow a_t b_t (file (read))))",
 		"(block corp (type corp_t) (roletype system_r corp_t))",
 		"(booleanif deny_ptrace (true (allow a_t b_t (process (ptrace)))))",
+		"(constrain (process (signal sigkill sigstop)) (or (neq t2 corp_t) (eq t1 init_t)))",
 	}
 	for _, v := range valid {
 		if err := CheckCIL(v); err != nil {
@@ -116,6 +117,7 @@ func TestCheckCIL(t *testing.T) {
 		"sid":          "(sid kernel)",
 		"user":         "(user corp_u)",
 		"policycap":    "(policycap open_perms)",
+		"mls":          "(mlsconstrain (process (sigkill)) (dom h1 h2))",
 		"nul":          "(allow a_t b_t (file (read)))\x00",
 		"unterminated": `(filecon "/opt any (system_u object_r bin_t ((s0) (s0))))`,
 		"too big":      "(" + strings.Repeat("allow a_t b_t (file (read))\n", 4000) + ")",
