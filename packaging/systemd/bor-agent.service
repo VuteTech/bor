@@ -13,6 +13,15 @@ RestartSec=30
 # cancelled through the agent's context on stop; give them time to wind down
 # cleanly before systemd escalates to SIGKILL.
 TimeoutStopSec=120
+# Run the agent with an MCS category of its own on SELinux systems. The
+# category changes nothing by itself: the agent stays in the unconfined
+# service domain and MCS binds only container domains for file access. It
+# lets an SELinux policy single the agent process out, for example a
+# constraint that refuses signals from senders at a lower level, without a
+# policy module per node. The leading "-" makes systemd ignore a failure to
+# set the context (a policy without the type); the directive is ignored
+# entirely where SELinux is disabled.
+SELinuxContext=-system_u:system_r:unconfined_service_t:s0:c1023
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=bor-agent

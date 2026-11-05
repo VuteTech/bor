@@ -145,7 +145,12 @@ inapplicable item that names it.
     parentheses and a statement allowlist; `semodule` on the node reports
     anything else. A Bor scheduled task can run under a type declared in a
     custom module: set `SELinuxContext` on the task in a
-    [Services & timers](systemd.md) policy.
+    [Services & timers](systemd.md) policy. The agent process itself runs
+    in the unconfined service domain at MCS level `s0:c1023` (see
+    [Hardening](../security/hardening.md#built-in-service-hardening)), so
+    a custom module can single it out by level, for example with a
+    `constrain` statement that refuses signals from senders whose level
+    does not dominate the target's.
 
 **File contexts**
 :   A path expression (`/opt/corpapp(/.*)?`), the SELinux type, the file
