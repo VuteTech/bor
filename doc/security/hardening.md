@@ -143,6 +143,17 @@ The agent (`bor-agent.service`) runs as root. It must write system policy
 files (browser policies, dconf, polkit rules, firewalld zones, repository
 definitions and so on), so it is not sandboxed.
 
+On SELinux systems the unit starts the agent in the unconfined service
+domain at MCS level `s0:c1023` (`SELinuxContext=` in the unit; the leading
+`-` lets the agent start where the policy has no such type, and the
+directive is ignored where SELinux is disabled). The category confines
+nothing by itself. It lets an [SELinux](../policy-types/selinux.md) policy
+single the agent process out, for example with a constraint that refuses
+signals from senders at a lower level, so that `kill -9` from a root shell
+is denied while `systemctl restart bor-agent` keeps working. Files the
+agent writes carry the level; on the targeted policy MCS binds only
+container domains for file access, so nothing else is affected.
+
 ## File permissions
 
 | Path | Owner | Mode | Notes |
