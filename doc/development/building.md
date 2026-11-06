@@ -137,7 +137,7 @@ The script collects the `bor-agent` packages for `VERSION` (and
 |---|---|
 | `manifest.json` | Index of all files with checksums and a `signed` flag, read by the web UI and checked at server startup |
 | `deb/` | Flat apt repository: packages, `Packages(.gz)`, `Release`, plus `InRelease` and `Release.gpg` when signed |
-| `rpm/` | dnf/zypper repository with `repodata/`, plus `repodata/repomd.xml.asc` when signed |
+| `rpm/` | dnf/zypper repository with `repodata/`, plus `repodata/repomd.xml.asc` and `repodata/repomd.xml.key` (the public key at the path zypper looks for) when signed |
 | `apk/`, `arch/` | Direct downloads (no repository index) |
 | `repo-key.asc` | Public signing key, only when signed |
 

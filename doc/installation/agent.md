@@ -71,22 +71,24 @@ The **Deploy agent** wizard generates a script that does all four.
    `node_group:view` and `node_group:create` permissions.
 5. Click the copy icon on the script and run it in a shell on the desktop.
 
-The generated script:
+The generated script is a single command: its lines are joined with
+`&& \`, so a paste runs it as a unit and a failing step stops it instead
+of every later step failing on its own. It:
 
-1. Downloads `/agent/ca.crt` and adds it to the system trust store. This
-   first download uses `curl -k` because the CA cannot be verified before it
-   is trusted; skip this step if the server has a publicly trusted
-   certificate.
+1. Downloads `/agent/ca.crt` and adds it to the system trust store (the
+   first two lines). This first download uses `curl -k` because the CA
+   cannot be verified before it is trusted; remove the two lines if the
+   server has a publicly trusted certificate.
 2. Adds the signed repository served by your server and installs
    `bor-agent` (Debian/Ubuntu, RHEL/Fedora, SUSE), or downloads and installs
    the package directly (Alpine, Arch).
 3. With the enrollment step: sets `server.address` and
    `server.enrollment_port` in `/etc/bor/config.yaml` to the address you
    used to open the web UI (a URL without a port, such as
-   `https://bor.example.com`, gives `enrollment_port` 443), sets `insecure_skip_verify` to `false`, writes
-   the token to a root-only file, runs
-   `bor-agent --token-file /etc/bor/enroll-token`, deletes the token file
-   and runs `systemctl enable --now bor-agent`.
+   `https://bor.example.com`, gives `enrollment_port` 443), sets
+   `insecure_skip_verify` to `false`, passes the token to
+   `bor-agent --token-file /dev/stdin` on standard input (nothing is left
+   on disk) and runs `systemctl enable --now bor-agent`.
 
 The **Direct downloads** tab lists the individual package files for the
 selected architecture with their sizes and SHA-256 checksums.
@@ -101,7 +103,9 @@ selected architecture with their sizes and SHA-256 checksums.
 Use these commands to script installations yourself, for example in a
 configuration management tool. Replace `bor.example.com` with your
 server's address. If the server uses a web port other than 443, for
-example the default 8443, write it as `bor.example.com:8443`.
+example the default 8443, write it as `bor.example.com:8443`. The commands
+of each block are joined with `&& \`, so a block pastes as one command and
+stops at the first failure.
 
 ### Trust the server CA
 
@@ -110,35 +114,35 @@ Skip this when the server uses a certificate from a publicly trusted CA.
 === "Debian / Ubuntu"
 
     ```bash
-    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /usr/local/share/ca-certificates/bor-ca.crt >/dev/null
+    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /usr/local/share/ca-certificates/bor-ca.crt >/dev/null && \
     sudo update-ca-certificates
     ```
 
 === "RHEL / Fedora"
 
     ```bash
-    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /etc/pki/ca-trust/source/anchors/bor-ca.crt >/dev/null
+    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /etc/pki/ca-trust/source/anchors/bor-ca.crt >/dev/null && \
     sudo update-ca-trust
     ```
 
 === "SUSE"
 
     ```bash
-    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /etc/pki/trust/anchors/bor-ca.crt >/dev/null
+    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /etc/pki/trust/anchors/bor-ca.crt >/dev/null && \
     sudo update-ca-certificates
     ```
 
 === "Alpine"
 
     ```bash
-    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /usr/local/share/ca-certificates/bor-ca.crt >/dev/null
+    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /usr/local/share/ca-certificates/bor-ca.crt >/dev/null && \
     sudo update-ca-certificates
     ```
 
 === "Arch Linux"
 
     ```bash
-    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /etc/ca-certificates/trust-source/anchors/bor-ca.crt >/dev/null
+    curl -fsSk https://bor.example.com/agent/ca.crt | sudo tee /etc/ca-certificates/trust-source/anchors/bor-ca.crt >/dev/null && \
     sudo update-ca-trust
     ```
 
@@ -154,25 +158,30 @@ Skip this when the server uses a certificate from a publicly trusted CA.
 === "Debian / Ubuntu"
 
     ```bash
-    sudo install -d -m 755 /etc/apt/keyrings
-    curl -fsS https://bor.example.com/agent/repo-key.asc | sudo tee /etc/apt/keyrings/bor.asc >/dev/null
-    printf 'Types: deb\nURIs: https://bor.example.com/agent/deb/\nSuites: ./\nSigned-By: /etc/apt/keyrings/bor.asc\n' \
-      | sudo tee /etc/apt/sources.list.d/bor.sources >/dev/null
-    sudo apt-get update && sudo apt-get install -y bor-agent
+    sudo install -d -m 755 /etc/apt/keyrings && \
+    curl -fsS https://bor.example.com/agent/repo-key.asc | sudo tee /etc/apt/keyrings/bor.asc >/dev/null && \
+    printf '%s\n' \
+      'Types: deb' \
+      'URIs: https://bor.example.com/agent/deb/' \
+      'Suites: ./' \
+      'Signed-By: /etc/apt/keyrings/bor.asc' \
+      | sudo tee /etc/apt/sources.list.d/bor.sources >/dev/null && \
+    sudo apt-get update && \
+    sudo apt-get install -y bor-agent
     ```
 
 === "RHEL / Fedora"
 
     ```bash
-    cat <<EOF | sudo tee /etc/yum.repos.d/bor.repo >/dev/null
-    [bor]
-    name=Bor Agent
-    baseurl=https://bor.example.com/agent/rpm/
-    enabled=1
-    gpgcheck=0
-    repo_gpgcheck=1
-    gpgkey=https://bor.example.com/agent/repo-key.asc
-    EOF
+    printf '%s\n' \
+      '[bor]' \
+      'name=Bor Agent' \
+      'baseurl=https://bor.example.com/agent/rpm/' \
+      'enabled=1' \
+      'gpgcheck=0' \
+      'repo_gpgcheck=1' \
+      'gpgkey=https://bor.example.com/agent/repo-key.asc' \
+      | sudo tee /etc/yum.repos.d/bor.repo >/dev/null && \
     sudo dnf install -y bor-agent
     ```
 
@@ -182,9 +191,28 @@ Skip this when the server uses a certificate from a publicly trusted CA.
 === "SUSE"
 
     ```bash
-    sudo zypper addrepo --refresh https://bor.example.com/agent/rpm/ bor
+    printf '%s\n' \
+      '[bor]' \
+      'name=Bor Agent' \
+      'baseurl=https://bor.example.com/agent/rpm/' \
+      'enabled=1' \
+      'autorefresh=1' \
+      'type=rpm-md' \
+      'gpgcheck=1' \
+      'repo_gpgcheck=1' \
+      'gpgkey=https://bor.example.com/agent/repo-key.asc' \
+      | sudo tee /etc/zypp/repos.d/bor.repo >/dev/null && \
     sudo zypper --gpg-auto-import-keys install -y bor-agent
     ```
+
+    `gpgkey=` tells zypper where to fetch the signing key and
+    `--gpg-auto-import-keys` imports it without a prompt. zypper's
+    `gpgcheck=1` is the master switch: with the metadata signed and verified,
+    packages are accepted by the SHA-256 checksum recorded in the metadata,
+    the same as dnf's `repo_gpgcheck=1`. The repository also publishes the
+    key as `rpm/repodata/repomd.xml.key`, the path zypper tries on its own
+    when a repository has no `gpgkey=` line, so a plain `zypper addrepo`
+    works too.
 
 === "Alpine"
 
@@ -194,7 +222,7 @@ Skip this when the server uses a certificate from a publicly trusted CA.
     **Direct downloads** tab of the wizard.
 
     ```bash
-    curl -fsSO https://bor.example.com/agent/apk/<file>.apk
+    curl -fsSO https://bor.example.com/agent/apk/<file>.apk && \
     sudo apk add --allow-untrusted ./<file>.apk
     ```
 
@@ -209,7 +237,7 @@ Skip this when the server uses a certificate from a publicly trusted CA.
 === "Arch Linux"
 
     ```bash
-    curl -fsSO https://bor.example.com/agent/arch/<file>.pkg.tar.zst
+    curl -fsSO https://bor.example.com/agent/arch/<file>.pkg.tar.zst && \
     sudo pacman -U --noconfirm ./<file>.pkg.tar.zst
     ```
 
@@ -305,14 +333,13 @@ join:
 Tokens are single-use and valid for 5 minutes. Then, on the desktop:
 
 ```bash
-sudo install -m 600 /dev/null /etc/bor/enroll-token
-printf '%s' 'PASTE-THE-TOKEN-HERE' | sudo tee /etc/bor/enroll-token >/dev/null
-sudo bor-agent --token-file /etc/bor/enroll-token
-sudo rm -f /etc/bor/enroll-token
+printf '%s' 'PASTE-THE-TOKEN-HERE' | sudo bor-agent --token-file /dev/stdin
 ```
 
-You can also pass the token in the `BOR_ENROLLMENT_TOKEN` environment
-variable, or with `--token` (deprecated: the token is visible in the process
+`--token-file` reads any file, so a configuration management tool can also
+place the token in a root-only file (mode `0600`) and delete it after
+enrolling. You can also pass the token in the `BOR_ENROLLMENT_TOKEN`
+environment variable, or with `--token` (deprecated: the token is visible in the process
 list; the **Node Groups** dialog shows a `sudo bor-agent --token ...`
 command for convenience). If several are given, `--token-file` wins over
 `BOR_ENROLLMENT_TOKEN`, which wins over `--token`.

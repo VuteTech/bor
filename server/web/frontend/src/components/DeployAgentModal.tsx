@@ -139,9 +139,14 @@ const PLATFORMS: { id: PlatformID; label: string; format: AgentRepoFile["format"
 const ARCHES: Arch[] = ["amd64", "arm64", "ppc64le"];
 
 /* ── Snippet builders ──
- * Pure string builders from this instance's own URL. The first CA fetch has
- * to use -k: with the auto-generated certificate there is nothing to verify
- * against yet (comment in the snippet says so; every later fetch verifies).
+ * Pure command builders from this instance's own URL. Each builder returns
+ * whole commands; the wizard chains them with `&& \` into one command, so a
+ * paste runs as a unit and a failed step stops the script instead of every
+ * later step failing on its own. No comment lines inside the chain (they
+ * would break it in interactive zsh): the notes under the code block carry
+ * the explanations. The first CA fetch has to use -k: with the
+ * auto-generated certificate there is nothing to verify against yet (every
+ * later fetch verifies).
  */
 
 interface SnippetEnv {
@@ -151,7 +156,18 @@ interface SnippetEnv {
   signed: boolean;
 }
 
-function caTrustStep(p: PlatformID, env: SnippetEnv): string {
+/** One shell command per line, chained so the paste runs as a unit. */
+function chain(commands: string[]): string {
+  return commands.join(" && \\\n");
+}
+
+/** Writes `lines` to `path` as root, one quoted line per continuation line
+ * so the command reads like the file it creates. Lines carry no quotes. */
+function writeFile(path: string, lines: string[]): string {
+  return [`printf '%s\\n' \\`, ...lines.map((l) => `  '${l}' \\`), `  | sudo tee ${path} >/dev/null`].join("\n");
+}
+
+function caTrustStep(p: PlatformID, env: SnippetEnv): string[] {
   const dest: Record<PlatformID, [string, string]> = {
     debian: ["/usr/local/share/ca-certificates/bor-ca.crt", "sudo update-ca-certificates"],
     alpine: ["/usr/local/share/ca-certificates/bor-ca.crt", "sudo update-ca-certificates"],
@@ -160,94 +176,109 @@ function caTrustStep(p: PlatformID, env: SnippetEnv): string {
     arch: ["/etc/ca-certificates/trust-source/anchors/bor-ca.crt", "sudo update-ca-trust"],
   };
   const [path, refresh] = dest[p];
-  return [
-    "# 1) Trust this server's CA — skip when it already has a publicly trusted",
-    "#    certificate. (-k: the CA is fetched before it can be verified; check",
-    "#    the fingerprint out-of-band for high-security environments.)",
-    `curl -fsSk ${env.origin}/agent/ca.crt | sudo tee ${path} >/dev/null`,
-    refresh,
-  ].join("\n");
+  return [`curl -fsSk ${env.origin}/agent/ca.crt | sudo tee ${path} >/dev/null`, refresh];
 }
 
-function repoStep(p: PlatformID, env: SnippetEnv): string {
+function repoStep(p: PlatformID, env: SnippetEnv): string[] {
   switch (p) {
     case "debian":
       if (!env.signed) {
         return [
-          "# 2) Add the Bor repository (UNSIGNED development build!)",
           `echo 'deb [trusted=yes] ${env.origin}/agent/deb ./' | sudo tee /etc/apt/sources.list.d/bor.list >/dev/null`,
-          "sudo apt-get update && sudo apt-get install -y bor-agent",
-        ].join("\n");
+          "sudo apt-get update",
+          "sudo apt-get install -y bor-agent",
+        ];
       }
       return [
-        "# 2) Add the signed Bor repository served by this instance",
         "sudo install -d -m 755 /etc/apt/keyrings",
         `curl -fsS ${env.origin}/agent/repo-key.asc | sudo tee /etc/apt/keyrings/bor.asc >/dev/null`,
-        `printf 'Types: deb\\nURIs: ${env.origin}/agent/deb/\\nSuites: ./\\nSigned-By: /etc/apt/keyrings/bor.asc\\n' | sudo tee /etc/apt/sources.list.d/bor.sources >/dev/null`,
-        "sudo apt-get update && sudo apt-get install -y bor-agent",
-      ].join("\n");
+        writeFile("/etc/apt/sources.list.d/bor.sources", [
+          "Types: deb",
+          `URIs: ${env.origin}/agent/deb/`,
+          "Suites: ./",
+          "Signed-By: /etc/apt/keyrings/bor.asc",
+        ]),
+        "sudo apt-get update",
+        "sudo apt-get install -y bor-agent",
+      ];
     case "rhel":
+      // The packages carry no signature of their own; the signed metadata
+      // holds their checksums, so repo_gpgcheck is the check that matters.
       return [
-        "# 2) Add the Bor repository served by this instance",
-        "cat <<EOF | sudo tee /etc/yum.repos.d/bor.repo >/dev/null",
-        "[bor]",
-        "name=Bor Agent",
-        `baseurl=${env.origin}/agent/rpm/`,
-        "enabled=1",
-        "gpgcheck=0",
-        `repo_gpgcheck=${env.signed ? 1 : 0}`,
-        ...(env.signed ? [`gpgkey=${env.origin}/agent/repo-key.asc`] : []),
-        "EOF",
+        writeFile("/etc/yum.repos.d/bor.repo", [
+          "[bor]",
+          "name=Bor Agent",
+          `baseurl=${env.origin}/agent/rpm/`,
+          "enabled=1",
+          "gpgcheck=0",
+          `repo_gpgcheck=${env.signed ? 1 : 0}`,
+          ...(env.signed ? [`gpgkey=${env.origin}/agent/repo-key.asc`] : []),
+        ]),
         "sudo dnf install -y bor-agent",
-      ].join("\n");
+      ];
     case "suse":
+      // zypper's gpgcheck is the master switch: with the metadata signed and
+      // verified, packages are accepted by the checksum in the metadata (the
+      // equivalent of dnf's repo_gpgcheck=1 above). gpgkey= is where zypper
+      // fetches the key from; --gpg-auto-import-keys imports it unprompted.
       return [
-        "# 2) Add the Bor repository served by this instance",
-        `sudo zypper addrepo --refresh ${env.origin}/agent/rpm/ bor`,
-        `sudo zypper --gpg-auto-import-keys install -y bor-agent`,
-      ].join("\n");
+        writeFile("/etc/zypp/repos.d/bor.repo", [
+          "[bor]",
+          "name=Bor Agent",
+          `baseurl=${env.origin}/agent/rpm/`,
+          "enabled=1",
+          "autorefresh=1",
+          "type=rpm-md",
+          ...(env.signed
+            ? ["gpgcheck=1", "repo_gpgcheck=1", `gpgkey=${env.origin}/agent/repo-key.asc`]
+            : ["gpgcheck=0"]),
+        ]),
+        "sudo zypper --gpg-auto-import-keys install -y bor-agent",
+      ];
     default:
-      return "";
+      return [];
   }
 }
 
-function directStep(p: PlatformID, env: SnippetEnv, file: AgentRepoFile | undefined): string {
+function directStep(p: PlatformID, env: SnippetEnv, file: AgentRepoFile | undefined): string[] {
   if (!file) {
-    return "# No package published for this architecture.";
+    return [];
   }
   const url = `${env.origin}/agent/${file.path}`;
   const name = file.path.split("/").pop() ?? file.path;
-  if (p === "alpine") {
-    return [
-      "# 2) Download and install the package (the apk index is not signed with",
-      "#    Alpine's scheme — delivery is protected by the TLS trust above)",
-      `curl -fsSO ${url}`,
-      `sudo apk add --allow-untrusted ./${name}`,
-    ].join("\n");
-  }
-  return [
-    "# 2) Download and install the package",
-    `curl -fsSO ${url}`,
-    `sudo pacman -U --noconfirm ./${name}`,
-  ].join("\n");
+  const install = p === "alpine" ? `sudo apk add --allow-untrusted ./${name}` : `sudo pacman -U --noconfirm ./${name}`;
+  return [`curl -fsSO ${url}`, install];
 }
 
-function enrollStep(env: SnippetEnv, token: EnrollmentToken): string {
+function enrollStep(env: SnippetEnv, token: EnrollmentToken): string[] {
+  // The token travels on stdin: nothing is left on disk when a later step
+  // fails, and printf is a shell builtin, so it never shows in a process
+  // listing. policy_port keeps its packaged default (8444).
   return [
-    "",
-    "# 3) Point the agent at this server and enroll (token is single-use,",
-    "#    valid 5 minutes). The CA trust from step 1 lets verification stay on.",
-    `sudo sed -i 's|^\\( *address:\\).*|\\1 "${env.host}"|' /etc/bor/config.yaml`,
-    `sudo sed -i 's|^\\( *enrollment_port:\\).*|\\1 ${env.port}|' /etc/bor/config.yaml`,
-    "sudo sed -i 's|^\\( *insecure_skip_verify:\\).*|\\1 false|' /etc/bor/config.yaml",
-    "# policy_port defaults to 8444 — adjust in /etc/bor/config.yaml if your",
-    "# deployment exposes the mTLS policy port elsewhere.",
-    "sudo install -m 600 /dev/null /etc/bor/enroll-token",
-    `printf '%s' '${token.token}' | sudo tee /etc/bor/enroll-token >/dev/null`,
-    "sudo bor-agent --token-file /etc/bor/enroll-token",
-    "sudo rm -f /etc/bor/enroll-token",
+    [
+      `sudo sed -i -e 's|^\\( *address:\\).*|\\1 "${env.host}"|' \\`,
+      `  -e 's|^\\( *enrollment_port:\\).*|\\1 ${env.port}|' \\`,
+      "  -e 's|^\\( *insecure_skip_verify:\\).*|\\1 false|' /etc/bor/config.yaml",
+    ].join("\n"),
+    `printf '%s' '${token.token}' | sudo bor-agent --token-file /dev/stdin`,
     "sudo systemctl enable --now bor-agent",
-  ].join("\n");
+  ];
+}
+
+/** The note for the install step under the code block. */
+function installNote(p: PlatformID, label: string, arch: Arch, repo: boolean, signed: boolean, file: AgentRepoFile | undefined): string {
+  if (repo) {
+    return signed
+      ? "Adds the signed repository served by this instance and installs bor-agent."
+      : "Adds the UNSIGNED repository served by this instance (development build) and installs bor-agent.";
+  }
+  if (!file) {
+    return `No package is published for ${arch} on ${label}; the script stops after the CA trust.`;
+  }
+  if (p === "alpine") {
+    return "Downloads and installs the package. The apk index is not signed with Alpine's scheme; delivery is protected by the TLS trust above.";
+  }
+  return "Downloads and installs the package.";
 }
 
 function formatSize(bytes: number): string {
@@ -302,12 +333,14 @@ const DeployAgentModal: React.FC<{
   const meta = PLATFORMS.find((p) => p.id === platform)!;
   const directFile = manifest.files.find((f) => f.format === meta.format && f.arch === arch);
 
+  const hasPackage = meta.repo || directFile !== undefined;
+
   const snippet = useMemo(() => {
-    const parts = [caTrustStep(platform, env)];
-    parts.push(meta.repo ? repoStep(platform, env) : directStep(platform, env, directFile));
-    if (token) parts.push(enrollStep(env, token));
-    return parts.join("\n");
-  }, [platform, env, meta.repo, directFile, token]);
+    const parts = caTrustStep(platform, env);
+    parts.push(...(meta.repo ? repoStep(platform, env) : directStep(platform, env, directFile)));
+    if (token && hasPackage) parts.push(...enrollStep(env, token));
+    return chain(parts);
+  }, [platform, env, meta.repo, directFile, token, hasPackage]);
 
   const copySnippet = () => {
     navigator.clipboard
@@ -410,6 +443,27 @@ const DeployAgentModal: React.FC<{
               >
                 <CodeBlockCode>{snippet}</CodeBlockCode>
               </CodeBlock>
+              <p className="bor-text-secondary" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                One command: the lines are joined with <code>{"&& \\"}</code>, so a
+                failing step stops the script. It:
+              </p>
+              <ol className="bor-text-secondary" style={{ margin: 0, paddingLeft: "1.25rem" }}>
+                <li>
+                  Trusts this server's CA (the first two lines). Remove them when the
+                  server has a publicly trusted certificate. The CA is fetched with{" "}
+                  <code>-k</code> because it cannot be verified before it is installed;
+                  in high-security environments compare its fingerprint out of band.
+                </li>
+                <li>{installNote(platform, meta.label, arch, meta.repo, env.signed, directFile)}</li>
+                {token && hasPackage && (
+                  <li>
+                    Points <code>/etc/bor/config.yaml</code> at this server, enrolls with the
+                    one-time token (valid 5 minutes) and starts the service. The policy port
+                    keeps its default of 8444; adjust it in the file when your deployment
+                    exposes the mutual TLS policy port elsewhere.
+                  </li>
+                )}
+              </ol>
               {!token && canEnroll && (
                 <p className="bor-text-secondary" style={{ marginTop: "0.5rem" }}>
                   Pick a node group and add the enrollment step to get a single

@@ -78,7 +78,7 @@ of Flatpak repository catalogs.
 | `/var/lib/bor/agent/luks-state.json` | root | Disk-encryption rotation progress (never contains keys). | `disk_encryption.state_file` |
 | `/etc/bor/luks-bootstrap/` | root | One-time LUKS provisioning credentials placed by an installer; wiped after adoption. | `disk_encryption.bootstrap_dir` |
 | `/run/bor/luks/` | root, `0700` | Work directory and lock file for disk-encryption operations. | `disk_encryption.run_dir` |
-| `/etc/bor/enroll-token` | root, `0600` | Temporary token file used by the deploy script; deleted after enrollment. | `--token-file` |
+| `/etc/bor/enroll-token` | root, `0600` | Conventional path for a token file written by hand or by a configuration management tool; delete it after enrollment. The deploy wizard passes the token on standard input instead. | `--token-file` |
 
 ### Service and user
 
