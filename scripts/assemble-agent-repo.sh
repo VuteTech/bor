@@ -13,7 +13,7 @@
 #   ├── deb/                   flat apt repo: *.deb + Packages(.gz) + Release
 #   │                          + InRelease/Release.gpg (when signing)
 #   ├── rpm/                   dnf/zypper repo: *.rpm + repodata/
-#   │                          + repodata/repomd.xml.asc (when signing)
+#   │                          + repodata/repomd.xml.asc|.key (when signing)
 #   ├── apk/                   direct-download .apk files (no index — Alpine
 #   │                          repo signing is abuild-specific; see plan §4.4)
 #   └── arch/                  direct-download pacman packages
@@ -136,6 +136,9 @@ if [ -n "$SIGN_KEY_ID" ]; then
     "$OUT_DIR/rpm/repodata/repomd.xml"
   # Public key, served to clients for Signed-By= / gpgkey= (no passphrase needed).
   gpg --batch --export --armor "$SIGN_KEY_ID" > "$OUT_DIR/repo-key.asc"
+  # zypper looks for the key at repodata/repomd.xml.key when a repository
+  # has no gpgkey= line (plain `zypper addrepo`): same key, second path.
+  cp "$OUT_DIR/repo-key.asc" "$OUT_DIR/rpm/repodata/repomd.xml.key"
   [ -n "$PASSFILE" ] && rm -f "$PASSFILE" && PASSFILE=""
   SIGNED=true
 else
@@ -229,23 +232,41 @@ tokens) is in the web UI: <em>Nodes &rarr; Deploy agent</em>.</p>
 Signing key: <a href="repo-key.asc">repo-key.asc</a> ·
 Instance CA: <a href="ca.crt">ca.crt</a></p>
 <h2>Debian / Ubuntu</h2>
-<pre><code>sudo install -d -m 755 /etc/apt/keyrings
-curl -fsS <span class="origin">ORIGIN</span>/agent/repo-key.asc | sudo tee /etc/apt/keyrings/bor.asc &gt;/dev/null
-printf 'Types: deb\nURIs: <span class="origin">ORIGIN</span>/agent/deb/\nSuites: ./\nSigned-By: /etc/apt/keyrings/bor.asc\n' | sudo tee /etc/apt/sources.list.d/bor.sources &gt;/dev/null
-sudo apt-get update &amp;&amp; sudo apt-get install -y bor-agent</code></pre>
+<pre><code>sudo install -d -m 755 /etc/apt/keyrings &amp;&amp; \\
+curl -fsS <span class="origin">ORIGIN</span>/agent/repo-key.asc | sudo tee /etc/apt/keyrings/bor.asc &gt;/dev/null &amp;&amp; \\
+printf '%s\n' \\
+  'Types: deb' \\
+  'URIs: <span class="origin">ORIGIN</span>/agent/deb/' \\
+  'Suites: ./' \\
+  'Signed-By: /etc/apt/keyrings/bor.asc' \\
+  | sudo tee /etc/apt/sources.list.d/bor.sources &gt;/dev/null &amp;&amp; \\
+sudo apt-get update &amp;&amp; \\
+sudo apt-get install -y bor-agent</code></pre>
 <h2>RHEL / Fedora</h2>
-<pre><code>cat &lt;&lt;REPO | sudo tee /etc/yum.repos.d/bor.repo &gt;/dev/null
-[bor]
-name=Bor Agent
-baseurl=<span class="origin">ORIGIN</span>/agent/rpm/
-enabled=1
-gpgcheck=0
-repo_gpgcheck=1
-gpgkey=<span class="origin">ORIGIN</span>/agent/repo-key.asc
-REPO
+<pre><code>printf '%s\n' \\
+  '[bor]' \\
+  'name=Bor Agent' \\
+  'baseurl=<span class="origin">ORIGIN</span>/agent/rpm/' \\
+  'enabled=1' \\
+  'gpgcheck=0' \\
+  'repo_gpgcheck=1' \\
+  'gpgkey=<span class="origin">ORIGIN</span>/agent/repo-key.asc' \\
+  | sudo tee /etc/yum.repos.d/bor.repo &gt;/dev/null &amp;&amp; \\
 sudo dnf install -y bor-agent</code></pre>
-<p>SUSE uses the same rpm repository via <code>zypper addrepo</code>; Alpine
-and Arch packages are direct downloads — paths in
+<h2>SUSE</h2>
+<pre><code>printf '%s\n' \\
+  '[bor]' \\
+  'name=Bor Agent' \\
+  'baseurl=<span class="origin">ORIGIN</span>/agent/rpm/' \\
+  'enabled=1' \\
+  'autorefresh=1' \\
+  'type=rpm-md' \\
+  'gpgcheck=1' \\
+  'repo_gpgcheck=1' \\
+  'gpgkey=<span class="origin">ORIGIN</span>/agent/repo-key.asc' \\
+  | sudo tee /etc/zypp/repos.d/bor.repo &gt;/dev/null &amp;&amp; \\
+sudo zypper --gpg-auto-import-keys install -y bor-agent</code></pre>
+<p>Alpine and Arch packages are direct downloads - paths in
 <a href="manifest.json">manifest.json</a>. If this instance uses its
 auto-generated certificate, trust <a href="ca.crt">ca.crt</a> first. Details:
 <code>doc/installation/agent.md</code> in the Bor repository.</p>
