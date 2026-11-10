@@ -397,6 +397,10 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # This job deliberately skips actions/checkout, so the gh CLI has no git
+      # remote to infer the repository from. Name it explicitly or every
+      # `gh release` call fails with "not a git repository".
+      GH_REPO: ${{ github.repository }}
       TAG: ${{ github.event.release.tag_name }}
       BOR_RELEASE_GPG_KEY: ${{ secrets.BOR_RELEASE_GPG_KEY }}
       SIGN_KEY_PASSPHRASE: ${{ secrets.BOR_RELEASE_GPG_PASSPHRASE }}
