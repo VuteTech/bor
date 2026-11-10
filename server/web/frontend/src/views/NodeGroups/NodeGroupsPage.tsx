@@ -3,6 +3,7 @@
 // Copyright (C) 2026 Bor contributors
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Link } from "react-router";
 import { LiveAlert } from "../../components/LiveAlert";
 import { BorEmptyState } from "../../components/BorEmptyState";
 import { BorToolbar } from "../../components/BorToolbar";
@@ -46,7 +47,8 @@ import {
   NodeGroup,
   EnrollmentToken,
 } from "../../apiClient/nodeGroupsApi";
-import { hasGlobalPermission } from "../../apiClient/permissions";
+import { hasGlobalPermission, hasPermission } from "../../apiClient/permissions";
+import { AddNodesModal, ManageMembersModal } from "./GroupMembersModals";
 
 /* ── Helpers ── */
 
@@ -58,6 +60,11 @@ export const NodeGroupsPage: React.FC = () => {
   // A new group cannot fall inside a delegated (node-group-scoped)
   // administrator's scope, so creating one needs a global grant.
   const canCreateGroup = hasGlobalPermission("node_group:create");
+  // Membership is changed through the node permissions, exactly as on the
+  // Nodes page: node:create to add, node:delete to remove.
+  const canViewNodes = hasPermission("node:view");
+  const canAddNodes = canViewNodes && hasPermission("node:create");
+  const canRemoveNodes = hasPermission("node:delete");
   const [groups, setGroups] = useState<NodeGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +101,10 @@ export const NodeGroupsPage: React.FC = () => {
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
 
+  // Membership dialogs
+  const [addNodesGroup, setAddNodesGroup] = useState<NodeGroup | null>(null);
+  const [membersGroup, setMembersGroup] = useState<NodeGroup | null>(null);
+
   /* ── Load data ── */
   const loadGroups = useCallback(async () => {
     try {
@@ -105,6 +116,16 @@ export const NodeGroupsPage: React.FC = () => {
       setError(err instanceof Error ? err.message : "Failed to load node groups");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // Refreshes the member counts without swapping the page for a spinner,
+  // which would close an open membership dialog.
+  const refreshGroups = useCallback(async () => {
+    try {
+      setGroups(await fetchNodeGroups());
+    } catch {
+      /* the list keeps its last known counts */
     }
   }, []);
 
@@ -397,6 +418,13 @@ export const NodeGroupsPage: React.FC = () => {
             <Tbody>
               {view.map((group, rowIndex) => {
                 const rowActions: IAction[] = [
+                  ...(canAddNodes
+                    ? [{ title: "Add nodes...", onClick: () => setAddNodesGroup(group) }]
+                    : []),
+                  ...(canViewNodes
+                    ? [{ title: "Manage members", onClick: () => setMembersGroup(group) }]
+                    : []),
+                  ...(canViewNodes ? [{ isSeparator: true }] : []),
                   { title: "Generate token", onClick: () => openTokenModal(group) },
                   { title: "Edit", onClick: () => openEditModal(group) },
                   { isSeparator: true },
@@ -414,9 +442,26 @@ export const NodeGroupsPage: React.FC = () => {
                     <Td dataLabel="Name"><strong>{group.name}</strong></Td>
                     <Td dataLabel="Description">{group.description || "—"}</Td>
                     <Td dataLabel="Nodes">
-                      <Label color={group.node_count > 0 ? "blue" : "grey"}>
-                        {group.node_count}
-                      </Label>
+                      {canViewNodes ? (
+                        <Label
+                          color={group.node_count > 0 ? "blue" : "grey"}
+                          render={({ className, content }) => (
+                            <Link
+                              to={`/nodes?group=${group.id}`}
+                              className={className}
+                              aria-label={`${group.node_count} node${group.node_count === 1 ? "" : "s"} in ${group.name}, open the node list`}
+                            >
+                              {content}
+                            </Link>
+                          )}
+                        >
+                          {group.node_count}
+                        </Label>
+                      ) : (
+                        <Label color={group.node_count > 0 ? "blue" : "grey"}>
+                          {group.node_count}
+                        </Label>
+                      )}
                     </Td>
                     <Td dataLabel="Created">{formatDate(group.created_at)}</Td>
                     <Td dataLabel="Actions" isActionCell>
@@ -442,6 +487,30 @@ export const NodeGroupsPage: React.FC = () => {
           </Table>
         )}
       </PageSection>
+
+      {/* ── Membership dialogs ── */}
+      <AddNodesModal
+        group={addNodesGroup}
+        onClose={() => setAddNodesGroup(null)}
+        onAdded={(added) => {
+          const name = addNodesGroup?.name ?? "";
+          setAddNodesGroup(null);
+          addToast({
+            variant: "success",
+            title:
+              added === 0
+                ? "The selected nodes were already members"
+                : `Added ${added} node${added === 1 ? "" : "s"} to ${name}`,
+          });
+          refreshGroups();
+        }}
+      />
+      <ManageMembersModal
+        group={membersGroup}
+        canRemove={canRemoveNodes}
+        onClose={() => setMembersGroup(null)}
+        onChanged={refreshGroups}
+      />
 
       {/* ── Create / Edit Modal ── */}
       <Modal

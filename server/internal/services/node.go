@@ -178,6 +178,12 @@ func (s *NodeService) AddNodeToGroup(ctx context.Context, nodeID, groupID string
 	return s.nodeRepo.AddToGroup(ctx, nodeID, groupID)
 }
 
+// AddNodesToGroup adds several nodes to a node group atomically and returns
+// how many of them were not members before.
+func (s *NodeService) AddNodesToGroup(ctx context.Context, groupID string, nodeIDs []string) (int, error) {
+	return s.nodeRepo.AddNodesToGroup(ctx, groupID, nodeIDs)
+}
+
 // RemoveNodeFromGroup removes a node from a specific node group.
 func (s *NodeService) RemoveNodeFromGroup(ctx context.Context, nodeID, groupID string) error {
 	return s.nodeRepo.RemoveFromGroup(ctx, nodeID, groupID)

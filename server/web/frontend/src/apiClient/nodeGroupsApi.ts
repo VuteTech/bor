@@ -96,3 +96,20 @@ export async function generateEnrollmentToken(
     headers: authHeaders(),
   });
 }
+
+/** Adds several nodes to a group in one call; resolves to how many were new members. */
+export async function addNodesToGroup(groupId: string, nodeIds: string[]): Promise<number> {
+  const res = await apiRequest<{ added: number }>(`/api/v1/node-groups/${groupId}/nodes`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ node_ids: nodeIds }),
+  });
+  return res.added;
+}
+
+export async function removeNodeFromNodeGroup(groupId: string, nodeId: string): Promise<void> {
+  return apiRequest<void>(`/api/v1/node-groups/${groupId}/nodes/${nodeId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+}

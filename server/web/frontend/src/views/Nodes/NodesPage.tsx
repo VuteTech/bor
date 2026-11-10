@@ -55,7 +55,6 @@ import {
   Form,
   FormGroup,
   ActionGroup,
-  Checkbox,
 } from "@patternfly/react-core";
 import { Table, Thead, Tr, Th, Tbody, Td, ThProps } from "@patternfly/react-table";
 import SearchIcon from "@patternfly/react-icons/dist/esm/icons/search-icon";
@@ -66,8 +65,6 @@ import {
   fetchNodesPaged,
   fetchNodeFilterOptions,
   refreshNodeMetadata,
-  addNodeToGroup,
-  removeNodeFromGroup,
   deleteNode,
   revokeNodeCertificate,
   updateNode,
@@ -79,6 +76,7 @@ import { fetchNodeGroups, NodeGroup } from "../../apiClient/nodeGroupsApi";
 import { hasPermission } from "../../apiClient/permissions";
 import { NodeDiskEncryptionSection } from "../DiskEncryption/NodeDiskEncryptionSection";
 import { NodeSystemdSection } from "./NodeSystemdSection";
+import { ChangeGroupsModal } from "./ChangeGroupsModal";
 import { NodeMacSection } from "./NodeMacSection";
 import { NodeUpdatesSection } from "./NodeUpdatesSection";
 import { macLsmLabel } from "../../apiClient/macApi";
@@ -221,6 +219,12 @@ export const NodesPage: React.FC = () => {
   // Selection (for bulk actions)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Keep the details panel in step with the list after a reload (for
+  // example a changed group membership).
+  useEffect(() => {
+    setSelectedNode((prev) => (prev ? nodes.find((n) => n.id === prev.id) ?? prev : prev));
+  }, [nodes]);
+
   // Bulk actions dropdown
   const [bulkOpen, setBulkOpen] = useState(false);
 
@@ -236,14 +240,10 @@ export const NodesPage: React.FC = () => {
   // Action error banner
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // "Add to group" modal state
-  const [groupModalOpen, setGroupModalOpen] = useState(false);
-  const [groupModalTargetIds, setGroupModalTargetIds] = useState<string[]>([]);
+  // "Change groups" dialog: the nodes it edits (null = closed), and the
+  // node groups, which also label the Group filter.
+  const [groupModalTargetIds, setGroupModalTargetIds] = useState<string[] | null>(null);
   const [nodeGroups, setNodeGroups] = useState<NodeGroup[]>([]);
-  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
-  const [groupActionLoading, setGroupActionLoading] = useState(false);
-  const [groupActionError, setGroupActionError] = useState<string | null>(null);
 
   // "Decommission" modal state
   const [decommModalOpen, setDecommModalOpen] = useState(false);
@@ -251,14 +251,6 @@ export const NodesPage: React.FC = () => {
   const [decommConfirmText, setDecommConfirmText] = useState("");
   const [decommLoading, setDecommLoading] = useState(false);
   const [decommError, setDecommError] = useState<string | null>(null);
-
-  // "Remove from group" modal state
-  const [removeGroupModalOpen, setRemoveGroupModalOpen] = useState(false);
-  const [removeGroupTargetIds, setRemoveGroupTargetIds] = useState<string[]>([]);
-  const [removeGroupOptions, setRemoveGroupOptions] = useState<{ id: string; name: string }[]>([]);
-  const [removeGroupSelectedIds, setRemoveGroupSelectedIds] = useState<Set<string>>(new Set());
-  const [removeGroupLoading, setRemoveGroupLoading] = useState(false);
-  const [removeGroupError, setRemoveGroupError] = useState<string | null>(null);
 
   /* ── Build the current query from filters/sort/page ── */
   const nodeQuery = useCallback(
@@ -483,85 +475,23 @@ export const NodesPage: React.FC = () => {
     }
   };
 
-  /* ── Add to group ── */
-  const openGroupModal = async (ids: string[]) => {
-    setGroupModalTargetIds(ids);
-    setGroupPickerOpen(false);
-    setSelectedGroupId("");
-    setGroupActionError(null);
-    setGroupActionLoading(false);
-    // Lazily load groups
+  /* ── Node groups ── */
+  const loadNodeGroups = useCallback(async () => {
     try {
-      const groups = await fetchNodeGroups();
-      setNodeGroups(groups);
+      setNodeGroups(await fetchNodeGroups());
     } catch {
-      setNodeGroups([]);
+      /* keep the last known list; the filter then shows fewer names */
     }
-    setGroupModalOpen(true);
-  };
+  }, []);
 
-  const handleAddToGroup = async () => {
-    if (!selectedGroupId) return;
-    setGroupActionLoading(true);
-    setGroupActionError(null);
-    try {
-      await Promise.all(groupModalTargetIds.map((id) => addNodeToGroup(id, selectedGroupId)));
-      await loadNodes();
-      setGroupModalOpen(false);
-      setSelectedIds(new Set());
-    } catch (err) {
-      setGroupActionError(err instanceof Error ? err.message : "Failed to assign group");
-    } finally {
-      setGroupActionLoading(false);
-    }
-  };
+  // Needed up front: the Group filter (and a ?group= deep link) shows names.
+  useEffect(() => {
+    loadNodeGroups();
+  }, [loadNodeGroups]);
 
-  /* ── Remove from group ── */
-  const openRemoveGroupModal = (ids: string[]) => {
-    // Collect all distinct groups across the target nodes from current data
-    const groupMap = new Map<string, string>(); // id → name
-    ids.forEach((nodeId) => {
-      const node = nodes.find((n) => n.id === nodeId);
-      if (node?.node_group_ids) {
-        node.node_group_ids.forEach((gid, idx) => {
-          const name = node.node_group_names?.[idx] ?? gid;
-          groupMap.set(gid, name);
-        });
-      }
-    });
-    const options = Array.from(groupMap.entries()).map(([id, name]) => ({ id, name }));
-    setRemoveGroupOptions(options);
-    // Pre-select all when there's only one option
-    setRemoveGroupSelectedIds(options.length === 1 ? new Set([options[0].id]) : new Set());
-    setRemoveGroupTargetIds(ids);
-    setRemoveGroupError(null);
-    setRemoveGroupLoading(false);
-    setRemoveGroupModalOpen(true);
-  };
-
-  const handleRemoveFromGroups = async () => {
-    setRemoveGroupLoading(true);
-    setRemoveGroupError(null);
-    try {
-      const ops: Promise<void>[] = [];
-      removeGroupTargetIds.forEach((nodeId) => {
-        const node = nodes.find((n) => n.id === nodeId);
-        if (!node?.node_group_ids) return;
-        node.node_group_ids.forEach((gid) => {
-          if (removeGroupSelectedIds.has(gid)) {
-            ops.push(removeNodeFromGroup(nodeId, gid));
-          }
-        });
-      });
-      await Promise.all(ops);
-      await loadNodes();
-      setSelectedIds(new Set());
-      setRemoveGroupModalOpen(false);
-    } catch (err) {
-      setRemoveGroupError(err instanceof Error ? err.message : "Failed to remove from group");
-    } finally {
-      setRemoveGroupLoading(false);
-    }
+  const openGroupModal = (ids: string[]) => {
+    loadNodeGroups();
+    setGroupModalTargetIds(ids);
   };
 
   /* ── Decommission ── */
@@ -820,19 +750,9 @@ export const NodesPage: React.FC = () => {
                 variant="secondary"
                 onClick={() => openGroupModal([selectedNode.id])}
               >
-                Add to group
+                Change groups
               </Button>
             </FlexItem>
-            {(selectedNode.node_group_ids?.length ?? 0) > 0 && (
-              <FlexItem>
-                <Button
-                  variant="secondary"
-                  onClick={() => openRemoveGroupModal([selectedNode.id])}
-                >
-                  Remove from group
-                </Button>
-              </FlexItem>
-            )}
             <FlexItem>
               <Button
                 variant="danger"
@@ -1093,16 +1013,7 @@ export const NodesPage: React.FC = () => {
                               openGroupModal(Array.from(selectedIds));
                             }}
                           >
-                            Add to group
-                          </DropdownItem>
-                          <DropdownItem
-                            key="remove-group"
-                            onClick={() => {
-                              setBulkOpen(false);
-                              openRemoveGroupModal(Array.from(selectedIds));
-                            }}
-                          >
-                            Remove from group
+                            Change groups
                           </DropdownItem>
                           <DropdownItem
                             key="decommission"
@@ -1259,118 +1170,18 @@ export const NodesPage: React.FC = () => {
         </Drawer>
       </PageSection>
 
-      {/* ── Add to group modal ── */}
-      <Modal
-        variant={ModalVariant.small}
-        isOpen={groupModalOpen}
-        onClose={() => setGroupModalOpen(false)}
-      >
-        <ModalHeader title={`Add to group (${groupModalTargetIds.length} node${groupModalTargetIds.length !== 1 ? "s" : ""})`} />
-        <ModalBody>
-        <Form>
-          <div aria-live="assertive" aria-atomic="true">
-            {groupActionError && (
-              <Alert variant="danger" title="Error" isInline>{groupActionError}</Alert>
-            )}
-          </div>
-          <FormGroup label="Node group" isRequired fieldId="group-picker">
-            <Select
-              isOpen={groupPickerOpen}
-              selected={selectedGroupId}
-              onSelect={(_ev, val) => {
-                setSelectedGroupId(val as string);
-                setGroupPickerOpen(false);
-              }}
-              onOpenChange={setGroupPickerOpen}
-              toggle={(ref: React.Ref<MenuToggleElement>) => (
-                <MenuToggle
-                  ref={ref}
-                  onClick={() => setGroupPickerOpen(!groupPickerOpen)}
-                  isExpanded={groupPickerOpen}
-                  style={{ width: "100%" }}
-                >
-                  {nodeGroups.find((g) => g.id === selectedGroupId)?.name || "Select a group"}
-                </MenuToggle>
-              )}
-            >
-              <SelectList>
-                {nodeGroups.map((g) => (
-                  <SelectOption key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectOption>
-                ))}
-              </SelectList>
-            </Select>
-          </FormGroup>
-          <ActionGroup>
-            <Button
-              variant="primary"
-              isDisabled={!selectedGroupId || groupActionLoading}
-              isLoading={groupActionLoading}
-              onClick={handleAddToGroup}
-            >
-              Assign
-            </Button>
-            <Button variant="link" onClick={() => setGroupModalOpen(false)}>
-              Cancel
-            </Button>
-          </ActionGroup>
-        </Form>
-        </ModalBody>
-      </Modal>
-
-      {/* ── Remove from group modal ── */}
-      <Modal
-        variant={ModalVariant.small}
-        isOpen={removeGroupModalOpen}
-        onClose={() => setRemoveGroupModalOpen(false)}
-      >
-        <ModalHeader title="Remove from group" />
-        <ModalBody>
-        <Form>
-          {removeGroupOptions.length === 0 ? (
-            <p>The selected node(s) are not in any groups.</p>
-          ) : (
-            <>
-              <p>Select the group(s) to remove the selected node(s) from:</p>
-              {removeGroupOptions.map((opt) => (
-                <Checkbox
-                  key={opt.id}
-                  id={`remove-group-${opt.id}`}
-                  label={opt.name}
-                  isChecked={removeGroupSelectedIds.has(opt.id)}
-                  onChange={(_ev, checked) => {
-                    setRemoveGroupSelectedIds((prev) => {
-                      const next = new Set(prev);
-                      if (checked) { next.add(opt.id); } else { next.delete(opt.id); }
-                      return next;
-                    });
-                  }}
-                />
-              ))}
-            </>
-          )}
-          <div aria-live="assertive" aria-atomic="true">
-            {removeGroupError && (
-              <Alert variant="danger" title="Error" isInline>{removeGroupError}</Alert>
-            )}
-          </div>
-          <ActionGroup>
-            <Button
-              variant="primary"
-              isDisabled={removeGroupSelectedIds.size === 0 || removeGroupLoading || removeGroupOptions.length === 0}
-              isLoading={removeGroupLoading}
-              onClick={handleRemoveFromGroups}
-            >
-              Remove
-            </Button>
-            <Button variant="link" onClick={() => setRemoveGroupModalOpen(false)}>
-              Cancel
-            </Button>
-          </ActionGroup>
-        </Form>
-        </ModalBody>
-      </Modal>
+      {/* ── Change groups dialog ── */}
+      <ChangeGroupsModal
+        isOpen={groupModalTargetIds !== null}
+        targets={nodes.filter((n) => groupModalTargetIds?.includes(n.id))}
+        groups={nodeGroups}
+        onClose={() => setGroupModalTargetIds(null)}
+        onChanged={() => loadNodes(false)}
+        onDone={() => {
+          setGroupModalTargetIds(null);
+          setSelectedIds(new Set());
+        }}
+      />
 
       {/* ── Decommission confirmation modal ── */}
       <Modal

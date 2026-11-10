@@ -57,6 +57,8 @@ func TestBuildNodeFilter(t *testing.T) {
 			"WHERE (n.name ILIKE $1 OR n.fqdn ILIKE $1 OR n.ip_address ILIKE $1 OR n.groups ILIKE $1)", 1},
 		{"status + search", &models.NodeListRequest{Status: "online", Search: "web"},
 			"WHERE n.status_cached = $1 AND (n.name ILIKE $2 OR n.fqdn ILIKE $2 OR n.ip_address ILIKE $2 OR n.groups ILIKE $2)", 2},
+		{"exclude group", &models.NodeListRequest{ExcludeGroup: "g1"},
+			"WHERE NOT EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id AND ngm.node_group_id::text = $1)", 1},
 		{"blank search ignored", &models.NodeListRequest{Search: "   "}, "", 0},
 		{"empty scope matches nothing", &models.NodeListRequest{Scope: &models.GroupScopeFilter{}},
 			"WHERE FALSE", 0},

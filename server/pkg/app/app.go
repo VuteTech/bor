@@ -386,6 +386,7 @@ func Run(opts Options) {
 	policyHandler := api.NewPolicyHandler(policySvc).WithBindings(policyBindingSvc).WithExecGate(az, auditSvc)
 	nodeHandler := api.NewNodeHandler(nodeSvc, enrollSvc, policyHub)
 	nodeGroupHandler := api.NewNodeGroupHandler(nodeGroupSvc, enrollSvc)
+	nodeGroupMembersHandler := api.NewNodeGroupMembersHandler(nodeHandler, nodeGroupSvc)
 	userGroupHandler := api.NewUserGroupHandler(userGroupSvc, userGroupMemberRepo, userGroupRoleBindingRepo).
 		WithAuditService(auditSvc, roleRepo).
 		WithNodeGroupScopes(nodeGroupRepo, nodeGroupScopes)
@@ -631,6 +632,10 @@ func Run(opts Options) {
 	})
 	mux.Handle("/api/v1/node-groups", authMiddleware(groupPerms(auditMw(http.HandlerFunc(nodeGroupHandler.ServeHTTP)))))
 	mux.Handle("/api/v1/node-groups/", authMiddleware(groupPerms(auditMw(http.HandlerFunc(nodeGroupHandler.ServeHTTP)))))
+	// Membership from the group side. It changes nodes, so it is gated by the
+	// node permissions of the per-node membership endpoints, not node_group.
+	mux.Handle("POST /api/v1/node-groups/{id}/nodes", authMiddleware(nodePerms(auditMw(http.HandlerFunc(nodeGroupMembersHandler.Add)))))
+	mux.Handle("DELETE /api/v1/node-groups/{id}/nodes/{node_id}", authMiddleware(nodePerms(auditMw(http.HandlerFunc(nodeGroupMembersHandler.Remove)))))
 
 	// User group routes — identity domain (separate from node groups)
 	userGroupPerms := gate.RequireMethod([]api.MethodPermission{

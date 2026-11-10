@@ -189,7 +189,7 @@ are just no longer protected against changes). Let the agent remove its
 policies first, then uninstall it.
 
 1. **Withdraw all policies from the node.** On **Fleet -> Nodes**, select
-   the node and use **Remove from group** to remove it from every node group.
+   the node and use **Change groups** to clear every node group.
 2. **Let the agent apply the empty policy set.** On the desktop, restart the
    agent so it reconnects with its new (empty) group membership:
 

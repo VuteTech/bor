@@ -92,6 +92,8 @@ export interface NodeListParams {
   lsm?: string;
   updates?: string;
   group?: string;
+  /** Leave out the members of this node group. */
+  exclude_group?: string;
   sort_field?: string;
   sort_order?: "asc" | "desc";
 }
