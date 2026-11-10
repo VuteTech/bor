@@ -498,6 +498,7 @@ type NodeListRequest struct {
 	LSM          string `json:"lsm,omitempty"`           // matches lsm ("selinux", "apparmor", "none")
 	Updates      string `json:"updates,omitempty"`       // "security" (pending), "reboot" (pending), "engine-missing", "not-reported"
 	Group        string `json:"group,omitempty"`         // node group id, or "none" for unassigned
+	ExcludeGroup string `json:"exclude_group,omitempty"` // node group id whose members are left out
 	SortField    string `json:"sort_field,omitempty"`
 	SortOrder    string `json:"sort_order,omitempty"` // "asc" | "desc"
 	// Scope restricts results to nodes in at least one of ScopeGroupIDs when

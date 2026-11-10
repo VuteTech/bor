@@ -124,7 +124,7 @@ Select a row to open the details panel on the right.
 :   - **Update metadata** - asks the agent to collect fresh system
       information (OS, desktop, IP address and so on) and report it. Only
       available while the node is `online`.
-    - **Add to group** / **Remove from group** - see
+    - **Change groups** - see
       [Move nodes between groups](#move-nodes-between-groups).
     - **Decommission** - see [Decommission a node](#decommission-a-node).
     - **Revoke Certificate** - see [Revoke a certificate](#revoke-a-certificate).
@@ -144,20 +144,28 @@ ships the agent package repository. See
 A node can belong to several node groups at the same time; it receives the
 policies bound to all of them. See [Node groups](node-groups.md).
 
-To add nodes to a group:
+One dialog sets the whole membership of a node:
 
 1. Select one node and open its details panel, or tick several nodes and
    open **Actions**.
-2. Choose **Add to group**.
-3. Pick the **Node group** and select **Assign**.
+2. Choose **Change groups**. The dialog lists every node group; the groups
+   the node is already in are ticked.
+3. Tick the groups the node should be in, clear the ones it should leave,
+   and select **Save**. The line under the list sums up what will be added
+   and removed.
 
-To remove nodes from groups:
+With several nodes selected, a group that only some of them are in is
+shown in the mixed state, with the number of members under its name.
+Tick it to put all selected nodes in the group, clear it to remove them
+all, or leave it mixed to keep it as it is. Only the groups you changed
+are applied.
 
-1. Select the nodes and choose **Remove from group**.
-2. Tick the groups to remove them from (when the nodes belong to only one
-   group it is preselected) and select **Remove**.
+Adding nodes needs `node:create`; removing them needs `node:delete`. A
+box you may not change is disabled.
 
-Adding nodes needs `node:create`; removing them needs `node:delete`.
+To work from the group instead (add many nodes to one group, or review
+and remove its members), use **Add nodes...** and **Manage members** on
+the [Node groups](node-groups.md#manage-the-members-of-a-group) page.
 
 !!! warning "Group changes take effect on the next agent connection"
     The server reads a node's group memberships when the agent opens its

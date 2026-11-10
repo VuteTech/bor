@@ -3,7 +3,8 @@
 A node group is a named set of nodes. Groups are how policies reach
 machines: you bind a policy to a node group, and every node in the group
 receives it. This page covers creating, editing and deleting node groups,
-how membership works, and generating enrollment tokens.
+how membership works, adding and removing member nodes, and generating
+enrollment tokens.
 
 Open it from **Fleet -> Node Groups** in the sidebar.
 
@@ -20,8 +21,9 @@ Open it from **Fleet -> Node Groups** in the sidebar.
   policy types; see [Bindings](bindings.md#priority-and-conflicts).
 
 New nodes join the node group of the enrollment token they used. You can
-add them to more groups later on the [Nodes](nodes.md#move-nodes-between-groups)
-page.
+add them to more groups later, either from the group (see
+[Manage the members of a group](#manage-the-members-of-a-group)) or from
+the node on the [Nodes](nodes.md#move-nodes-between-groups) page.
 
 ## The node group list
 
@@ -31,12 +33,13 @@ page.
 |---|---|
 | **Name** | Group name. Sortable. |
 | **Description** | Optional description. |
-| **Nodes** | Number of member nodes. Sortable. |
+| **Nodes** | Number of member nodes. Select it to open the [Nodes](nodes.md) page filtered to this group. Sortable. |
 | **Created** | Creation time. Sortable. |
 
 Use **Search by name or description...** to filter the list. The row menu
-offers **Generate token**, **Edit** and **Delete**. Tick several rows to use
-**Actions** for bulk **Edit** (one row only) and **Delete**.
+offers **Add nodes...**, **Manage members**, **Generate token**, **Edit**
+and **Delete**. Tick several rows to use **Actions** for bulk **Edit** (one
+row only) and **Delete**.
 
 ## Create a node group
 
@@ -54,6 +57,50 @@ Requires `node_group:create`.
     baseline policies. Because nodes can be in several groups, you can
     combine a baseline group with more specific ones.
 
+## Manage the members of a group
+
+### Add nodes
+
+1. In the row menu of the group, select **Add nodes...**.
+2. The dialog lists the nodes that are not members yet, with their status
+   and current groups. Use the search box to narrow the list (name, FQDN
+   or IP address); ticked nodes stay selected when you search again. At
+   most 100 nodes are listed at a time.
+3. Tick the nodes and select **Add**.
+
+The nodes keep their other groups. Requires `node:view` and `node:create`.
+
+### Review and remove members
+
+1. In the row menu of the group, select **Manage members**.
+2. The dialog lists the member nodes with their status and their other
+   groups. Search and page through the list as needed.
+3. To remove one node, select **Remove** in its row and type the node name
+   to confirm. To remove several, tick them, select **Remove selected**
+   and type `Yes`.
+
+A removed node stops receiving the policies bound to this group and keeps
+its other memberships; a node left in no group receives no policies.
+**Open in Nodes** opens the [Nodes](nodes.md) page filtered to the group.
+Viewing requires `node:view`; removing requires `node:delete`.
+
+To set all groups of one node in a single dialog, use **Change groups** on
+the [Nodes](nodes.md#move-nodes-between-groups) page.
+
+### From a script
+
+The same actions are available over the REST API:
+
+```text
+POST   /api/v1/node-groups/{group_id}/nodes            {"node_ids": ["...", "..."]}
+DELETE /api/v1/node-groups/{group_id}/nodes/{node_id}
+```
+
+The `POST` adds up to 500 nodes in one call, applies fully or not at all,
+skips nodes that already are members and answers `{"added": N}`. Both
+calls need the same permissions as the dialogs and are recorded in the
+[audit log](audit-log.md).
+
 ## Edit a node group
 
 Select **Edit** in the row menu. You can change the **Name** and
@@ -66,8 +113,8 @@ auto-enrollment (see [Kerberos](../configuration/kerberos.md)). Requires
 
 1. Make sure the group has no member nodes. The server refuses to delete a
    group that still has nodes assigned (`cannot delete node group: N
-   node(s) still assigned`). Remove the nodes on the
-   [Nodes](nodes.md#move-nodes-between-groups) page first, or decommission
+   node(s) still assigned`). Remove them with
+   [**Manage members**](#review-and-remove-members) first, or decommission
    them.
 2. Select **Delete** in the row menu (or **Actions -> Delete** for several
    groups).

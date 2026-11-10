@@ -310,6 +310,12 @@ func buildNodeFilter(req *models.NodeListRequest) (where string, args []interfac
 		conds = append(conds, fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id AND ngm.node_group_id::text = $%d)", len(args)))
 	}
+	if req.ExcludeGroup != "" {
+		// Nodes that are not a member of this group (candidates to add to it).
+		args = append(args, req.ExcludeGroup)
+		conds = append(conds, fmt.Sprintf(
+			"NOT EXISTS (SELECT 1 FROM node_group_members ngm WHERE ngm.node_id = n.id AND ngm.node_group_id::text = $%d)", len(args)))
+	}
 	if s := strings.TrimSpace(req.Search); s != "" {
 		args = append(args, "%"+s+"%")
 		p := len(args)
@@ -674,6 +680,25 @@ func (r *NodeRepository) AddToGroup(ctx context.Context, nodeID, groupID string)
 		return fmt.Errorf("failed to add node to group: %w", err)
 	}
 	return nil
+}
+
+// AddNodesToGroup adds several nodes to a node group in one statement, so
+// either all of them become members or none does. Nodes that already are
+// members are skipped. It returns the number of memberships created.
+func (r *NodeRepository) AddNodesToGroup(ctx context.Context, groupID string, nodeIDs []string) (int, error) {
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO node_group_members (node_id, node_group_id)
+		 SELECT u.node_id, $2::uuid FROM unnest($1::uuid[]) AS u(node_id)
+		 ON CONFLICT DO NOTHING`,
+		pq.Array(nodeIDs), groupID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to add nodes to group: %w", err)
+	}
+	added, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to count added group members: %w", err)
+	}
+	return int(added), nil
 }
 
 // RemoveFromGroup removes a node from a specific node group.
