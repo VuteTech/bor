@@ -302,6 +302,16 @@ The policy state is not exported.
     | **Skip that policy** | The existing policy is kept unchanged. |
     | **Update the existing draft** | The existing policy's content is replaced, but only if it is a draft; a released or archived policy is an error. |
 
+    The same option applies to a binding in the file whose policy and
+    node group are already bound on the server, which is the usual case
+    when a file is imported a second time:
+
+    | Option | Effect on an existing binding |
+    |---|---|
+    | **Fail the import (recommended)** | The document is an error and nothing is imported. |
+    | **Skip that policy** | The existing binding is kept unchanged. |
+    | **Update the existing draft** | The priority is set to the one in the file. A binding that already has that priority is reported as `skipped`. |
+
     Changing the option re-runs the preview.
 4. If the preview is valid, select **Import N resources**. Otherwise fix
    the file; if any document has an error, nothing is imported.
@@ -312,6 +322,9 @@ Rules:
   yourself.
 - Imported bindings are always created **disabled**. Enable them on
   [Policy Bindings](bindings.md) after releasing the policy.
+- An import never enables or disables a binding that already exists;
+  only its priority can change.
+- A file may bind a policy to a node group only once.
 - A binding's `spec.policy` refers to a `metadata.name` in the same file or
   to the name of a policy that already exists on the server. Its
   `spec.group` must be the name of an existing node group; node groups are
