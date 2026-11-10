@@ -586,6 +586,9 @@ func Run(opts Options) {
 	// import creates drafts and needs create. Both are audit-logged by the
 	// handler itself (exports are GETs, which the audit middleware skips).
 	exportHandler := api.NewExportHandler(policySvc, policyBindingSvc, nodeGroupSvc, auditSvc).WithAuthorizer(az)
+	exportHandler.OnBindingChange = func(b *models.PolicyBinding) {
+		policyHub.PublishResync(b.GroupID)
+	}
 	mux.Handle("/api/v1/policies/export", authMiddleware(gate.RequireScoped("policy", "view")(http.HandlerFunc(exportHandler.Export))))
 	mux.Handle("/api/v1/policies/import", authMiddleware(gate.RequireScoped("policy", "create")(http.HandlerFunc(exportHandler.Import))))
 

@@ -23,6 +23,8 @@ type PolicyStore interface {
 
 // BindingStore is the slice of PolicyBindingService the importer needs.
 type BindingStore interface {
+	ListBindings(ctx context.Context) ([]*models.PolicyBindingWithDetails, error)
+	UpdateBinding(ctx context.Context, id string, req *models.UpdatePolicyBindingRequest) (*models.PolicyBinding, error)
 	CreateBinding(ctx context.Context, req *models.CreatePolicyBindingRequest) (*models.PolicyBinding, error)
 }
 
@@ -31,7 +33,8 @@ type GroupStore interface {
 	ListNodeGroups(ctx context.Context) ([]*models.NodeGroup, error)
 }
 
-// Conflict handling for policies whose display name already exists.
+// Conflict handling for policies whose display name already exists and for
+// bindings whose policy and node group are already bound.
 const (
 	OnConflictError      = "error"
 	OnConflictSkip       = "skip"
@@ -88,7 +91,13 @@ type pendingBinding struct {
 	priority   int
 	policySlug bool // ref resolved against an in-file slug
 	policyID   string
+	existing   *models.PolicyBinding // binding already on the server for this policy and group
+	skip       bool                  // leave the existing binding untouched
+	skipReason string
 }
+
+// bindingKey identifies a binding by the pair the database keeps unique.
+type bindingKey struct{ policyID, groupID string }
 
 // Import validates the whole bundle first and creates resources only when
 // every document is valid ("validate all, then execute"): nothing is written
@@ -131,11 +140,20 @@ func Import(ctx context.Context, policies PolicyStore, bindings BindingStore, gr
 	for _, g := range groupList {
 		groupByName[g.Name] = g.ID
 	}
+	bindingList, err := bindings.ListBindings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list policy bindings: %w", err)
+	}
+	bindingByKey := make(map[bindingKey]*models.PolicyBinding, len(bindingList))
+	for _, eb := range bindingList {
+		bindingByKey[bindingKey{eb.PolicyID, eb.GroupID}] = &eb.PolicyBinding
+	}
 
 	// ── Pass 1: parse + validate every document ──
 	var pendingPolicies []*pendingPolicy
 	var pendingBindings []*pendingBinding
 	slugs := make(map[string]*pendingPolicy)
+	bindingsInFile := make(map[bindingKey]bool)
 	namesInFile := make(map[string]bool)
 
 	for i, doc := range docs {
@@ -238,13 +256,46 @@ func Import(ctx context.Context, policies PolicyStore, bindings BindingStore, gr
 				continue
 			}
 			b.groupID = gid
-			if _, ok := slugs[b.policyRef]; ok {
+			// existingPolicyID is the server-side policy the binding will
+			// attach to, when there is one already: a policy that is updated
+			// or skipped keeps its ID, a policy the bundle creates has none.
+			existingPolicyID := ""
+			if p, ok := slugs[b.policyRef]; ok {
 				b.policySlug = true
+				if prev, exists := byName[p.name]; exists {
+					existingPolicyID = prev.ID
+				}
 			} else if prev, ok := byName[b.policyRef]; ok {
 				b.policyID = prev.ID
+				existingPolicyID = prev.ID
 			} else {
 				fail(n, res.Kind, name, fmt.Sprintf("policy %q not found in bundle or on this server", b.policyRef))
 				continue
+			}
+			fileKey := bindingKey{existingPolicyID, gid}
+			if existingPolicyID == "" {
+				fileKey.policyID = "slug:" + b.policyRef
+			}
+			if bindingsInFile[fileKey] {
+				fail(n, res.Kind, name, "duplicate binding for this policy and node group in bundle")
+				continue
+			}
+			bindingsInFile[fileKey] = true
+			if prev, ok := bindingByKey[bindingKey{existingPolicyID, gid}]; ok && existingPolicyID != "" {
+				switch opts.OnConflict {
+				case OnConflictError:
+					fail(n, res.Kind, name, "a binding for this policy and node group already exists (on_conflict=error)")
+					continue
+				case OnConflictSkip:
+					b.skip = true
+					b.skipReason = "binding exists"
+				case OnConflictNewVersion:
+					b.existing = prev
+					if prev.Priority == b.priority {
+						b.skip = true
+						b.skipReason = "binding exists with the same priority"
+					}
+				}
 			}
 			pendingBindings = append(pendingBindings, b)
 		}
@@ -272,8 +323,18 @@ func Import(ctx context.Context, policies PolicyStore, bindings BindingStore, gr
 			}
 		}
 		for _, b := range pendingBindings {
-			report.Created++
-			report.Results = append(report.Results, DocResult{Doc: b.doc, Kind: "PolicyBinding", Name: b.name, Status: "created", Message: "would create"})
+			switch {
+			case b.skip:
+				report.Skipped++
+				report.Results = append(report.Results, DocResult{Doc: b.doc, Kind: "PolicyBinding", Name: b.name, Status: "skipped", Message: b.skipReason})
+			case b.existing != nil:
+				report.Updated++
+				report.Results = append(report.Results, DocResult{Doc: b.doc, Kind: "PolicyBinding", Name: b.name, Status: "updated",
+					Message: fmt.Sprintf("would change priority from %d to %d", b.existing.Priority, b.priority)})
+			default:
+				report.Created++
+				report.Results = append(report.Results, DocResult{Doc: b.doc, Kind: "PolicyBinding", Name: b.name, Status: "created", Message: "would create"})
+			}
 		}
 		report.Ok = true
 		return report, nil
@@ -324,6 +385,23 @@ func Import(ctx context.Context, policies PolicyStore, bindings BindingStore, gr
 		}
 	}
 	for _, b := range pendingBindings {
+		if b.skip {
+			report.Skipped++
+			report.Results = append(report.Results, DocResult{Doc: b.doc, Kind: "PolicyBinding", Name: b.name, Status: "skipped", Message: b.skipReason})
+			continue
+		}
+		if b.existing != nil {
+			// Only the priority follows the bundle; whether the binding is
+			// enabled stays an explicit decision made on the server.
+			if _, err := bindings.UpdateBinding(ctx, b.existing.ID, &models.UpdatePolicyBindingRequest{Priority: &b.priority}); err != nil {
+				fail(b.doc, "PolicyBinding", b.name, err.Error())
+				continue
+			}
+			report.Updated++
+			report.Results = append(report.Results, DocResult{Doc: b.doc, Kind: "PolicyBinding", Name: b.name, Status: "updated",
+				Message: fmt.Sprintf("priority changed from %d to %d", b.existing.Priority, b.priority)})
+			continue
+		}
 		id := b.policyID
 		if b.policySlug {
 			id = slugToID[b.policyRef]

@@ -188,7 +188,20 @@ func (f *fakePolicies) UpdatePolicy(_ context.Context, id string, req *models.Up
 }
 
 type fakeBindings struct {
-	created []*models.CreatePolicyBindingRequest
+	existing []*models.PolicyBindingWithDetails
+	created  []*models.CreatePolicyBindingRequest
+	updated  map[string]*models.UpdatePolicyBindingRequest
+}
+
+func (f *fakeBindings) ListBindings(_ context.Context) ([]*models.PolicyBindingWithDetails, error) {
+	return f.existing, nil
+}
+func (f *fakeBindings) UpdateBinding(_ context.Context, id string, req *models.UpdatePolicyBindingRequest) (*models.PolicyBinding, error) {
+	if f.updated == nil {
+		f.updated = map[string]*models.UpdatePolicyBindingRequest{}
+	}
+	f.updated[id] = req
+	return &models.PolicyBinding{ID: id}, nil
 }
 
 func (f *fakeBindings) CreateBinding(_ context.Context, req *models.CreatePolicyBindingRequest) (*models.PolicyBinding, error) {
@@ -304,6 +317,106 @@ func TestImportConflictModes(t *testing.T) {
 	}
 	if report.Ok || report.Errors == 0 {
 		t.Fatalf("released policy update should be rejected: %+v", report)
+	}
+}
+
+// A bundle that is imported again meets the bindings it created the first
+// time; they follow the conflict mode instead of being inserted twice.
+func TestImportExistingBinding(t *testing.T) {
+	nameRefBundle := `apiVersion: bor.dev/v1
+kind: PolicyBinding
+metadata:
+  name: firefox-eng
+spec:
+  policy: "Firefox Baseline"
+  group: "Engineering"
+  priority: 10
+`
+	tests := []struct {
+		name         string
+		bundle       string
+		onConflict   string
+		priority     int // priority of the binding already on the server
+		wantOk       bool
+		wantStatus   string // status of the PolicyBinding document
+		wantMessage  string // substring of its message
+		wantPriority int    // priority written by UpdateBinding; 0 = no update
+	}{
+		{name: "new-version updates a different priority", bundle: importBundle, onConflict: OnConflictNewVersion, priority: 50, wantOk: true, wantStatus: "updated", wantMessage: "from 50 to 10", wantPriority: 10},
+		{name: "new-version leaves an equal priority", bundle: importBundle, onConflict: OnConflictNewVersion, priority: 10, wantOk: true, wantStatus: "skipped", wantMessage: "same priority"},
+		{name: "skip leaves the binding", bundle: importBundle, onConflict: OnConflictSkip, priority: 50, wantOk: true, wantStatus: "skipped", wantMessage: "binding exists"},
+		{name: "error rejects the bundle", bundle: nameRefBundle, onConflict: OnConflictError, priority: 50, wantOk: false, wantStatus: "error", wantMessage: "already exists"},
+		{name: "new-version by policy name", bundle: nameRefBundle, onConflict: OnConflictNewVersion, priority: 50, wantOk: true, wantStatus: "updated", wantMessage: "from 50 to 10", wantPriority: 10},
+		{name: "skip by policy name", bundle: nameRefBundle, onConflict: OnConflictSkip, priority: 50, wantOk: true, wantStatus: "skipped", wantMessage: "binding exists"},
+	}
+	for _, tc := range tests {
+		for _, dryRun := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/dry_run=%t", tc.name, dryRun), func(t *testing.T) {
+				fp, fb, fg := importFixture()
+				fp.existing = []*models.Policy{{ID: "p1", Name: "Firefox Baseline", Type: "Firefox", State: "draft"}}
+				fb.existing = []*models.PolicyBindingWithDetails{
+					{PolicyBinding: models.PolicyBinding{ID: "b1", PolicyID: "p1", GroupID: "g1", State: models.BindingStateEnabled, Priority: tc.priority}},
+					// Same group, other policy: must not be mistaken for a match.
+					{PolicyBinding: models.PolicyBinding{ID: "b2", PolicyID: "p2", GroupID: "g1", Priority: 1}},
+				}
+				report, err := Import(context.Background(), fp, fb, fg, nil, []byte(tc.bundle), Options{DryRun: dryRun, OnConflict: tc.onConflict})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if report.Ok != tc.wantOk {
+					t.Fatalf("ok = %t, want %t: %+v", report.Ok, tc.wantOk, report)
+				}
+				var got *DocResult
+				for i := range report.Results {
+					if report.Results[i].Kind == "PolicyBinding" {
+						got = &report.Results[i]
+					}
+				}
+				if got == nil || got.Status != tc.wantStatus || !strings.Contains(got.Message, tc.wantMessage) {
+					t.Fatalf("binding result = %+v, want status %q with %q", got, tc.wantStatus, tc.wantMessage)
+				}
+				if len(fb.created) != 0 {
+					t.Fatalf("existing binding inserted again: %+v", fb.created)
+				}
+				wantUpdates := 0
+				if tc.wantPriority != 0 && !dryRun {
+					wantUpdates = 1
+				}
+				if len(fb.updated) != wantUpdates {
+					t.Fatalf("got %d binding updates, want %d", len(fb.updated), wantUpdates)
+				}
+				if wantUpdates == 1 {
+					req := fb.updated["b1"]
+					if req == nil || req.Priority == nil || *req.Priority != tc.wantPriority {
+						t.Fatalf("priority not updated on b1: %+v", fb.updated)
+					}
+					if req.State != nil {
+						t.Fatalf("import must not change the binding state: %v", *req.State)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestImportDuplicateBindingInBundle(t *testing.T) {
+	bundle := importBundle + `---
+apiVersion: bor.dev/v1
+kind: PolicyBinding
+metadata:
+  name: firefox-eng-again
+spec:
+  policy: firefox-baseline
+  group: "Engineering"
+  priority: 20
+`
+	fp, fb, fg := importFixture()
+	report, err := Import(context.Background(), fp, fb, fg, nil, []byte(bundle), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Ok || report.Errors != 1 || len(fp.created) != 0 || len(fb.created) != 0 {
+		t.Fatalf("duplicate binding must reject the bundle: %+v", report)
 	}
 }
 

@@ -30,6 +30,9 @@ type ExportHandler struct {
 	// az backs the systemd:exec check on import; nil refuses every
 	// command-running Systemd policy in a bundle (fail closed).
 	az authz.Authorizer
+	// OnBindingChange is called after an import changes the priority of an
+	// enabled binding, so the nodes of that group pick up the new order.
+	OnBindingChange func(b *models.PolicyBinding)
 }
 
 // NewExportHandler wires the export/import endpoints to their services.
@@ -334,10 +337,46 @@ func (s scopedPolicyStore) UpdatePolicy(ctx context.Context, id string, req *mod
 }
 
 // scopedBindingStore only creates bindings to in-scope groups, for policies
-// the caller can see.
+// the caller can see. Existing bindings are matched among the ones the caller
+// can view, and changing one needs the same reach as the bindings API.
 type scopedBindingStore struct {
 	h *ExportHandler
 	r *http.Request
+}
+
+func (s scopedBindingStore) ListBindings(ctx context.Context) ([]*models.PolicyBindingWithDetails, error) {
+	all, err := s.h.bindingSvc.ListBindings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope := requestScope(s.r, "binding", "view")
+	visible := make([]*models.PolicyBindingWithDetails, 0, len(all))
+	for _, b := range all {
+		if scope.Allows(b.GroupID) {
+			visible = append(visible, b)
+		}
+	}
+	return visible, nil
+}
+
+func (s scopedBindingStore) UpdateBinding(ctx context.Context, id string, req *models.UpdatePolicyBindingRequest) (*models.PolicyBinding, error) {
+	existing, err := s.h.bindingSvc.GetBinding(ctx, id)
+	if err != nil || existing == nil || !requestScope(s.r, "binding", "view").Allows(existing.GroupID) {
+		return nil, fmt.Errorf("policy binding not found")
+	}
+	if !requestScope(s.r, "binding", "toggle").Allows(existing.GroupID) {
+		return nil, errOutOfScope
+	}
+	updated, err := s.h.bindingSvc.UpdateBinding(ctx, id, req)
+	if err != nil {
+		return nil, err
+	}
+	// A disabled binding delivers nothing, so its priority is not yet
+	// visible to any node.
+	if s.h.OnBindingChange != nil && updated != nil && updated.State == models.BindingStateEnabled {
+		s.h.OnBindingChange(updated)
+	}
+	return updated, nil
 }
 
 func (s scopedBindingStore) CreateBinding(ctx context.Context, req *models.CreatePolicyBindingRequest) (*models.PolicyBinding, error) {
