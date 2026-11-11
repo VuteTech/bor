@@ -249,6 +249,10 @@ type CAConfig struct {
 	KeyFile    string       // BOR_CA_KEY_FILE    – path to CA private key (unused when PKCS11 is set)
 	AutogenDir string       // BOR_CA_AUTOGEN_DIR – dir for auto-generated CA
 	PKCS11     PKCS11Config // optional: load CA key from PKCS#11 HSM instead of a file
+	// Lifetime is the validity of the auto-generated CA certificate
+	// (BOR_CA_LIFETIME, default 10y). It is applied only when the CA
+	// certificate is first generated; an existing CA is never re-issued.
+	Lifetime time.Duration
 }
 
 // LDAPConfig holds LDAP connection configuration.
@@ -358,6 +362,7 @@ type fileConfig struct {
 		CertFile   string `yaml:"cert_file"`
 		KeyFile    string `yaml:"key_file"`
 		AutogenDir string `yaml:"autogen_dir"`
+		Lifetime   string `yaml:"lifetime"`
 		PKCS11     struct {
 			Lib        string `yaml:"lib"`
 			TokenLabel string `yaml:"token_label"`
@@ -541,6 +546,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("both BOR_CA_CERT_FILE and BOR_CA_KEY_FILE must be set, or neither")
 	}
 
+	caLifetime, err := parseCALifetime(getEnv("BOR_CA_LIFETIME", fc.CA.Lifetime))
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_CA_LIFETIME: %w", err)
+	}
+
 	// ─── CA PKCS#11 (optional HSM) ─────────────────────────────────────────
 	pkcs11Lib := getEnv("BOR_CA_PKCS11_LIB", fc.CA.PKCS11.Lib)
 	pkcs11TokenLabel := getEnv("BOR_CA_PKCS11_TOKEN_LABEL", fc.CA.PKCS11.TokenLabel)
@@ -689,6 +699,7 @@ func Load() (*Config, error) {
 			CertFile:   caCertFile,
 			KeyFile:    caKeyFile,
 			AutogenDir: getEnv("BOR_CA_AUTOGEN_DIR", fc.CA.AutogenDir),
+			Lifetime:   caLifetime,
 			PKCS11: PKCS11Config{
 				Lib:        pkcs11Lib,
 				TokenLabel: pkcs11TokenLabel,
@@ -799,6 +810,7 @@ func defaultFileConfig() fileConfig {
 	fc.Security.RefreshLifetime = "24h"
 	fc.TLS.AutogenDir = "/var/lib/bor/pki/ui"
 	fc.CA.AutogenDir = "/var/lib/bor/pki/ca"
+	fc.CA.Lifetime = "10y"
 	fc.LDAP.Host = "localhost"
 	fc.LDAP.Port = 389
 	fc.LDAP.UserFilter = "(uid=%s)"
@@ -853,6 +865,47 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// Bounds for the auto-generated CA lifetime. The lower bound keeps the CA
+// valid for longer than the server certificate it signs (1 year); the upper
+// bound rejects lifetimes that no key of this strength should be trusted for.
+const (
+	minCALifetime = 2 * 365 * 24 * time.Hour
+	maxCALifetime = 30 * 365 * 24 * time.Hour
+)
+
+// parseCALifetime parses a CA lifetime. Besides Go durations ("87600h") it
+// accepts a whole number of years ("10y", 365 days each) or days ("3650d").
+func parseCALifetime(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	var d time.Duration
+	switch {
+	case strings.HasSuffix(s, "y"), strings.HasSuffix(s, "d"):
+		n, err := strconv.Atoi(s[:len(s)-1])
+		if err != nil {
+			return 0, fmt.Errorf("%q is not a whole number of years or days", s)
+		}
+		// Guard the multiplication below against overflow.
+		if n < 0 || n > 100*365 {
+			return 0, fmt.Errorf("%q is out of range", s)
+		}
+		unit := 24 * time.Hour
+		if strings.HasSuffix(s, "y") {
+			unit *= 365
+		}
+		d = time.Duration(n) * unit
+	default:
+		var err error
+		d, err = time.ParseDuration(s)
+		if err != nil {
+			return 0, fmt.Errorf("%q: use years (10y), days (3650d) or a duration (87600h)", s)
+		}
+	}
+	if d < minCALifetime || d > maxCALifetime {
+		return 0, fmt.Errorf("%q is outside the allowed range of 2 to 30 years", s)
+	}
+	return d, nil
 }
 
 func getEnvBool(key string, defaultValue bool) bool {

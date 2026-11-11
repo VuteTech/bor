@@ -7,6 +7,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -38,6 +39,51 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.CA.AutogenDir != "/var/lib/bor/pki/ca" {
 		t.Errorf("CA.AutogenDir = %q, want %q", cfg.CA.AutogenDir, "/var/lib/bor/pki/ca")
+	}
+	if want := 10 * 365 * 24 * time.Hour; cfg.CA.Lifetime != want {
+		t.Errorf("CA.Lifetime = %v, want %v", cfg.CA.Lifetime, want)
+	}
+}
+
+func TestLoad_CALifetime(t *testing.T) {
+	const day = 24 * time.Hour
+	tests := []struct {
+		name    string
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "years", value: "5y", want: 5 * 365 * day},
+		{name: "days", value: "1000d", want: 1000 * day},
+		{name: "go duration", value: "43800h", want: 43800 * time.Hour},
+		{name: "surrounding space", value: " 3y ", want: 3 * 365 * day},
+		{name: "lower bound", value: "2y", want: 2 * 365 * day},
+		{name: "upper bound", value: "30y", want: 30 * 365 * day},
+		{name: "too short", value: "1y", wantErr: true},
+		{name: "too long", value: "31y", wantErr: true},
+		{name: "no unit", value: "10", wantErr: true},
+		{name: "fractional years", value: "2.5y", wantErr: true},
+		{name: "negative", value: "-5y", wantErr: true},
+		{name: "overflow", value: "999999999999y", wantErr: true},
+		{name: "garbage", value: "forever", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("BOR_CA_LIFETIME", tt.value)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Load() with BOR_CA_LIFETIME=%q succeeded, want error", tt.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.CA.Lifetime != tt.want {
+				t.Errorf("CA.Lifetime = %v, want %v", cfg.CA.Lifetime, tt.want)
+			}
+		})
 	}
 }
 

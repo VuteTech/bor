@@ -93,6 +93,12 @@ ca:
   key_file:  ""
   autogen_dir: "/var/lib/bor/pki/ca"
 
+  # Validity of the auto-generated CA certificate: years ("10y"), days
+  # ("3650d") or a duration ("87600h"), between 2 and 30 years.
+  # Applied only when the CA is first generated - set it before the first
+  # start. Changing it later does not re-issue an existing CA.
+  lifetime: "10y"
+
   # Optional: store the CA private key in a PKCS#11 HSM instead of a file.
   # Requires the server binary to be built with: make server-pkcs11
   # Set the PIN via the BOR_CA_PKCS11_PIN environment variable — do not

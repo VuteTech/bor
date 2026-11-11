@@ -120,6 +120,7 @@ func Run(opts Options) {
 			caCertFile,
 			cfg.CA.PKCS11.Lib, cfg.CA.PKCS11.TokenLabel,
 			cfg.CA.PKCS11.KeyLabel, cfg.CA.PKCS11.PIN,
+			cfg.CA.Lifetime,
 		)
 		if err != nil {
 			log.Fatalf("Failed to initialise CA with PKCS#11 HSM: %v", err)
@@ -131,7 +132,7 @@ func Run(opts Options) {
 		caKeyFile := cfg.CA.KeyFile
 		if caCertFile == "" && caKeyFile == "" {
 			log.Println("BOR_CA_CERT_FILE/KEY not set – generating internal CA")
-			caCertFile, caKeyFile, err = pki.EnsureCA(cfg.CA.AutogenDir)
+			caCertFile, caKeyFile, err = pki.EnsureCAWithLifetime(cfg.CA.AutogenDir, cfg.CA.Lifetime)
 			if err != nil {
 				log.Fatalf("Failed to generate internal CA: %v", err)
 			}

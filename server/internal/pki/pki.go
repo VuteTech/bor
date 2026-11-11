@@ -136,15 +136,28 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 	return certPath, keyPath, nil
 }
 
-// EnsureCA checks for an existing CA cert/key at dir/ca.crt and dir/ca.key.
-// If they do not exist it generates a new CA (ECDSA P-384, 10 years).
+// DefaultCALifetime is the validity of a newly generated internal CA
+// certificate when no lifetime is configured.
+const DefaultCALifetime = 10 * 365 * 24 * time.Hour
+
+// EnsureCA is EnsureCAWithLifetime with DefaultCALifetime.
+func EnsureCA(dir string) (certPath, keyPath string, err error) {
+	return EnsureCAWithLifetime(dir, DefaultCALifetime)
+}
+
+// EnsureCAWithLifetime checks for an existing CA cert/key at dir/ca.crt and
+// dir/ca.key. If they do not exist it generates a new CA (ECDSA P-384) valid
+// for lifetime; a non-positive lifetime means DefaultCALifetime. The lifetime
+// only applies at generation time: an existing CA is returned unchanged.
 //
-// ECDSA P-384 provides 192-bit security — appropriate for a CA with a
-// 10-year lifetime. Satisfies FIPS 140-3, BSI TR-02102-1, ANSSI RGS,
-// and ETSI TS 119 312.
+// ECDSA P-384 provides 192-bit security - appropriate for a long-lived CA.
+// Satisfies FIPS 140-3, BSI TR-02102-1, ANSSI RGS, and ETSI TS 119 312.
 //
 // Returns the paths to the CA cert and key files.
-func EnsureCA(dir string) (certPath, keyPath string, err error) {
+func EnsureCAWithLifetime(dir string, lifetime time.Duration) (certPath, keyPath string, err error) {
+	if lifetime <= 0 {
+		lifetime = DefaultCALifetime
+	}
 	certPath = filepath.Join(dir, "ca.crt")
 	keyPath = filepath.Join(dir, "ca.key")
 
@@ -174,7 +187,7 @@ func EnsureCA(dir string) (certPath, keyPath string, err error) {
 			CommonName:   "Bor Internal CA",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Minute),
-		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		NotAfter:              time.Now().Add(lifetime),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,

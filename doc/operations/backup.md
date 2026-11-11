@@ -46,7 +46,7 @@ Not needed in a backup:
 
 Unless you configured your own CA with `ca.cert_file` and `ca.key_file`, the
 server generates an internal CA on first start in
-`/var/lib/bor/pki/ca` (ECDSA P-384, valid 10 years) and uses it to:
+`/var/lib/bor/pki/ca` (ECDSA P-384, valid 10 years unless `ca.lifetime` was set before the first start) and uses it to:
 
 - sign every agent's client certificate during enrollment, and
 - sign the server certificate in `/var/lib/bor/pki/ui` that agents verify on
