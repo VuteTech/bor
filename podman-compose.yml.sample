@@ -66,6 +66,7 @@ services:
       # - BOR_CA_CERT_FILE=/etc/bor/pki/ca/ca.crt
       # - BOR_CA_KEY_FILE=/etc/bor/pki/ca/ca.key
       # - BOR_CA_AUTOGEN_DIR=/var/lib/bor/pki/ca
+      # - BOR_CA_LIFETIME=10y
       # - BOR_TLS_CERT_FILE=/etc/bor/pki/ui/server.crt
       # - BOR_TLS_KEY_FILE=/etc/bor/pki/ui/server.key
       # - BOR_TLS_AUTOGEN_DIR=/var/lib/bor/pki/ui

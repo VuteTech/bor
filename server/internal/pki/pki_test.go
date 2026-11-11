@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestEnsureServerCert_SelfSigned(t *testing.T) {
@@ -193,6 +194,47 @@ func TestEnsureServerCert_RegeneratesWhenCAChanges(t *testing.T) {
 	_, err = parsed.Verify(x509.VerifyOptions{Roots: pool})
 	if err != nil {
 		t.Errorf("Regenerated cert should verify against CA: %v", err)
+	}
+}
+
+func TestEnsureCAWithLifetime(t *testing.T) {
+	const day = 24 * time.Hour
+	tests := []struct {
+		name     string
+		lifetime time.Duration
+		want     time.Duration
+	}{
+		{name: "custom", lifetime: 3 * 365 * day, want: 3 * 365 * day},
+		{name: "zero falls back to default", lifetime: 0, want: DefaultCALifetime},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			certPath, keyPath, err := EnsureCAWithLifetime(dir, tt.lifetime)
+			if err != nil {
+				t.Fatalf("EnsureCAWithLifetime() error = %v", err)
+			}
+			caCert, _, err := LoadCA(certPath, keyPath)
+			if err != nil {
+				t.Fatalf("LoadCA() error = %v", err)
+			}
+			got := time.Until(caCert.NotAfter)
+			if got > tt.want || got < tt.want-time.Minute {
+				t.Errorf("CA expires in %v, want about %v", got, tt.want)
+			}
+
+			// An existing CA keeps its lifetime.
+			if _, _, err = EnsureCAWithLifetime(dir, 20*365*day); err != nil {
+				t.Fatalf("EnsureCAWithLifetime() second call error = %v", err)
+			}
+			again, _, err := LoadCA(certPath, keyPath)
+			if err != nil {
+				t.Fatalf("LoadCA() error = %v", err)
+			}
+			if !again.NotAfter.Equal(caCert.NotAfter) {
+				t.Errorf("existing CA was re-issued: NotAfter %v -> %v", caCert.NotAfter, again.NotAfter)
+			}
+		})
 	}
 }
 

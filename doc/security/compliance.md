@@ -91,8 +91,8 @@ syslog) set a minimum of TLS 1.2 and otherwise use Go defaults.
 
 | Item | Algorithm / curve | Signature | Lifetime and rotation | Package |
 |---|---|---|---|---|
-| Internal CA (auto-generated in `ca.autogen_dir`) | ECDSA P-384 | Self-signed, ECDSA with SHA-384 | 10 years. No automatic rotation; rotating the CA means re-enrolling every agent. | `pki` |
-| Internal CA in an HSM (PKCS#11, optional build) | ECDSA P-384 generated on the token | ECDSA with SHA-384 | 10 years | `pki` (`pkcs11` build tag) |
+| Internal CA (auto-generated in `ca.autogen_dir`) | ECDSA P-384 | Self-signed, ECDSA with SHA-384 | 10 years by default, configurable before the first start with `ca.lifetime`. No automatic rotation; rotating the CA means re-enrolling every agent. | `pki` |
+| Internal CA in an HSM (PKCS#11, optional build) | ECDSA P-384 generated on the token | ECDSA with SHA-384 | 10 years by default (`ca.lifetime`) | `pki` (`pkcs11` build tag) |
 | Server certificate (`ui.crt` in `tls.autogen_dir`) | ECDSA P-256, `digitalSignature` key usage, `serverAuth` EKU | Signed by the CA (ECDSA with SHA-384) | 1 year. Regenerated at server start when it no longer verifies against the CA (including when expired) or when required host names are missing. | `pki` |
 | Agent client certificate | ECDSA P-256 key generated on the endpoint, `digitalSignature` key usage, `clientAuth` EKU | Signed by the CA (ECDSA with SHA-384) | 90 days. The agent requests renewal (new key pair, new CSR over mTLS) when it starts and the certificate expires within 30 days. | `pki`, `policyclient` |
 | Certificate serial numbers | 128-bit random from `crypto/rand` | - | - | `pki` |

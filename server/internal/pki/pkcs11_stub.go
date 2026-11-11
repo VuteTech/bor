@@ -15,6 +15,7 @@ import (
 	"crypto"
 	"crypto/x509"
 	"errors"
+	"time"
 )
 
 // ErrPKCS11NotCompiled is returned by EnsureCAWithHSM in builds without the
@@ -26,6 +27,6 @@ var ErrPKCS11NotCompiled = errors.New(
 
 // EnsureCAWithHSM is not available in this build.
 // Rebuild with -tags pkcs11 to enable PKCS#11 HSM support.
-func EnsureCAWithHSM(_, _, _, _, _ string) (*x509.Certificate, crypto.Signer, error) {
+func EnsureCAWithHSM(_, _, _, _, _ string, _ time.Duration) (*x509.Certificate, crypto.Signer, error) {
 	return nil, nil, ErrPKCS11NotCompiled
 }

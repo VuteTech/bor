@@ -50,14 +50,18 @@ import (
 //   - If a key with keyLabel already exists on the token and certPath exists,
 //     both are loaded and returned.
 //   - If the key exists but certPath is missing, a new self-signed CA
-//     certificate is generated (ECDSA P-384, 10 years) and written to certPath.
+//     certificate is generated (ECDSA P-384, valid for lifetime) and written
+//     to certPath. A non-positive lifetime means DefaultCALifetime.
 //   - If no key with keyLabel is found on the token, a new ECDSA P-384 key is
 //     generated on the HSM, then a CA certificate is created and written to certPath.
 //
 // The returned crypto.Signer wraps the HSM key; signing operations happen
 // inside the HSM. The PKCS#11 context is intentionally kept open for the
 // process lifetime so the signer remains valid.
-func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string) (*x509.Certificate, crypto.Signer, error) {
+func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string, lifetime time.Duration) (*x509.Certificate, crypto.Signer, error) {
+	if lifetime <= 0 {
+		lifetime = DefaultCALifetime
+	}
 	ctx, err := crypto11.Configure(&crypto11.Config{
 		Path:       lib,
 		TokenLabel: tokenLabel,
@@ -88,7 +92,7 @@ func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string) (*x509.Cer
 			return nil, nil, fmt.Errorf("failed to create CA cert directory: %w", mkErr)
 		}
 		log.Printf("pki: generating CA certificate for HSM key %q -> %s", keyLabel, certPath)
-		if genErr := generateCACert(certPath, signer); genErr != nil {
+		if genErr := generateCACert(certPath, signer, lifetime); genErr != nil {
 			return nil, nil, genErr
 		}
 	}
@@ -101,9 +105,9 @@ func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string) (*x509.Cer
 	return caCert, signer, nil
 }
 
-// generateCACert creates a self-signed CA certificate using the given signer
-// and writes it to certPath (PEM, 0o644).
-func generateCACert(certPath string, signer crypto.Signer) error {
+// generateCACert creates a self-signed CA certificate valid for lifetime using
+// the given signer and writes it to certPath (PEM, 0o644).
+func generateCACert(certPath string, signer crypto.Signer, lifetime time.Duration) error {
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
 		return fmt.Errorf("failed to generate CA serial number: %w", err)
@@ -116,7 +120,7 @@ func generateCACert(certPath string, signer crypto.Signer) error {
 			CommonName:   "Bor Internal CA",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Minute),
-		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		NotAfter:              time.Now().Add(lifetime),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,

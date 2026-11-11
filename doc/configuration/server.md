@@ -218,6 +218,7 @@ and the auto-generated server certificate.
 | `ca.cert_file` | `BOR_CA_CERT_FILE` | `""` | PEM CA certificate to use instead of the auto-generated CA. Must be set together with `key_file`. |
 | `ca.key_file` | `BOR_CA_KEY_FILE` | `""` | PEM private key of the CA (PKCS#8 or traditional ECDSA/RSA). |
 | `ca.autogen_dir` | `BOR_CA_AUTOGEN_DIR` | `/var/lib/bor/pki/ca` | Directory for the auto-generated CA (`ca.crt`, `ca.key`). With PKCS#11, the CA certificate is stored here as `ca.crt`. |
+| `ca.lifetime` | `BOR_CA_LIFETIME` | `10y` | Validity of the auto-generated CA certificate: years (`10y`), days (`3650d`) or a duration (`87600h`), between 2 and 30 years. Applied only when the CA certificate is first generated, so set it before the first start; an existing CA is never re-issued. Ignored when `cert_file`/`key_file` point to your own CA. |
 | `ca.pkcs11.lib` | `BOR_CA_PKCS11_LIB` | `""` | Path to the PKCS#11 module (`.so`) of the HSM. |
 | `ca.pkcs11.token_label` | `BOR_CA_PKCS11_TOKEN_LABEL` | `""` | Label of the HSM token. |
 | `ca.pkcs11.key_label` | `BOR_CA_PKCS11_KEY_LABEL` | `""` | Label of the CA private key on the token. |

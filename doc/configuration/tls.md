@@ -33,7 +33,7 @@ On first start, if no CA is configured, the server creates one in
 | Files | `ca.crt` and `ca.key` (PKCS#8), both mode `0600` |
 | Key | ECDSA P-384 |
 | Subject | `CN=Bor Internal CA, O=Bor` |
-| Validity | 10 years from creation |
+| Validity | 10 years from creation by default; set `ca.lifetime` (`BOR_CA_LIFETIME`) before the first start to change it |
 | Constraints | CA, path length 0 (can sign only end-entity certificates) |
 
 The CA signs two kinds of certificates:
@@ -418,7 +418,8 @@ BOR_CA_PKCS11_PIN=123456
 Behavior at startup:
 
 - If no key with `key_label` exists on the token, the server generates an
-  ECDSA P-384 key on the token and a new 10-year CA certificate.
+  ECDSA P-384 key on the token and a new CA certificate valid for
+  `ca.lifetime` (10 years by default).
 - If the key exists but the certificate file is missing, a new CA
   certificate is created for that key.
 - Otherwise both are loaded.
