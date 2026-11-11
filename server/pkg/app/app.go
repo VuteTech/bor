@@ -104,7 +104,19 @@ func Run(opts Options) {
 	//     sign the UI cert when auto-generating) ──────────────────────────
 	var caCert *x509.Certificate
 	var caKey crypto.Signer
-	var caCertFile string // retained for LoadCACertPool below
+	var caCertFile string // retained for LoadCAChain below
+
+	// A signing request without a certificate means the operator is having
+	// the CA certified by an external authority. Starting now would put a
+	// self-signed CA in its place.
+	caFiles := caStore(cfg)
+	if caFiles.RequestPending() {
+		//nolint:gosec // G706: the paths come from the administrator's configuration
+		log.Fatalf("A certificate signing request for the CA is pending (%s) and no CA certificate is installed. "+
+			"Install the certificate the authority issued with '%s ca import -in <file>', "+
+			"or remove the request file to start with a self-signed CA",
+			caFiles.RequestPath(), os.Args[0])
+	}
 
 	if cfg.CA.PKCS11.IsConfigured() {
 		// PKCS#11 HSM path: the CA private key lives in the hardware security
@@ -144,9 +156,33 @@ func Run(opts Options) {
 		}
 	}
 
-	caCertPool, err := pki.LoadCACertPool(caCertFile)
+	// The CA file may hold a bundle: the Bor signing certificate followed by
+	// the external authorities above it. Only the signing certificate is
+	// trusted for agent client certificates.
+	caChain, err := pki.LoadCAChain(caCertFile)
 	if err != nil {
-		log.Fatalf("Failed to load CA cert pool: %v", err)
+		log.Fatalf("Failed to load CA certificate chain: %v", err)
+	}
+	if err = caChain.Validate(caKey); err != nil {
+		log.Fatalf("Invalid CA configuration: %v", err)
+	}
+	if n := len(caChain.Issuers); n > 0 {
+		log.Printf("CA %q is subordinate to %q (%d issuer certificate(s) in the bundle)",
+			caChain.Signing.Subject.CommonName, caChain.Issuers[n-1].Subject.CommonName, n)
+	}
+	// What the server trusts and tells agents to trust follows the CA
+	// rotation state on disk and can change while the server runs.
+	caStoreInUse := pki.CAStore{CertPath: caCertFile, KeyPath: caFiles.KeyPath}
+	caTrust, err := pki.NewTrustState(caChain, caStoreInUse, agentTrustIncludesIssuers(caChain, cfg.CA.AgentTrust))
+	if err != nil {
+		log.Fatalf("Failed to load the CA rotation state: %v", err)
+	}
+	if previous, prevErr := caTrust.Rotation().Previous(); prevErr == nil && len(previous) > 0 {
+		log.Printf("CA rotation: %d previous CA certificate(s) are still trusted for agent certificates", len(previous))
+	}
+	caKeyStorage := "file"
+	if cfg.CA.PKCS11.IsConfigured() {
+		caKeyStorage = "pkcs11"
 	}
 
 	// ─── TLS: UI HTTPS certificate (signed by the CA when auto-generated) ──
@@ -154,7 +190,13 @@ func Run(opts Options) {
 	tlsKeyFile := cfg.TLS.KeyFile
 	if tlsCertFile == "" && tlsKeyFile == "" {
 		log.Println("BOR_TLS_CERT_FILE/KEY not set – ensuring server certificate (signed by internal CA)")
-		tlsCertFile, tlsKeyFile, err = pki.EnsureServerCert(cfg.TLS.AutogenDir, caCert, caKey, cfg.Server.Hostnames)
+		dnsNames, ipAddresses := pki.ServerCertSANs(cfg.Server.Hostnames)
+		if err = caChain.CheckServerNames(caKey, dnsNames, ipAddresses); err != nil {
+			log.Fatalf("Cannot issue the server certificate from the configured CA: %v. "+
+				"If the CA carries name constraints, supply a server certificate with BOR_TLS_CERT_FILE/BOR_TLS_KEY_FILE", err)
+		}
+		tlsCertFile, tlsKeyFile, err = pki.EnsureServerCertWithChain(
+			cfg.TLS.AutogenDir, caCert, caKey, cfg.Server.Hostnames, caChain.ServedIssuers())
 		if err != nil {
 			log.Fatalf("Failed to ensure server certificate: %v", err)
 		}
@@ -300,6 +342,7 @@ func Run(opts Options) {
 
 	// Initialize enrollment service
 	enrollSvc := services.NewEnrollmentService(caCert, caKey, enrollmentTokenRepo, nodeGroupSvc, nodeSvc, revocationRepo)
+	enrollSvc.SetAgentTrustSource(caTrust.AgentTrustPEM)
 
 	// Initialize audit service
 	auditSvc := services.NewAuditService(auditLogRepo)
@@ -440,7 +483,7 @@ func Run(opts Options) {
 	// and the /agent/* apt/dnf endpoints (docs/agent-package-downloads-plan.md).
 	// The counter is registered on the metrics server below.
 	agentPackageDownloads := metrics.NewAgentPackageDownloads()
-	agentRepoHandler := api.NewAgentRepoHandler(cfg.AgentRepo.Dir, caCertFile, version, agentPackageDownloads)
+	agentRepoHandler := api.NewAgentRepoHandler(cfg.AgentRepo.Dir, caTrust.AgentTrustPEM, version, agentPackageDownloads)
 	agentRepoHandler.LogStartup()
 
 	// Flatpak application catalog (docs/flatpak-policy-plan.md): indexes the
@@ -817,6 +860,13 @@ func Run(opts Options) {
 		SIEM:            siem,
 		CACert:          caCert,
 		CAKey:           caKey,
+		CATrust:         caTrust,
+		CAManager:       &pki.CAManager{Store: caStoreInUse, Key: caKey},
+		CATrustStats:    nodeRepo.CATrustStats,
+		RequestMetadata: policyHub.RequestMetadataFromAll,
+		CALifetime:      cfg.CA.Lifetime,
+		CAAgentTrust:    cfg.CA.AgentTrust,
+		CAKeyStorage:    caKeyStorage,
 	}, extLogins, opts.Extensions); extErr != nil {
 		log.Fatalf("Failed to initialize extensions: %v", extErr)
 	}
@@ -948,7 +998,8 @@ func Run(opts Options) {
 			WithUpdatesRepository(updatesRepo).
 			WithMacActions(macActions).
 			WithUpdatesActions(updatesActions).
-			WithComplianceListener(extLogins))
+			WithComplianceListener(extLogins).
+			WithCATrust(caTrust, nodeRepo))
 
 	// ─── UI + Enrollment server (:8443) — VerifyClientCertIfGiven ────────
 	// Explicit cipher suites per BSI TR-02102-2 (2024): ECDHE+AEAD only.
@@ -959,7 +1010,7 @@ func Run(opts Options) {
 	// GODEBUG=fips140=on will automatically remove it at runtime.
 	uiTLSConfig := &tls.Config{
 		GetCertificate: uiGetCertificate, // ACME or static, set above
-		ClientCAs:      caCertPool,
+		ClientCAs:      caTrust.ClientCAs(),
 		ClientAuth:     tls.VerifyClientCertIfGiven,
 		MinVersion:     tls.VersionTLS12,
 		NextProtos:     uiNextProtos, // includes ACME ALPNProto when ACME is enabled
@@ -975,6 +1026,8 @@ func Run(opts Options) {
 			tls.CurveP384, // FIPS 140-3 + all EU standards
 		},
 	}
+
+	uiTLSConfig.GetConfigForClient = withCurrentClientCAs(uiTLSConfig, caTrust)
 
 	uiGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
@@ -1001,11 +1054,12 @@ func Run(opts Options) {
 	// when ACME is active on the UI port.
 	agentTLSConfig := &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
-		ClientCAs:    caCertPool,
+		ClientCAs:    caTrust.ClientCAs(),
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		MinVersion:   tls.VersionTLS13,
 		NextProtos:   []string{"h2"},
 	}
+	agentTLSConfig.GetConfigForClient = withCurrentClientCAs(agentTLSConfig, caTrust)
 
 	agentGrpcRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		policyGrpcSrv.ServeHTTP(w, r)

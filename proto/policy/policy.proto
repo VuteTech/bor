@@ -378,10 +378,22 @@ message NodeInfo {
 message HeartbeatRequest {
   string client_id = 1;
   NodeInfo info = 2;
+  // Hex SHA-256 of the CA certificate file the agent verifies the server
+  // against. Empty from agents that cannot replace that file.
+  string trust_bundle_sha256 = 3;
 }
 
 message HeartbeatResponse {
   bool accepted = 1;
+  // The CA certificates the agent must trust from now on, in PEM. Set only
+  // when they differ from what the agent reported in trust_bundle_sha256;
+  // the agent then replaces its CA certificate file with them. This is how
+  // a new CA reaches enrolled agents before the server starts to use it.
+  bytes ca_bundle_pem = 2;
+  // The agent's certificate was issued by a CA that is being retired: the
+  // agent requests a new one with RenewCertificate now instead of waiting
+  // for the expiry window.
+  bool renew_certificate = 3;
 }
 
 // ─── Tamper event messages ───────────────────────────────────────────────────

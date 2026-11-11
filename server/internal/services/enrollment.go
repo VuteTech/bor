@@ -34,6 +34,9 @@ type EnrollmentService struct {
 
 	caCert *x509.Certificate
 	caKey  crypto.Signer
+	// agentTrust overrides the CA certificate handed to agents; see
+	// SetAgentTrustSource.
+	agentTrust func() []byte
 
 	nodeGroupSvc *NodeGroupService
 	nodeSvc      *NodeService
@@ -167,7 +170,21 @@ func (s *EnrollmentService) CreateNodeOnEnroll(ctx context.Context, nodeName, no
 	return node.ID, nil
 }
 
-// GetCACertPEM returns the CA certificate in PEM format.
+// SetAgentTrustSource sets where the CA certificates agents receive at
+// enrollment and verify the server against come from. It is asked on every
+// enrollment, so it can follow a CA replacement. Without it agents get the
+// signing certificate. Call it before the service handles requests.
+func (s *EnrollmentService) SetAgentTrustSource(source func() []byte) {
+	s.agentTrust = source
+}
+
+// GetCACertPEM returns the CA certificates agents trust, in PEM format: the
+// signing certificate, or the bundle of SetAgentTrustSource.
 func (s *EnrollmentService) GetCACertPEM() []byte {
+	if s.agentTrust != nil {
+		if trust := s.agentTrust(); len(trust) > 0 {
+			return trust
+		}
+	}
 	return pki.EncodeCertPEM(s.caCert)
 }

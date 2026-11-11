@@ -195,3 +195,38 @@ func TestLoad_FlatpakCatalog(t *testing.T) {
 		t.Error("expected error for non-numeric BOR_FLATPAK_CATALOG_MAX_DOWNLOAD_MB")
 	}
 }
+
+func TestLoad_CAAgentTrust(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string // "" leaves the variable unset
+		want    string
+		wantErr bool
+	}{
+		{name: "default", want: AgentTrustSigning},
+		{name: "signing", value: "signing", want: AgentTrustSigning},
+		{name: "chain", value: "chain", want: AgentTrustChain},
+		{name: "unknown", value: "root", wantErr: true},
+		{name: "wrong case", value: "Chain", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.value != "" {
+				t.Setenv("BOR_CA_AGENT_TRUST", tt.value)
+			}
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Load() with BOR_CA_AGENT_TRUST=%q succeeded, want error", tt.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.CA.AgentTrust != tt.want {
+				t.Errorf("CA.AgentTrust = %q, want %q", cfg.CA.AgentTrust, tt.want)
+			}
+		})
+	}
+}

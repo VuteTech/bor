@@ -99,6 +99,14 @@ ca:
   # start. Changing it later does not re-issue an existing CA.
   lifetime: "10y"
 
+  # CA certificates agents receive at enrollment when the CA is a subordinate
+  # of an external authority (cert_file lists the certificates above it):
+  #   signing  only the Bor signing certificate (default)
+  #   chain    also the external intermediates and root. Every CA under that
+  #            root can then impersonate this server to agents; use it only
+  #            with a root dedicated to Bor.
+  agent_trust: "signing"
+
   # Optional: store the CA private key in a PKCS#11 HSM instead of a file.
   # Requires the server binary to be built with: make server-pkcs11
   # Set the PIN via the BOR_CA_PKCS11_PIN environment variable — do not

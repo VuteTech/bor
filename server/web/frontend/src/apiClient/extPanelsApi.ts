@@ -38,8 +38,11 @@ export interface PanelAction {
   danger?: boolean;
   confirm_phrase?: string;
   confirm?: string;
-  /** "secret": show the response's token once; "message": show its message. */
-  result?: "secret" | "message" | "";
+  /**
+   * "secret": show the response's token once; "message": show its message;
+   * "document": show the response's document (text) to copy or download.
+   */
+  result?: "secret" | "message" | "document" | "";
   /** Asks for a value first; it is sent as the JSON body {"panel_input": ...}. */
   input?: PanelInput;
 }
@@ -78,6 +81,15 @@ export interface Panel {
   sections: PanelSection[];
 }
 
+/** What an action's response may carry, depending on PanelAction.result. */
+export interface PanelActionResult {
+  token?: string;
+  message?: string;
+  /** Text of a "document" result, and the file name to download it as. */
+  document?: string;
+  filename?: string;
+}
+
 /** Extension URLs are confined to the extension API. */
 function checkURL(url: string): string {
   if (!url.startsWith("/api/v1/ext/") || url.includes("..")) {
@@ -97,10 +109,10 @@ export async function fetchPanel(dataUrl: string): Promise<Panel> {
 export async function runPanelAction(
   action: PanelAction,
   value?: string,
-): Promise<{ token?: string; message?: string }> {
+): Promise<PanelActionResult> {
   const init: RequestInit = { method: action.method, headers: authHeaders() };
   if (value !== undefined) init.body = JSON.stringify({ panel_input: value });
-  const res = await apiRequest<{ token?: string; message?: string }>(checkURL(action.url), init);
+  const res = await apiRequest<PanelActionResult>(checkURL(action.url), init);
   // An extension action may change what the edition enables (a license, for
   // example); the shell re-reads the session to pick that up.
   window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));

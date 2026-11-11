@@ -219,6 +219,26 @@ func (h *PolicyHub) SendMetadataRefreshRequest(clientID string) bool {
 	return h.sendNodeEvent(clientID, pb.PolicyUpdate_METADATA_REQUEST)
 }
 
+// RequestMetadataFromAll sends a METADATA_REQUEST event to every connected
+// agent, which answers with a heartbeat. It returns how many agents were
+// asked.
+func (h *PolicyHub) RequestMetadataFromAll() int {
+	h.mu.RLock()
+	ids := make([]string, 0, len(h.clients))
+	for id := range h.clients {
+		ids = append(ids, id)
+	}
+	h.mu.RUnlock()
+
+	sent := 0
+	for _, id := range ids {
+		if h.SendMetadataRefreshRequest(id) {
+			sent++
+		}
+	}
+	return sent
+}
+
 // SendDiskEncryptionTask sends a DISK_ENCRYPTION_TASK event directly to the
 // named client's stream, asking the agent to fetch and run its pending
 // disk-encryption tasks. Returns false if the client is not connected.

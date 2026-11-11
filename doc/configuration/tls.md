@@ -67,6 +67,224 @@ server with `both BOR_CA_CERT_FILE and BOR_CA_KEY_FILE must be set, or
 neither`. Switching CA on a running deployment has the same effect as
 losing the CA: agents enrolled under the old CA must re-enroll.
 
+At startup the server checks the CA and stops with a message that names the
+cause when:
+
+- the private key does not match the certificate,
+- the certificate is not a CA certificate or lacks the certificate signing
+  key usage,
+- the key is below the baseline (RSA 3072 bits, ECDSA P-256),
+- the certificate, or one of its issuers in the file, restricts extended
+  key usage and does not allow both server and client authentication,
+- a path length constraint of an issuer forbids a subordinate CA.
+
+### Run the Bor CA under an external authority
+
+The Bor CA can be a subordinate CA of your organization's PKI. The server
+creates the CA key and a certificate signing request, your authority issues
+a **CA** certificate for it, and the server installs the result. The private
+key never leaves the server.
+
+Run the commands on the server host as the `bor` user. They read the same
+configuration as the server (`/etc/bor/server.yaml` and the `BOR_CA_*`
+variables), so the key and certificate end up where the server looks for
+them: in `ca.autogen_dir`, or at `ca.cert_file` / `ca.key_file` when you set
+those.
+
+1. Create the signing request. On a new installation, do this **before the
+   first start** of the server:
+
+    ```bash
+    sudo -u bor bor-server ca csr -cn "Example Bor CA" -out /tmp/bor-ca.csr
+    ```
+
+    If the CA has no key yet, an ECDSA P-384 key is generated. The request
+    asks for a CA certificate with path length 0 and the certificate signing
+    key usage. Without `-cn` the request repeats the subject of the current
+    CA certificate (or `CN=Bor CA, O=Bor` when there is none).
+
+2. Have your certificate authority issue the certificate. It must meet these
+   requirements:
+
+    | Property | Requirement |
+    |----------|-------------|
+    | Basic constraints | `CA:TRUE`. A path length of 0 is enough: Bor issues only end-entity certificates. |
+    | Key usage | Certificate signing |
+    | Extended key usage | Absent, or including both server and client authentication |
+    | Name constraints | Absent, or permitting every name of the server certificate (see below) |
+    | Issuers | Each authority above must permit a subordinate CA (path length) |
+
+3. Put the issued certificate and its issuers into one PEM file: the Bor CA
+   certificate first, then each issuer in order, ending with the self-signed
+   root. Install it and restart the server:
+
+    ```bash
+    cat bor-ca.crt issuing-ca.crt root-ca.crt > /tmp/bor-ca-chain.pem
+    sudo -u bor bor-server ca import -in /tmp/bor-ca-chain.pem
+    sudo systemctl restart bor-server
+    ```
+
+    The import refuses a certificate that does not belong to the CA key, a
+    file that is out of order or does not end with the root, and a
+    certificate that fails the checks listed under
+    [Use your own CA](#use-your-own-ca).
+
+`bor-server ca status` shows the certificate on disk, its issuers and
+whether a signing request is waiting for its certificate.
+
+While a signing request is waiting and no CA certificate is installed, the
+server refuses to start. This prevents it from generating a self-signed CA
+in place of the one you requested. Remove the request file (`ca.csr` next
+to the CA certificate) to abandon the request.
+
+With the CA key in an HSM, the same commands create the request for the key
+on the token and need the token PIN, for example
+`sudo -u bor env BOR_CA_PKCS11_PIN=... bor-server ca csr`.
+
+You can also create the key and request with your own tools and configure
+the result with `ca.cert_file` and `ca.key_file`; the same rules for the
+file contents apply. A file with the signing certificate alone still works,
+but the server then cannot present the chain.
+
+How the chain is used:
+
+- **Agent certificates** are verified against the Bor signing certificate
+  only. A certificate issued by another CA under the same root is rejected,
+  whether or not the file contains the root.
+- **Agents** receive the Bor signing certificate at enrollment and accept
+  only server certificates issued by it. See
+  [What agents trust](#what-agents-trust) for the alternative.
+- **The auto-generated server certificate** is served together with the
+  signing certificate and the intermediates (without the root), so a
+  browser that trusts your root validates the web UI.
+
+With name constraints on the CA, the auto-generated server certificate must
+fit them. It always contains `localhost`, the loopback addresses and the
+system hostname besides `server.hostnames`, so a CA constrained to your
+domain usually cannot issue it. The server then stops at startup; supply
+the server certificate yourself with `tls.cert_file` and `tls.key_file`.
+
+`ca.lifetime` does not apply to a CA certified by an external authority:
+its validity is set by that authority.
+
+#### Renew or replace the CA certificate
+
+Repeat the three steps before the CA certificate expires. A certificate
+that keeps the **same key and the same subject** replaces the old one
+without touching the agents: certificates issued before and after verify
+against either CA certificate. `bor-server ca csr` without `-cn` requests
+exactly that, and `bor-server ca import` reports whether the installed
+certificate qualifies. The replaced file is kept next to the new one with
+the suffix `.previous`.
+
+This also applies to a deployment that started with the self-generated CA:
+requesting a certificate for its key and subject turns it into a
+subordinate CA in place.
+
+!!! warning "Limits of an in-place replacement"
+    - A certificate with a different key or subject is a CA switch. Without
+      a [CA rotation](#replace-the-ca-with-a-new-key), agents enrolled
+      under the previous certificate must re-enroll.
+    - Some authorities re-encode the subject they are given. The import
+      then reports a different subject; treat it as a CA switch.
+    - Agents older than the version that
+      [keeps CA certificates current](#how-agents-keep-their-ca-certificates-current)
+      hold the certificate they received at enrollment and stop trusting
+      the server when **that** certificate expires. Upgrade them, or
+      re-enroll them before it runs out.
+
+### What agents trust
+
+`ca.agent_trust` (`BOR_CA_AGENT_TRUST`) selects the CA certificates an agent
+receives at enrollment and verifies the server against. It only matters
+when the CA certificate file lists the authorities above the Bor CA.
+
+| Value | Agents receive | Agents accept a server certificate issued by |
+|-------|----------------|-----------------------------------------------|
+| `signing` (default) | The Bor signing certificate | The Bor CA only |
+| `chain` | The Bor signing certificate, the intermediates and the root | Any CA under that root |
+
+With `chain`, agents keep trusting the server when the Bor signing
+certificate is renewed or replaced under the same root, including after the
+certificate they received at enrollment has expired.
+
+!!! danger "`chain` widens who can impersonate the server"
+    A server that agents trust delivers policies that are applied as
+    `root`. With `ca.agent_trust: chain`, every certificate authority under
+    your root can issue a certificate that agents accept as the Bor server:
+    a certificate mis-issued anywhere in that PKI is enough to take over
+    every managed machine.
+
+    Use `chain` only when the root is dedicated to Bor, or when it is
+    constrained so that no other CA under it can issue a certificate for
+    the Bor server names. The server logs a warning at every start while
+    `chain` is active.
+
+The setting never changes which **agent** certificates the server accepts:
+those are always verified against the Bor signing certificate alone. An
+agent whose certificate was issued by a replaced signing key must
+re-enroll, whatever it trusts.
+
+Agents receive the certificates at enrollment, and enrolled agents pick up
+a change of the setting with their next heartbeat (see below). The same
+certificates are served at `/agent/ca.crt` for the agent installer.
+
+### How agents keep their CA certificates current
+
+An agent stores the CA certificates it verifies the server against in
+`ca.crt` in its data directory. With every heartbeat (on connect, and
+whenever the server asks for one) it reports a fingerprint of that file.
+When the server hands out different certificates, it answers with them and
+the agent replaces the file. The exchange runs over the mutually
+authenticated policy channel, so only a server the agent already trusts can
+change what it trusts.
+
+This is how these changes reach enrolled agents without re-enrollment:
+
+- a CA certificate renewed for the same key and subject,
+- a switch of `ca.agent_trust`,
+- a new CA during a [CA rotation](#replace-the-ca-with-a-new-key).
+
+The agent uses the new file for its next connection; it also reads its own
+certificate again for every connection, so a renewed certificate needs no
+restart. Agents that predate this exchange report no fingerprint and keep
+what they received at enrollment.
+
+### Replace the CA with a new key
+
+Renewing the CA certificate keeps its key. Replacing the key (after a
+suspected compromise, to move to another authority, or because policy
+demands a fresh key) is a CA rotation. It runs in three steps and does not
+re-enroll agents:
+
+1. **Stage.** A new CA is created next to the one in use, either
+   self-signed or with a signing request for your authority. The server
+   starts handing it to agents in addition to the current one. Nothing is
+   signed by it yet.
+2. **Activate.** The new CA becomes the server's CA and the server is
+   restarted. It then issues from the new CA and presents a server
+   certificate from it. Certificates issued by the replaced CA stay
+   accepted, and the server asks each agent to renew its certificate, which
+   the agent does at once.
+3. **Retire.** When no agent holds a certificate of the replaced CA any
+   more, it is removed: its certificates are no longer accepted, agents
+   stop trusting it, and its key is deleted.
+
+The server keeps the state in the directory `rotation` next to the CA
+certificate (`/var/lib/bor/pki/ca/rotation` by default); it is part of the
+PKI directory you back up.
+
+An agent that was offline between step 1 and step 2 never learned the new
+CA: it can no longer verify the server and must re-enroll. An agent that
+was offline between step 2 and step 3 still holds a certificate of the
+retired CA and must re-enroll as well. Wait for the agents before each of
+these steps.
+
+Guided CA rotation, with the count of agents that are ready for each step
+and a safeguard against cutting agents off, is part of **Bor Enterprise**
+(**Settings** -> **Certificate authority**). Rotation needs the CA key in a
+file; a key in a PKCS#11 token is not supported.
+
 ## Choose a certificate mode for the web UI
 
 The web UI port can use one of three certificate sources. Exactly one is

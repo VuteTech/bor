@@ -62,28 +62,9 @@ func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string, lifetime t
 	if lifetime <= 0 {
 		lifetime = DefaultCALifetime
 	}
-	ctx, err := crypto11.Configure(&crypto11.Config{
-		Path:       lib,
-		TokenLabel: tokenLabel,
-		Pin:        pin,
-	})
+	signer, err := OpenHSMKey(lib, tokenLabel, keyLabel, pin)
 	if err != nil {
-		return nil, nil, fmt.Errorf("PKCS#11 configure (lib=%s token=%s): %w", lib, tokenLabel, err)
-	}
-	// ctx is not deferred-closed: the returned signer needs it alive.
-
-	signer, err := ctx.FindKeyPair(nil, []byte(keyLabel))
-	if err != nil {
-		return nil, nil, fmt.Errorf("PKCS#11 FindKeyPair (label=%s): %w", keyLabel, err)
-	}
-
-	if signer == nil {
-		// Key not present on token: generate a new P-384 key.
-		log.Printf("pki: key %q not found on HSM token %q, generating new ECDSA P-384 CA key", keyLabel, tokenLabel)
-		signer, err = ctx.GenerateECDSAKeyPairWithLabel(nil, []byte(keyLabel), elliptic.P384())
-		if err != nil {
-			return nil, nil, fmt.Errorf("PKCS#11 GenerateECDSAKeyPairWithLabel (label=%s): %w", keyLabel, err)
-		}
+		return nil, nil, err
 	}
 
 	// Ensure the CA certificate exists on disk.
@@ -103,6 +84,36 @@ func EnsureCAWithHSM(certPath, lib, tokenLabel, keyLabel, pin string, lifetime t
 	}
 
 	return caCert, signer, nil
+}
+
+// OpenHSMKey returns the CA key with keyLabel on the PKCS#11 token, generating
+// an ECDSA P-384 key there when none exists. Signing happens inside the
+// token. The PKCS#11 context is intentionally kept open for the process
+// lifetime so the signer remains valid.
+func OpenHSMKey(lib, tokenLabel, keyLabel, pin string) (crypto.Signer, error) {
+	ctx, err := crypto11.Configure(&crypto11.Config{
+		Path:       lib,
+		TokenLabel: tokenLabel,
+		Pin:        pin,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("PKCS#11 configure (lib=%s token=%s): %w", lib, tokenLabel, err)
+	}
+	// ctx is not deferred-closed: the returned signer needs it alive.
+
+	signer, err := ctx.FindKeyPair(nil, []byte(keyLabel))
+	if err != nil {
+		return nil, fmt.Errorf("PKCS#11 FindKeyPair (label=%s): %w", keyLabel, err)
+	}
+	if signer == nil {
+		// Key not present on token: generate a new P-384 key.
+		log.Printf("pki: key %q not found on HSM token %q, generating new ECDSA P-384 CA key", keyLabel, tokenLabel)
+		signer, err = ctx.GenerateECDSAKeyPairWithLabel(nil, []byte(keyLabel), elliptic.P384())
+		if err != nil {
+			return nil, fmt.Errorf("PKCS#11 GenerateECDSAKeyPairWithLabel (label=%s): %w", keyLabel, err)
+		}
+	}
+	return signer, nil
 }
 
 // generateCACert creates a self-signed CA certificate valid for lifetime using

@@ -36,10 +36,11 @@ func TestFullTLSChain(t *testing.T) {
 	if err != nil {
 		t.Fatal("LoadCA:", err)
 	}
-	caCertPool, err := pki.LoadCACertPool(caCertPath)
+	caChain, err := pki.LoadCAChain(caCertPath)
 	if err != nil {
-		t.Fatal("LoadCACertPool:", err)
+		t.Fatal("LoadCAChain:", err)
 	}
+	caCertPool := caChain.ClientCAPool()
 
 	// Step 2: Generate server cert signed by CA
 	certPath, keyPath, err := pki.EnsureServerCert(uiDir, caCert, caKey, nil)

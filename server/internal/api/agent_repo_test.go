@@ -49,10 +49,10 @@ func buildAgentRepo(t *testing.T) (repoDir string) {
 	return repoDir
 }
 
-func newTestAgentRepoHandler(t *testing.T, dir, caCertFile, version string) (*AgentRepoHandler, *prometheus.CounterVec) {
+func newTestAgentRepoHandler(t *testing.T, dir, caCertPEM, version string) (*AgentRepoHandler, *prometheus.CounterVec) {
 	t.Helper()
 	counter := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_downloads_total"}, []string{"format", "arch"})
-	return NewAgentRepoHandler(dir, caCertFile, version, counter), counter
+	return NewAgentRepoHandler(dir, func() []byte { return []byte(caCertPEM) }, version, counter), counter
 }
 
 func getAgent(h *AgentRepoHandler, method, path string) *httptest.ResponseRecorder {
@@ -242,14 +242,10 @@ func TestAgentRepoManifestAPI(t *testing.T) {
 }
 
 func TestAgentRepoServeCACert(t *testing.T) {
-	pemPath := filepath.Join(t.TempDir(), "ca.crt")
 	pem := "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
-	if err := os.WriteFile(pemPath, []byte(pem), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	t.Run("served", func(t *testing.T) {
-		h, _ := newTestAgentRepoHandler(t, t.TempDir(), pemPath, "1.2.3")
+		h, _ := newTestAgentRepoHandler(t, t.TempDir(), pem, "1.2.3")
 		rec := getAgent(h, http.MethodGet, "/agent/ca.crt")
 		if rec.Code != http.StatusOK || rec.Body.String() != pem {
 			t.Fatalf("status = %d, body = %q", rec.Code, rec.Body.String())
@@ -259,8 +255,8 @@ func TestAgentRepoServeCACert(t *testing.T) {
 		}
 	})
 
-	t.Run("missing file is 404", func(t *testing.T) {
-		h, _ := newTestAgentRepoHandler(t, t.TempDir(), filepath.Join(t.TempDir(), "nope.crt"), "1.2.3")
+	t.Run("no certificate is 404", func(t *testing.T) {
+		h, _ := newTestAgentRepoHandler(t, t.TempDir(), "", "1.2.3")
 		if rec := getAgent(h, http.MethodGet, "/agent/ca.crt"); rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
 		}

@@ -63,7 +63,7 @@ field that disagrees with it is rejected with `PermissionDenied`.
 | `SubscribePolicyUpdates` (server stream) | Long-lived policy stream: snapshot or delta on connect, then pushes |
 | `ReportCompliance` | Compliance result for one policy on this node |
 | `GetAgentConfig` | Server-side agent settings: desktop notification switch, cooldown and messages, LUKS inventory reporting |
-| `Heartbeat` | Node metadata (`NodeInfo`: FQDN, IP, OS name and version, desktop environments, agent version, machine ID) |
+| `Heartbeat` | Node metadata (`NodeInfo`: FQDN, IP, OS name and version, desktop environments, agent version, machine ID) and the fingerprint of the agent's CA certificate file (`trust_bundle_sha256`). The answer carries new CA certificates (`ca_bundle_pem`) when the agent's are out of date, and `renew_certificate` when the agent's certificate was issued by a CA that is being replaced. |
 | `ReportTamperEvent` | A managed file was changed externally and restored |
 | `RenewCertificate` | Sign a new CSR for the calling node, authenticated with its current certificate |
 | `ReportSchemaCatalogue` | GSettings schemas installed on the node (dconf editor data) |

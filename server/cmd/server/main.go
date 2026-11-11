@@ -7,7 +7,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/VuteTech/Bor/server/pkg/app"
 	"github.com/VuteTech/Bor/server/pkg/edition"
@@ -19,6 +21,15 @@ var Version = "dev"
 func main() {
 	resetMFAUser := flag.String("reset-mfa", "", "Disable MFA for the given username and exit")
 	flag.Parse()
+
+	// "ca <command>" has the CA certified by an external authority.
+	if flag.Arg(0) == "ca" {
+		if err := app.CACommand(flag.Args()[1:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if *resetMFAUser != "" {
 		if err := app.ResetMFA(*resetMFAUser); err != nil {

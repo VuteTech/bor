@@ -8,11 +8,10 @@ package policyclient
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log"
 	"math"
-	"os"
+	"net"
 	"time"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -51,15 +50,22 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 
 	switch {
 	case caCertPath != "":
-		caPEM, err := os.ReadFile(caCertPath) //nolint:gosec // G304: path comes from trusted config
-		if err != nil {
-			return nil, fmt.Errorf("failed to read CA certificate %s: %w", caCertPath, err)
+		// Fail early on an unusable file; the roots themselves are read
+		// again for every handshake (see verifyWithTrustFile).
+		if _, err := loadTrustPool(caCertPath); err != nil {
+			return nil, err
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caPEM) {
-			return nil, fmt.Errorf("failed to parse CA certificate from %s", caCertPath)
+		// The CA certificate file can change while the agent runs (the
+		// server delivers a new CA before it starts to use it), so the
+		// built-in verification against a fixed pool is replaced by the
+		// same verification against the file's current content.
+		host, _, splitErr := net.SplitHostPort(serverAddr)
+		if splitErr != nil {
+			host = serverAddr
 		}
-		tlsCfg.RootCAs = pool
+		tlsCfg.ServerName = host
+		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: verification is done in VerifyConnection against the CA file
+		tlsCfg.VerifyConnection = verifyWithTrustFile(caCertPath, host)
 	case insecureSkipVerify:
 		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: controlled by admin config, only during enrollment bootstrap
 		log.Println("WARNING: server certificate verification is disabled (insecure_skip_verify)")
@@ -69,11 +75,18 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 
 	// Load client certificate for mTLS if present
 	if clientCertPath != "" && clientKeyPath != "" {
-		cert, err := tls.LoadX509KeyPair(clientCertPath, clientKeyPath)
-		if err != nil {
+		if _, err := tls.LoadX509KeyPair(clientCertPath, clientKeyPath); err != nil {
 			return nil, fmt.Errorf("failed to load client certificate: %w", err)
 		}
-		tlsCfg.Certificates = []tls.Certificate{cert}
+		// Read the certificate for every handshake, so a renewed
+		// certificate is used from the next connection on.
+		tlsCfg.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(clientCertPath, clientKeyPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load client certificate: %w", err)
+			}
+			return &cert, nil
+		}
 	}
 
 	conn, err := grpc.NewClient(serverAddr,
@@ -217,8 +230,20 @@ type NodeInfo struct {
 	LSMMode      string
 }
 
+// HeartbeatResult is what the server answered to a heartbeat.
+type HeartbeatResult struct {
+	// TrustBundlePEM, when not empty, is the CA certificates the agent
+	// must trust from now on.
+	TrustBundlePEM []byte
+	// RenewCertificate asks the agent to renew its certificate now.
+	RenewCertificate bool
+}
+
 // Heartbeat sends a heartbeat with node metadata to the server.
-func (c *Client) Heartbeat(ctx context.Context, info *NodeInfo) error {
+// trustBundleSHA256 is the fingerprint of the agent's CA certificate file
+// (see TrustBundleSHA256); the server answers with a new bundle when the
+// agent's is out of date.
+func (c *Client) Heartbeat(ctx context.Context, info *NodeInfo, trustBundleSHA256 string) (*HeartbeatResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -235,16 +260,20 @@ func (c *Client) Heartbeat(ctx context.Context, info *NodeInfo) error {
 			Lsm:          info.LSM,
 			LsmMode:      info.LSMMode,
 		},
+		TrustBundleSha256: trustBundleSHA256,
 	}
 
 	resp, err := c.client.Heartbeat(ctx, req)
 	if err != nil {
-		return fmt.Errorf("Heartbeat RPC failed: %w", err)
+		return nil, fmt.Errorf("Heartbeat RPC failed: %w", err)
 	}
 	if !resp.GetAccepted() {
-		return fmt.Errorf("server rejected heartbeat for client %s", c.clientID)
+		return nil, fmt.Errorf("server rejected heartbeat for client %s", c.clientID)
 	}
-	return nil
+	return &HeartbeatResult{
+		TrustBundlePEM:   resp.GetCaBundlePem(),
+		RenewCertificate: resp.GetRenewCertificate(),
+	}, nil
 }
 
 // TamperProcess describes a process found holding a tampered file open.

@@ -33,8 +33,8 @@ import (
 // manifest.json (the tracked placeholder in source builds), every endpoint
 // reports the feature as off.
 type AgentRepoHandler struct {
-	fsys          fs.FS // nil when the repo directory was absent at startup
-	caCertFile    string
+	fsys          fs.FS         // nil when the repo directory was absent at startup
+	caCertPEM     func() []byte // nil: no CA certificate to serve
 	serverVersion string
 	downloads     *prometheus.CounterVec
 }
@@ -74,9 +74,9 @@ type AgentPackagesResponse struct {
 // NewAgentRepoHandler opens dir as the repository root. A missing directory
 // is not an error — the feature is simply off (every endpoint 404s and the
 // manifest API reports repo_available=false).
-func NewAgentRepoHandler(dir, caCertFile, serverVersion string, downloads *prometheus.CounterVec) *AgentRepoHandler {
+func NewAgentRepoHandler(dir string, caCertPEM func() []byte, serverVersion string, downloads *prometheus.CounterVec) *AgentRepoHandler {
 	h := &AgentRepoHandler{
-		caCertFile:    caCertFile,
+		caCertPEM:     caCertPEM,
 		serverVersion: serverVersion,
 		downloads:     downloads,
 	}
@@ -166,16 +166,20 @@ func (h *AgentRepoHandler) ServeFiles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ServeCACert handles GET/HEAD /agent/ca.crt — the internal CA certificate
-// (public material only), so package managers and enroll scripts can trust
-// the server's TLS endpoint when it uses the auto-generated certificate.
+// ServeCACert handles GET/HEAD /agent/ca.crt — the CA certificates agents
+// trust (public material only), so package managers and enroll scripts can
+// trust the server's TLS endpoint when it uses the auto-generated
+// certificate. It is the same trust material agents receive at enrollment.
 func (h *AgentRepoHandler) ServeCACert(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
-	pem, err := os.ReadFile(h.caCertFile)
-	if err != nil {
+	var caPEM []byte
+	if h.caCertPEM != nil {
+		caPEM = h.caCertPEM()
+	}
+	if len(caPEM) == 0 {
 		http.NotFound(w, r)
 		return
 	}
@@ -184,7 +188,7 @@ func (h *AgentRepoHandler) ServeCACert(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead {
 		return
 	}
-	_, _ = w.Write(pem)
+	_, _ = w.Write(caPEM)
 }
 
 // ManifestAPI handles GET /api/v1/agent-packages (authenticated) — what the

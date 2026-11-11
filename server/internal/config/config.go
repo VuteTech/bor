@@ -253,7 +253,21 @@ type CAConfig struct {
 	// (BOR_CA_LIFETIME, default 10y). It is applied only when the CA
 	// certificate is first generated; an existing CA is never re-issued.
 	Lifetime time.Duration
+	// AgentTrust selects the CA certificates agents receive at enrollment
+	// and verify the server against (BOR_CA_AGENT_TRUST): AgentTrustSigning
+	// (default) or AgentTrustChain.
+	AgentTrust string
 }
+
+// Values of CAConfig.AgentTrust.
+const (
+	// AgentTrustSigning hands agents the Bor signing certificate only.
+	AgentTrustSigning = "signing"
+	// AgentTrustChain hands agents the signing certificate and the external
+	// authorities above it, so they accept a server certificate issued by
+	// any CA under that root.
+	AgentTrustChain = "chain"
+)
 
 // LDAPConfig holds LDAP connection configuration.
 type LDAPConfig struct {
@@ -363,6 +377,7 @@ type fileConfig struct {
 		KeyFile    string `yaml:"key_file"`
 		AutogenDir string `yaml:"autogen_dir"`
 		Lifetime   string `yaml:"lifetime"`
+		AgentTrust string `yaml:"agent_trust"`
 		PKCS11     struct {
 			Lib        string `yaml:"lib"`
 			TokenLabel string `yaml:"token_label"`
@@ -551,6 +566,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid BOR_CA_LIFETIME: %w", err)
 	}
 
+	caAgentTrust := getEnv("BOR_CA_AGENT_TRUST", fc.CA.AgentTrust)
+	if caAgentTrust != AgentTrustSigning && caAgentTrust != AgentTrustChain {
+		return nil, fmt.Errorf("invalid BOR_CA_AGENT_TRUST %q: use %q or %q", caAgentTrust, AgentTrustSigning, AgentTrustChain)
+	}
+
 	// ─── CA PKCS#11 (optional HSM) ─────────────────────────────────────────
 	pkcs11Lib := getEnv("BOR_CA_PKCS11_LIB", fc.CA.PKCS11.Lib)
 	pkcs11TokenLabel := getEnv("BOR_CA_PKCS11_TOKEN_LABEL", fc.CA.PKCS11.TokenLabel)
@@ -700,6 +720,7 @@ func Load() (*Config, error) {
 			KeyFile:    caKeyFile,
 			AutogenDir: getEnv("BOR_CA_AUTOGEN_DIR", fc.CA.AutogenDir),
 			Lifetime:   caLifetime,
+			AgentTrust: caAgentTrust,
 			PKCS11: PKCS11Config{
 				Lib:        pkcs11Lib,
 				TokenLabel: pkcs11TokenLabel,
@@ -811,6 +832,7 @@ func defaultFileConfig() fileConfig {
 	fc.TLS.AutogenDir = "/var/lib/bor/pki/ui"
 	fc.CA.AutogenDir = "/var/lib/bor/pki/ca"
 	fc.CA.Lifetime = "10y"
+	fc.CA.AgentTrust = AgentTrustSigning
 	fc.LDAP.Host = "localhost"
 	fc.LDAP.Port = 389
 	fc.LDAP.UserFilter = "(uid=%s)"

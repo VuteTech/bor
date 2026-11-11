@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/VuteTech/Bor/server/internal/database"
 	"github.com/VuteTech/Bor/server/internal/models"
+	"github.com/VuteTech/Bor/server/internal/pki"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/ext"
 	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
@@ -52,6 +54,93 @@ type PolicyServer struct {
 	// compliance is told about every reported compliance result; nil when
 	// nobody listens.
 	compliance complianceListener
+	// caTrust and caTrustStore keep agents' CA certificates current; nil
+	// leaves agents with what they received at enrollment.
+	caTrust      caTrustSource
+	caTrustStore nodeCATrustStore
+}
+
+// caTrustSource is what the server currently tells agents to trust
+// (pki.TrustState implements it).
+type caTrustSource interface {
+	// AgentTrust returns the CA certificates in PEM and their fingerprint.
+	AgentTrust() (bundlePEM []byte, sha string)
+	// ActiveIssuer identifies the CA that issues agent certificates.
+	ActiveIssuer() string
+}
+
+// nodeCATrustStore records what each node holds of the server's CA
+// (database.NodeRepository implements it).
+type nodeCATrustStore interface {
+	GetCATrust(ctx context.Context, nodeID string) (database.NodeCATrust, error)
+	SetTrustBundle(ctx context.Context, nodeID, sha string) error
+	SetCertIssuer(ctx context.Context, nodeID, issuer string) error
+}
+
+// WithCATrust makes heartbeats deliver the CA certificates agents must
+// trust and ask agents to renew certificates issued by a replaced CA.
+func (s *PolicyServer) WithCATrust(source caTrustSource, store nodeCATrustStore) *PolicyServer {
+	s.caTrust, s.caTrustStore = source, store
+	return s
+}
+
+// syncCATrust fills the CA part of a heartbeat answer for a node and
+// records what the node holds. It is best-effort: a failure is logged and
+// never fails the heartbeat.
+func (s *PolicyServer) syncCATrust(ctx context.Context, nodeID, nodeName, reportedSHA string, resp *pb.HeartbeatResponse) {
+	if s.caTrust == nil || s.caTrustStore == nil {
+		return
+	}
+	held, err := s.caTrustStore.GetCATrust(ctx, nodeID)
+	if err != nil {
+		log.Printf("CA trust: %v", err)
+		return
+	}
+	// The issuer of a node's certificate is recorded when the server signs
+	// it. For certificates signed before that was recorded, take it from
+	// the certificate of this connection.
+	if held.CertIssuerSHA256 == "" {
+		if issuer := peerIssuerFingerprint(ctx); issuer != "" {
+			held.CertIssuerSHA256 = issuer
+			if err = s.caTrustStore.SetCertIssuer(ctx, nodeID, issuer); err != nil {
+				log.Printf("CA trust: %v", err)
+			}
+		}
+	}
+	// An agent that reports no fingerprint cannot replace its CA
+	// certificates or renew on request; leave it alone.
+	if reportedSHA == "" {
+		return
+	}
+	if reportedSHA != held.TrustBundleSHA256 {
+		if err = s.caTrustStore.SetTrustBundle(ctx, nodeID, reportedSHA); err != nil {
+			log.Printf("CA trust: %v", err)
+		}
+	}
+	bundle, sha := s.caTrust.AgentTrust()
+	if reportedSHA != sha {
+		resp.CaBundlePem = bundle
+		log.Printf("CA trust: sending the current CA certificates to %s", nodeName)
+	}
+	if held.CertIssuerSHA256 != "" && held.CertIssuerSHA256 != s.caTrust.ActiveIssuer() {
+		resp.RenewCertificate = true
+	}
+}
+
+// peerIssuerFingerprint identifies the CA certificate the calling agent's
+// certificate was verified against, or "" without a verified client
+// certificate.
+func peerIssuerFingerprint(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return ""
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
+		return ""
+	}
+	chain := tlsInfo.State.VerifiedChains[0]
+	return pki.CertFingerprint(chain[len(chain)-1])
 }
 
 // complianceListener receives reported compliance results
@@ -478,7 +567,9 @@ func (s *PolicyServer) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) 
 	log.Printf("Heartbeat from %s: OS=%s %s, DE=%v, agent=%s",
 		clientID, info.OSName, info.OSVersion, info.DesktopEnvs, info.AgentVersion)
 
-	return &pb.HeartbeatResponse{Accepted: true}, nil
+	resp := &pb.HeartbeatResponse{Accepted: true}
+	s.syncCATrust(ctx, node.ID, clientID, req.GetTrustBundleSha256(), resp)
+	return resp, nil
 }
 
 // tamperResourcePattern matches a non-file tamper resource, "<kind>:<name>"
@@ -595,6 +686,12 @@ func (s *PolicyServer) RenewCertificate(ctx context.Context, req *pb.RenewCertif
 	certPEM, err := s.enrollSvc.RenewCertificate(ctx, node.ID, node.Name, req.GetCsrPem())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to renew certificate: %v", err)
+	}
+
+	if s.caTrust != nil && s.caTrustStore != nil {
+		if issuerErr := s.caTrustStore.SetCertIssuer(ctx, node.ID, s.caTrust.ActiveIssuer()); issuerErr != nil {
+			log.Printf("CA trust: %v", issuerErr)
+		}
 	}
 
 	log.Printf("Renewed certificate for node %s (%s)", node.Name, node.ID)
