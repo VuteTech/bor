@@ -265,12 +265,18 @@ At start-up, after the enrollment check, the agent calls
 is close to expiry it generates a new key and CSR with the same CN and calls
 `RenewCertificate` on the policy port, authenticated with the current
 certificate. The server looks up the node by the verified CN, signs a new
-90-day certificate and updates the node's certificate serial and expiry.
-The agent then writes the new key and certificate and connects as usual.
+90-day certificate and records it as the node's current certificate; the
+presented one becomes `previous_cert_serial`. The agent then writes the
+new key and certificate.
 
-The check runs once per agent start, so a daemon that is never restarted
-for longer than the certificate lifetime does not renew. Any restart of
-the service (for example a reboot) runs the check again.
+The check runs at agent start and every 12 hours. The new certificate is
+used from the next connection on; the policy listener sets
+`MaxConnectionAge` to 24 hours, so that happens within a day. When the
+node opens a policy stream with its current certificate, the previous one
+is revoked. A renewal authenticated with the previous certificate (the
+agent lost the answer) revokes the unused current one instead; any other
+certificate is refused. An open stream re-checks its certificate against
+the revocation list and its expiry every minute.
 
 ### Compliance and tamper reports
 

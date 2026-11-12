@@ -206,11 +206,12 @@ Decommissioning requires `node:delete`.
 
 ## Revoke a certificate
 
-**Revoke Certificate** in the node details revokes the node's current
-client certificate without deleting the node record. Use it when you
-suspect the machine's credentials are compromised. The panel confirms with
-**Certificate revoked**: the agent is denied on its next connection
-attempt. The node record, its notes and its group memberships remain. To
+**Revoke Certificate** in the node details revokes the node's client
+certificates (the current one and, shortly after a renewal, the one it
+replaced) without deleting the node record. Use it when you suspect the
+machine's credentials are compromised. The panel confirms with
+**Certificate revoked**: an open policy stream closes within a minute and
+every further request from the agent is denied. The node record, its notes and its group memberships remain. To
 bring the machine back, [re-enroll](#re-enroll-a-node) it.
 
 This action requires `node:create`.

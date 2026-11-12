@@ -22,22 +22,44 @@ directory accounts is a separate feature, see [LDAP](ldap.md).
 4. The Bor server decrypts and validates the ticket with its own service
    keytab. It does not contact the KDC and does not need to be joined to
    the domain.
-5. The server signs the certificate, creates the node in the configured
-   default node group and returns the certificate and CA certificate.
+5. The server checks that the principal is a machine account of the
+   configured realm and that the requested node name belongs to it, signs
+   the certificate, creates the node in the configured default node group
+   and returns the certificate and CA certificate.
 
 Because the server only needs the keytab, the Bor server itself can stay
 outside the domain. The agent hosts must reach the KDC on port 88 (TCP and
 UDP).
 
-!!! warning "Who can enroll"
-    The server accepts any client whose service ticket for the Bor principal
-    it can decrypt with its keytab. It does not restrict enrollment to
-    particular hosts, groups or realms. Every account that can obtain a
-    ticket for the Bor service principal from your KDC can therefore enroll
-    a node, and all of them land in the same default node group. Keep the
-    default node group free of sensitive policy assignments, or restrict
-    ticket issuance for the service principal in the directory. Review new
-    nodes in **Nodes** and decommission unexpected ones.
+### Who can enroll
+
+The server accepts a ticket only when:
+
+- it can decrypt it with its keytab,
+- the client principal is in `kerberos.realm` (when set; tickets from
+  trusted foreign realms are refused), and
+- the client principal is a machine account: `host/<fqdn>` (FreeIPA, MIT
+  Kerberos) or `<NAME>$` (Active Directory, Samba AD). User and service
+  principals cannot enroll a node.
+
+The node name is bound to that principal, ignoring case:
+
+| Principal | Accepted node names | Without a requested name |
+|-----------|---------------------|--------------------------|
+| `host/ws042.example.com@EXAMPLE.COM` | `ws042.example.com` or `ws042` | `ws042.example.com` |
+| `WS042$@EXAMPLE.COM` | `ws042`, or any FQDN whose first label is `ws042` | `ws042` |
+
+Any other name (from `agent.client_id`, or the host name when that is
+unset) is refused with `node name ... does not match principal ...`. One
+machine's keytab therefore cannot enroll under another machine's name.
+
+!!! warning "Default node group"
+    Every machine account that can obtain a ticket for the Bor service
+    principal can still enroll itself, and all of them land in the same
+    default node group. Keep that group free of sensitive policy
+    assignments, or restrict ticket issuance for the service principal in
+    the directory. Review new nodes in **Nodes** and decommission
+    unexpected ones.
 
 ## Prerequisites
 
@@ -153,7 +175,7 @@ kerberos:
 | YAML key | Environment variable | Description |
 |----------|----------------------|-------------|
 | `kerberos.enabled` | `BOR_KERBEROS_ENABLED` | Turn on the `KerberosEnroll` call. While it is off, agents get `Kerberos enrollment is not enabled on this server`. |
-| `kerberos.realm` | `BOR_KERBEROS_REALM` | Realm, for reference in the startup log. Tickets are validated with the keytab. |
+| `kerberos.realm` | `BOR_KERBEROS_REALM` | Realm whose machine accounts may enroll. Tickets for principals of any other realm are refused. Empty accepts any realm the keytab can validate. |
 | `kerberos.keytab_file` | `BOR_KERBEROS_KEYTAB` | Service keytab. Read at startup; if it cannot be loaded, the server stops with `Failed to initialize Kerberos service`. |
 | `kerberos.service_principal` | `BOR_KERBEROS_PRINCIPAL` | Service principal, shown in the startup log. Agents must use the same value. |
 | `kerberos.default_node_group_id` | `BOR_KERBEROS_DEFAULT_NODE_GROUP` | Group ID from step 2. Without it, every Kerberos enrollment is refused. |

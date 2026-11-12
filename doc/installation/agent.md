@@ -377,7 +377,8 @@ sudo systemctl enable --now bor-agent
 sudo systemctl status bor-agent
 ```
 
-At start the agent renews its certificate if it expires within 30 days,
+At start (and every 12 hours) the agent renews its certificate if it
+expires within 30 days,
 connects to the policy port and applies every policy it receives.
 
 ## Verify the node

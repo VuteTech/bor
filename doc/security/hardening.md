@@ -281,8 +281,10 @@ the backup codes before you turn enforcement on.
 
 If an administrator loses their authenticator and backup codes, reset MFA on
 the server host. The command reads `server.yaml` and connects to the database
-directly; it does not need the service to be running and its action is **not**
-written to the Bor audit log, so record it in your change log:
+directly; it does not need the service to be running. It writes
+`auth.mfa.reset` records (actor `local:<operating system user>`) to the
+audit log and refuses to reset MFA if it cannot. The records are not
+forwarded to syslog, so also record the reset in your change log:
 
 ```bash
 sudo -u bor bor-server --reset-mfa admin
@@ -294,6 +296,8 @@ your secrets are in `server.env`, export them into the environment first. See
 
 Login endpoints are rate limited to 10 requests per minute per client IP
 address; additional attempts get HTTP 429 `rate limit exceeded, try again later`.
+The agent enrollment calls on the enrollment port are limited to 60 per
+client IP address per minute (`security.enroll_rate_limit`).
 
 ## Secure LDAP
 
@@ -395,20 +399,21 @@ retention.
 
 Agents authenticate with client certificates. The server checks the
 certificate's serial number against its revocation list on every gRPC call and
-every new stream, so revocation takes effect when the agent next connects or
-calls the server.
+every new stream, and an open stream re-checks it every minute, so a
+revocation takes effect within a minute.
 
 - **Revoke a certificate**: **Nodes** -> select the node -> **Revoke
   Certificate**. The node stays in the inventory but its agent cannot connect
   any more. To bring it back, decommission the node and re-enroll the agent.
 - **Remove a node**: **Nodes** -> select the node -> **Decommission**. This
   revokes the certificate and deletes the node record.
-- **Renewal**: when `bor-agent` starts and its certificate expires within 30
-  days, it requests a new one from port 8444, authenticating with its current
-  certificate. Restart
-  agents (or reboot endpoints) regularly, and alert on
-  `bor_node_certificate_expiry_seconds` (see [Monitoring](../operations/monitoring.md)). An
-  expired certificate cannot be renewed; the node must be re-enrolled.
+- **Renewal**: when the certificate expires within 30 days (checked at start
+  and every 12 hours), `bor-agent` requests a new one from port 8444,
+  authenticating with its current certificate. The replaced certificate is
+  revoked once the agent connects with the new one. Alert on
+  `bor_node_certificate_expiry_seconds` (see [Monitoring](../operations/monitoring.md))
+  to catch machines that stay switched off: an expired certificate cannot be
+  renewed, and the node must be re-enrolled.
 - Each node name is the authoritative identity: the server writes it into the
   certificate's common name and rejects requests whose claimed client ID does
   not match.

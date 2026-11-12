@@ -6,7 +6,9 @@ package grpc
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"log"
 	"regexp"
 	"slices"
@@ -260,6 +262,20 @@ func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequ
 		return status.Errorf(codes.NotFound, "node not found for client_id: %s", clientID)
 	}
 
+	// The certificate this stream authenticated with: once a renewed
+	// certificate is in use the one it replaced is revoked, and the stream
+	// ends when this certificate is revoked or expires.
+	streamCert, err := verifiedClientCert(ctx)
+	if err != nil {
+		return err
+	}
+	streamSerial := streamCert.SerialNumber.Text(16)
+	if s.enrollSvc != nil {
+		if confirmErr := s.enrollSvc.ConfirmCertificateInUse(ctx, node.ID, streamSerial); confirmErr != nil {
+			log.Printf("Failed to confirm certificate of node %s: %v", clientID, confirmErr)
+		}
+	}
+
 	lastKnown := req.GetLastKnownRevision()
 	currentRev := s.hub.Revision()
 
@@ -316,11 +332,19 @@ func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequ
 	updates, cancel := s.hub.Subscribe(ctx, clientID)
 	defer cancel()
 
+	certCheck := time.NewTicker(streamCertCheckInterval)
+	defer certCheck.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("Client %s stream ended: %v", clientID, ctx.Err())
 			return nil
+		case <-certCheck.C:
+			if err := s.streamCertStillValid(ctx, streamCert); err != nil {
+				log.Printf("Closing policy stream of %s: %v", clientID, err)
+				return err
+			}
 		case ev := <-updates:
 			if IsResyncSignal(ev.update) {
 				// The node's group membership may have changed since the
@@ -344,6 +368,33 @@ func (s *PolicyServer) SubscribePolicyUpdates(req *pb.SubscribePolicyUpdatesRequ
 			}
 		}
 	}
+}
+
+// streamCertCheckInterval is how often an open policy stream re-checks
+// that its client certificate is neither revoked nor expired. Revocation
+// is checked when every call starts; this bounds how long an already open
+// stream outlives a revocation.
+const streamCertCheckInterval = time.Minute
+
+// streamCertStillValid returns a gRPC error when cert has expired or been
+// revoked since the stream opened. A failed revocation lookup keeps the
+// stream open; the next check retries.
+func (s *PolicyServer) streamCertStillValid(ctx context.Context, cert *x509.Certificate) error {
+	if time.Now().After(cert.NotAfter) {
+		return status.Errorf(codes.Unauthenticated, "client certificate expired")
+	}
+	if s.enrollSvc == nil {
+		return nil
+	}
+	revoked, err := s.enrollSvc.IsRevoked(ctx, cert.SerialNumber.Text(16))
+	if err != nil {
+		log.Printf("Revocation check for open stream failed: %v", err)
+		return nil
+	}
+	if revoked {
+		return status.Errorf(codes.Unauthenticated, "client certificate revoked")
+	}
+	return nil
 }
 
 // groupsOverlap returns true if nodeGroups and eventGroups share at least one
@@ -672,7 +723,8 @@ func (s *PolicyServer) RenewCertificate(ctx context.Context, req *pb.RenewCertif
 	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
 		return nil, status.Errorf(codes.Unauthenticated, "no client certificate")
 	}
-	clientCN := tlsInfo.State.VerifiedChains[0][0].Subject.CommonName
+	clientCert := tlsInfo.State.VerifiedChains[0][0]
+	clientCN := clientCert.Subject.CommonName
 
 	// Look up node by name (CN = node name set during enrollment).
 	node, err := s.nodeSvc.GetNodeByName(ctx, clientCN)
@@ -683,7 +735,10 @@ func (s *PolicyServer) RenewCertificate(ctx context.Context, req *pb.RenewCertif
 		return nil, status.Errorf(codes.NotFound, "node not registered: %s", clientCN)
 	}
 
-	certPEM, err := s.enrollSvc.RenewCertificate(ctx, node.ID, node.Name, req.GetCsrPem())
+	certPEM, err := s.enrollSvc.RenewCertificate(ctx, node.ID, node.Name, clientCert.SerialNumber.Text(16), req.GetCsrPem())
+	if errors.Is(err, services.ErrStaleCertificate) {
+		return nil, status.Errorf(codes.PermissionDenied, "this certificate has been replaced; it cannot be renewed")
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to renew certificate: %v", err)
 	}

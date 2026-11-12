@@ -82,7 +82,7 @@ func (h *AuthHandler) emitAuthAudit(r *http.Request, action, username string, su
 		Action:     action,
 		Resource:   &auditpb.Resource{Type: "auth", Id: username},
 		Outcome:    outcome,
-		SrcIp:      extractIP(r),
+		SrcIp:      defaultAuditIP(r),
 		Payload: &auditpb.AuditEvent_HttpChange{
 			HttpChange: &auditpb.HttpPayload{
 				Method: r.Method,
