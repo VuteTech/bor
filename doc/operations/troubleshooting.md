@@ -137,7 +137,9 @@ from `server.env` first if your database settings are there.
 
 The user can then sign in with their password. If MFA is required for all
 users, they are asked to enroll again (when self-enrollment is allowed). The
-reset is not recorded in the Bor audit log; note it in your change log.
+reset is recorded in the Bor audit log as `auth.mfa.reset`; if that record
+cannot be written, the command fails with `write audit record (MFA not
+reset)` and nothing changes.
 
 If **every** user's TOTP codes stopped working at the same time, the secret
 that encrypts TOTP data changed: `BOR_MFA_SECRET`, or `jwt_secret` when
@@ -176,6 +178,8 @@ sudo bor-agent --token-file /etc/bor/enroll-token
 | `Enrollment failed: enrollment RPC failed: rpc error: code = Unauthenticated desc = enrollment failed: enrollment token expired` | The token is older than 5 minutes | Generate a new one (**Node Groups** -> **Generate token**) and use it right away |
 | `... desc = enrollment failed: invalid enrollment token` | Token mistyped, already used (tokens are single-use, even by a failed attempt), or from another server | Generate a new token |
 | `... code = Internal desc = enrolled but failed to create node record: a node named "<name>" already exists; delete it before re-enrolling` | A node with this name (the host name, or `agent.client_id`) is already registered; the token is now used up | Decommission the old node on **Nodes**, or set a unique `agent.client_id`; then use a new token |
+| `... code = ResourceExhausted desc = too many requests, retry in 1m0s` | More enrollment calls from this IP address in the last minute than `security.enroll_rate_limit` allows (default 60), common when many machines enroll from behind one NAT address | Wait a minute and retry, or raise `security.enroll_rate_limit` on the server |
+| `... code = PermissionDenied desc = node name "<name>" does not match principal "<principal>"` (Kerberos) | The node name (`agent.client_id` or the host name) does not belong to the machine principal | Leave `agent.client_id` unset, or set it to the principal's host name; see [Kerberos enrollment](../configuration/kerberos.md#who-can-enroll) |
 | `... x509: certificate signed by unknown authority` | The server uses the internal CA and the endpoint does not trust it | Install the CA into the system trust store (the **Deploy agent** wizard shows the commands), or set `server.insecure_skip_verify: true` in `/etc/bor/config.yaml` for enrollment only |
 | `... x509: certificate is valid for <names>, not <address>` | `server.address` in the agent configuration is not in the server certificate | Use a listed name, or add the address to `server.hostnames` on the server and restart it |
 | `... x509: certificate has expired or is not yet valid` | The endpoint's clock is wrong (or the server certificate really expired) | Fix time synchronization (`timedatectl`), then retry |

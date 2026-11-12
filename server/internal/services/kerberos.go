@@ -93,10 +93,63 @@ func (s *KerberosService) ValidateToken(tokenBytes []byte) (string, error) {
 		return "", fmt.Errorf("kerberos AP_REQ rejected")
 	}
 
+	// Only principals of the configured realm may enroll; a ticket from a
+	// trusted foreign realm is refused.
+	if s.config.Realm != "" && !strings.EqualFold(creds.Realm(), s.config.Realm) {
+		return "", fmt.Errorf("principal realm %q is not the configured realm %q", creds.Realm(), s.config.Realm)
+	}
+
 	// Build the full principal string: primary/instance@REALM
 	// For machine accounts this is typically "host/hostname.example.com@REALM".
 	principal := creds.CName().PrincipalNameString() + "@" + creds.Realm()
 	return principal, nil
+}
+
+// KerberosNodeName returns the node name a Kerberos-enrolled agent gets,
+// bound to the machine identity in its principal:
+//
+//   - host/<fqdn>@REALM (FreeIPA, MIT): the FQDN or its first label.
+//   - <NAME>$@REALM (Active Directory, Samba AD machine accounts): NAME, or
+//     an FQDN whose first label is NAME.
+//
+// requested is the name the agent asked for; empty selects the name from
+// the principal. Comparison ignores case. Any other principal (users,
+// service principals) cannot enroll a node.
+func KerberosNodeName(principal, requested string) (string, error) {
+	noRealm := principal
+	if idx := strings.LastIndex(noRealm, "@"); idx >= 0 {
+		noRealm = noRealm[:idx]
+	}
+
+	var fqdn, short string
+	switch {
+	case strings.HasPrefix(noRealm, "host/"):
+		fqdn = strings.TrimSuffix(strings.TrimPrefix(noRealm, "host/"), ".")
+		short, _, _ = strings.Cut(fqdn, ".")
+	case strings.HasSuffix(noRealm, "$") && !strings.ContainsAny(noRealm, "/"):
+		short = strings.TrimSuffix(noRealm, "$")
+	default:
+		return "", fmt.Errorf("principal %q is not a machine account (host/<fqdn> or <NAME>$)", principal)
+	}
+	if short == "" {
+		return "", fmt.Errorf("principal %q names no host", principal)
+	}
+
+	if requested == "" {
+		if fqdn != "" {
+			return fqdn, nil
+		}
+		return strings.ToLower(short), nil
+	}
+	reqShort, _, _ := strings.Cut(requested, ".")
+	switch {
+	case fqdn != "" && strings.EqualFold(requested, fqdn):
+	case strings.EqualFold(requested, short):
+	case fqdn == "" && strings.EqualFold(reqShort, short):
+	default:
+		return "", fmt.Errorf("node name %q does not match principal %q", requested, principal)
+	}
+	return requested, nil
 }
 
 // RealmFromPrincipal returns the realm portion of a Kerberos principal string,
@@ -106,21 +159,4 @@ func RealmFromPrincipal(principal string) string {
 		return principal[idx+1:]
 	}
 	return ""
-}
-
-// PrincipalToHostname returns the host component from a host-keytab principal,
-// e.g. "worker01.example.com" from "host/worker01.example.com@EXAMPLE.COM".
-// Returns the full primary/instance string for non-host principals.
-func PrincipalToHostname(principal string) string {
-	// Strip realm
-	noRealm := principal
-	if idx := strings.LastIndex(principal, "@"); idx >= 0 {
-		noRealm = principal[:idx]
-	}
-	// Return instance part for host/... principals
-	parts := strings.SplitN(noRealm, "/", 2)
-	if len(parts) == 2 {
-		return parts[1]
-	}
-	return noRealm
 }

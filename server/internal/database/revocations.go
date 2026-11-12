@@ -7,7 +7,9 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/VuteTech/Bor/server/internal/models"
 )
@@ -59,16 +61,6 @@ func (r *RevocationRepository) GetByNodeID(ctx context.Context, nodeID string) (
 	return &rev, nil
 }
 
-// DeleteByNodeID removes all revocations for a node (used when re-enrolling).
-func (r *RevocationRepository) DeleteByNodeID(ctx context.Context, nodeID string) error {
-	_, err := r.db.ExecContext(ctx,
-		`DELETE FROM revoked_certificates WHERE node_id = $1`, nodeID)
-	if err != nil {
-		return fmt.Errorf("failed to delete revocations for node: %w", err)
-	}
-	return nil
-}
-
 // ListAll returns all revoked certificates ordered by revoked_at descending.
 func (r *RevocationRepository) ListAll(ctx context.Context) ([]*models.RevokedCertificate, error) {
 	rows, err := r.db.QueryContext(ctx,
@@ -86,4 +78,160 @@ func (r *RevocationRepository) ListAll(ctx context.Context) ([]*models.RevokedCe
 		revs = append(revs, rev)
 	}
 	return revs, rows.Err()
+}
+
+// ErrStaleCertificate is returned by RotateCertificate when the certificate
+// presented for renewal is neither the node's current nor its previous one.
+var ErrStaleCertificate = errors.New("certificate is not the node's current certificate")
+
+// RotateCertificate records a renewed certificate for a node, in one
+// transaction. presentedSerial is the certificate the node authenticated
+// the renewal with:
+//
+//   - the current certificate: it becomes the previous one and stays valid
+//     until the node connects with the new one (see ConfirmCertificateInUse);
+//     an older previous certificate, if any, is revoked.
+//   - the previous certificate: the node lost the answer to an earlier
+//     renewal. The certificate issued then was never used and is revoked;
+//     the previous certificate stays as it is.
+//
+// Any other certificate is refused with ErrStaleCertificate. It returns the
+// serials it revoked.
+func (r *RevocationRepository) RotateCertificate(ctx context.Context, nodeID, presentedSerial, newSerial string, notAfter time.Time) (revoked []string, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin certificate rotation: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var current sql.NullString
+	var previous string
+	err = tx.QueryRowContext(ctx,
+		`SELECT cert_serial, previous_cert_serial FROM nodes WHERE id = $1 FOR UPDATE`,
+		nodeID).Scan(&current, &previous)
+	if err != nil {
+		return nil, fmt.Errorf("load node certificate: %w", err)
+	}
+
+	newPrevious := previous
+	switch {
+	case current.Valid && current.String != "" && presentedSerial == current.String:
+		if previous != "" {
+			revoked = append(revoked, previous)
+		}
+		newPrevious = current.String
+	case previous != "" && presentedSerial == previous:
+		if current.Valid && current.String != "" {
+			revoked = append(revoked, current.String)
+		}
+	default:
+		return nil, ErrStaleCertificate
+	}
+
+	for _, serial := range revoked {
+		if _, err = tx.ExecContext(ctx,
+			`INSERT INTO revoked_certificates (node_id, serial, reason) VALUES ($1, $2, $3)`,
+			nodeID, serial, "superseded by renewal"); err != nil {
+			return nil, fmt.Errorf("revoke superseded certificate: %w", err)
+		}
+	}
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE nodes SET cert_serial = $1, cert_not_after = $2, previous_cert_serial = $3, updated_at = NOW() WHERE id = $4`,
+		newSerial, notAfter, newPrevious, nodeID); err != nil {
+		return nil, fmt.Errorf("update node certificate: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit certificate rotation: %w", err)
+	}
+	return revoked, nil
+}
+
+// ConfirmCertificateInUse is called when a node connects with
+// presentedSerial. When that is the node's current certificate and a
+// previous one is still valid, the previous one is revoked. It returns the
+// revoked serial, or "" when nothing changed.
+func (r *RevocationRepository) ConfirmCertificateInUse(ctx context.Context, nodeID, presentedSerial string) (revoked string, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin certificate confirmation: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var current sql.NullString
+	var previous string
+	err = tx.QueryRowContext(ctx,
+		`SELECT cert_serial, previous_cert_serial FROM nodes WHERE id = $1 FOR UPDATE`,
+		nodeID).Scan(&current, &previous)
+	if err != nil {
+		return "", fmt.Errorf("load node certificate: %w", err)
+	}
+	if previous == "" || !current.Valid || current.String != presentedSerial {
+		err = tx.Rollback()
+		return "", err
+	}
+	if _, err = tx.ExecContext(ctx,
+		`INSERT INTO revoked_certificates (node_id, serial, reason) VALUES ($1, $2, $3)`,
+		nodeID, previous, "superseded by renewal"); err != nil {
+		return "", fmt.Errorf("revoke previous certificate: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE nodes SET previous_cert_serial = '', updated_at = NOW() WHERE id = $1`, nodeID); err != nil {
+		return "", fmt.Errorf("clear previous certificate: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit certificate confirmation: %w", err)
+	}
+	return previous, nil
+}
+
+// RevokeNode revokes every certificate a node holds (current and previous)
+// in one transaction and returns the revoked serials.
+func (r *RevocationRepository) RevokeNode(ctx context.Context, nodeID, reason string) (revoked []string, err error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin node revocation: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var current sql.NullString
+	var previous string
+	err = tx.QueryRowContext(ctx,
+		`SELECT cert_serial, previous_cert_serial FROM nodes WHERE id = $1 FOR UPDATE`,
+		nodeID).Scan(&current, &previous)
+	if err != nil {
+		return nil, fmt.Errorf("load node certificate: %w", err)
+	}
+	if current.Valid && current.String != "" {
+		revoked = append(revoked, current.String)
+	}
+	if previous != "" {
+		revoked = append(revoked, previous)
+	}
+	for _, serial := range revoked {
+		if _, err = tx.ExecContext(ctx,
+			`INSERT INTO revoked_certificates (node_id, serial, reason) VALUES ($1, $2, $3)`,
+			nodeID, serial, reason); err != nil {
+			return nil, fmt.Errorf("record revocation: %w", err)
+		}
+	}
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE nodes SET previous_cert_serial = '', updated_at = NOW() WHERE id = $1`, nodeID); err != nil {
+		return nil, fmt.Errorf("clear previous certificate: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit node revocation: %w", err)
+	}
+	return revoked, nil
 }

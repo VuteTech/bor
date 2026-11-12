@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"sync"
 	"time"
@@ -16,6 +17,14 @@ import (
 // server asks for, so a server that keeps asking cannot make the agent
 // renew in a loop.
 const renewRetryInterval = time.Hour
+
+// certRenewThreshold is how long before expiry the agent renews its
+// certificate, and certCheckInterval how often a running agent checks.
+// The server issues certificates for 90 days.
+const (
+	certRenewThreshold = 30 * 24 * time.Hour
+	certCheckInterval  = 12 * time.Hour
+)
 
 // agentCredentials is where the enrolled agent keeps its CA certificates and
 // its own certificate, and how it reacts when the server replaces its CA.
@@ -73,4 +82,48 @@ func (c *agentCredentials) apply(res *policyclient.HeartbeatResult) (trustChange
 	}
 	log.Println("Certificate renewed")
 	return trustChanged
+}
+
+// renewIfExpiring renews the agent certificate when it expires within
+// certRenewThreshold. The renewed certificate is used from the next
+// connection on; the server closes connections daily.
+func (c *agentCredentials) renewIfExpiring() {
+	if c == nil {
+		return
+	}
+	expiring, err := policyclient.CertExpiringSoon(c.paths.CertFile, certRenewThreshold)
+	if err != nil {
+		log.Printf("Warning: could not check certificate expiry: %v", err)
+		return
+	}
+	if !expiring {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.lastRenewal.IsZero() && time.Since(c.lastRenewal) < renewRetryInterval {
+		return
+	}
+	c.lastRenewal = time.Now()
+	log.Println("Certificate expires within 30 days, renewing...")
+	if err := policyclient.RenewCertificate(c.serverAddr, c.paths.CACert, c.paths.CertFile, c.paths.KeyFile); err != nil {
+		log.Printf("Warning: certificate renewal failed: %v - will retry in %s", err, certCheckInterval)
+		return
+	}
+	log.Println("Certificate renewed")
+}
+
+// watchCertExpiry checks the agent certificate every certCheckInterval
+// until ctx ends, so an agent that runs for months renews in time.
+func (c *agentCredentials) watchCertExpiry(ctx context.Context) {
+	ticker := time.NewTicker(certCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.renewIfExpiring()
+		}
+	}
 }

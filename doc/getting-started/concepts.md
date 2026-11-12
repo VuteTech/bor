@@ -227,7 +227,8 @@ See [Users, groups and roles](../user-guide/users-and-roles.md) and the
 
 - Agents authenticate with a client certificate issued by the server's
   internal CA during enrollment. Certificates are valid for 90 days and the
-  agent renews its certificate at startup when it expires within 30 days.
+  agent renews its certificate when it expires within 30 days (checked at
+  startup and every 12 hours).
 - Enrollment tokens are single-use and expire after 5 minutes.
 - Deleting a node revokes its certificate; a revoked agent can no longer
   connect to the policy port.

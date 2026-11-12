@@ -245,7 +245,7 @@ func (h *NodeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	// cannot be reused (the DB record that app-level checks rely on is gone,
 	// but the cert remains cryptographically valid until its 90-day expiry).
 	if h.enrollSvc != nil && node.CertSerial != nil && *node.CertSerial != "" {
-		if err := h.enrollSvc.RevokeCertificate(r.Context(), id, *node.CertSerial, "node deleted"); err != nil {
+		if _, err := h.enrollSvc.RevokeNode(r.Context(), id, "node deleted"); err != nil {
 			log.Printf("Failed to revoke certificate for node %s before delete: %v", id, err) //nolint:gosec // id comes from URL path parameter
 			http.Error(w, `{"error":"failed to revoke node certificate"}`, http.StatusInternalServerError)
 			return
@@ -410,8 +410,8 @@ func (h *NodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // RevokeNodeCertificate handles POST /api/v1/nodes/{id}/revoke.
-// It revokes the current mTLS certificate of the node, preventing it from
-// connecting to the policy gRPC server until a new certificate is issued.
+// It revokes the node's mTLS certificates, preventing it from connecting to
+// the policy gRPC server until it is enrolled again.
 func (h *NodeHandler) RevokeNodeCertificate(w http.ResponseWriter, r *http.Request, nodeID string) {
 	node, ok := h.loadWritableNode(w, r, nodeID, "create")
 	if !ok {
@@ -429,7 +429,9 @@ func (h *NodeHandler) RevokeNodeCertificate(w http.ResponseWriter, r *http.Reque
 	if reason == "" {
 		reason = "manually revoked"
 	}
-	if err := h.enrollSvc.RevokeCertificate(r.Context(), nodeID, *node.CertSerial, reason); err != nil {
+	// Revokes the current certificate and, shortly after a renewal, the one
+	// it replaced. An open policy stream closes within a minute.
+	if _, err := h.enrollSvc.RevokeNode(r.Context(), nodeID, reason); err != nil {
 		log.Printf("Failed to revoke certificate for node %s: %v", nodeID, err) //nolint:gosec // nodeID comes from authenticated request
 		http.Error(w, `{"error":"failed to revoke certificate"}`, http.StatusInternalServerError)
 		return

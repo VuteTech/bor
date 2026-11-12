@@ -107,10 +107,15 @@ BOR_AUDIT_ANONYMIZE_IPS=true
 ```
 
 Restart the server after changing it (`sudo systemctl restart
-bor-server`). It affects new records only. Note that IP addresses are taken
-from `X-Forwarded-For` or `X-Real-IP` when present, so a reverse proxy in
-front of Bor must set those headers for the logged address to be the
-client's.
+bor-server`). It affects new records only, including sign-in and sign-out
+events.
+
+The recorded address is the TCP peer of the request. Behind a reverse
+proxy, list the proxy in `audit.trusted_proxies` (`BOR_TRUSTED_PROXIES`, see
+[Server configuration](../configuration/server.md#audit)); the server then
+takes the client address from the proxy's `X-Forwarded-For` or `X-Real-IP`
+header. Those headers are ignored from any other address, so a client
+cannot choose the address that is logged.
 
 ## Forward to a SIEM over syslog
 

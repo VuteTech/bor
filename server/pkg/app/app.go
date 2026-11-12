@@ -14,11 +14,13 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	osuser "os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -36,6 +38,7 @@ import (
 	"github.com/VuteTech/Bor/server/internal/metrics"
 	"github.com/VuteTech/Bor/server/internal/models"
 	"github.com/VuteTech/Bor/server/internal/pki"
+	"github.com/VuteTech/Bor/server/internal/ratelimit"
 	"github.com/VuteTech/Bor/server/internal/services"
 	"github.com/VuteTech/Bor/server/pkg/edition"
 	"github.com/VuteTech/Bor/server/pkg/ext"
@@ -60,6 +63,12 @@ func grpcHardeningOptions() []grpc.ServerOption {
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    1 * time.Hour,
 			Timeout: 20 * time.Second,
+			// Agents reconnect at least daily, so the TLS handshake (and the
+			// certificate checks with it) happens again: a renewed agent
+			// certificate is taken into use and an expired one cannot keep
+			// an old connection. Open streams get a minute to finish.
+			MaxConnectionAge:      24 * time.Hour,
+			MaxConnectionAgeGrace: time.Minute,
 		}),
 	}
 }
@@ -550,6 +559,10 @@ func Run(opts Options) {
 	// Setup HTTP routes
 	mux := http.NewServeMux()
 
+	// Client IPs in audit records: forwarding headers are believed only from
+	// the configured reverse proxies.
+	api.ConfigureClientIP(cfg.Audit.TrustedProxies, cfg.Audit.AnonymizeIPs)
+
 	// Audit middleware for logging state-changing API calls
 	auditMw := api.AuditMiddleware(auditSvc, cfg.Audit.AnonymizeIPs)
 
@@ -977,8 +990,24 @@ func Run(opts Options) {
 		enrollSrvImpl.WithKerberosService(kerberosvc)
 	}
 
+	// Per-IP throttle on the unauthenticated bootstrap calls and on the
+	// admin-token call, so neither token guessing nor CSR signing can be
+	// driven at line rate. Runs before the certificate check.
+	var enrollLimiter *ratelimit.Limiter
+	if cfg.Security.EnrollRateLimit > 0 {
+		enrollLimiter = ratelimit.New(cfg.Security.EnrollRateLimit, time.Minute)
+	}
+	throttledMethods := map[string]bool{
+		"/bor.enrollment.v1.EnrollmentService/Enroll":                true,
+		"/bor.enrollment.v1.EnrollmentService/KerberosEnroll":        true,
+		"/bor.enrollment.v1.EnrollmentService/CreateEnrollmentToken": true,
+	}
+
 	enrollGrpcSrv := grpc.NewServer(append(grpcHardeningOptions(),
-		grpc.UnaryInterceptor(grpcserver.RequireClientCertInterceptor(exemptMethods, revocationRepo)),
+		grpc.ChainUnaryInterceptor(
+			grpcserver.RateLimitInterceptor(throttledMethods, enrollLimiter),
+			grpcserver.RequireClientCertInterceptor(exemptMethods, revocationRepo),
+		),
 		grpc.StreamInterceptor(grpcserver.RequireClientCertStreamInterceptor(exemptMethods, revocationRepo)),
 	)...)
 	enrollpb.RegisterEnrollmentServiceServer(enrollGrpcSrv, enrollSrvImpl)
@@ -1181,12 +1210,49 @@ func ResetMFA(username string) error {
 		return fmt.Errorf("user %q not found", username)
 	}
 
+	// The reset is recorded before it happens: if the audit log cannot be
+	// written, the reset is refused, so a second factor is never removed
+	// without a trace.
+	auditRepo := database.NewAuditLogRepository(db)
+	if err := auditRepo.Create(ctx, resetMFAAuditEntry(user.Username, "requested")); err != nil {
+		return fmt.Errorf("write audit record (MFA not reset): %w", err)
+	}
+
 	mfaRepo := database.NewMFARepository(db)
-	err = mfaRepo.Delete(ctx, user.ID)
-	if err != nil {
+	if err := mfaRepo.Delete(ctx, user.ID); err != nil {
+		if aerr := auditRepo.Create(ctx, resetMFAAuditEntry(user.Username, "failed")); aerr != nil {
+			log.Printf("reset-mfa: write failure audit record: %v", aerr)
+		}
 		return fmt.Errorf("delete MFA record: %w", err)
+	}
+	if err := auditRepo.Create(ctx, resetMFAAuditEntry(user.Username, "completed")); err != nil {
+		log.Printf("reset-mfa: write completion audit record: %v", err)
 	}
 
 	log.Printf("MFA disabled for user %q (id=%s)", username, user.ID)
 	return nil
+}
+
+// resetMFAAuditEntry builds the audit record for the -reset-mfa command.
+// The actor is the operating system account that ran the command, since no
+// Bor user is signed in.
+func resetMFAAuditEntry(target, stage string) *models.AuditLog {
+	osUser := "unknown"
+	if u, err := osuser.Current(); err == nil && u.Username != "" {
+		osUser = u.Username
+	}
+	host, _ := os.Hostname()
+	details, _ := json.Marshal(map[string]string{
+		"via":     "bor-server -reset-mfa",
+		"stage":   stage,
+		"os_user": osUser,
+		"host":    host,
+	})
+	return &models.AuditLog{
+		Username:     "local:" + osUser,
+		Action:       "auth.mfa.reset",
+		ResourceType: "auth",
+		ResourceID:   target,
+		Details:      string(details),
+	}
 }

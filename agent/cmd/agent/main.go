@@ -466,19 +466,10 @@ To follow the agent logs:
 	agentAddr := cfg.Server.PolicyAddr()
 
 	// ─── Certificate renewal check ────────────────────────────────────
-	// Renew the agent certificate if it expires within 30 days.
-	const renewThreshold = 30 * 24 * time.Hour
-	expiring, expiryErr := policyclient.CertExpiringSoon(paths.CertFile, renewThreshold)
-	if expiryErr != nil {
-		log.Printf("Warning: could not check cert expiry: %v", expiryErr)
-	} else if expiring {
-		log.Println("Certificate expires within 30 days, renewing...")
-		if renewErr := policyclient.RenewCertificate(agentAddr, paths.CACert, paths.CertFile, paths.KeyFile); renewErr != nil {
-			log.Printf("Warning: certificate renewal failed: %v - will retry next cycle", renewErr)
-		}
-	}
-
+	// Renew the agent certificate if it expires within 30 days; a running
+	// agent checks again periodically (watchCertExpiry below).
 	agentCreds = &agentCredentials{serverAddr: agentAddr, paths: paths}
+	agentCreds.renewIfExpiring()
 
 	// ─── Connect with mTLS credentials ────────────────────────────────
 	client, err := policyclient.New(
@@ -506,6 +497,8 @@ To follow the agent logs:
 		log.Printf("Received signal %s, shutting down...", sig)
 		cancel()
 	}()
+
+	go agentCreds.watchCertExpiry(ctx)
 
 	// Start the file watcher to restore managed files if tampered externally.
 	var watcherErr error
@@ -613,6 +606,10 @@ To follow the agent logs:
 
 	log.Println("Bor Agent stopped")
 }
+
+// stableStreamDuration is how long a policy stream must stay up for its end
+// to reset the reconnect backoff.
+const stableStreamDuration = time.Minute
 
 // runStreamingLoop connects to the server's SubscribePolicyUpdates
 // stream and applies policies as they arrive. On stream failure it
@@ -766,6 +763,7 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 		startUpdatesInventoryTicker(ctx, client, cfg)
 
 		var postInitialSync bool
+		streamStart := time.Now()
 		err := client.SubscribePolicyUpdates(ctx, lastRevision,
 			func(updateType string, pi *policyclient.PolicyInfo, revision int64, snapshotComplete bool) {
 				// Don't let targeted server-to-agent commands overwrite the
@@ -781,6 +779,11 @@ func runStreamingLoop(ctx context.Context, client *policyclient.Client, cfg *con
 			return // parent context cancelled - shutting down
 		}
 
+		// A stream that stayed up for a while ended normally (the server
+		// closes connections daily); reconnect quickly.
+		if time.Since(streamStart) >= stableStreamDuration {
+			backoff = time.Second
+		}
 		log.Printf("Policy stream disconnected: %v - reconnecting in %v", err, backoff)
 
 		select {

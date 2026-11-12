@@ -215,7 +215,7 @@ func auditSrcIP(r *http.Request) string {
 	if st := authzFromRequest(r); st != nil && st.gate != nil {
 		return extractAuditIP(r, st.gate.anonymizeIPs)
 	}
-	return extractIP(r)
+	return defaultAuditIP(r)
 }
 
 // writeJSONError writes {"error": msg} with the given status.

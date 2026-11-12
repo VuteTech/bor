@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/VuteTech/Bor/server/internal/database"
@@ -119,28 +120,55 @@ func (s *EnrollmentService) SetNodeCertificate(ctx context.Context, nodeID, seri
 	return s.nodeSvc.UpdateNodeCertificate(ctx, nodeID, serial, notAfter)
 }
 
+// ErrStaleCertificate is returned by RenewCertificate when the node
+// authenticated with a certificate it no longer holds.
+var ErrStaleCertificate = database.ErrStaleCertificate
+
 // RenewCertificate signs a new CSR for an existing node (cert renewal).
-// It replaces the node's cert record and clears any prior revocation for that node.
 // nodeName is the authoritative identity (CN) carried over from the node's
 // existing certificate; it is forced onto the renewed certificate.
-func (s *EnrollmentService) RenewCertificate(ctx context.Context, nodeID, nodeName string, csrPEM []byte) ([]byte, error) {
+// presentedSerial is the certificate the node authenticated with. That
+// certificate stays valid until the node first connects with the new one
+// (ConfirmCertificateInUse), so a lost response can be retried; any
+// certificate it supersedes is revoked. Earlier revocations are kept.
+func (s *EnrollmentService) RenewCertificate(ctx context.Context, nodeID, nodeName, presentedSerial string, csrPEM []byte) ([]byte, error) {
 	certPEM, serial, notAfter, err := pki.SignCSR(csrPEM, s.caCert, s.caKey, nodeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign renewal CSR: %w", err)
 	}
-	if err := s.nodeSvc.UpdateNodeCertificate(ctx, nodeID, serial, notAfter); err != nil {
-		return nil, fmt.Errorf("failed to update node certificate: %w", err)
+	revoked, err := s.revokeRepo.RotateCertificate(ctx, nodeID, presentedSerial, serial, notAfter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record renewed certificate: %w", err)
 	}
-	// Clear any stale revocation so the new cert is accepted.
-	if err := s.revokeRepo.DeleteByNodeID(ctx, nodeID); err != nil {
-		return nil, fmt.Errorf("failed to clear revocations: %w", err)
+	for _, r := range revoked {
+		log.Printf("Revoked superseded certificate %s of node %s", r, nodeName)
 	}
 	return certPEM, nil
 }
 
-// RevokeCertificate revokes the certificate of a node by serial number.
-func (s *EnrollmentService) RevokeCertificate(ctx context.Context, nodeID, serial, reason string) error {
-	return s.revokeRepo.Revoke(ctx, nodeID, serial, reason)
+// ConfirmCertificateInUse is called when a node connects with the
+// certificate presentedSerial. Once the renewed certificate is in use, the
+// one it replaced is revoked.
+func (s *EnrollmentService) ConfirmCertificateInUse(ctx context.Context, nodeID, presentedSerial string) error {
+	revoked, err := s.revokeRepo.ConfirmCertificateInUse(ctx, nodeID, presentedSerial)
+	if err != nil {
+		return err
+	}
+	if revoked != "" {
+		log.Printf("Node %s connected with its renewed certificate; revoked the previous certificate %s", nodeID, revoked)
+	}
+	return nil
+}
+
+// IsRevoked reports whether the certificate serial has been revoked.
+func (s *EnrollmentService) IsRevoked(ctx context.Context, serial string) (bool, error) {
+	return s.revokeRepo.IsRevoked(ctx, serial)
+}
+
+// RevokeNode revokes every certificate the node holds: the current one and,
+// shortly after a renewal, the one it replaced. It returns the serials.
+func (s *EnrollmentService) RevokeNode(ctx context.Context, nodeID, reason string) ([]string, error) {
+	return s.revokeRepo.RevokeNode(ctx, nodeID, reason)
 }
 
 // CreateNodeOnEnroll creates a Node record in the database for a newly

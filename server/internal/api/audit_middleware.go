@@ -10,7 +10,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
+	"sync/atomic"
 
 	"github.com/VuteTech/Bor/server/internal/services"
 	auditpb "github.com/VuteTech/Bor/server/pkg/grpc/audit"
@@ -209,41 +211,110 @@ func parseResourceFromPath(path string) (resource, action string) {
 	return resourceType, resourceID
 }
 
+// clientIPPolicy is the deployment's policy for recording client IPs,
+// set once at startup by ConfigureClientIP.
+type clientIPPolicy struct {
+	trustedProxies []netip.Prefix
+	anonymize      bool
+}
+
+var ipPolicy atomic.Pointer[clientIPPolicy]
+
+// ConfigureClientIP sets which reverse proxies are trusted to report the
+// client address in X-Forwarded-For / X-Real-IP, and whether audit records
+// anonymize IPs by default. Requests from any other peer are recorded with
+// their TCP peer address, so a client cannot choose the IP that is audited.
+func ConfigureClientIP(trustedProxies []netip.Prefix, anonymize bool) {
+	ipPolicy.Store(&clientIPPolicy{
+		trustedProxies: append([]netip.Prefix(nil), trustedProxies...),
+		anonymize:      anonymize,
+	})
+}
+
+func currentIPPolicy() *clientIPPolicy {
+	if p := ipPolicy.Load(); p != nil {
+		return p
+	}
+	return &clientIPPolicy{}
+}
+
+func (p *clientIPPolicy) trusted(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	for _, pfx := range p.trustedProxies {
+		if pfx.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
 // AuditClientIP returns the client IP for an audit record, anonymized when
 // anonymize is set (GDPR). Used by server extensions.
 func AuditClientIP(r *http.Request, anonymize bool) string {
 	return extractAuditIP(r, anonymize)
 }
 
+// defaultAuditIP returns the client IP for an audit record, anonymized when
+// the deployment enables BOR_AUDIT_ANONYMIZE_IPS.
+func defaultAuditIP(r *http.Request) string {
+	return extractAuditIP(r, currentIPPolicy().anonymize)
+}
+
 // extractAuditIP extracts the client IP, optionally anonymizing it for GDPR.
 func extractAuditIP(r *http.Request, anonymize bool) string {
 	ip := extractIP(r)
-	if anonymize {
+	if anonymize || currentIPPolicy().anonymize {
 		return anonymizeIP(ip)
 	}
 	return ip
 }
 
-// extractIP extracts the client IP address from the request.
+// extractIP returns the client IP address of the request. Forwarding
+// headers are honoured only when the TCP peer is a configured trusted proxy;
+// X-Forwarded-For is then walked from the right, skipping trusted hops, so
+// the first address not added by our own proxies is the one recorded.
 func extractIP(r *http.Request) string {
-	// Check X-Forwarded-For first (behind proxy)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
+	peer := peerIP(r.RemoteAddr)
+	pol := currentIPPolicy()
+	peerAddr, err := netip.ParseAddr(peer)
+	if err != nil || !pol.trusted(peerAddr) {
+		return peer
 	}
 
-	// Check X-Real-IP
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+		hops := strings.Split(strings.Join(xff, ","), ",")
+		leftmost := ""
+		for i := len(hops) - 1; i >= 0; i-- {
+			hop := strings.TrimSpace(hops[i])
+			a, perr := netip.ParseAddr(hop)
+			if perr != nil {
+				// A malformed hop means the chain beyond it cannot be trusted.
+				break
+			}
+			leftmost = a.Unmap().String()
+			if !pol.trusted(a) {
+				return leftmost
+			}
+		}
+		if leftmost != "" {
+			return leftmost
+		}
 	}
 
-	// Fall back to RemoteAddr
-	addr := r.RemoteAddr
-	// Remove port if present
-	if idx := strings.LastIndex(addr, ":"); idx != -1 {
-		return addr[:idx]
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+		if a, perr := netip.ParseAddr(xri); perr == nil {
+			return a.Unmap().String()
+		}
 	}
-	return addr
+	return peer
+}
+
+// peerIP strips the port from an http.Request RemoteAddr.
+func peerIP(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
 }
 
 // anonymizeIP truncates an IP address for GDPR data minimization:

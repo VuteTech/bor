@@ -496,27 +496,45 @@ The agent stores the key, certificate and CA certificate in
 
 ### Renewal
 
-When the agent starts and its certificate expires within **30 days**, it
-generates a new key pair, requests a new certificate over the existing
-mutual TLS connection on port 8444, and replaces the files on disk. No
-token and no administrator action are needed. If renewal fails, the agent
-logs `certificate renewal failed` and tries again at its next start.
+The agent checks its certificate when it starts and every 12 hours while
+it runs. When the certificate expires within **30 days**, the agent
+generates a new key pair, requests a new certificate over mutual TLS on
+port 8444, and replaces the files on disk. No token and no administrator
+action are needed. If renewal fails, the agent logs `certificate renewal
+failed` and tries again at the next check.
 
-Because the check runs at agent start, an endpoint whose agent runs
-without interruption for more than 60 days only renews at its next restart
-(a reboot or a package upgrade restarts it). If a certificate expires, the
-agent can no longer connect and must be re-enrolled with a new token.
+The agent uses the new certificate from its next connection on. The server
+closes every agent connection after at most 24 hours (open streams get a
+minute to finish), so a renewed certificate is in use within a day, and an
+expired certificate cannot keep an old connection open.
+
+Until the agent connects with the new certificate, the previous one stays
+valid, so an agent that lost the server's answer can renew again. The
+first connection with the new certificate revokes the previous one
+(reason `superseded by renewal`). A certificate that was already replaced
+cannot be renewed.
+
+If a certificate expires anyway (for example the machine was switched off
+for months), the agent can no longer connect and must be re-enrolled with a
+new token.
 
 ### Revocation
 
 Bor keeps its own revocation list in the database instead of CRLs or OCSP.
 Every call on the policy port, and every authenticated call on the
-enrollment port, checks it, so a revocation takes effect on the agent's
-next connection. A certificate is revoked when:
+enrollment port, checks it. An open policy stream checks it again every
+minute and closes when its certificate is revoked or has expired. A
+certificate is revoked when:
 
 - you click **Revoke Certificate** on a node in **Nodes**, or
-- you **Decommission** (delete) a node: its certificate is revoked before
-  the record is removed.
+- you **Decommission** (delete) a node: its certificates are revoked before
+  the record is removed, or
+- the agent connects with a renewed certificate: the one it replaced is
+  revoked.
+
+Revoking or decommissioning a node revokes both its current certificate
+and, shortly after a renewal, the previous one. Renewal never clears a
+revocation.
 
 A revoked agent must be re-enrolled with a new token. See
 [Nodes](../user-guide/nodes.md).

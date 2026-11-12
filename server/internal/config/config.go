@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -95,6 +96,10 @@ type AuditConfig struct {
 	Syslog        SyslogConfig
 	RetentionDays int  // BOR_AUDIT_RETENTION_DAYS – purge audit logs older than N days (default 365; 0 disables)
 	AnonymizeIPs  bool // BOR_AUDIT_ANONYMIZE_IPS – truncate IPs to /24 (v4) or /48 (v6) before storing
+	// TrustedProxies lists the reverse proxies whose X-Forwarded-For and
+	// X-Real-IP headers are believed when recording a client IP. A request
+	// from any other peer is recorded with its TCP peer address.
+	TrustedProxies []netip.Prefix // BOR_TRUSTED_PROXIES - comma-separated IPs or CIDRs (default: none)
 }
 
 // SyslogConfig holds configuration for the syslog audit sink.
@@ -219,6 +224,9 @@ type SecurityConfig struct {
 	TLSKeyFile      string
 	AdminToken      string // BOR_ADMIN_TOKEN – static admin token for gRPC enrollment calls
 	AdminPassword   string // BOR_ADMIN_PASSWORD – initial admin password (used once on first startup when no users exist)
+	// EnrollRateLimit caps Enroll, KerberosEnroll and CreateEnrollmentToken
+	// calls per client IP per minute. 0 disables the limit.
+	EnrollRateLimit int // BOR_ENROLL_RATE_LIMIT, default 60
 }
 
 // TLSConfig holds UI HTTPS TLS configuration.
@@ -366,6 +374,7 @@ type fileConfig struct {
 		RefreshLifetime string `yaml:"refresh_lifetime"`
 		AdminToken      string `yaml:"admin_token"`
 		AdminPassword   string `yaml:"admin_password"`
+		EnrollRateLimit *int   `yaml:"enroll_rate_limit"`
 	} `yaml:"security"`
 	TLS struct {
 		CertFile   string `yaml:"cert_file"`
@@ -457,8 +466,9 @@ type fileConfig struct {
 		HTTPPort     int      `yaml:"http_port"`
 	} `yaml:"acme"`
 	Audit struct {
-		RetentionDays int `yaml:"retention_days"`
-		Syslog        struct {
+		RetentionDays  int      `yaml:"retention_days"`
+		TrustedProxies []string `yaml:"trusted_proxies"`
+		Syslog         struct {
 			Enabled   bool   `yaml:"enabled"`
 			Network   string `yaml:"network"`
 			Addr      string `yaml:"addr"`
@@ -623,6 +633,27 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid BOR_AUDIT_RETENTION_DAYS: %w", err)
 	}
+	enrollRateLimit := 60
+	if fc.Security.EnrollRateLimit != nil {
+		enrollRateLimit = *fc.Security.EnrollRateLimit
+	}
+	if env := os.Getenv("BOR_ENROLL_RATE_LIMIT"); env != "" {
+		if enrollRateLimit, err = strconv.Atoi(env); err != nil {
+			return nil, fmt.Errorf("invalid BOR_ENROLL_RATE_LIMIT: %w", err)
+		}
+	}
+	if enrollRateLimit < 0 {
+		return nil, fmt.Errorf("invalid BOR_ENROLL_RATE_LIMIT: must be >= 0")
+	}
+
+	trustedProxyList := fc.Audit.TrustedProxies
+	if env := os.Getenv("BOR_TRUSTED_PROXIES"); env != "" {
+		trustedProxyList = splitComma(env)
+	}
+	trustedProxies, err := parsePrefixes(trustedProxyList)
+	if err != nil {
+		return nil, fmt.Errorf("invalid BOR_TRUSTED_PROXIES: %w", err)
+	}
 
 	// ─── JWT lifetimes ────────────────────────────────────────────────────
 	jwtLifetimeStr := getEnv("BOR_JWT_LIFETIME", fc.Security.JWTLifetime)
@@ -709,6 +740,7 @@ func Load() (*Config, error) {
 			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
 			AdminToken:      getEnv("BOR_ADMIN_TOKEN", fc.Security.AdminToken),
 			AdminPassword:   getEnv("BOR_ADMIN_PASSWORD", fc.Security.AdminPassword),
+			EnrollRateLimit: enrollRateLimit,
 		},
 		TLS: TLSConfig{
 			CertFile:   tlsCertFile,
@@ -800,8 +832,9 @@ func Load() (*Config, error) {
 			HTTPPort:     acmeHTTPPort,
 		},
 		Audit: AuditConfig{
-			RetentionDays: auditRetentionDays,
-			AnonymizeIPs:  getEnvBool("BOR_AUDIT_ANONYMIZE_IPS", false),
+			RetentionDays:  auditRetentionDays,
+			AnonymizeIPs:   getEnvBool("BOR_AUDIT_ANONYMIZE_IPS", false),
+			TrustedProxies: trustedProxies,
 			Syslog: SyslogConfig{
 				Enabled:   syslogEnabled,
 				Network:   syslogNetwork,
@@ -951,6 +984,33 @@ func splitComma(s string) []string {
 		}
 	}
 	return out
+}
+
+// parsePrefixes parses IP addresses and CIDR prefixes. A bare address
+// becomes a single-host prefix.
+func parsePrefixes(items []string) ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if strings.Contains(item, "/") {
+			p, err := netip.ParsePrefix(item)
+			if err != nil {
+				return nil, fmt.Errorf("%q: %w", item, err)
+			}
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(item)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", item, err)
+		}
+		a = a.Unmap()
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
 }
 
 // parseGroupRoleMap parses a string like "Domain Admins=Super Admin,IT Staff=Org Admin"

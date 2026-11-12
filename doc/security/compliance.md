@@ -95,7 +95,7 @@ syslog) set a minimum of TLS 1.2 and otherwise use Go defaults.
 | Internal CA certified by an external authority (`bor-server ca csr` / `ca import`) | Key generated on the server or the token, ECDSA P-384 | Set by the external authority | Set by the external authority. Replaced in place when key and subject are kept; client certificates are verified against the Bor signing certificate only. | `pki` |
 | Internal CA in an HSM (PKCS#11, optional build) | ECDSA P-384 generated on the token | ECDSA with SHA-384 | 10 years by default (`ca.lifetime`) | `pki` (`pkcs11` build tag) |
 | Server certificate (`ui.crt` in `tls.autogen_dir`) | ECDSA P-256, `digitalSignature` key usage, `serverAuth` EKU | Signed by the CA (ECDSA with SHA-384) | 1 year. Regenerated at server start when it no longer verifies against the CA (including when expired) or when required host names are missing. | `pki` |
-| Agent client certificate | ECDSA P-256 key generated on the endpoint, `digitalSignature` key usage, `clientAuth` EKU | Signed by the CA (ECDSA with SHA-384) | 90 days. The agent requests renewal (new key pair, new CSR over mTLS) when it starts and the certificate expires within 30 days. | `pki`, `policyclient` |
+| Agent client certificate | ECDSA P-256 key generated on the endpoint, `digitalSignature` key usage, `clientAuth` EKU | Signed by the CA (ECDSA with SHA-384) | 90 days. The agent requests renewal (new key pair, new CSR over mTLS) when the certificate expires within 30 days, checked at start and every 12 hours. The replaced certificate is revoked once the new one is in use. | `pki`, `policyclient` |
 | Certificate serial numbers | 128-bit random from `crypto/rand` | - | - | `pki` |
 | CSR policy | The CA rejects RSA keys below 3072 bits and ECDSA curves other than P-256, P-384, P-521; Ed25519 is accepted; the CSR signature is verified. | - | - | `pki` |
 | ACME certificate (web port only) | ECDSA P-256 requested by default; RSA 2048 for clients that do not support ECDSA (behavior of the `golang.org/x/crypto/acme/autocert` library) | Issued by the ACME CA | Renewed automatically by the library | `pki` |
@@ -104,8 +104,12 @@ syslog) set a minimum of TLS 1.2 and otherwise use Go defaults.
 serial numbers are stored in the `revoked_certificates` table. Every gRPC
 call and every new stream on both ports passes an interceptor that requires a
 verified client certificate (except the two enrollment calls) and rejects the
-call if the serial number is revoked. **Revoke Certificate** and
-**Decommission** on the **Nodes** page write that record; see
+call if the serial number is revoked. An open policy stream re-checks its
+certificate every minute and closes when it is revoked or expired, and the
+policy port closes every connection after at most 24 hours.
+**Revoke Certificate** and **Decommission** on the **Nodes** page revoke the
+node's current and previous certificates; a renewal revokes the certificate
+it replaces once the new one is in use. See
 [TLS and certificates](../configuration/tls.md).
 
 **PKCS#11.** HSM support for the CA key is compiled only with the `pkcs11`
@@ -150,7 +154,7 @@ See [Multi-factor authentication](../configuration/mfa.md) for setup.
 |---|---|---|
 | Enrollment token | 256 bits from `crypto/rand`, hex-encoded; only its SHA-256 hash is stored; valid 5 minutes; consumed by the first enrollment attempt whether it succeeds or not; bound to one node group | `services` |
 | Admin token for the token-creation RPC | `security.admin_token`; compared in constant time; RPC disabled when empty | `grpc` |
-| Kerberos enrollment | SPNEGO / Kerberos AP-REQ validated with the server's service keytab (`gokrb5` library). Bor does not restrict encryption types: they are those of the keytab and the KDC. Create the keytab with AES encryption types only. | `services` |
+| Kerberos enrollment | SPNEGO / Kerberos AP-REQ validated with the server's service keytab (`gokrb5` library). Only machine principals (`host/<fqdn>`, `<NAME>$`) of `kerberos.realm` are accepted, and the node name must belong to the principal. Bor does not restrict encryption types: they are those of the keytab and the KDC. Create the keytab with AES encryption types only. | `services` |
 
 See [Kerberos](../configuration/kerberos.md).
 
@@ -292,7 +296,7 @@ Bor does not do or only partly does.
 | (e) Vulnerability handling and disclosure | Private disclosure channel (see [Vulnerability reporting](#vulnerability-reporting)) | Subscribe to GitHub releases | No published CVE / advisory feed |
 | (h) Cryptography and encryption | See [Cryptographic inventory](#cryptographic-inventory) | Enable FIPS mode if required; use TLS for PostgreSQL and LDAP | Database at-rest encryption is the operator's responsibility |
 | (i) Access control and asset management | RBAC with granular permissions; node inventory; certificate-based agent identity; revocation | Assign least-privilege roles ([Permissions](../reference/permissions.md)) | Node-group-scoped roles are not available in the community edition |
-| (j) Multi-factor authentication | TOTP and WebAuthn, global enforcement, step-up for recovery-key reveals | Turn on **Require MFA for all users** ([Hardening guide](hardening.md#enforce-multi-factor-authentication)) | MFA is off by default; `bor-server --reset-mfa` bypasses the audit log |
+| (j) Multi-factor authentication | TOTP and WebAuthn, global enforcement, step-up for recovery-key reveals | Turn on **Require MFA for all users** ([Hardening guide](hardening.md#enforce-multi-factor-authentication)) | MFA is off by default |
 
 ### EU Cybersecurity Act / EUCC
 
@@ -382,8 +386,11 @@ over TCP with `sslmode: disable`. For PostgreSQL over TCP use
 | Integrity | None built in. Anyone with write access to the database can change or delete records, and retention purges them. For tamper evidence, forward events in real time to a SIEM or write-once store. |
 
 Not recorded in the audit log: read-only (`GET`) requests other than those
-listed, failed (non-`2xx`) change requests other than permission denials, and
-`bor-server --reset-mfa` (it runs outside the server process).
+listed, and failed (non-`2xx`) change requests other than permission
+denials. `bor-server --reset-mfa` writes `auth.mfa.reset` records directly
+to the database (actor `local:<operating system user>`); it refuses to reset
+MFA when it cannot write them. These records are not forwarded to syslog,
+because the command runs outside the server process.
 
 Usage, filters, retention and syslog configuration:
 [Audit log](../user-guide/audit-log.md).
@@ -413,20 +420,15 @@ risk assessment.
 
 | Area | Limitation | Mitigation |
 |---|---|---|
-| Agent certificate renewal | The agent checks its certificate only when the service starts. An agent that runs for more than 60 days without a restart lets its certificate expire, after which the node must be re-enrolled. | Restart agents or reboot endpoints regularly; alert on `bor_node_certificate_expiry_seconds` ([Monitoring](../operations/monitoring.md)). |
 | Server certificate renewal | The internally issued server certificate (1 year) is regenerated only at server start. | Restart the server at least yearly, or use your own certificate or ACME for the web port. |
-| Revocation of open streams | Revocation is checked when a call or stream starts. A policy stream that is already open is not closed when its certificate is revoked. | Restart the server or wait for the agent to reconnect. |
-| Renewed certificates | On renewal the previous certificate is not revoked and stays valid until it expires (up to 30 days). Revoking a node from the UI revokes only the current serial, and a successful renewal clears the node's revocation records. | After revoking a node that renewed recently, **Decommission** it instead, which deletes the node record so its other certificates can no longer renew or stream. |
-| Kerberos enrollment | The node name sent by the agent is not checked against the Kerberos principal, and the principal's realm is not compared with `kerberos.realm`. Any principal that can obtain a ticket for the service can enroll a new node into the default node group. | Restrict which principals can get service tickets; review new nodes; use token enrollment where this matters. |
-| Audit source IP | The audit log takes the client IP from `X-Forwarded-For` or `X-Real-IP` when present, without checking for a trusted proxy, so a client can set it. Rate limiting uses the TCP peer address and is not affected. | Treat audit IP addresses as informational, or strip these headers at a trusted reverse proxy. |
-| IP anonymization coverage | `BOR_AUDIT_ANONYMIZE_IPS` does not apply to sign-in and logout events. | Account for this in your records of processing. |
+| Revocation of open streams | An open policy stream notices a revocation at its next check, up to one minute later. | None needed for most uses; decommission the node for the same effect plus removal of the record. |
+| Kerberos enrollment | Any machine account of the realm that can obtain a ticket for the Bor service principal can enroll itself into the default node group. | Restrict which principals can get service tickets; keep the default group free of sensitive policies; review new nodes. |
 | Audit log integrity | No hash chain or signatures. | Forward events to a SIEM in real time. |
 | Compliance report integrity (Bor Enterprise) | A report's SHA-256 is re-checked and its signature verified on every open, but anyone with write access to the database can replace a bundle together with its hash; only the signature, the forwarded audit event and downloaded copies survive that. | Forward the audit log (the `report.generate` event carries the hash) to a SIEM or write-once store; keep downloaded bundles and signatures outside the server and verify them with `bor-verify`. |
 | Backup codes | Hashed with bcrypt at cost 10 (not a FIPS-approved algorithm); 40 bits of entropy per code. | Rate limiting applies to the sign-in endpoints. |
 | `BOR_MFA_SECRET` | No minimum length is enforced; when unset, `jwt_secret` is used, so changing `jwt_secret` breaks existing TOTP enrollments. | Set a dedicated 32-byte random value before users enroll. |
 | WebAuthn | No attestation, user verification only preferred. | Combine with a password (always required) and enforce MFA. |
-| CSRF and metrics token comparison | Compared with ordinary string comparison rather than constant-time comparison. | Low risk; keep the metrics listener on loopback. |
 | Rate limiting behind a proxy | All clients behind a reverse proxy share the proxy's address for rate limiting. | Prefer direct TLS to the web port. |
 | PKCS#11 | Not included in packaged binaries; escrow KEK in an HSM not implemented. | Build with `make server-pkcs11` if you need an HSM for the CA. |
 | Database at rest | Bor does not encrypt PostgreSQL data or backups. | Use encrypted storage and encrypted backups. |
-| MFA reset | `bor-server --reset-mfa` is not written to the audit log. | Record its use in your change log. |
+| MFA reset | `bor-server --reset-mfa` writes its audit records to the database only; they are not forwarded to syslog. | Record its use in your change log as well. |

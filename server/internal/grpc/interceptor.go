@@ -6,6 +6,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/x509"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -95,6 +96,20 @@ func verifyClientCert(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// verifiedClientCert returns the verified TLS client certificate of the
+// call.
+func verifiedClientCert(ctx context.Context) (*x509.Certificate, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.Unauthenticated, "no peer info")
+	}
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.VerifiedChains) == 0 {
+		return nil, status.Errorf(codes.Unauthenticated, "no verified client certificate")
+	}
+	return tlsInfo.State.VerifiedChains[0][0], nil
 }
 
 // extractCertSerial extracts the serial number (as a lowercase hex string) from

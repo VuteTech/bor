@@ -139,10 +139,12 @@ func (s *EnrollmentServer) KerberosEnroll(ctx context.Context, req *pb.KerberosE
 			"kerberos_default_node_group not configured; cannot place agent into a node group")
 	}
 
-	nodeName := req.GetNodeName()
-	if nodeName == "" {
-		// Fall back to the hostname embedded in the Kerberos principal.
-		nodeName = services.PrincipalToHostname(principal)
+	// The node name is bound to the machine account that authenticated, so
+	// one host's keytab cannot enroll under another host's name.
+	nodeName, err := services.KerberosNodeName(principal, req.GetNodeName())
+	if err != nil {
+		log.Printf("Kerberos enrollment refused: %v", err)
+		return nil, status.Errorf(codes.PermissionDenied, "%v", err)
 	}
 
 	// CN forced to the server-assigned node name — see EnrollmentService.SignCSR.

@@ -178,6 +178,7 @@ Web UI sessions and bootstrap credentials.
 | `security.jwt_lifetime` | `BOR_JWT_LIFETIME` | `1h` | Lifetime of the access token. |
 | `security.refresh_lifetime` | `BOR_REFRESH_LIFETIME` | `24h` | Lifetime of the refresh token, kept in an HTTP-only cookie. A user must sign in again after this time. |
 | `security.admin_token` | `BOR_ADMIN_TOKEN` | `""` | Static token that authorizes the `CreateEnrollmentToken` gRPC call (header `x-admin-token`) on the enrollment port, for scripted token creation. Empty disables that call. Enrollment tokens created in the web UI do not need it. |
+| `security.enroll_rate_limit` | `BOR_ENROLL_RATE_LIMIT` | `60` | Most `Enroll`, `KerberosEnroll` and `CreateEnrollmentToken` calls accepted per client IP address per minute on the enrollment port. Further calls fail with `ResourceExhausted` until the minute is over. Raise it when many machines enroll at once from behind one NAT address; `0` turns the limit off. |
 | `security.admin_password` | `BOR_ADMIN_PASSWORD` | `""` | Password for the initial `admin` account. Used only when the user table is empty, that is on the very first start. The package writes a random value here at install time. Once you have signed in and changed the password, remove the value from the file. |
 
 ```yaml
@@ -322,7 +323,8 @@ log](../user-guide/audit-log.md).
 | YAML key | Environment variable | Default | Description |
 |----------|----------------------|---------|-------------|
 | `audit.retention_days` | `BOR_AUDIT_RETENTION_DAYS` | `365` | Audit records older than this are purged. `0` keeps them forever. |
-| (none) | `BOR_AUDIT_ANONYMIZE_IPS` | `false` | Store client IP addresses truncated to /24 (IPv4) or /48 (IPv6). Environment variable only: an `anonymize_ips` key in `server.yaml` is ignored. |
+| (none) | `BOR_AUDIT_ANONYMIZE_IPS` | `false` | Store client IP addresses truncated to /24 (IPv4) or /48 (IPv6), in every audit record including sign-in and sign-out. Environment variable only: an `anonymize_ips` key in `server.yaml` is ignored. |
+| `audit.trusted_proxies` | `BOR_TRUSTED_PROXIES` | empty | Reverse proxies (IP addresses or CIDR ranges; comma-separated in the environment variable) whose `X-Forwarded-For` and `X-Real-IP` headers are believed when the audit log records a client IP. Requests from any other address are recorded with their TCP peer address, and the headers are ignored. Rate limiting always uses the peer address. |
 | `audit.syslog.enabled` | `BOR_AUDIT_SYSLOG_ENABLED` | `false` | Also send every audit event to a syslog receiver. |
 | `audit.syslog.network` | `BOR_AUDIT_SYSLOG_NETWORK` | `udp` | `udp`, `tcp` or `tcp+tls`. |
 | `audit.syslog.addr` | `BOR_AUDIT_SYSLOG_ADDR` | `localhost:514` | `host:port` of the receiver. |

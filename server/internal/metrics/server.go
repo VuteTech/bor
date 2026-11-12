@@ -5,6 +5,7 @@
 package metrics
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"strings"
@@ -66,10 +67,12 @@ func NewServer(addr, bearerToken string, ext []prometheus.Collector, cs ...prome
 
 // bearerTokenMiddleware rejects requests that do not carry a valid Bearer token.
 func bearerTokenMiddleware(token string, next http.Handler) http.Handler {
-	expected := "Bearer " + token
+	expected := []byte(token)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
-		if !strings.EqualFold(auth[:min(len(auth), 7)], "bearer ") || auth != expected {
+		const prefix = "bearer "
+		if len(auth) < len(prefix) || !strings.EqualFold(auth[:len(prefix)], prefix) ||
+			subtle.ConstantTimeCompare([]byte(auth[len(prefix):]), expected) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
