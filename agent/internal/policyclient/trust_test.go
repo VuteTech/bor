@@ -25,6 +25,7 @@ import (
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 )
@@ -156,6 +157,20 @@ func heartbeat(c *Client, sha string) (*HeartbeatResult, error) {
 	return c.Heartbeat(ctx, &NodeInfo{FQDN: "node-1"}, sha)
 }
 
+// waitDisconnected returns once the client has noticed that its server
+// went away. An RPC sent before that goes out on the dead connection and
+// fails with Unavailable instead of dialling the restarted server.
+func waitDisconnected(t *testing.T, c *Client) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for state := c.conn.GetState(); state == connectivity.Ready; state = c.conn.GetState() {
+		if !c.conn.WaitForStateChange(ctx, state) {
+			t.Fatal("the client did not notice the server restart")
+		}
+	}
+}
+
 func pool(cas ...*testAuthority) *x509.CertPool {
 	p := x509.NewCertPool()
 	for _, ca := range cas {
@@ -189,6 +204,13 @@ func TestClient_FollowsCAReplacement(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	defer func() { _ = client.Close() }()
+	// restart replaces the server on the same address.
+	restart := func(ca *testAuthority, clientCAs *x509.CertPool) {
+		t.Helper()
+		stop()
+		waitDisconnected(t, client)
+		_, stop = serve(t, addr, ca, clientCAs, impl)
+	}
 
 	sha := TrustBundleSHA256(caPath)
 	if _, err = heartbeat(client, sha); err != nil {
@@ -229,8 +251,7 @@ func TestClient_FollowsCAReplacement(t *testing.T) {
 
 	// The server restarts on the new CA and still accepts the old CA's
 	// client certificates.
-	stop()
-	_, stop = serve(t, addr, newCA, pool(oldCA, newCA), impl)
+	restart(newCA, pool(oldCA, newCA))
 	if _, err = heartbeat(client, TrustBundleSHA256(caPath)); err != nil {
 		t.Fatalf("heartbeat to the new CA's server with the same client: %v", err)
 	}
@@ -239,8 +260,7 @@ func TestClient_FollowsCAReplacement(t *testing.T) {
 	certPEM, keyPEM = newCA.issue(t, "node-1-renewed", x509.ExtKeyUsageClientAuth)
 	write(keyPath, keyPEM)
 	write(certPath, certPEM)
-	stop()
-	_, stop = serve(t, addr, newCA, pool(newCA), impl) // the old CA is retired
+	restart(newCA, pool(newCA)) // the old CA is retired
 	if _, err = heartbeat(client, TrustBundleSHA256(caPath)); err != nil {
 		t.Fatalf("heartbeat with the renewed certificate: %v", err)
 	}
@@ -250,14 +270,12 @@ func TestClient_FollowsCAReplacement(t *testing.T) {
 
 	// A server of a CA the agent was never given is rejected, and so is
 	// the old CA once the agent no longer trusts it.
-	stop()
-	_, stop = serve(t, addr, rogueCA, pool(newCA), impl)
+	restart(rogueCA, pool(newCA))
 	if _, err = heartbeat(client, ""); err == nil {
 		t.Error("the agent accepted a server of a CA it does not trust")
 	}
 	write(caPath, newCA.pem())
-	stop()
-	_, stop = serve(t, addr, oldCA, pool(newCA), impl)
+	restart(oldCA, pool(newCA))
 	defer stop()
 	if _, err = heartbeat(client, ""); err == nil {
 		t.Error("the agent accepted a server of the CA it stopped trusting")
