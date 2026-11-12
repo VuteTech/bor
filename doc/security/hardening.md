@@ -413,6 +413,15 @@ calls the server.
   certificate's common name and rejects requests whose claimed client ID does
   not match.
 
+Keep `ca.agent_trust` at its default `signing` when the Bor CA is a
+subordinate of your organization's PKI. With `chain`, agents accept a server
+certificate from **any** certificate authority under your root, and a server
+that agents trust delivers policies that are applied as `root`: one
+mis-issued certificate anywhere in that PKI is enough to take over every
+managed machine. Use `chain` only with a root that is dedicated to Bor or
+constrained so that no other CA can issue for the Bor server names. See
+[What agents trust](../configuration/tls.md#what-agents-trust).
+
 Do not leave `insecure_skip_verify: true` in agent configurations as a habit.
 It only affects enrollment (after enrollment the agent always verifies the
 server against its stored CA), but during enrollment it means the agent will

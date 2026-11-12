@@ -801,3 +801,92 @@ func (r *NodeRepository) ListGroupIDs(ctx context.Context, nodeID string) ([]str
 	}
 	return ids, rows.Err()
 }
+
+// NodeCATrust is what a node holds of the server's certificate authority.
+type NodeCATrust struct {
+	// TrustBundleSHA256 identifies the CA certificates the agent trusts.
+	TrustBundleSHA256 string
+	// CertIssuerSHA256 identifies the CA that issued the node's certificate.
+	CertIssuerSHA256 string
+}
+
+// GetCATrust returns what the node holds of the server's CA.
+func (r *NodeRepository) GetCATrust(ctx context.Context, nodeID string) (NodeCATrust, error) {
+	var t NodeCATrust
+	err := r.db.QueryRowContext(ctx,
+		`SELECT trust_bundle_sha256, cert_issuer_sha256 FROM nodes WHERE id = $1`, nodeID).
+		Scan(&t.TrustBundleSHA256, &t.CertIssuerSHA256)
+	if err != nil {
+		return t, fmt.Errorf("failed to read node CA trust: %w", err)
+	}
+	return t, nil
+}
+
+// SetTrustBundle records the CA certificates an agent reports to trust.
+func (r *NodeRepository) SetTrustBundle(ctx context.Context, nodeID, sha string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE nodes SET trust_bundle_sha256 = $1 WHERE id = $2 AND trust_bundle_sha256 <> $1`, sha, nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to record node trust bundle: %w", err)
+	}
+	return nil
+}
+
+// SetCertIssuer records the CA that issued the node's certificate.
+func (r *NodeRepository) SetCertIssuer(ctx context.Context, nodeID, issuer string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE nodes SET cert_issuer_sha256 = $1 WHERE id = $2 AND cert_issuer_sha256 <> $1`, issuer, nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to record node certificate issuer: %w", err)
+	}
+	return nil
+}
+
+// CATrustStats counts nodes by what they hold of the server's CA. Nodes
+// whose certificate is revoked are left out: they cannot connect.
+type CATrustStats struct {
+	// Nodes is the number of nodes that can connect.
+	Nodes int
+	// HoldingBundle of them trust exactly the given CA certificates.
+	HoldingBundle int
+	// NeverReported of them have not reported what they trust.
+	NeverReported int
+	// OtherIssuer of them hold a certificate issued by a CA other than the
+	// given one.
+	OtherIssuer int
+	// Lagging names up to 20 nodes that do not hold the bundle, most
+	// recently seen first.
+	Lagging []string
+}
+
+// CATrustStats counts nodes against the trust bundle and issuing CA given.
+func (r *NodeRepository) CATrustStats(ctx context.Context, bundleSHA, issuer string) (*CATrustStats, error) {
+	const active = `NOT EXISTS (SELECT 1 FROM revoked_certificates rc WHERE rc.node_id = n.id)`
+	st := &CATrustStats{}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE n.trust_bundle_sha256 = $1),
+		       COUNT(*) FILTER (WHERE n.trust_bundle_sha256 = ''),
+		       COUNT(*) FILTER (WHERE n.cert_issuer_sha256 <> '' AND n.cert_issuer_sha256 <> $2)
+		FROM nodes n WHERE `+active, bundleSHA, issuer).
+		Scan(&st.Nodes, &st.HoldingBundle, &st.NeverReported, &st.OtherIssuer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count node CA trust: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT n.name FROM nodes n
+		WHERE n.trust_bundle_sha256 <> $1 AND `+active+`
+		ORDER BY n.last_seen DESC NULLS LAST, n.name LIMIT 20`, bundleSHA)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list nodes without the trust bundle: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed to scan node name: %w", err)
+		}
+		st.Lagging = append(st.Lagging, name)
+	}
+	return st, rows.Err()
+}

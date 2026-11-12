@@ -71,6 +71,8 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
+  // A "document" result: text the administrator copies or downloads.
+  const [doc, setDoc] = useState<{ title: string; text: string; filename: string; message?: string } | null>(null);
   // The action waiting for its input value, and that value.
   const [inputAction, setInputAction] = useState<PanelAction | null>(null);
   const [inputValue, setInputValue] = useState("");
@@ -100,6 +102,13 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
       setInputAction(null);
       if (action.result === "secret" && res.token) {
         setSecret(res.token);
+      } else if (action.result === "document" && res.document) {
+        setDoc({
+          title: action.label,
+          text: res.document,
+          filename: res.filename || "document.txt",
+          message: res.message,
+        });
       } else {
         addToast({ variant: "success", title: action.label, detail: res.message });
       }
@@ -109,6 +118,16 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
     } finally {
       setBusy(false);
     }
+  };
+
+  const downloadDoc = () => {
+    if (!doc) return;
+    const url = URL.createObjectURL(new Blob([doc.text], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = doc.filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const start = (action: PanelAction) => {
@@ -276,6 +295,31 @@ export const ExtensionPanelTab: React.FC<{ dataUrl: string }> = ({ dataUrl }) =>
         <ModalFooter>
           <Button variant="primary" onClick={() => setSecret(null)}>
             Done
+          </Button>
+        </ModalFooter>
+      </Modal>
+      <Modal variant={ModalVariant.medium} isOpen={doc !== null} onClose={() => setDoc(null)} aria-labelledby="ext-doc-title">
+        <ModalHeader title={doc?.title ?? ""} labelId="ext-doc-title" />
+        <ModalBody>
+          {doc?.message && <LiveAlert variant="info" isInline message={doc.message} style={{ marginBottom: 16 }} />}
+          <ClipboardCopy
+            isReadOnly
+            isCode
+            isExpanded
+            variant="expansion"
+            hoverTip="Copy"
+            clickTip="Copied"
+            aria-label={`Copy ${doc?.filename ?? "document"}`}
+          >
+            {doc?.text ?? ""}
+          </ClipboardCopy>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="primary" onClick={downloadDoc}>
+            Download {doc?.filename}
+          </Button>
+          <Button variant="link" onClick={() => setDoc(null)}>
+            Close
           </Button>
         </ModalFooter>
       </Modal>

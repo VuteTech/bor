@@ -6,6 +6,7 @@
 package pki
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -44,13 +45,16 @@ import (
 // for when no CA is available).
 // Returns the paths to the cert and key files.
 func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer, extraHostnames []string) (certPath, keyPath string, err error) {
-	certPath = filepath.Join(dir, "ui.crt")
-	keyPath = filepath.Join(dir, "ui.key")
+	return EnsureServerCertWithChain(dir, caCert, caKey, extraHostnames, nil)
+}
 
-	// Compute required SANs up front so we can check existing certs for drift.
+// ServerCertSANs returns the subject alternative names of the auto-generated
+// server certificate: localhost, the loopback addresses, the system hostname
+// and extraHostnames (entries that parse as an IP address become IP SANs).
+func ServerCertSANs(extraHostnames []string) (dnsNames []string, ipAddresses []net.IP) {
 	hostname, _ := os.Hostname()
-	dnsNames := []string{"localhost"}
-	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+	dnsNames = []string{"localhost"}
+	ipAddresses = []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
 	if hostname != "" {
 		dnsNames = append(dnsNames, hostname)
 	}
@@ -61,14 +65,29 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 			dnsNames = append(dnsNames, h)
 		}
 	}
+	return dnsNames, ipAddresses
+}
+
+// EnsureServerCertWithChain is EnsureServerCert that additionally stores
+// issuers after the leaf certificate in the certificate file, so the server
+// presents them during the TLS handshake. Pass CAChain.ServedIssuers() to
+// let clients that trust only an external root build the path. An existing
+// certificate file whose appended certificates differ from issuers is
+// regenerated.
+func EnsureServerCertWithChain(dir string, caCert *x509.Certificate, caKey crypto.Signer, extraHostnames []string, issuers []*x509.Certificate) (certPath, keyPath string, err error) {
+	certPath = filepath.Join(dir, "ui.crt")
+	keyPath = filepath.Join(dir, "ui.key")
+
+	// Compute required SANs up front so we can check existing certs for drift.
+	dnsNames, ipAddresses := ServerCertSANs(extraHostnames)
 
 	if fileExists(certPath) && fileExists(keyPath) {
 		caOK := caCert == nil || isSignedByCA(certPath, caCert)
 		sansOK := certHasAllSANs(certPath, dnsNames, ipAddresses)
-		if caOK && sansOK {
+		if caOK && sansOK && servesIssuers(certPath, issuers) {
 			return certPath, keyPath, nil
 		}
-		// Stale cert: wrong CA or missing SANs — regenerate.
+		// Stale cert: wrong CA, missing SANs or different chain — regenerate.
 		if err = os.Remove(certPath); err != nil {
 			return "", "", fmt.Errorf("failed to remove old server cert %s: %w", certPath, err)
 		}
@@ -122,8 +141,12 @@ func EnsureServerCert(dir string, caCert *x509.Certificate, caKey crypto.Signer,
 		return "", "", fmt.Errorf("failed to create server certificate: %w", err)
 	}
 
-	if err = writePEM(certPath, "CERTIFICATE", certDER); err != nil { //nolint:gocritic // sloppyReassign: named return err updated intentionally
-		return "", "", err
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	for _, issuer := range issuers {
+		certPEM = append(certPEM, EncodeCertPEM(issuer)...)
+	}
+	if err = os.WriteFile(certPath, certPEM, 0o600); err != nil { //nolint:gocritic // sloppyReassign: named return err updated intentionally
+		return "", "", fmt.Errorf("failed to write %s: %w", certPath, err)
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
@@ -345,20 +368,6 @@ func validateCSRPublicKey(pub crypto.PublicKey) error {
 	}
 }
 
-// LoadCACertPool loads a CA certificate from the given path and returns
-// a CertPool containing it.
-func LoadCACertPool(certPath string) (*x509.CertPool, error) {
-	certPEM, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CA cert: %w", err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(certPEM) {
-		return nil, fmt.Errorf("failed to append CA cert to pool")
-	}
-	return pool, nil
-}
-
 // LoadTLSCert loads a TLS certificate from cert and key PEM files.
 func LoadTLSCert(certPath, keyPath string) (tls.Certificate, error) {
 	return tls.LoadX509KeyPair(certPath, keyPath)
@@ -454,6 +463,25 @@ func isSignedByCA(certPath string, caCert *x509.Certificate) bool {
 	pool.AddCert(caCert)
 	_, err = cert.Verify(x509.VerifyOptions{Roots: pool})
 	return err == nil
+}
+
+// servesIssuers reports whether the certificates stored after the leaf in
+// the PEM file at certPath are exactly issuers, in order.
+func servesIssuers(certPath string, issuers []*x509.Certificate) bool {
+	data, err := os.ReadFile(certPath) //nolint:gosec // cert path is admin-configured
+	if err != nil {
+		return false
+	}
+	_, rest := pem.Decode(data) // skip the leaf
+	for _, want := range issuers {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil || !bytes.Equal(block.Bytes, want.Raw) {
+			return false
+		}
+	}
+	block, _ := pem.Decode(rest)
+	return block == nil
 }
 
 // loadCACert loads only the CA certificate from a PEM file.

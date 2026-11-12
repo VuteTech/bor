@@ -293,11 +293,31 @@ export interface NodeInfo {
 
 export interface HeartbeatRequest {
   client_id: string;
-  info: NodeInfo | undefined;
+  info:
+    | NodeInfo
+    | undefined;
+  /**
+   * Hex SHA-256 of the CA certificate file the agent verifies the server
+   * against. Empty from agents that cannot replace that file.
+   */
+  trust_bundle_sha256: string;
 }
 
 export interface HeartbeatResponse {
   accepted: boolean;
+  /**
+   * The CA certificates the agent must trust from now on, in PEM. Set only
+   * when they differ from what the agent reported in trust_bundle_sha256;
+   * the agent then replaces its CA certificate file with them. This is how
+   * a new CA reaches enrolled agents before the server starts to use it.
+   */
+  ca_bundle_pem: Uint8Array;
+  /**
+   * The agent's certificate was issued by a CA that is being retired: the
+   * agent requests a new one with RenewCertificate now instead of waiting
+   * for the expiry window.
+   */
+  renew_certificate: boolean;
 }
 
 /** TamperProcessInfo describes a process found holding the tampered file open. */

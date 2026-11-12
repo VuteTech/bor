@@ -478,6 +478,8 @@ To follow the agent logs:
 		}
 	}
 
+	agentCreds = &agentCredentials{serverAddr: agentAddr, paths: paths}
+
 	// ─── Connect with mTLS credentials ────────────────────────────────
 	client, err := policyclient.New(
 		agentAddr,
@@ -2113,10 +2115,20 @@ func sendHeartbeat(ctx context.Context, client *policyclient.Client) {
 		LSMMode:      lsmMode,
 	}
 
-	if err := client.Heartbeat(ctx, info); err != nil {
+	res, err := client.Heartbeat(ctx, info, agentCreds.trustFingerprint())
+	if err != nil {
 		log.Printf("Heartbeat failed: %v", err)
-	} else {
-		log.Printf("Heartbeat sent (os=%s %s, de=%v)", info.OSName, info.OSVersion, info.DesktopEnvs)
+		return
+	}
+	log.Printf("Heartbeat sent (os=%s %s, de=%v)", info.OSName, info.OSVersion, info.DesktopEnvs)
+	if agentCreds.apply(res) {
+		// Tell the server that the new CA certificates are in place; it
+		// waits for every agent before it starts to use a new CA.
+		if confirm, confirmErr := client.Heartbeat(ctx, info, agentCreds.trustFingerprint()); confirmErr != nil {
+			log.Printf("Heartbeat failed: %v", confirmErr)
+		} else {
+			agentCreds.apply(confirm)
+		}
 	}
 }
 

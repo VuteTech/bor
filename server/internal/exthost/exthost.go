@@ -7,6 +7,7 @@
 package exthost
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/aes"
@@ -23,10 +24,12 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
@@ -72,6 +75,23 @@ type Deps struct {
 	// certificates modules ask for through Host.PKI().
 	CACert *x509.Certificate
 	CAKey  crypto.Signer
+	// CATrust is what the server trusts and tells agents to trust; nil
+	// means the signing certificate alone and no CA rotation.
+	CATrust *pki.TrustState
+	// CATrustStats counts nodes by the CA certificates they hold; nil in
+	// tests.
+	CATrustStats func(ctx context.Context, bundleSHA, issuer string) (*database.CATrustStats, error)
+	// RequestMetadata asks every connected agent for a heartbeat, which is
+	// how they pick up changed CA certificates; nil in tests.
+	RequestMetadata func() int
+	// CAManager re-certifies the CA; nil when that is unavailable.
+	CAManager *pki.CAManager
+	// CALifetime is the validity of a new self-signed CA when a module
+	// asks for the default.
+	CALifetime time.Duration
+	// CAAgentTrust and CAKeyStorage are reported in the CA status.
+	CAAgentTrust string
+	CAKeyStorage string
 }
 
 var moduleName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -254,11 +274,93 @@ type pkiHost struct {
 }
 
 func (p *pkiHost) CACertificatePEM() []byte {
+	if p.deps.CATrust != nil {
+		return p.deps.CATrust.AgentTrustPEM()
+	}
 	if p.deps.CACert == nil {
 		return nil
 	}
 	return pki.EncodeCertPEM(p.deps.CACert)
 }
+
+var errNoCAManager = errors.New("ext: the certificate authority cannot be managed on this server")
+
+func (p *pkiHost) CAStatus() (ext.CAStatus, error) {
+	cert := p.deps.CACert
+	if cert == nil || p.deps.CAManager == nil {
+		return ext.CAStatus{}, errNoCAManager
+	}
+	st := ext.CAStatus{
+		Subject:        cert.Subject.String(),
+		Issuer:         cert.Issuer.String(),
+		SelfSigned:     bytes.Equal(cert.RawSubject, cert.RawIssuer),
+		NotBefore:      cert.NotBefore,
+		NotAfter:       cert.NotAfter,
+		SerialNumber:   cert.SerialNumber.Text(16),
+		KeyAlgorithm:   pki.KeyAlgorithm(cert.PublicKey),
+		KeyStorage:     p.deps.CAKeyStorage,
+		AgentTrust:     p.deps.CAAgentTrust,
+		RequestPending: fileExists(p.deps.CAManager.Store.RequestPath()),
+	}
+	onDisk, err := p.deps.CAManager.Current()
+	if err != nil {
+		return st, fmt.Errorf("ext: reading the CA certificate file: %w", err)
+	}
+	if onDisk == nil {
+		return st, nil
+	}
+	if onDisk.Signing.Equal(cert) {
+		for _, issuer := range onDisk.Issuers {
+			st.Issuers = append(st.Issuers, issuer.Subject.String())
+		}
+		return st, nil
+	}
+	st.RestartRequired = true
+	st.InstalledSubject = onDisk.Signing.Subject.String()
+	st.InstalledIssuer = onDisk.Signing.Issuer.String()
+	st.InstalledNotAfter = onDisk.Signing.NotAfter
+	return st, nil
+}
+
+func (p *pkiHost) CreateCARequest(_ context.Context, commonName string) ([]byte, error) {
+	if p.deps.CAManager == nil {
+		return nil, errNoCAManager
+	}
+	csrPEM, err := p.deps.CAManager.CreateRequest(commonName)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("ext: module %q created a certificate signing request for the CA key", p.module)
+	return csrPEM, nil
+}
+
+func (p *pkiHost) InstallCACertificate(_ context.Context, bundlePEM []byte) (ext.CAInstallResult, error) {
+	if p.deps.CAManager == nil {
+		return ext.CAInstallResult{}, errNoCAManager
+	}
+	res, err := p.deps.CAManager.Install(bundlePEM)
+	if err != nil {
+		return ext.CAInstallResult{}, err
+	}
+	signing := res.Chain.Signing
+	log.Printf("ext: module %q installed the CA certificate %q issued by %q; it takes effect at the next restart",
+		p.module, signing.Subject, signing.Issuer)
+	return ext.CAInstallResult{
+		Subject:      signing.Subject.String(),
+		Issuer:       signing.Issuer.String(),
+		NotAfter:     signing.NotAfter,
+		Issuers:      len(res.Chain.Issuers),
+		Replaced:     res.Replaced,
+		SameIdentity: res.SameIdentity,
+	}, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+var _ ext.CAManager = (*pkiHost)(nil)
 
 func (p *pkiHost) IssueCertificate(_ context.Context, req ext.CertificateRequest) ([]byte, error) {
 	if p.deps.CACert == nil || p.deps.CAKey == nil {

@@ -356,29 +356,6 @@ func TestSignCSR_InvalidPEM(t *testing.T) {
 	}
 }
 
-func TestLoadCACertPool(t *testing.T) {
-	dir := t.TempDir()
-	certPath, _, err := EnsureCA(dir)
-	if err != nil {
-		t.Fatalf("EnsureCA() error = %v", err)
-	}
-
-	pool, err := LoadCACertPool(certPath)
-	if err != nil {
-		t.Fatalf("LoadCACertPool() error = %v", err)
-	}
-	if pool == nil {
-		t.Error("LoadCACertPool() returned nil pool")
-	}
-}
-
-func TestLoadCACertPool_MissingFile(t *testing.T) {
-	_, err := LoadCACertPool("/nonexistent/ca.crt")
-	if err == nil {
-		t.Error("LoadCACertPool() should return error for missing file")
-	}
-}
-
 func TestEnsureServerCert_FilePermissions(t *testing.T) {
 	dir := t.TempDir()
 

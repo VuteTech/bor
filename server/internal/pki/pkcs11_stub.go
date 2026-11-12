@@ -30,3 +30,9 @@ var ErrPKCS11NotCompiled = errors.New(
 func EnsureCAWithHSM(_, _, _, _, _ string, _ time.Duration) (*x509.Certificate, crypto.Signer, error) {
 	return nil, nil, ErrPKCS11NotCompiled
 }
+
+// OpenHSMKey is not available in this build.
+// Rebuild with -tags pkcs11 to enable PKCS#11 HSM support.
+func OpenHSMKey(_, _, _, _ string) (crypto.Signer, error) {
+	return nil, ErrPKCS11NotCompiled
+}

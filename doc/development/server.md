@@ -9,8 +9,8 @@ and where metrics and audit events go. For the bigger picture see
 ## Entry point and start-up sequence
 
 `server/cmd/server/main.go` is deliberately small. It parses the
-`--reset-mfa <username>` flag (handled by `app.ResetMFA`) and otherwise
-calls:
+`--reset-mfa <username>` flag (handled by `app.ResetMFA`) and the
+`ca <command>` arguments (handled by `app.CACommand`), and otherwise calls:
 
 ```go
 app.Run(app.Options{Version: Version, Edition: edition.Community{}})

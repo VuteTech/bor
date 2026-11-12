@@ -464,8 +464,10 @@ type PanelAction struct {
 	// Confirm is a confirmation question for non-destructive actions.
 	Confirm string `json:"confirm,omitempty"`
 	// Result is how the response is shown: "secret" (the "token" member,
-	// shown once with a copy control), "message" (the "message" member) or
-	// "" (nothing).
+	// shown once with a copy control), "message" (the "message" member),
+	// "document" (the "document" member, text shown to copy or to download
+	// as the "filename" member, with an optional "message") or ""
+	// (nothing).
 	Result string `json:"result,omitempty"`
 	// Input, when set, asks the administrator for a value before the
 	// request is sent; it is sent as the JSON body {"panel_input": "..."}.
@@ -554,8 +556,165 @@ const (
 
 // PKI is the server's certificate authority as seen by modules.
 type PKI interface {
-	// CACertificatePEM returns the CA certificate the agents trust.
+	// CACertificatePEM returns the CA certificates the agents trust: the
+	// signing certificate, followed by the authorities above it when the
+	// server hands agents the whole chain.
 	CACertificatePEM() []byte
 	// IssueCertificate signs a certificate for req and returns it in PEM.
 	IssueCertificate(ctx context.Context, req CertificateRequest) (certPEM []byte, err error)
+}
+
+// CAStatus describes the server's certificate authority.
+type CAStatus struct {
+	// Subject and Issuer are the distinguished names of the signing
+	// certificate in use.
+	Subject string
+	Issuer  string
+	// SelfSigned is true for a CA that is its own root.
+	SelfSigned bool
+	NotBefore  time.Time
+	NotAfter   time.Time
+	// SerialNumber is the signing certificate's serial number in hex.
+	SerialNumber string
+	// Issuers are the subjects of the authorities above the signing
+	// certificate that the CA file lists, from its direct issuer to the
+	// root. Empty when the file holds the signing certificate alone.
+	Issuers []string
+	// KeyAlgorithm is e.g. "ECDSA P-384" or "RSA 4096".
+	KeyAlgorithm string
+	// KeyStorage is "file" or "pkcs11".
+	KeyStorage string
+	// AgentTrust is what agents receive at enrollment: "signing" or
+	// "chain".
+	AgentTrust string
+	// RequestPending is true when a signing request was created and no
+	// certificate has been installed since.
+	RequestPending bool
+	// RestartRequired is true when the certificate on disk differs from
+	// the one the running server uses, i.e. a certificate was installed
+	// and the server has not been restarted.
+	RestartRequired bool
+	// InstalledSubject, InstalledIssuer and InstalledNotAfter describe the
+	// certificate on disk when RestartRequired is true.
+	InstalledSubject  string
+	InstalledIssuer   string
+	InstalledNotAfter time.Time
+}
+
+// CAInstallResult describes a CA certificate that was installed.
+type CAInstallResult struct {
+	Subject  string
+	Issuer   string
+	NotAfter time.Time
+	// Issuers is the number of issuer certificates stored with it.
+	Issuers int
+	// Replaced is true when a certificate was in place before.
+	Replaced bool
+	// SameIdentity is true when the replaced certificate had the same key
+	// and subject, so agents that pin it keep working while it is valid.
+	SameIdentity bool
+}
+
+// CAManager has the server's certificate authority certified by an external
+// authority. The value returned by Host.PKI() implements it:
+//
+//	ca, ok := host.PKI().(ext.CAManager)
+//
+// The private key never leaves the server (or its PKCS#11 token).
+type CAManager interface {
+	// CAStatus describes the certificate authority.
+	CAStatus() (CAStatus, error)
+	// CreateCARequest returns a PEM certificate signing request for the CA
+	// key. An empty commonName requests the subject of the certificate in
+	// use.
+	CreateCARequest(ctx context.Context, commonName string) (csrPEM []byte, err error)
+	// InstallCACertificate validates and stores the certificate an
+	// authority issued for the CA key: the signing certificate, optionally
+	// followed by its issuers up to the root, in PEM. It takes effect when
+	// the server restarts.
+	InstallCACertificate(ctx context.Context, bundlePEM []byte) (CAInstallResult, error)
+}
+
+// CACertificate describes one CA certificate of a rotation.
+type CACertificate struct {
+	Subject    string
+	Issuer     string
+	SelfSigned bool
+	NotBefore  time.Time
+	NotAfter   time.Time
+	// Fingerprint is the hex SHA-256 of the certificate.
+	Fingerprint string
+}
+
+// CARotationStatus is where a replacement of the CA by one with a new key
+// stands.
+type CARotationStatus struct {
+	// Supported is false when the CA cannot be rotated here;
+	// UnsupportedReason says why.
+	Supported         bool
+	UnsupportedReason string
+	// Staged is the new CA agents are being told to trust, nil when none.
+	Staged *CACertificate
+	// StagedRequestPending is true when a signing request was created for
+	// a new CA and its certificate has not been installed yet.
+	StagedRequestPending bool
+	// ActivationPending is true when the staged CA was activated and the
+	// server has not been restarted since: it still issues from the
+	// replaced CA.
+	ActivationPending bool
+	// Previous are replaced CAs whose certificates are still accepted.
+	Previous []CACertificate
+
+	// Nodes is the number of nodes that can connect (certificate not
+	// revoked).
+	Nodes int
+	// NodesHoldingTrust of them have confirmed that they trust exactly the
+	// CA certificates the server currently hands out, which include the
+	// staged CA. The others would lose the server if it were activated now.
+	NodesHoldingTrust int
+	// NodesNeverReported of them have not reported what they trust: they
+	// never connected, or their agent is too old to receive CA
+	// certificates.
+	NodesNeverReported int
+	// NodesOnOtherCA of them hold a certificate that the CA in use did not
+	// issue; they depend on a previous CA until they renew.
+	NodesOnOtherCA int
+	// LaggingNodes names up to 20 nodes that do not hold the current CA
+	// certificates, most recently seen first.
+	LaggingNodes []string
+}
+
+// CARotator replaces the server's certificate authority with one that has a
+// new key, without re-enrolling agents. The value returned by Host.PKI()
+// implements it:
+//
+//	rot, ok := host.PKI().(ext.CARotator)
+//
+// The steps are: stage a new CA (StageCA, or StageCARequest followed by
+// InstallStagedCA for a CA certified by an external authority); wait until
+// the agents hold it (CARotationStatus); ActivateStagedCA and restart the
+// server; once the agents have renewed their certificates,
+// RetirePreviousCAs.
+type CARotator interface {
+	CARotationStatus(ctx context.Context) (CARotationStatus, error)
+	// StageCA creates a new self-signed CA valid for lifetime (zero: the
+	// default) and starts handing it to agents.
+	StageCA(ctx context.Context, lifetime time.Duration) (CACertificate, error)
+	// StageCARequest creates the key of a new CA and returns a PEM signing
+	// request for it. An empty commonName requests the active CA's.
+	StageCARequest(ctx context.Context, commonName string) (csrPEM []byte, err error)
+	// InstallStagedCA stores the certificate issued for StageCARequest
+	// (PEM, optionally followed by its issuers) and starts handing it to
+	// agents.
+	InstallStagedCA(ctx context.Context, bundlePEM []byte) (CACertificate, error)
+	// DiscardStagedCA drops the staged CA or its pending request.
+	DiscardStagedCA(ctx context.Context) error
+	// ActivateStagedCA makes the staged CA the server's CA from the next
+	// restart on. Agents that do not hold it by then can no longer verify
+	// the server and must re-enroll.
+	ActivateStagedCA(ctx context.Context) (CACertificate, error)
+	// RetirePreviousCAs stops accepting certificates issued by replaced
+	// CAs and returns how many CAs were retired. Agents still holding such
+	// a certificate must re-enroll.
+	RetirePreviousCAs(ctx context.Context) (int, error)
 }
