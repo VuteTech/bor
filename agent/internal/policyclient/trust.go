@@ -5,6 +5,7 @@
 package policyclient
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -12,8 +13,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+
+	"google.golang.org/grpc/credentials"
 )
 
 // loadTrustPool reads the CA certificates the agent verifies the server
@@ -30,35 +34,36 @@ func loadTrustPool(caCertPath string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// verifyWithTrustFile returns a tls.Config.VerifyConnection callback that
-// verifies the server's certificate chain against the CA certificates
-// currently in caCertPath, and that the certificate is valid for serverName
-// (a host name or an IP address). It performs the verification
-// crypto/tls does for a fixed RootCAs pool, with the pool read from the file
-// for every handshake.
-func verifyWithTrustFile(caCertPath, serverName string) func(tls.ConnectionState) error {
-	return func(cs tls.ConnectionState) error {
-		if len(cs.PeerCertificates) == 0 {
-			return errors.New("server presented no certificate")
-		}
-		if serverName == "" {
-			return errors.New("no server name to verify the certificate against")
-		}
-		roots, err := loadTrustPool(caCertPath)
-		if err != nil {
-			return err
-		}
-		intermediates := x509.NewCertPool()
-		for _, cert := range cs.PeerCertificates[1:] {
-			intermediates.AddCert(cert)
-		}
-		_, err = cs.PeerCertificates[0].Verify(x509.VerifyOptions{
-			Roots:         roots,
-			Intermediates: intermediates,
-			DNSName:       serverName,
-			KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		})
-		return err
+// trustFileCredentials are TLS transport credentials whose root CAs are
+// read from a file for every handshake, so the agent follows a replacement
+// of its CA certificates without a restart. Each handshake is the standard
+// crypto/tls one, with full verification of the server's certificate chain
+// and name against the certificates in the file at that moment.
+type trustFileCredentials struct {
+	// TransportCredentials answers everything but the client handshake.
+	credentials.TransportCredentials
+	// config is the TLS configuration without root CAs.
+	config     *tls.Config
+	caCertPath string
+}
+
+// ClientHandshake implements credentials.TransportCredentials.
+func (c *trustFileCredentials) ClientHandshake(ctx context.Context, authority string, rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+	roots, err := loadTrustPool(c.caCertPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg := c.config.Clone()
+	cfg.RootCAs = roots
+	return credentials.NewTLS(cfg).ClientHandshake(ctx, authority, rawConn)
+}
+
+// Clone implements credentials.TransportCredentials.
+func (c *trustFileCredentials) Clone() credentials.TransportCredentials {
+	return &trustFileCredentials{
+		TransportCredentials: c.TransportCredentials.Clone(),
+		config:               c.config.Clone(),
+		caCertPath:           c.caCertPath,
 	}
 }
 

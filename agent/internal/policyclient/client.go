@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"net"
 	"time"
 
 	pb "github.com/VuteTech/Bor/server/pkg/grpc/policy"
@@ -50,22 +49,13 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 
 	switch {
 	case caCertPath != "":
-		// Fail early on an unusable file; the roots themselves are read
-		// again for every handshake (see verifyWithTrustFile).
+		// Fail early on an unusable file. The roots themselves are read
+		// again for every handshake (see trustFileCredentials), because
+		// the server can replace the agent's CA certificates while the
+		// agent runs.
 		if _, err := loadTrustPool(caCertPath); err != nil {
 			return nil, err
 		}
-		// The CA certificate file can change while the agent runs (the
-		// server delivers a new CA before it starts to use it), so the
-		// built-in verification against a fixed pool is replaced by the
-		// same verification against the file's current content.
-		host, _, splitErr := net.SplitHostPort(serverAddr)
-		if splitErr != nil {
-			host = serverAddr
-		}
-		tlsCfg.ServerName = host
-		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: verification is done in VerifyConnection against the CA file
-		tlsCfg.VerifyConnection = verifyWithTrustFile(caCertPath, host)
 	case insecureSkipVerify:
 		tlsCfg.InsecureSkipVerify = true //nolint:gosec // G402: controlled by admin config, only during enrollment bootstrap
 		log.Println("WARNING: server certificate verification is disabled (insecure_skip_verify)")
@@ -89,8 +79,12 @@ func New(serverAddr, clientID, caCertPath, clientCertPath, clientKeyPath string,
 		}
 	}
 
+	creds := credentials.NewTLS(tlsCfg)
+	if caCertPath != "" {
+		creds = &trustFileCredentials{TransportCredentials: creds, config: tlsCfg, caCertPath: caCertPath}
+	}
 	conn, err := grpc.NewClient(serverAddr,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
+		grpc.WithTransportCredentials(creds),
 		// HTTP/2 pings so a dead connection is noticed within about a
 		// minute. After a suspend, a NAT reset or a server restart the TCP
 		// socket can stay established on the node while the server has
